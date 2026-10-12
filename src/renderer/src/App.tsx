@@ -1,18 +1,21 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
+  ArrowDown,
   ArrowDownToLine,
-  ArrowLeft,
   ArrowUp,
+  ArrowUpDown,
   Check,
   ChevronRight,
-  CircleAlert,
   Cloud,
   Eye,
   File,
   Folder,
   FolderUp,
   HardDrive,
+  House,
   KeyRound,
+  LayoutGrid,
+  List,
   LoaderCircle,
   Pencil,
   Plus,
@@ -24,6 +27,7 @@ import {
   WifiOff,
   X,
 } from 'lucide-react'
+import GlobalToast, { type ToastNotice } from './GlobalToast'
 import type {
   ConnectResult,
   PreviewResult,
@@ -58,9 +62,20 @@ interface TransferJob {
 }
 
 type PreviewDialog =
-  | { kind: 'unsupported'; name: string }
   | { kind: 'loading'; name: string }
   | { kind: 'ready'; result: PreviewResult }
+
+type FileViewMode = 'icons' | 'details'
+type SortColumn = 'name' | 'type' | 'size' | 'modifiedAt' | 'permissions'
+type SortDirection = 'ascending' | 'descending'
+
+const entryNameCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' })
+const entryTypeOrder: Record<RemoteEntry['type'], number> = {
+  directory: 0,
+  file: 1,
+  symlink: 2,
+  other: 3,
+}
 
 const emptyForm = (): ProfileForm => ({
   id: '',
@@ -94,6 +109,18 @@ function formatDate(value: string | null): string {
   }).format(new Date(value))
 }
 
+function getEntryTypeLabel(entry: RemoteEntry): string {
+  if (entry.type === 'directory') return '文件夹'
+  if (entry.type === 'symlink') return '链接'
+  if (entry.type === 'file') return '文件'
+  return '其他'
+}
+
+function readViewMode(): FileViewMode {
+  const savedMode = window.localStorage.getItem('remote-files:view-mode')
+  return savedMode === 'icons' || savedMode === 'details' ? savedMode : 'details'
+}
+
 function getParentPath(remotePath: string): string {
   const parts = remotePath.split('/').filter(Boolean)
   parts.pop()
@@ -120,13 +147,26 @@ export default function App() {
   const [entries, setEntries] = useState<RemoteEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [connectionPending, setConnectionPending] = useState(false)
-  const [connectionMessage, setConnectionMessage] = useState('')
+  const [toast, setToast] = useState<ToastNotice | null>(null)
+  const [viewMode, setViewMode] = useState<FileViewMode>(readViewMode)
+  const [sort, setSort] = useState<{ column: SortColumn; direction: SortDirection }>({
+    column: 'name',
+    direction: 'ascending',
+  })
   const [dialog, setDialog] = useState<{ mode: 'create' | 'edit'; form: ProfileForm } | null>(null)
   const [pendingHostKey, setPendingHostKey] = useState<PendingHostKey | null>(null)
   const [transfers, setTransfers] = useState<Record<string, TransferJob>>({})
   const [previewDialog, setPreviewDialog] = useState<PreviewDialog | null>(null)
+  const toastSequenceRef = useRef(0)
+  const connectionAttemptRef = useRef(0)
+  const connectingProfilesRef = useRef(new Set<string>())
   const previewTokenRef = useRef<string | null>(null)
   const previewRequestRef = useRef(0)
+
+  const showToast = useCallback((kind: ToastNotice['kind'], message: string) => {
+    setToast({ id: ++toastSequenceRef.current, kind, message })
+  }, [])
+  const dismissToast = useCallback(() => setToast(null), [])
 
   const connectedProfile = useMemo(
     () => profiles.find((profile) => profile.id === connectedProfileId) ?? null,
@@ -138,8 +178,12 @@ export default function App() {
   }
 
   useEffect(() => {
-    void window.remoteFiles.listProfiles().then(setProfiles).catch((error) => setConnectionMessage(errorMessage(error)))
-  }, [])
+    window.localStorage.setItem('remote-files:view-mode', viewMode)
+  }, [viewMode])
+
+  useEffect(() => {
+    void window.remoteFiles.listProfiles().then(setProfiles).catch((error) => showToast('error', errorMessage(error)))
+  }, [showToast])
 
   useEffect(() => {
     const removeProgressListener = window.remoteFiles.onTransferProgress((progress: TransferProgress) => {
@@ -158,13 +202,13 @@ export default function App() {
       if (event.profileId !== connectedProfileId) return
       setConnectedProfileId(null)
       setEntries([])
-      setConnectionMessage(`连接已断开：${event.message}`)
+      showToast('error', `连接已断开：${event.message}`)
     })
     return () => {
       removeProgressListener()
       removeClosedListener()
     }
-  }, [connectedProfileId])
+  }, [connectedProfileId, showToast])
 
   useEffect(() => () => {
     if (previewTokenRef.current) void window.remoteFiles.releasePreview(previewTokenRef.current)
@@ -176,22 +220,30 @@ export default function App() {
       const nextEntries = await window.remoteFiles.listDirectory(profileId, remotePath)
       setEntries(nextEntries)
       setCurrentPath(remotePath)
-      setConnectionMessage('')
+      setToast(null)
     } catch (error) {
-      setConnectionMessage(errorMessage(error))
+      showToast('error', errorMessage(error))
     } finally {
       setLoading(false)
     }
   }
 
   const connectTo = async (profile: ServerProfile) => {
+    if (connectedProfileId === profile.id || connectingProfilesRef.current.has(profile.id)) return
+
+    const attempt = ++connectionAttemptRef.current
+    connectingProfilesRef.current.add(profile.id)
     setSelectedProfileId(profile.id)
     setConnectionPending(true)
-    setConnectionMessage('')
+    setToast(null)
     setEntries([])
     setConnectedProfileId(null)
     try {
       const result = await window.remoteFiles.connect(profile.id)
+      if (attempt !== connectionAttemptRef.current) {
+        if (result.ok) await window.remoteFiles.disconnect(profile.id)
+        return
+      }
       if (!result.ok) {
         if (result.reason === 'host-key-unknown') {
           setPendingHostKey({ profile, fingerprint: result.fingerprint })
@@ -202,16 +254,17 @@ export default function App() {
             previousFingerprint: result.previousFingerprint,
           })
         } else {
-          setConnectionMessage(connectFailureText(result))
+          showToast('error', connectFailureText(result))
         }
         return
       }
       setConnectedProfileId(profile.id)
       await loadDirectory(profile.id, result.path)
     } catch (error) {
-      setConnectionMessage(errorMessage(error))
+      if (attempt === connectionAttemptRef.current) showToast('error', errorMessage(error))
     } finally {
-      setConnectionPending(false)
+      connectingProfilesRef.current.delete(profile.id)
+      if (attempt === connectionAttemptRef.current) setConnectionPending(false)
     }
   }
 
@@ -221,7 +274,7 @@ export default function App() {
   }
 
   const openProfileDialog = (mode: 'create' | 'edit', profile?: ServerProfile) => {
-    setConnectionMessage('')
+    setToast(null)
     setDialog({
       mode,
       form: profile
@@ -265,9 +318,9 @@ export default function App() {
       }
       setSelectedProfileId(savedProfile.id)
       setDialog(null)
-      setConnectionMessage('')
+      setToast(null)
     } catch (error) {
-      setConnectionMessage(errorMessage(error))
+      showToast('error', errorMessage(error))
     }
   }
 
@@ -282,7 +335,7 @@ export default function App() {
       if (selectedProfileId === profile.id) setSelectedProfileId(null)
       await refreshProfiles()
     } catch (error) {
-      setConnectionMessage(errorMessage(error))
+      showToast('error', errorMessage(error))
     }
   }
 
@@ -292,7 +345,7 @@ export default function App() {
     await window.remoteFiles.disconnect(profileId)
     setConnectedProfileId(null)
     setEntries([])
-    setConnectionMessage('')
+    setToast(null)
   }
 
   const trustAndReconnect = async () => {
@@ -309,7 +362,7 @@ export default function App() {
       await connectTo(profile)
     } catch (error) {
       setPendingHostKey(null)
-      setConnectionMessage(errorMessage(error))
+      showToast('error', errorMessage(error))
     }
   }
 
@@ -359,7 +412,7 @@ export default function App() {
         delete next[requestId]
         return next
       })
-      setConnectionMessage(`${direction === 'upload' ? '上传' : '下载'}失败：${errorMessage(error)}`)
+      showToast('error', `${direction === 'upload' ? '上传' : '下载'}失败：${errorMessage(error)}`)
     }
   }
 
@@ -397,7 +450,7 @@ export default function App() {
     const supportedExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.txt', '.sh', '.mp3', '.mp4'])
     const extension = entry.name.slice(entry.name.lastIndexOf('.')).toLowerCase()
     if (!supportedExtensions.has(extension)) {
-      setPreviewDialog({ kind: 'unsupported', name: entry.name })
+      showToast('info', `暂不支持的文件类型：${entry.name}`)
       return
     }
     if (!connectedProfileId) return
@@ -415,7 +468,7 @@ export default function App() {
     } catch (error) {
       if (requestId === previewRequestRef.current) {
         setPreviewDialog(null)
-        setConnectionMessage(`预览失败：${errorMessage(error)}`)
+        showToast('error', `预览失败：${errorMessage(error)}`)
       }
     }
   }
@@ -430,6 +483,56 @@ export default function App() {
     }
     return items
   }, [currentPath])
+
+  const sortedEntries = useMemo(() => [...entries].sort((left, right) => {
+    if (left.type === 'directory' && right.type !== 'directory') return -1
+    if (left.type !== 'directory' && right.type === 'directory') return 1
+
+    let comparison = 0
+    if (sort.column === 'name') {
+      comparison = entryNameCollator.compare(left.name, right.name)
+    } else if (sort.column === 'type') {
+      comparison = entryTypeOrder[left.type] - entryTypeOrder[right.type]
+    } else if (sort.column === 'size') {
+      comparison = left.type === 'directory' ? 0 : left.size - right.size
+    } else if (sort.column === 'modifiedAt') {
+      if (left.modifiedAt === null || right.modifiedAt === null) {
+        if (left.modifiedAt === null && right.modifiedAt !== null) return 1
+        if (left.modifiedAt !== null && right.modifiedAt === null) return -1
+      } else {
+        comparison = Date.parse(left.modifiedAt) - Date.parse(right.modifiedAt)
+      }
+    } else {
+      comparison = entryNameCollator.compare(left.permissions, right.permissions)
+    }
+
+    if (comparison === 0) return entryNameCollator.compare(left.name, right.name)
+    return sort.direction === 'ascending' ? comparison : -comparison
+  }), [entries, sort])
+
+  const toggleSort = (column: SortColumn) => {
+    setSort((current) => current.column === column
+      ? { column, direction: current.direction === 'ascending' ? 'descending' : 'ascending' }
+      : { column, direction: 'ascending' })
+  }
+
+  const sortHeader = (column: SortColumn, label: string) => {
+    const active = sort.column === column
+    const directionLabel = sort.direction === 'ascending' ? '升序' : '降序'
+    return (
+      <button
+        className={`sort-header ${active ? 'active' : ''}`}
+        title={`按${label}排序${active ? `，当前${directionLabel}` : ''}`}
+        aria-label={`按${label}排序${active ? `，当前${directionLabel}` : ''}`}
+        onClick={() => toggleSort(column)}
+      >
+        <span>{label}</span>
+        {active
+          ? sort.direction === 'ascending' ? <ArrowUp size={13} /> : <ArrowDown size={13} />
+          : <ArrowUpDown size={13} />}
+      </button>
+    )
+  }
 
   const transferJobs = Object.entries(transfers)
 
@@ -523,11 +626,11 @@ export default function App() {
         {connectedProfile ? (
           <>
             <div className="pathbar">
-              <button className="icon-button path-nav" title="返回上级目录" aria-label="返回上级目录" disabled={currentPath === '/'} onClick={() => navigate(getParentPath(currentPath))}>
-                <ArrowUp size={16} />
+              <button className="icon-button path-nav" title="返回根目录" aria-label="返回根目录" disabled={currentPath === '/'} onClick={() => navigate('/')}>
+                <House size={16} />
               </button>
-              <button className="icon-button path-nav back-nav" title="返回根目录" aria-label="返回根目录" disabled={currentPath === '/'} onClick={() => navigate('/')}>
-                <ArrowLeft size={16} />
+              <button className="icon-button path-nav nav-group-end" title="返回上级目录" aria-label="返回上级目录" disabled={currentPath === '/'} onClick={() => navigate(getParentPath(currentPath))}>
+                <ArrowUp size={16} />
               </button>
               <nav className="breadcrumbs" aria-label="当前路径">
                 {breadcrumbs.map((crumb, index) => (
@@ -537,37 +640,94 @@ export default function App() {
                   </span>
                 ))}
               </nav>
-              <div className="path-count">{entries.length} 项</div>
+              <div className="pathbar-tools">
+                <div className="view-toggle" role="group" aria-label="文件视图">
+                  <button
+                    className="view-toggle-button"
+                    title="图标视图"
+                    aria-label="图标视图"
+                    aria-pressed={viewMode === 'icons'}
+                    onClick={() => setViewMode('icons')}
+                  >
+                    <LayoutGrid size={16} />
+                  </button>
+                  <button
+                    className="view-toggle-button"
+                    title="详细信息视图"
+                    aria-label="详细信息视图"
+                    aria-pressed={viewMode === 'details'}
+                    onClick={() => setViewMode('details')}
+                  >
+                    <List size={17} />
+                  </button>
+                </div>
+                <div className="path-count">{entries.length} 项</div>
+              </div>
             </div>
 
-            <div className="file-table-wrap">
-              <table className="file-table">
-                <thead>
-                  <tr>
-                    <th className="name-col">名称</th>
-                    <th className="type-col">类型</th>
-                    <th className="size-col">大小</th>
-                    <th className="date-col">修改时间</th>
-                    <th className="permission-col">权限</th>
-                    <th className="action-col"><span className="visually-hidden">操作</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.map((entry) => (
-                    <tr className="file-row" key={entry.path}>
-                      <td className="name-col">
-                        <button className={`entry-name ${entry.type === 'directory' ? 'directory-entry' : ''}`} onClick={() => entry.type === 'directory' && navigate(entry.path)} disabled={entry.type !== 'directory'}>
-                          <span className={`entry-icon ${entry.type === 'directory' ? 'folder-icon' : ''}`}>
-                            {entry.type === 'directory' ? <Folder size={17} fill="currentColor" strokeWidth={1.8} /> : <File size={16} />}
-                          </span>
-                          <span className="entry-label">{entry.name}</span>
-                        </button>
-                      </td>
-                      <td className="type-col">{entry.type === 'directory' ? '文件夹' : entry.type === 'symlink' ? '链接' : entry.type === 'file' ? '文件' : '其他'}</td>
-                      <td className="size-col">{entry.type === 'directory' ? '—' : formatSize(entry.size)}</td>
-                      <td className="date-col">{formatDate(entry.modifiedAt)}</td>
-                      <td className="permission-col"><code>{entry.permissions}</code></td>
-                      <td className="action-col">
+            <div className="file-content-wrap">
+              {viewMode === 'details' ? (
+                <table className="file-table">
+                  <thead>
+                    <tr>
+                      <th className="name-col" aria-sort={sort.column === 'name' ? sort.direction : 'none'}>{sortHeader('name', '名称')}</th>
+                      <th className="type-col" aria-sort={sort.column === 'type' ? sort.direction : 'none'}>{sortHeader('type', '类型')}</th>
+                      <th className="size-col" aria-sort={sort.column === 'size' ? sort.direction : 'none'}>{sortHeader('size', '大小')}</th>
+                      <th className="date-col" aria-sort={sort.column === 'modifiedAt' ? sort.direction : 'none'}>{sortHeader('modifiedAt', '修改时间')}</th>
+                      <th className="permission-col" aria-sort={sort.column === 'permissions' ? sort.direction : 'none'}>{sortHeader('permissions', '权限')}</th>
+                      <th className="action-col"><span className="visually-hidden">操作</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedEntries.map((entry) => (
+                      <tr className="file-row" key={entry.path}>
+                        <td className="name-col">
+                          <button className={`entry-name ${entry.type === 'directory' ? 'directory-entry' : ''}`} onClick={() => entry.type === 'directory' && navigate(entry.path)} disabled={entry.type !== 'directory'}>
+                            <span className={`entry-icon ${entry.type === 'directory' ? 'folder-icon' : ''}`}>
+                              {entry.type === 'directory' ? <Folder size={17} fill="currentColor" strokeWidth={1.8} /> : <File size={16} />}
+                            </span>
+                            <span className="entry-label">{entry.name}</span>
+                          </button>
+                        </td>
+                        <td className="type-col">{getEntryTypeLabel(entry)}</td>
+                        <td className="size-col">{entry.type === 'directory' ? '—' : formatSize(entry.size)}</td>
+                        <td className="date-col">{formatDate(entry.modifiedAt)}</td>
+                        <td className="permission-col"><code>{entry.permissions}</code></td>
+                        <td className="action-col">
+                          {entry.type === 'file' && (
+                            <button className="icon-button preview-button" title="预览文件" aria-label={`预览 ${entry.name}`} onClick={() => void previewFile(entry)}>
+                              <Eye size={16} />
+                            </button>
+                          )}
+                          {(entry.type === 'file' || entry.type === 'directory') && (
+                            <button className="icon-button download-button" title={entry.type === 'directory' ? '下载文件夹' : '下载文件'} aria-label={`下载 ${entry.name}`} onClick={() => void download(entry)}>
+                              <ArrowDownToLine size={16} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="file-icon-grid">
+                  {sortedEntries.map((entry) => (
+                    <article className="file-tile" key={entry.path}>
+                      <button
+                        className={`file-tile-main ${entry.type === 'directory' ? 'directory-entry' : ''}`}
+                        title={entry.name}
+                        onClick={() => entry.type === 'directory' && navigate(entry.path)}
+                        disabled={entry.type !== 'directory'}
+                      >
+                        <span className={`tile-glyph ${entry.type === 'directory' ? 'folder-glyph' : ''}`}>
+                          {entry.type === 'directory'
+                            ? <Folder size={31} fill="currentColor" strokeWidth={1.7} />
+                            : <File size={29} />}
+                        </span>
+                        <span className="tile-name">{entry.name}</span>
+                        <span className="tile-type">{getEntryTypeLabel(entry)}</span>
+                      </button>
+                      <div className="tile-actions">
                         {entry.type === 'file' && (
                           <button className="icon-button preview-button" title="预览文件" aria-label={`预览 ${entry.name}`} onClick={() => void previewFile(entry)}>
                             <Eye size={16} />
@@ -578,11 +738,11 @@ export default function App() {
                             <ArrowDownToLine size={16} />
                           </button>
                         )}
-                      </td>
-                    </tr>
+                      </div>
+                    </article>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              )}
               {loading && (
                 <div className="table-state"><LoaderCircle className="spin" size={19} /> 正在读取目录</div>
               )}
@@ -598,14 +758,6 @@ export default function App() {
             <p>{profiles.length ? '选择左侧的服务器建立连接' : '保存 SSH 连接信息，开始浏览远程目录'}</p>
             {profiles.length === 0 && <button className="primary-button" onClick={() => openProfileDialog('create')}><Plus size={16} /> 添加服务器</button>}
             {connectionPending && <div className="welcome-loading"><LoaderCircle className="spin" size={16} /> 正在连接</div>}
-          </div>
-        )}
-
-        {connectionMessage && (
-          <div className="message-banner" role="status">
-            <CircleAlert size={16} />
-            <span>{connectionMessage}</span>
-            <button className="icon-button" title="关闭提示" aria-label="关闭提示" onClick={() => setConnectionMessage('')}><X size={15} /></button>
           </div>
         )}
 
@@ -633,6 +785,8 @@ export default function App() {
           </div>
         )}
       </main>
+
+      <GlobalToast notice={toast} onDismiss={dismissToast} />
 
       {dialog && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setDialog(null)}>
@@ -692,7 +846,6 @@ export default function App() {
               </div>
               <button className="icon-button modal-close" title="关闭预览" aria-label="关闭预览" onClick={closePreview}><X size={18} /></button>
             </div>
-            {previewDialog.kind === 'unsupported' && <p className="unsupported-preview">暂不支持的文件类型</p>}
             {previewDialog.kind === 'loading' && <div className="preview-loading"><LoaderCircle className="spin" size={20} /> 正在读取文件</div>}
             {previewDialog.kind === 'ready' && previewDialog.result.type === 'text' && (
               <pre className="preview-text">{previewDialog.result.content}</pre>
