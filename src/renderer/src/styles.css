@@ -41,7 +41,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid #73a997; outline-
 button:disabled { cursor: not-allowed; opacity: .45; }
 
 .app-shell { display: flex; height: 100vh; min-height: 560px; background: var(--canvas); }
-.sidebar { width: 264px; flex: 0 0 264px; display: flex; flex-direction: column; background: #f8faf8; border-right: 1px solid var(--line); }
+.sidebar { width: 264px; min-width: 0; flex: 0 0 264px; display: flex; flex-direction: column; overflow: hidden; background: #f8faf8; border-right: 1px solid var(--line); transition: width .2s ease, flex-basis .2s ease; }
+.sidebar-collapsed .sidebar { width: 0; flex-basis: 0; border-right-width: 0; }
 .brand-row { height: 62px; padding: 0 20px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
 .brand-mark { width: 30px; height: 30px; display: grid; place-items: center; color: var(--green); background: var(--green-soft); border: 1px solid #d4e9dc; border-radius: 6px; }
 .brand-name { font-size: 14px; font-weight: 700; }

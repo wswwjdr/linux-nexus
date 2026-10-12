@@ -17,6 +17,8 @@ import {
   LayoutGrid,
   List,
   LoaderCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Plus,
   RefreshCw,
@@ -127,6 +129,10 @@ function readViewMode(): FileViewMode {
   return savedMode === 'icons' || savedMode === 'details' ? savedMode : 'details'
 }
 
+function readSidebarCollapsed(): boolean {
+  return window.localStorage.getItem('remote-files:sidebar-collapsed') === 'true'
+}
+
 function getParentPath(remotePath: string): string {
   const parts = remotePath.split('/').filter(Boolean)
   parts.pop()
@@ -155,6 +161,7 @@ export default function App() {
   const [connectionPending, setConnectionPending] = useState(false)
   const [toast, setToast] = useState<ToastNotice | null>(null)
   const [viewMode, setViewMode] = useState<FileViewMode>(readViewMode)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
   const [sort, setSort] = useState<{ column: SortColumn; direction: SortDirection }>({
     column: 'name',
     direction: 'ascending',
@@ -198,6 +205,10 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem('remote-files:view-mode', viewMode)
   }, [viewMode])
+
+  useEffect(() => {
+    window.localStorage.setItem('remote-files:sidebar-collapsed', String(sidebarCollapsed))
+  }, [sidebarCollapsed])
 
   useEffect(() => {
     void window.remoteFiles.listProfiles().then(setProfiles).catch((error) => showToast('error', errorMessage(error)))
@@ -654,12 +665,12 @@ export default function App() {
   const transferJobs = Object.entries(transfers)
 
   return (
-    <div className="app-shell" onAuxClick={(event) => {
+    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} onAuxClick={(event) => {
       if (event.button !== 3 && event.button !== 4) return
       event.preventDefault()
       movePathHistory(event.button === 3 ? -1 : 1)
     }}>
-      <aside className="sidebar">
+      <aside id="app-sidebar" className="sidebar" aria-hidden={sidebarCollapsed} inert={sidebarCollapsed}>
         <div className="brand-row">
           <div className="brand-mark"><HardDrive size={18} strokeWidth={2.1} /></div>
           <div className="brand-name">远程文件</div>
@@ -720,6 +731,16 @@ export default function App() {
       <main className="main-area">
         <header className="topbar">
           <div className="topbar-left">
+            <button
+              className="icon-button toolbar-button"
+              title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
+              aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
+              aria-expanded={!sidebarCollapsed}
+              aria-controls="app-sidebar"
+              onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            </button>
             <div className="page-title">文件</div>
             {connectedProfile && <span className="topbar-separator" />}
             {connectedProfile && <span className="connected-host"><Cloud size={14} /> {connectedProfile.username}@{connectedProfile.host}</span>}
