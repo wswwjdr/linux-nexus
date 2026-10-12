@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   ConnectionClosedEvent,
-  DownloadProgress,
+  PreviewResult,
   RemoteFilesApi,
   SaveProfileInput,
+  TransferProgress,
   TrustHostKeyInput,
 } from '@shared/types'
 
@@ -16,12 +17,19 @@ const api: RemoteFilesApi = {
   disconnect: (profileId: string) => ipcRenderer.invoke('connection:disconnect', profileId),
   listDirectory: (profileId: string, remotePath: string) =>
     ipcRenderer.invoke('files:list', profileId, remotePath),
-  downloadFile: (requestId: string, profileId: string, remotePath: string) =>
+  uploadFiles: (requestId: string, profileId: string, remoteDirectory: string) =>
+    ipcRenderer.invoke('files:upload-files', requestId, profileId, remoteDirectory),
+  uploadFolder: (requestId: string, profileId: string, remoteDirectory: string) =>
+    ipcRenderer.invoke('files:upload-folder', requestId, profileId, remoteDirectory),
+  downloadEntry: (requestId: string, profileId: string, remotePath: string) =>
     ipcRenderer.invoke('files:download', requestId, profileId, remotePath),
-  onDownloadProgress: (callback: (progress: DownloadProgress) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, progress: DownloadProgress) => callback(progress)
-    ipcRenderer.on('files:download-progress', listener)
-    return () => ipcRenderer.removeListener('files:download-progress', listener)
+  previewFile: (profileId: string, remotePath: string): Promise<PreviewResult> =>
+    ipcRenderer.invoke('files:preview', profileId, remotePath),
+  releasePreview: (token: string) => ipcRenderer.invoke('files:preview-release', token),
+  onTransferProgress: (callback: (progress: TransferProgress) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: TransferProgress) => callback(progress)
+    ipcRenderer.on('files:transfer-progress', listener)
+    return () => ipcRenderer.removeListener('files:transfer-progress', listener)
   },
   onConnectionClosed: (callback: (event: ConnectionClosedEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, event: ConnectionClosedEvent) => callback(event)

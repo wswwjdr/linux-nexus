@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -7,8 +7,10 @@ import {
   ChevronRight,
   CircleAlert,
   Cloud,
+  Eye,
   File,
   Folder,
+  FolderUp,
   HardDrive,
   KeyRound,
   LoaderCircle,
@@ -18,15 +20,17 @@ import {
   Server,
   ShieldCheck,
   Trash2,
+  Upload,
   WifiOff,
   X,
 } from 'lucide-react'
 import type {
   ConnectResult,
-  DownloadProgress,
+  PreviewResult,
   RemoteEntry,
   SaveProfileInput,
   ServerProfile,
+  TransferProgress,
   TrustHostKeyInput,
 } from '@shared/types'
 
@@ -45,12 +49,18 @@ interface PendingHostKey {
   previousFingerprint?: string
 }
 
-interface DownloadJob {
+interface TransferJob {
   name: string
+  direction: 'upload' | 'download'
   transferred: number
   total: number
   finished: boolean
 }
+
+type PreviewDialog =
+  | { kind: 'unsupported'; name: string }
+  | { kind: 'loading'; name: string }
+  | { kind: 'ready'; result: PreviewResult }
 
 const emptyForm = (): ProfileForm => ({
   id: '',
@@ -113,7 +123,10 @@ export default function App() {
   const [connectionMessage, setConnectionMessage] = useState('')
   const [dialog, setDialog] = useState<{ mode: 'create' | 'edit'; form: ProfileForm } | null>(null)
   const [pendingHostKey, setPendingHostKey] = useState<PendingHostKey | null>(null)
-  const [downloads, setDownloads] = useState<Record<string, DownloadJob>>({})
+  const [transfers, setTransfers] = useState<Record<string, TransferJob>>({})
+  const [previewDialog, setPreviewDialog] = useState<PreviewDialog | null>(null)
+  const previewTokenRef = useRef<string | null>(null)
+  const previewRequestRef = useRef(0)
 
   const connectedProfile = useMemo(
     () => profiles.find((profile) => profile.id === connectedProfileId) ?? null,
@@ -129,11 +142,12 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const removeProgressListener = window.remoteFiles.onDownloadProgress((progress: DownloadProgress) => {
-      setDownloads((current) => ({
+    const removeProgressListener = window.remoteFiles.onTransferProgress((progress: TransferProgress) => {
+      setTransfers((current) => ({
         ...current,
         [progress.requestId]: {
           name: current[progress.requestId]?.name ?? progress.remotePath.split('/').pop() ?? '文件',
+          direction: progress.direction,
           transferred: progress.transferred,
           total: progress.total,
           finished: false,
@@ -151,6 +165,10 @@ export default function App() {
       removeClosedListener()
     }
   }, [connectedProfileId])
+
+  useEffect(() => () => {
+    if (previewTokenRef.current) void window.remoteFiles.releasePreview(previewTokenRef.current)
+  }, [])
 
   const loadDirectory = async (profileId: string, remotePath: string) => {
     setLoading(true)
@@ -295,41 +313,110 @@ export default function App() {
     }
   }
 
-  const download = async (entry: RemoteEntry) => {
+  const runTransfer = async (
+    name: string,
+    direction: TransferJob['direction'],
+    operation: (requestId: string) => Promise<boolean>,
+    refreshPath?: string,
+    initialTotal = 0,
+  ) => {
     if (!connectedProfileId) return
+    const profileId = connectedProfileId
     const requestId = crypto.randomUUID()
-    setDownloads((current) => ({
+    setTransfers((current) => ({
       ...current,
-      [requestId]: { name: entry.name, transferred: 0, total: entry.size, finished: false },
+      [requestId]: { name, direction, transferred: 0, total: initialTotal, finished: false },
     }))
     try {
-      const saved = await window.remoteFiles.downloadFile(requestId, connectedProfileId, entry.path)
-      if (!saved) {
-        setDownloads((current) => {
+      const transferred = await operation(requestId)
+      if (!transferred) {
+        setTransfers((current) => {
           const next = { ...current }
           delete next[requestId]
           return next
         })
         return
       }
-      setDownloads((current) => ({
+      setTransfers((current) => ({
         ...current,
-        [requestId]: { ...current[requestId], transferred: entry.size, total: entry.size, finished: true },
+        [requestId]: {
+          ...current[requestId],
+          transferred: current[requestId]?.total ?? initialTotal,
+          finished: true,
+        },
       }))
       window.setTimeout(() => {
-        setDownloads((current) => {
+        setTransfers((current) => {
           const next = { ...current }
           delete next[requestId]
           return next
         })
       }, 2800)
+      if (refreshPath !== undefined) await loadDirectory(profileId, refreshPath)
     } catch (error) {
-      setDownloads((current) => {
+      setTransfers((current) => {
         const next = { ...current }
         delete next[requestId]
         return next
       })
-      setConnectionMessage(`下载失败：${errorMessage(error)}`)
+      setConnectionMessage(`${direction === 'upload' ? '上传' : '下载'}失败：${errorMessage(error)}`)
+    }
+  }
+
+  const uploadFiles = () => {
+    if (!connectedProfileId) return
+    const remoteDirectory = currentPath
+    void runTransfer('上传文件', 'upload', (requestId) =>
+      window.remoteFiles.uploadFiles(requestId, connectedProfileId, remoteDirectory), remoteDirectory)
+  }
+
+  const uploadFolder = () => {
+    if (!connectedProfileId) return
+    const remoteDirectory = currentPath
+    void runTransfer('上传文件夹', 'upload', (requestId) =>
+      window.remoteFiles.uploadFolder(requestId, connectedProfileId, remoteDirectory), remoteDirectory)
+  }
+
+  const download = (entry: RemoteEntry) => {
+    if (!connectedProfileId) return
+    void runTransfer(entry.name, 'download', (requestId) =>
+      window.remoteFiles.downloadEntry(requestId, connectedProfileId!, entry.path), undefined,
+    entry.type === 'file' ? entry.size : 0)
+  }
+
+  const closePreview = () => {
+    previewRequestRef.current += 1
+    const token = previewTokenRef.current
+    previewTokenRef.current = null
+    setPreviewDialog(null)
+    if (token) window.setTimeout(() => void window.remoteFiles.releasePreview(token), 0)
+  }
+
+  const previewFile = async (entry: RemoteEntry) => {
+    closePreview()
+    const supportedExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.txt', '.sh', '.mp3', '.mp4'])
+    const extension = entry.name.slice(entry.name.lastIndexOf('.')).toLowerCase()
+    if (!supportedExtensions.has(extension)) {
+      setPreviewDialog({ kind: 'unsupported', name: entry.name })
+      return
+    }
+    if (!connectedProfileId) return
+
+    const requestId = previewRequestRef.current
+    setPreviewDialog({ kind: 'loading', name: entry.name })
+    try {
+      const result = await window.remoteFiles.previewFile(connectedProfileId, entry.path)
+      if (requestId !== previewRequestRef.current) {
+        if (result.type !== 'text') void window.remoteFiles.releasePreview(result.token)
+        return
+      }
+      if (result.type !== 'text') previewTokenRef.current = result.token
+      setPreviewDialog({ kind: 'ready', result })
+    } catch (error) {
+      if (requestId === previewRequestRef.current) {
+        setPreviewDialog(null)
+        setConnectionMessage(`预览失败：${errorMessage(error)}`)
+      }
     }
   }
 
@@ -344,7 +431,7 @@ export default function App() {
     return items
   }, [currentPath])
 
-  const downloadJobs = Object.entries(downloads)
+  const transferJobs = Object.entries(transfers)
 
   return (
     <div className="app-shell">
@@ -416,6 +503,12 @@ export default function App() {
           <div className="topbar-actions">
             {connectedProfileId ? (
               <>
+                <button className="text-button upload-button" title="上传文件到当前目录" aria-label="上传文件到当前目录" onClick={uploadFiles}>
+                  <Upload size={15} /> 上传文件
+                </button>
+                <button className="text-button upload-button" title="上传文件夹到当前目录" aria-label="上传文件夹到当前目录" onClick={uploadFolder}>
+                  <FolderUp size={15} /> 上传文件夹
+                </button>
                 <button className="icon-button toolbar-button" title="刷新目录" aria-label="刷新目录" disabled={loading} onClick={() => navigate(currentPath)}>
                   <RefreshCw className={loading ? 'spin' : ''} size={17} />
                 </button>
@@ -475,8 +568,13 @@ export default function App() {
                       <td className="date-col">{formatDate(entry.modifiedAt)}</td>
                       <td className="permission-col"><code>{entry.permissions}</code></td>
                       <td className="action-col">
-                        {entry.type !== 'directory' && (
-                          <button className="icon-button download-button" title="下载文件" aria-label={`下载 ${entry.name}`} onClick={() => void download(entry)}>
+                        {entry.type === 'file' && (
+                          <button className="icon-button preview-button" title="预览文件" aria-label={`预览 ${entry.name}`} onClick={() => void previewFile(entry)}>
+                            <Eye size={16} />
+                          </button>
+                        )}
+                        {(entry.type === 'file' || entry.type === 'directory') && (
+                          <button className="icon-button download-button" title={entry.type === 'directory' ? '下载文件夹' : '下载文件'} aria-label={`下载 ${entry.name}`} onClick={() => void download(entry)}>
                             <ArrowDownToLine size={16} />
                           </button>
                         )}
@@ -511,20 +609,20 @@ export default function App() {
           </div>
         )}
 
-        {downloadJobs.length > 0 && (
-          <div className="download-tray">
-            {downloadJobs.map(([id, job]) => {
+        {transferJobs.length > 0 && (
+          <div className="transfer-tray">
+            {transferJobs.map(([id, job]) => {
               const percent = job.total > 0 ? Math.min(100, Math.round(job.transferred * 100 / job.total)) : 0
               return (
-                <div className="download-item" key={id}>
-                  <div className={`download-state-icon ${job.finished ? 'complete' : ''}`}>
-                    {job.finished ? <Check size={15} /> : <ArrowDownToLine size={15} />}
+                <div className="transfer-item" key={id}>
+                  <div className={`transfer-state-icon ${job.finished ? 'complete' : ''}`}>
+                    {job.finished ? <Check size={15} /> : job.direction === 'upload' ? <Upload size={15} /> : <ArrowDownToLine size={15} />}
                   </div>
-                  <div className="download-copy">
-                    <div className="download-line"><span>{job.name}</span><span>{job.finished ? '已完成' : `${percent}%`}</span></div>
+                  <div className="transfer-copy">
+                    <div className="transfer-line"><span>{job.name}</span><span>{job.finished ? '已完成' : `${percent}%`}</span></div>
                     <div className="progress-track"><div className={`progress-fill ${job.finished ? 'complete' : ''}`} style={{ width: `${job.finished ? 100 : percent}%` }} /></div>
                   </div>
-                  <button className="icon-button subtle" title="隐藏下载状态" aria-label="隐藏下载状态" onClick={() => setDownloads((current) => {
+                  <button className="icon-button subtle" title="隐藏传输状态" aria-label="隐藏传输状态" onClick={() => setTransfers((current) => {
                     const next = { ...current }
                     delete next[id]
                     return next
@@ -578,6 +676,36 @@ export default function App() {
                 <button type="submit" className="primary-button"><Check size={15} /> 保存连接</button>
               </div>
             </form>
+          </section>
+        </div>
+      )}
+
+      {previewDialog && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closePreview()}>
+          <section className={`modal preview-modal ${previewDialog.kind === 'ready' ? 'media-preview-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
+            <div className="modal-heading">
+              <div>
+                <div className="modal-kicker"><Eye size={14} /> 文件预览</div>
+                <h2 id="preview-modal-title">
+                  {previewDialog.kind === 'ready' ? previewDialog.result.name : previewDialog.name}
+                </h2>
+              </div>
+              <button className="icon-button modal-close" title="关闭预览" aria-label="关闭预览" onClick={closePreview}><X size={18} /></button>
+            </div>
+            {previewDialog.kind === 'unsupported' && <p className="unsupported-preview">暂不支持的文件类型</p>}
+            {previewDialog.kind === 'loading' && <div className="preview-loading"><LoaderCircle className="spin" size={20} /> 正在读取文件</div>}
+            {previewDialog.kind === 'ready' && previewDialog.result.type === 'text' && (
+              <pre className="preview-text">{previewDialog.result.content}</pre>
+            )}
+            {previewDialog.kind === 'ready' && previewDialog.result.type === 'image' && (
+              <div className="preview-media"><img className="preview-image" src={previewDialog.result.url} alt={previewDialog.result.name} /></div>
+            )}
+            {previewDialog.kind === 'ready' && previewDialog.result.type === 'audio' && (
+              <div className="preview-audio-wrap"><audio controls src={previewDialog.result.url}>浏览器不支持音频播放。</audio></div>
+            )}
+            {previewDialog.kind === 'ready' && previewDialog.result.type === 'video' && (
+              <div className="preview-media"><video className="preview-video" controls src={previewDialog.result.url}>浏览器不支持视频播放。</video></div>
+            )}
           </section>
         </div>
       )}

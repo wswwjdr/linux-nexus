@@ -45,13 +45,18 @@ export interface TrustHostKeyInput {
   previousFingerprint?: string
 }
 
-export interface DownloadProgress {
+export interface TransferProgress {
   requestId: string
   profileId: string
   remotePath: string
+  direction: 'upload' | 'download'
   transferred: number
   total: number
 }
+
+export type PreviewResult =
+  | { type: 'text'; name: string; content: string }
+  | { type: 'image' | 'audio' | 'video'; name: string; url: string; token: string }
 
 export interface ConnectionClosedEvent {
   profileId: string
@@ -66,7 +71,11 @@ export interface RemoteFilesApi {
   trustHostKey(input: TrustHostKeyInput): Promise<void>
   disconnect(profileId: string): Promise<void>
   listDirectory(profileId: string, remotePath: string): Promise<RemoteEntry[]>
-  downloadFile(requestId: string, profileId: string, remotePath: string): Promise<boolean>
-  onDownloadProgress(callback: (progress: DownloadProgress) => void): () => void
+  uploadFiles(requestId: string, profileId: string, remoteDirectory: string): Promise<boolean>
+  uploadFolder(requestId: string, profileId: string, remoteDirectory: string): Promise<boolean>
+  downloadEntry(requestId: string, profileId: string, remotePath: string): Promise<boolean>
+  previewFile(profileId: string, remotePath: string): Promise<PreviewResult>
+  releasePreview(token: string): Promise<void>
+  onTransferProgress(callback: (progress: TransferProgress) => void): () => void
   onConnectionClosed(callback: (event: ConnectionClosedEvent) => void): () => void
 }
