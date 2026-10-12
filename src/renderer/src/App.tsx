@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   ArrowDown,
   ArrowDownToLine,
@@ -59,6 +59,12 @@ interface TransferJob {
   transferred: number
   total: number
   finished: boolean
+}
+
+interface EntryContextMenu {
+  entry: RemoteEntry
+  x: number
+  y: number
 }
 
 type PreviewDialog =
@@ -157,16 +163,28 @@ export default function App() {
   const [pendingHostKey, setPendingHostKey] = useState<PendingHostKey | null>(null)
   const [transfers, setTransfers] = useState<Record<string, TransferJob>>({})
   const [previewDialog, setPreviewDialog] = useState<PreviewDialog | null>(null)
+  const [entryContextMenu, setEntryContextMenu] = useState<EntryContextMenu | null>(null)
   const toastSequenceRef = useRef(0)
   const connectionAttemptRef = useRef(0)
   const connectingProfilesRef = useRef(new Set<string>())
   const previewTokenRef = useRef<string | null>(null)
   const previewRequestRef = useRef(0)
+  const directoryLoadRef = useRef(0)
+  const pathHistoryRef = useRef<string[]>([])
+  const historyIndexRef = useRef(-1)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
 
   const showToast = useCallback((kind: ToastNotice['kind'], message: string) => {
     setToast({ id: ++toastSequenceRef.current, kind, message })
   }, [])
   const dismissToast = useCallback(() => setToast(null), [])
+  const resetPathNavigation = useCallback(() => {
+    pathHistoryRef.current = []
+    historyIndexRef.current = -1
+    directoryLoadRef.current += 1
+    setEntryContextMenu(null)
+    setLoading(false)
+  }, [])
 
   const connectedProfile = useMemo(
     () => profiles.find((profile) => profile.id === connectedProfileId) ?? null,
@@ -200,6 +218,7 @@ export default function App() {
     })
     const removeClosedListener = window.remoteFiles.onConnectionClosed((event) => {
       if (event.profileId !== connectedProfileId) return
+      resetPathNavigation()
       setConnectedProfileId(null)
       setEntries([])
       showToast('error', `连接已断开：${event.message}`)
@@ -208,29 +227,60 @@ export default function App() {
       removeProgressListener()
       removeClosedListener()
     }
-  }, [connectedProfileId, showToast])
+  }, [connectedProfileId, resetPathNavigation, showToast])
+
+  useEffect(() => {
+    if (!entryContextMenu) return
+
+    const dismissOutside = (event: PointerEvent) => {
+      if (!contextMenuRef.current?.contains(event.target as Node)) setEntryContextMenu(null)
+    }
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setEntryContextMenu(null)
+    }
+    const dismiss = () => setEntryContextMenu(null)
+
+    document.addEventListener('pointerdown', dismissOutside, true)
+    window.addEventListener('keydown', dismissOnEscape)
+    window.addEventListener('blur', dismiss)
+    window.addEventListener('resize', dismiss)
+    window.addEventListener('scroll', dismiss, true)
+    contextMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    return () => {
+      document.removeEventListener('pointerdown', dismissOutside, true)
+      window.removeEventListener('keydown', dismissOnEscape)
+      window.removeEventListener('blur', dismiss)
+      window.removeEventListener('resize', dismiss)
+      window.removeEventListener('scroll', dismiss, true)
+    }
+  }, [entryContextMenu])
 
   useEffect(() => () => {
     if (previewTokenRef.current) void window.remoteFiles.releasePreview(previewTokenRef.current)
   }, [])
 
   const loadDirectory = async (profileId: string, remotePath: string) => {
+    const requestId = ++directoryLoadRef.current
     setLoading(true)
     try {
       const nextEntries = await window.remoteFiles.listDirectory(profileId, remotePath)
+      if (requestId !== directoryLoadRef.current) return false
       setEntries(nextEntries)
       setCurrentPath(remotePath)
       setToast(null)
+      return true
     } catch (error) {
-      showToast('error', errorMessage(error))
+      if (requestId === directoryLoadRef.current) showToast('error', errorMessage(error))
+      return false
     } finally {
-      setLoading(false)
+      if (requestId === directoryLoadRef.current) setLoading(false)
     }
   }
 
   const connectTo = async (profile: ServerProfile) => {
     if (connectedProfileId === profile.id || connectingProfilesRef.current.has(profile.id)) return
 
+    resetPathNavigation()
     const attempt = ++connectionAttemptRef.current
     connectingProfilesRef.current.add(profile.id)
     setSelectedProfileId(profile.id)
@@ -259,6 +309,8 @@ export default function App() {
         return
       }
       setConnectedProfileId(profile.id)
+      pathHistoryRef.current = [result.path]
+      historyIndexRef.current = 0
       await loadDirectory(profile.id, result.path)
     } catch (error) {
       if (attempt === connectionAttemptRef.current) showToast('error', errorMessage(error))
@@ -270,9 +322,38 @@ export default function App() {
 
   const navigate = (remotePath: string) => {
     if (!connectedProfileId) return
-    void loadDirectory(connectedProfileId, remotePath)
+    if (remotePath === currentPath) {
+      void loadDirectory(connectedProfileId, remotePath)
+      return
+    }
+
+    const previousHistory = pathHistoryRef.current
+    const previousIndex = historyIndexRef.current
+    const nextHistory = previousHistory.slice(0, previousIndex + 1)
+    if (nextHistory.at(-1) !== remotePath) nextHistory.push(remotePath)
+    pathHistoryRef.current = nextHistory
+    historyIndexRef.current = nextHistory.length - 1
+    const nextIndex = historyIndexRef.current
+    void loadDirectory(connectedProfileId, remotePath).then((loaded) => {
+      if (!loaded && historyIndexRef.current === nextIndex) {
+        pathHistoryRef.current = previousHistory
+        historyIndexRef.current = previousIndex
+      }
+    })
   }
 
+  const movePathHistory = (offset: -1 | 1) => {
+    if (!connectedProfileId) return
+    const previousIndex = historyIndexRef.current
+    const nextIndex = previousIndex + offset
+    const remotePath = pathHistoryRef.current[nextIndex]
+    if (remotePath === undefined) return
+
+    historyIndexRef.current = nextIndex
+    void loadDirectory(connectedProfileId, remotePath).then((loaded) => {
+      if (!loaded && historyIndexRef.current === nextIndex) historyIndexRef.current = previousIndex
+    })
+  }
   const openProfileDialog = (mode: 'create' | 'edit', profile?: ServerProfile) => {
     setToast(null)
     setDialog({
@@ -313,6 +394,7 @@ export default function App() {
       const savedProfile = await window.remoteFiles.saveProfile(input)
       await refreshProfiles()
       if (connectedProfileId === savedProfile.id) {
+        resetPathNavigation()
         setConnectedProfileId(null)
         setEntries([])
       }
@@ -329,6 +411,7 @@ export default function App() {
     try {
       await window.remoteFiles.deleteProfile(profile.id)
       if (connectedProfileId === profile.id) {
+        resetPathNavigation()
         setConnectedProfileId(null)
         setEntries([])
       }
@@ -343,6 +426,7 @@ export default function App() {
     if (!connectedProfileId) return
     const profileId = connectedProfileId
     await window.remoteFiles.disconnect(profileId)
+    resetPathNavigation()
     setConnectedProfileId(null)
     setEntries([])
     setToast(null)
@@ -473,6 +557,39 @@ export default function App() {
     }
   }
 
+  const openEntryContextMenu = (entry: RemoteEntry, x: number, y: number) => {
+    if (entry.type !== 'file' && entry.type !== 'directory') return
+    const menuWidth = 190
+    const menuHeight = entry.type === 'file' ? 82 : 46
+    setEntryContextMenu({
+      entry,
+      x: Math.max(8, Math.min(x, window.innerWidth - menuWidth - 8)),
+      y: Math.max(8, Math.min(y, window.innerHeight - menuHeight - 8)),
+    })
+  }
+
+  const handleEntryContextMenu = (event: ReactMouseEvent<HTMLElement>, entry: RemoteEntry) => {
+    if (entry.type !== 'file' && entry.type !== 'directory') return
+    event.preventDefault()
+    openEntryContextMenu(entry, event.clientX, event.clientY)
+  }
+
+  const handleEntryKeyDown = (event: ReactKeyboardEvent<HTMLElement>, entry: RemoteEntry) => {
+    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+    event.preventDefault()
+    const bounds = event.currentTarget.getBoundingClientRect()
+    openEntryContextMenu(entry, bounds.left + 12, bounds.top + 12)
+  }
+
+  const handleContextMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    event.preventDefault()
+    const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+    const index = items.indexOf(document.activeElement as HTMLElement)
+    const step = event.key === 'ArrowDown' ? 1 : -1
+    items[(index + step + items.length) % items.length]?.focus()
+  }
+
   const breadcrumbs = useMemo(() => {
     const parts = currentPath.split('/').filter(Boolean)
     const items = [{ label: '/', path: '/' }]
@@ -537,7 +654,11 @@ export default function App() {
   const transferJobs = Object.entries(transfers)
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" onAuxClick={(event) => {
+      if (event.button !== 3 && event.button !== 4) return
+      event.preventDefault()
+      movePathHistory(event.button === 3 ? -1 : 1)
+    }}>
       <aside className="sidebar">
         <div className="brand-row">
           <div className="brand-mark"><HardDrive size={18} strokeWidth={2.1} /></div>
@@ -612,7 +733,7 @@ export default function App() {
                 <button className="text-button upload-button" title="上传文件夹到当前目录" aria-label="上传文件夹到当前目录" onClick={uploadFolder}>
                   <FolderUp size={15} /> 上传文件夹
                 </button>
-                <button className="icon-button toolbar-button" title="刷新目录" aria-label="刷新目录" disabled={loading} onClick={() => navigate(currentPath)}>
+                <button className="icon-button toolbar-button" title="刷新目录" aria-label="刷新目录" disabled={loading} onClick={() => void loadDirectory(connectedProfileId, currentPath)}>
                   <RefreshCw className={loading ? 'spin' : ''} size={17} />
                 </button>
                 <button className="text-button disconnect-button" onClick={() => void disconnect()}><WifiOff size={15} /> 断开</button>
@@ -675,12 +796,17 @@ export default function App() {
                       <th className="size-col" aria-sort={sort.column === 'size' ? sort.direction : 'none'}>{sortHeader('size', '大小')}</th>
                       <th className="date-col" aria-sort={sort.column === 'modifiedAt' ? sort.direction : 'none'}>{sortHeader('modifiedAt', '修改时间')}</th>
                       <th className="permission-col" aria-sort={sort.column === 'permissions' ? sort.direction : 'none'}>{sortHeader('permissions', '权限')}</th>
-                      <th className="action-col"><span className="visually-hidden">操作</span></th>
                     </tr>
                   </thead>
                   <tbody>
                     {sortedEntries.map((entry) => (
-                      <tr className="file-row" key={entry.path}>
+                      <tr
+                        className="file-row"
+                        key={entry.path}
+                        tabIndex={entry.type === 'file' ? 0 : -1}
+                        onContextMenu={(event) => handleEntryContextMenu(event, entry)}
+                        onKeyDown={(event) => handleEntryKeyDown(event, entry)}
+                      >
                         <td className="name-col">
                           <button className={`entry-name ${entry.type === 'directory' ? 'directory-entry' : ''}`} onClick={() => entry.type === 'directory' && navigate(entry.path)} disabled={entry.type !== 'directory'}>
                             <span className={`entry-icon ${entry.type === 'directory' ? 'folder-icon' : ''}`}>
@@ -693,18 +819,6 @@ export default function App() {
                         <td className="size-col">{entry.type === 'directory' ? '—' : formatSize(entry.size)}</td>
                         <td className="date-col">{formatDate(entry.modifiedAt)}</td>
                         <td className="permission-col"><code>{entry.permissions}</code></td>
-                        <td className="action-col">
-                          {entry.type === 'file' && (
-                            <button className="icon-button preview-button" title="预览文件" aria-label={`预览 ${entry.name}`} onClick={() => void previewFile(entry)}>
-                              <Eye size={16} />
-                            </button>
-                          )}
-                          {(entry.type === 'file' || entry.type === 'directory') && (
-                            <button className="icon-button download-button" title={entry.type === 'directory' ? '下载文件夹' : '下载文件'} aria-label={`下载 ${entry.name}`} onClick={() => void download(entry)}>
-                              <ArrowDownToLine size={16} />
-                            </button>
-                          )}
-                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -712,7 +826,13 @@ export default function App() {
               ) : (
                 <div className="file-icon-grid">
                   {sortedEntries.map((entry) => (
-                    <article className="file-tile" key={entry.path}>
+                    <article
+                      className="file-tile"
+                      key={entry.path}
+                      tabIndex={entry.type === 'file' ? 0 : -1}
+                      onContextMenu={(event) => handleEntryContextMenu(event, entry)}
+                      onKeyDown={(event) => handleEntryKeyDown(event, entry)}
+                    >
                       <button
                         className={`file-tile-main ${entry.type === 'directory' ? 'directory-entry' : ''}`}
                         title={entry.name}
@@ -725,20 +845,7 @@ export default function App() {
                             : <File size={29} />}
                         </span>
                         <span className="tile-name">{entry.name}</span>
-                        <span className="tile-type">{getEntryTypeLabel(entry)}</span>
                       </button>
-                      <div className="tile-actions">
-                        {entry.type === 'file' && (
-                          <button className="icon-button preview-button" title="预览文件" aria-label={`预览 ${entry.name}`} onClick={() => void previewFile(entry)}>
-                            <Eye size={16} />
-                          </button>
-                        )}
-                        {(entry.type === 'file' || entry.type === 'directory') && (
-                          <button className="icon-button download-button" title={entry.type === 'directory' ? '下载文件夹' : '下载文件'} aria-label={`下载 ${entry.name}`} onClick={() => void download(entry)}>
-                            <ArrowDownToLine size={16} />
-                          </button>
-                        )}
-                      </div>
                     </article>
                   ))}
                 </div>
@@ -758,6 +865,43 @@ export default function App() {
             <p>{profiles.length ? '选择左侧的服务器建立连接' : '保存 SSH 连接信息，开始浏览远程目录'}</p>
             {profiles.length === 0 && <button className="primary-button" onClick={() => openProfileDialog('create')}><Plus size={16} /> 添加服务器</button>}
             {connectionPending && <div className="welcome-loading"><LoaderCircle className="spin" size={16} /> 正在连接</div>}
+          </div>
+        )}
+
+        {entryContextMenu && (
+          <div
+            className="entry-context-menu"
+            ref={contextMenuRef}
+            role="menu"
+            aria-label={`${entryContextMenu.entry.name}的操作`}
+            style={{ left: entryContextMenu.x, top: entryContextMenu.y }}
+            onContextMenu={(event) => event.preventDefault()}
+            onKeyDown={handleContextMenuKeyDown}
+          >
+            {entryContextMenu.entry.type === 'file' && (
+              <button
+                className="entry-context-action preview-action"
+                role="menuitem"
+                onClick={() => {
+                  const { entry } = entryContextMenu
+                  setEntryContextMenu(null)
+                  void previewFile(entry)
+                }}
+              >
+                <Eye size={16} /> 预览
+              </button>
+            )}
+            <button
+              className="entry-context-action download-action"
+              role="menuitem"
+              onClick={() => {
+                const { entry } = entryContextMenu
+                setEntryContextMenu(null)
+                void download(entry)
+              }}
+            >
+              <ArrowDownToLine size={16} /> {entryContextMenu.entry.type === 'directory' ? '下载文件夹' : '下载文件'}
+            </button>
           </div>
         )}
 
