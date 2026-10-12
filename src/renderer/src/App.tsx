@@ -702,13 +702,18 @@ export default function App() {
 
   const deleteRemoteEntry = async (entry: RemoteEntry) => {
     if (!connectedProfileId) return
+    const profileId = connectedProfileId
+    const directory = currentPath
     const isDirectory = entry.type === 'directory'
     const detail = isDirectory ? '及其中所有内容' : ''
     if (!window.confirm(`确定删除“${entry.name}”${detail}？此操作无法撤销。`)) return
     setEntryContextMenu(null)
     try {
-      await window.remoteFiles.deleteRemoteEntry(connectedProfileId, entry.path)
-      if (await loadDirectory(connectedProfileId, currentPath)) {
+      await window.remoteFiles.deleteRemoteEntry(profileId, entry.path)
+      setEntries((current) => current.filter((item) => item.path !== entry.path))
+      const refreshed = await loadDirectory(profileId, directory)
+      setEntries((current) => current.filter((item) => item.path !== entry.path))
+      if (refreshed) {
         showToast('info', `${isDirectory ? '文件夹' : '文件'}已删除`)
       }
     } catch (error) {

@@ -201,6 +201,12 @@ function executeRemoteCommand(client: Client, command: string): Promise<void> {
     const onStreamError = (streamError: Error) => finish(streamError)
     const onExit = (code: number | null) => {
       exitCode = typeof code === 'number' ? code : null
+      if (exitCode === 0) {
+        finish()
+        return
+      }
+      const detail = Buffer.concat(stderr).toString('utf8').trim()
+      finish(new Error(detail || `远程命令失败（退出码 ${exitCode ?? '未知'}）`))
     }
     const onStreamClose = () => {
       if (exitCode === 0) {
