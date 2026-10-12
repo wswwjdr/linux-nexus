@@ -1,13 +1,16 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, session } from 'electron'
 import { safeStorage } from 'electron'
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, createWriteStream, existsSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { lstat as localLstat, mkdir, readdir as localReaddir, rename, rm, unlink } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
+import { Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { pathToFileURL } from 'node:url'
 import { Client, type SFTPWrapper } from 'ssh2'
 import type {
   ConnectResult,
+  PreviewLimits,
   PreviewResult,
   RemoteEntry,
   SaveProfileInput,
@@ -26,6 +29,15 @@ interface StoredState {
   passwords: Record<string, string>
   hostKeys: Record<string, string>
 }
+
+const DEFAULT_PREVIEW_LIMITS: PreviewLimits = {
+  textMiB: 5,
+  imageMiB: 100,
+  audioMiB: 100,
+  videoMiB: 100,
+}
+
+const MAX_PREVIEW_LIMIT_MIB = 1024
 
 interface ActiveSession {
   client: Client
@@ -57,6 +69,27 @@ const previewAssets = new Map<string, string>()
 const activeTransfers = new Set<string>()
 let mainWindow: BrowserWindow | null = null
 let stateFile = ''
+let settingsFile = ''
+let pendingConnection: { profileId: string; client: Client; generation: number; cancel: () => void } | null = null
+let connectionGeneration = 0
+let focusWindowWhenCreated = false
+
+function focusMainWindow(): void {
+  if (!mainWindow) {
+    focusWindowWhenCreated = true
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', focusMainWindow)
+}
 
 function fileType(mode?: number): 'directory' | 'file' | 'symlink' | 'other' {
   const kind = (mode ?? 0) & 0o170000
@@ -477,11 +510,26 @@ async function previewFile(profileId: string, remotePath: string): Promise<Previ
   const attrs = await sftpLstat(session.sftp, normalizedPath)
   if (fileType(attrs.mode) !== 'file') throw new Error('只能预览普通文件')
   const name = posix.basename(normalizedPath)
+  const limits = readPreviewLimits()
+  const limitMiB = limits[`${type}MiB`]
+  const limitBytes = limitMiB * 1024 * 1024
+  if ((attrs.size ?? 0) > limitBytes) throw previewSizeError(limitMiB)
 
   if (type === 'text') {
-    const content = await new Promise<string>((resolve, reject) => {
-      session.sftp.readFile(normalizedPath, (error, data) => error ? reject(error) : resolve(data.toString('utf8')))
-    })
+    const stream = session.sftp.createReadStream(normalizedPath)
+    const chunks: Buffer[] = []
+    let received = 0
+    try {
+      for await (const chunk of stream) {
+        const buffer = Buffer.from(chunk)
+        received += buffer.length
+        if (received > limitBytes) throw previewSizeError(limitMiB)
+        chunks.push(buffer)
+      }
+    } finally {
+      if (!stream.destroyed) stream.destroy()
+    }
+    const content = Buffer.concat(chunks).toString('utf8')
     return { type, name, content }
   }
 
@@ -491,13 +539,29 @@ async function previewFile(profileId: string, remotePath: string): Promise<Previ
   const filePath = join(directory, `${token}${extension}`)
   await mkdir(directory, { recursive: true })
   try {
-    await transferFile('get', session.sftp, normalizedPath, filePath, () => undefined)
+    let received = 0
+    const limiter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        received += chunk.length
+        if (received > limitBytes) callback(previewSizeError(limitMiB))
+        else callback(null, chunk)
+      },
+    })
+    await pipeline(
+      session.sftp.createReadStream(normalizedPath),
+      limiter,
+      createWriteStream(filePath, { flags: 'wx' }),
+    )
   } catch (error) {
     await unlink(filePath).catch(() => undefined)
     throw error
   }
   previewAssets.set(token, filePath)
   return { type, name, url: `remote-preview://${token}/${encodeURIComponent(name)}`, token }
+}
+
+function previewSizeError(limitMiB: number): Error {
+  return new Error(`文件超过预览上限（${limitMiB} MiB），请下载后查看`)
 }
 
 async function releasePreview(token: string): Promise<void> {
@@ -507,15 +571,134 @@ async function releasePreview(token: string): Promise<void> {
   await unlink(filePath).catch(() => undefined)
 }
 
-function readState(): StoredState {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  return Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key))
+}
+
+function validatePreviewLimits(value: unknown): PreviewLimits {
+  const keys = Object.keys(DEFAULT_PREVIEW_LIMITS)
+  if (!isRecord(value) || !hasExactKeys(value, keys)) {
+    throw new Error('预览设置结构无效')
+  }
+  for (const key of keys) {
+    const limit = value[key]
+    if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > MAX_PREVIEW_LIMIT_MIB) {
+      throw new Error(`预览设置 ${key} 必须是 1 到 ${MAX_PREVIEW_LIMIT_MIB} 之间的整数`)
+    }
+  }
+  return value as unknown as PreviewLimits
+}
+
+function validateStoredState(value: unknown, verifyPasswordCiphertexts = false): StoredState {
+  const keys = ['profiles', 'passwords', 'hostKeys']
+  if (!isRecord(value) || !hasExactKeys(value, keys) || !Array.isArray(value.profiles)
+    || !isRecord(value.passwords) || !isRecord(value.hostKeys)) {
+    throw new Error('服务器配置结构无效')
+  }
+
+  const profileIds = new Set<string>()
+  for (const profile of value.profiles) {
+    if (!isRecord(profile) || !hasExactKeys(profile, ['id', 'name', 'host', 'port', 'username'])
+      || typeof profile.id !== 'string' || !profile.id
+      || typeof profile.name !== 'string' || !profile.name.trim()
+      || typeof profile.host !== 'string' || !profile.host.trim()
+      || !Number.isInteger(profile.port) || (profile.port as number) < 1 || (profile.port as number) > 65535
+      || typeof profile.username !== 'string' || !profile.username.trim()
+      || profileIds.has(profile.id)) {
+      throw new Error('服务器配置中包含无效或重复的连接')
+    }
+    profileIds.add(profile.id)
+  }
+
+  for (const [profileId, password] of Object.entries(value.passwords)) {
+    if (!profileId || typeof password !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(password) || !password) {
+      throw new Error('服务器密码数据结构无效')
+    }
+    const ciphertext = Buffer.from(password, 'base64')
+    if (ciphertext.toString('base64') !== password) throw new Error('服务器密码数据结构无效')
+    if (verifyPasswordCiphertexts && safeStorage.isEncryptionAvailable()) {
+      try {
+        safeStorage.decryptString(ciphertext)
+      } catch {
+        throw new Error(`服务器密码密文无效：${profileId}`)
+      }
+    }
+  }
+  for (const [endpoint, fingerprint] of Object.entries(value.hostKeys)) {
+    if (!endpoint || typeof fingerprint !== 'string' || !/^SHA256:[A-Za-z0-9+/]{43}$/.test(fingerprint)) {
+      throw new Error('服务器指纹数据结构无效')
+    }
+  }
+
+  return value as unknown as StoredState
+}
+
+function parseJsonFile(filePath: string): unknown {
+  let contents: string
+  try {
+    contents = readFileSync(filePath, 'utf8')
+  } catch (error) {
+    throw new Error(`无法读取配置文件 ${filePath}：${messageFromError(error)}`)
+  }
+  try {
+    return JSON.parse(contents) as unknown
+  } catch (error) {
+    throw new Error(`配置文件格式无效 ${filePath}：${messageFromError(error)}`)
+  }
+}
+
+function atomicWriteJson(filePath: string, value: unknown): void {
+  const temporaryFile = `${filePath}.${process.pid}.${randomUUID()}.tmp`
+  let descriptor: number | null = null
+  try {
+    descriptor = openSync(temporaryFile, 'wx', 0o600)
+    writeFileSync(descriptor, JSON.stringify(value, null, 2), { encoding: 'utf8' })
+    fsyncSync(descriptor)
+    closeSync(descriptor)
+    descriptor = null
+    renameSync(temporaryFile, filePath)
+  } catch (error) {
+    if (descriptor !== null) {
+      try { closeSync(descriptor) } catch { /* Preserve the original write error. */ }
+    }
+    try { unlinkSync(temporaryFile) } catch { /* The temporary file may not exist. */ }
+    throw new Error(`无法安全保存配置文件 ${filePath}：${messageFromError(error)}`)
+  }
+}
+
+function readState(verifyPasswordCiphertexts = false): StoredState {
   if (!existsSync(stateFile)) return { profiles: [], passwords: {}, hostKeys: {} }
-  return JSON.parse(readFileSync(stateFile, 'utf8')) as StoredState
+  try {
+    return validateStoredState(parseJsonFile(stateFile), verifyPasswordCiphertexts)
+  } catch (error) {
+    throw new Error(`服务器配置无效（${stateFile}）：${messageFromError(error)}`)
+  }
 }
 
 function writeState(state: StoredState): void {
-  const temporaryFile = `${stateFile}.tmp`
-  writeFileSync(temporaryFile, JSON.stringify(state, null, 2), { encoding: 'utf8', mode: 0o600 })
-  renameSync(temporaryFile, stateFile)
+  atomicWriteJson(stateFile, state)
+}
+
+function readPreviewLimits(): PreviewLimits {
+  if (!existsSync(settingsFile)) {
+    atomicWriteJson(settingsFile, DEFAULT_PREVIEW_LIMITS)
+    return { ...DEFAULT_PREVIEW_LIMITS }
+  }
+  try {
+    return validatePreviewLimits(parseJsonFile(settingsFile))
+  } catch (error) {
+    throw new Error(`预览设置无效（${settingsFile}）：${messageFromError(error)}`)
+  }
+}
+
+function writePreviewLimits(limits: unknown): PreviewLimits {
+  const validated = validatePreviewLimits(limits)
+  atomicWriteJson(settingsFile, validated)
+  return validated
 }
 
 function endpointKey(profile: ServerProfile): string {
@@ -542,32 +725,58 @@ function sendConnectionClosed(profileId: string, message: string): void {
 }
 
 function stopSession(profileId: string): void {
+  if (pendingConnection?.profileId === profileId) pendingConnection.cancel()
   const session = sessions.get(profileId)
   if (!session) return
   sessions.delete(profileId)
   session.client.end()
 }
 
+function stopAllSessions(): void {
+  pendingConnection?.cancel()
+  for (const profileId of sessions.keys()) stopSession(profileId)
+}
+
 function connectProfile(profileId: string): Promise<ConnectResult> {
+  stopAllSessions()
+  const generation = ++connectionGeneration
   const state = readState()
   const profile = profileFromState(state, profileId)
   const password = passwordFor(state, profileId)
-  stopSession(profileId)
 
   return new Promise((resolve) => {
     const client = new Client()
     let settled = false
     let keyIssue: ConnectResult | null = null
+    const isCurrentAttempt = () => connectionGeneration === generation
+      && pendingConnection?.client === client
+      && pendingConnection.generation === generation
 
     const finish = (result: ConnectResult) => {
       if (settled) return
       settled = true
+      if (pendingConnection?.client === client) pendingConnection = null
       if (!result.ok) client.end()
       resolve(result)
     }
 
+    pendingConnection = {
+      profileId,
+      client,
+      generation,
+      cancel: () => finish({ ok: false, reason: 'other', message: '连接已取消' }),
+    }
+
     client.on('ready', () => {
+      if (!isCurrentAttempt()) {
+        finish({ ok: false, reason: 'other', message: '连接已取消' })
+        return
+      }
       client.sftp((error, sftp) => {
+        if (!isCurrentAttempt()) {
+          finish({ ok: false, reason: 'other', message: '连接已取消' })
+          return
+        }
         if (error) {
           finish({ ok: false, reason: 'sftp-unavailable', message: error.message })
           return
@@ -578,13 +787,12 @@ function connectProfile(profileId: string): Promise<ConnectResult> {
     })
 
     client.on('error', (error: Error & { level?: string }) => {
-      if (settled) {
-        if (sessions.get(profileId)?.client === client) {
-          sessions.delete(profileId)
-          sendConnectionClosed(profileId, error.message)
-        }
+      if (sessions.get(profileId)?.client === client) {
+        sessions.delete(profileId)
+        sendConnectionClosed(profileId, error.message)
         return
       }
+      if (!isCurrentAttempt() || settled) return
       if (keyIssue) {
         finish(keyIssue)
         return
@@ -605,7 +813,9 @@ function connectProfile(profileId: string): Promise<ConnectResult> {
         sessions.delete(profileId)
         sendConnectionClosed(profileId, 'SSH 连接已关闭')
       }
-      if (!settled) finish({ ok: false, reason: 'unreachable', message: '连接在完成前关闭' })
+      if (!settled && isCurrentAttempt()) {
+        finish({ ok: false, reason: 'unreachable', message: '连接在完成前关闭' })
+      }
     })
 
     client.connect({
@@ -615,6 +825,10 @@ function connectProfile(profileId: string): Promise<ConnectResult> {
       password,
       readyTimeout: 15000,
       hostVerifier: (hash, callback) => {
+        if (!isCurrentAttempt()) {
+          callback(false)
+          return
+        }
         const fingerprint = `SHA256:${createHash('sha256').update(hash).digest('base64').replace(/=+$/, '')}`
         const previousFingerprint = readState().hostKeys[endpointKey(profile)]
         if (previousFingerprint === fingerprint) {
@@ -673,7 +887,7 @@ function listDirectory(profileId: string, remotePath: string): Promise<RemoteEnt
 }
 
 function createWindow(): void {
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 1160,
     height: 760,
     minWidth: 820,
@@ -687,18 +901,28 @@ function createWindow(): void {
       sandbox: true,
     },
   })
+  mainWindow = window
 
   if (process.env.ELECTRON_RENDERER_URL) {
-    void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
+    void window.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    void window.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
-  mainWindow.on('closed', () => {
+  window.on('closed', () => {
     mainWindow = null
     previewAssets.clear()
     void rm(join(app.getPath('temp'), 'ubuntu-server-files-preview'), { recursive: true, force: true })
   })
+
+  if (focusWindowWhenCreated) {
+    focusWindowWhenCreated = false
+    window.once('ready-to-show', () => {
+      if (window.isMinimized()) window.restore()
+      window.show()
+      window.focus()
+    })
+  }
 }
 
 function registerPreviewProtocol(): void {
@@ -715,6 +939,7 @@ function registerIpc(): void {
   ipcMain.handle('profiles:save', async (_event, input: SaveProfileInput) => {
     const { profile, password } = input
     if (
+      typeof profile?.id !== 'string' ||
       typeof profile?.name !== 'string' ||
       typeof profile.host !== 'string' ||
       typeof profile.username !== 'string'
@@ -727,20 +952,29 @@ function registerIpc(): void {
     if (!Number.isInteger(profile.port) || profile.port < 1 || profile.port > 65535) {
       throw new Error('SSH 端口必须是 1 到 65535 之间的整数')
     }
+    if (password !== undefined && typeof password !== 'string') {
+      throw new Error('SSH 密码格式无效')
+    }
     if (password && !safeStorage.isEncryptionAvailable()) {
       throw new Error('Windows 凭据加密不可用，不能安全保存密码')
     }
 
     const state = readState()
     const id = profile.id || randomUUID()
-    const savedProfile = { ...profile, id, name: profile.name.trim(), host: profile.host.trim(), username: profile.username.trim() }
+    const savedProfile: ServerProfile = {
+      id,
+      name: profile.name.trim(),
+      host: profile.host.trim(),
+      port: profile.port,
+      username: profile.username.trim(),
+    }
     const existingIndex = state.profiles.findIndex((candidate) => candidate.id === id)
     if (!password && !state.passwords[id]) throw new Error('请填写 SSH 密码')
     if (existingIndex === -1) state.profiles.push(savedProfile)
     else state.profiles[existingIndex] = savedProfile
     if (password) state.passwords[id] = safeStorage.encryptString(password).toString('base64')
     writeState(state)
-    if (sessions.has(id)) stopSession(id)
+    stopSession(id)
     return savedProfile
   })
 
@@ -754,7 +988,15 @@ function registerIpc(): void {
 
   ipcMain.handle('connection:connect', (_event, profileId: string) => connectProfile(profileId))
   ipcMain.handle('connection:disconnect', (_event, profileId: string) => stopSession(profileId))
+  ipcMain.handle('settings:preview-limits:get', () => readPreviewLimits())
+  ipcMain.handle('settings:preview-limits:save', (_event, limits: PreviewLimits) => writePreviewLimits(limits))
   ipcMain.handle('host-key:trust', (_event, input: TrustHostKeyInput) => {
+    if (typeof input?.profileId !== 'string' || !input.profileId
+      || typeof input.fingerprint !== 'string' || !/^SHA256:[A-Za-z0-9+/]{43}$/.test(input.fingerprint)
+      || (input.previousFingerprint !== undefined
+        && (typeof input.previousFingerprint !== 'string' || !/^SHA256:[A-Za-z0-9+/]{43}$/.test(input.previousFingerprint)))) {
+      throw new Error('服务器指纹格式无效')
+    }
     const state = readState()
     const profile = profileFromState(state, input.profileId)
     const key = endpointKey(profile)
@@ -782,8 +1024,21 @@ function registerIpc(): void {
 }
 
 app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) return
   stateFile = join(app.getPath('userData'), 'servers.json')
+  settingsFile = join(app.getPath('userData'), 'settings.json')
   await mkdir(app.getPath('userData'), { recursive: true })
+  try {
+    readState(true)
+    readPreviewLimits()
+  } catch (error) {
+    dialog.showErrorBox(
+      '配置文件无效',
+      `${messageFromError(error)}\n\n应用未修改配置文件。请修复该文件后重新启动。`,
+    )
+    app.exit(1)
+    return
+  }
   const previewDirectory = join(app.getPath('temp'), 'ubuntu-server-files-preview')
   await rm(previewDirectory, { recursive: true, force: true })
   await mkdir(previewDirectory, { recursive: true })
@@ -793,15 +1048,20 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+}).catch((error: unknown) => {
+  dialog.showErrorBox('启动失败', messageFromError(error))
+  app.exit(1)
 })
 
 app.on('before-quit', () => {
-  for (const profileId of sessions.keys()) stopSession(profileId)
+  stopAllSessions()
   previewAssets.clear()
 })
 
 app.on('will-quit', () => {
-  rmSync(join(app.getPath('temp'), 'ubuntu-server-files-preview'), { recursive: true, force: true })
+  if (hasSingleInstanceLock) {
+    rmSync(join(app.getPath('temp'), 'ubuntu-server-files-preview'), { recursive: true, force: true })
+  }
 })
 
 app.on('window-all-closed', () => {

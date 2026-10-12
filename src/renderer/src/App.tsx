@@ -24,6 +24,7 @@ import {
   Plus,
   RefreshCw,
   Server,
+  Settings,
   ShieldCheck,
   Trash2,
   Upload,
@@ -33,6 +34,7 @@ import {
 import GlobalToast, { type ToastNotice } from './GlobalToast'
 import type {
   ConnectResult,
+  PreviewLimits,
   PreviewResult,
   RemoteEntry,
   SaveProfileInput,
@@ -82,6 +84,15 @@ type PreviewDialog =
 type FileViewMode = 'icons' | 'details'
 type SortColumn = 'name' | 'type' | 'size' | 'modifiedAt' | 'permissions'
 type SortDirection = 'ascending' | 'descending'
+type PreviewLimitKey = keyof PreviewLimits
+type PreviewLimitsForm = Record<PreviewLimitKey, string>
+
+const previewLimitFields: { key: PreviewLimitKey; label: string }[] = [
+  { key: 'textMiB', label: '文本文件上限（MiB）' },
+  { key: 'imageMiB', label: '图片文件上限（MiB）' },
+  { key: 'audioMiB', label: '音频文件上限（MiB）' },
+  { key: 'videoMiB', label: '视频文件上限（MiB）' },
+]
 
 const entryNameCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' })
 const entryTypeOrder: Record<RemoteEntry['type'], number> = {
@@ -179,6 +190,9 @@ export default function App() {
     direction: 'ascending',
   })
   const [dialog, setDialog] = useState<{ mode: 'create' | 'edit'; form: ProfileForm } | null>(null)
+  const [settingsForm, setSettingsForm] = useState<PreviewLimitsForm | null>(null)
+  const [settingsLoading, setSettingsLoading] = useState(false)
+  const [settingsSaving, setSettingsSaving] = useState(false)
   const [pendingHostKey, setPendingHostKey] = useState<PendingHostKey | null>(null)
   const [transfers, setTransfers] = useState<Record<string, TransferJob>>({})
   const [previewDialog, setPreviewDialog] = useState<PreviewDialog | null>(null)
@@ -409,6 +423,51 @@ export default function App() {
           }
         : emptyForm(),
     })
+  }
+
+  const openSettingsDialog = async () => {
+    if (settingsLoading || settingsSaving) return
+    setSettingsLoading(true)
+    try {
+      const limits = await window.remoteFiles.getPreviewLimits()
+      setSettingsForm({
+        textMiB: String(limits.textMiB),
+        imageMiB: String(limits.imageMiB),
+        audioMiB: String(limits.audioMiB),
+        videoMiB: String(limits.videoMiB),
+      })
+    } catch (error) {
+      showToast('error', `读取设置失败：${errorMessage(error)}`)
+    } finally {
+      setSettingsLoading(false)
+    }
+  }
+
+  const updateSettingsForm = (key: PreviewLimitKey, value: string) => {
+    setSettingsForm((current) => current ? { ...current, [key]: value } : current)
+  }
+
+  const submitSettings = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!settingsForm) return
+    const limits = Object.fromEntries(
+      previewLimitFields.map(({ key }) => [key, Number(settingsForm[key])]),
+    ) as PreviewLimits
+    if (previewLimitFields.some(({ key }) => !Number.isInteger(limits[key]) || limits[key] < 1 || limits[key] > 1024)) {
+      showToast('error', '预览上限必须是 1 到 1024 之间的整数')
+      return
+    }
+
+    setSettingsSaving(true)
+    try {
+      await window.remoteFiles.savePreviewLimits(limits)
+      setSettingsForm(null)
+      setToast(null)
+    } catch (error) {
+      showToast('error', `保存设置失败：${errorMessage(error)}`)
+    } finally {
+      setSettingsSaving(false)
+    }
   }
 
   const updateProfileForm = (patch: Partial<ProfileForm>) => {
@@ -772,6 +831,15 @@ export default function App() {
               {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
             </button>
             <div className="page-title">文件</div>
+            <button
+              className="icon-button toolbar-button"
+              title="设置"
+              aria-label="设置"
+              disabled={settingsLoading}
+              onClick={() => void openSettingsDialog()}
+            >
+              <Settings size={16} />
+            </button>
             {connectedProfile && <span className="topbar-separator" />}
             {connectedProfile && <span className="connected-host"><Cloud size={14} /> {connectedProfile.username}@{connectedProfile.host}</span>}
           </div>
@@ -1053,6 +1121,56 @@ export default function App() {
               <div className="modal-footer">
                 <button type="button" className="secondary-button" onClick={() => setDialog(null)}>取消</button>
                 <button type="submit" className="primary-button"><Check size={15} /> 保存连接</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {settingsForm && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => event.target === event.currentTarget && !settingsSaving && setSettingsForm(null)}
+        >
+          <section className="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+            <div className="modal-heading">
+              <div>
+                <div className="modal-kicker"><Settings size={14} /> 应用设置</div>
+                <h2 id="settings-modal-title">文件预览上限</h2>
+              </div>
+              <button
+                className="icon-button modal-close"
+                title="关闭设置"
+                aria-label="关闭设置"
+                disabled={settingsSaving}
+                onClick={() => setSettingsForm(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={(event) => void submitSettings(event)}>
+              {previewLimitFields.map(({ key, label }) => (
+                <label className="field" key={key}>
+                  <span>{label}</span>
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    max="1024"
+                    step="1"
+                    value={settingsForm[key]}
+                    onChange={(event) => updateSettingsForm(key, event.target.value)}
+                  />
+                </label>
+              ))}
+              <div className="modal-footer">
+                <button type="button" className="secondary-button" disabled={settingsSaving} onClick={() => setSettingsForm(null)}>
+                  取消
+                </button>
+                <button type="submit" className="primary-button" disabled={settingsSaving}>
+                  <Check size={15} /> 保存设置
+                </button>
               </div>
             </form>
           </section>

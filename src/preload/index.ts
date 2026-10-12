@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   ConnectionClosedEvent,
   PreviewResult,
+  PreviewLimits,
   RemoteFilesApi,
   SaveProfileInput,
   TransferProgress,
@@ -15,6 +16,9 @@ const api: RemoteFilesApi = {
   connect: (profileId: string) => ipcRenderer.invoke('connection:connect', profileId),
   trustHostKey: (input: TrustHostKeyInput) => ipcRenderer.invoke('host-key:trust', input),
   disconnect: (profileId: string) => ipcRenderer.invoke('connection:disconnect', profileId),
+  getPreviewLimits: (): Promise<PreviewLimits> => ipcRenderer.invoke('settings:preview-limits:get'),
+  savePreviewLimits: (limits: PreviewLimits): Promise<PreviewLimits> =>
+    ipcRenderer.invoke('settings:preview-limits:save', limits),
   listDirectory: (profileId: string, remotePath: string) =>
     ipcRenderer.invoke('files:list', profileId, remotePath),
   uploadFiles: (requestId: string, profileId: string, remoteDirectory: string) =>

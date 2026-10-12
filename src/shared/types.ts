@@ -45,6 +45,13 @@ export interface TrustHostKeyInput {
   previousFingerprint?: string
 }
 
+export interface PreviewLimits {
+  textMiB: number
+  imageMiB: number
+  audioMiB: number
+  videoMiB: number
+}
+
 export interface TransferProgress {
   requestId: string
   profileId: string
@@ -70,6 +77,8 @@ export interface RemoteFilesApi {
   connect(profileId: string): Promise<ConnectResult>
   trustHostKey(input: TrustHostKeyInput): Promise<void>
   disconnect(profileId: string): Promise<void>
+  getPreviewLimits(): Promise<PreviewLimits>
+  savePreviewLimits(limits: PreviewLimits): Promise<PreviewLimits>
   listDirectory(profileId: string, remotePath: string): Promise<RemoteEntry[]>
   uploadFiles(requestId: string, profileId: string, remoteDirectory: string): Promise<boolean>
   uploadFolder(requestId: string, profileId: string, remoteDirectory: string): Promise<boolean>
