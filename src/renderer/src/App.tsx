@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type SyntheticEvent as ReactSyntheticEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import {
   ArrowDown,
   ArrowDownToLine,
@@ -7,6 +7,7 @@ import {
   Check,
   ChevronRight,
   Cloud,
+  Copy,
   Eye,
   File,
   Folder,
@@ -40,6 +41,7 @@ import type {
   SaveProfileInput,
   ServerProfile,
   TransferProgress,
+  TransferResult,
   TrustHostKeyInput,
 } from '@shared/types'
 
@@ -63,7 +65,12 @@ interface TransferJob {
   direction: 'upload' | 'download'
   transferred: number
   total: number
-  finished: boolean
+  state: 'running' | 'cancelling' | 'complete' | 'cancelled'
+}
+
+interface ImagePreviewSize {
+  width: number
+  height: number
 }
 
 interface RecentConnection {
@@ -82,7 +89,7 @@ type PreviewDialog =
   | { kind: 'ready'; result: PreviewResult }
 
 type FileViewMode = 'icons' | 'details'
-type SortColumn = 'name' | 'type' | 'size' | 'modifiedAt' | 'permissions'
+type SortColumn = 'name' | 'size' | 'modifiedAt' | 'permissions'
 type SortDirection = 'ascending' | 'descending'
 type PreviewLimitKey = keyof PreviewLimits
 type PreviewLimitsForm = Record<PreviewLimitKey, string>
@@ -95,12 +102,6 @@ const previewLimitFields: { key: PreviewLimitKey; label: string }[] = [
 ]
 
 const entryNameCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' })
-const entryTypeOrder: Record<RemoteEntry['type'], number> = {
-  directory: 0,
-  file: 1,
-  symlink: 2,
-  other: 3,
-}
 
 const emptyForm = (): ProfileForm => ({
   id: '',
@@ -132,13 +133,6 @@ function formatDate(value: string | null): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
-}
-
-function getEntryTypeLabel(entry: RemoteEntry): string {
-  if (entry.type === 'directory') return '文件夹'
-  if (entry.type === 'symlink') return '链接'
-  if (entry.type === 'file') return '文件'
-  return '其他'
 }
 
 function readViewMode(): FileViewMode {
@@ -196,6 +190,8 @@ export default function App() {
   const [pendingHostKey, setPendingHostKey] = useState<PendingHostKey | null>(null)
   const [transfers, setTransfers] = useState<Record<string, TransferJob>>({})
   const [previewDialog, setPreviewDialog] = useState<PreviewDialog | null>(null)
+  const [imageZoom, setImageZoom] = useState(1)
+  const [imagePreviewSize, setImagePreviewSize] = useState<ImagePreviewSize | null>(null)
   const [entryContextMenu, setEntryContextMenu] = useState<EntryContextMenu | null>(null)
   const toastSequenceRef = useRef(0)
   const connectionAttemptRef = useRef(0)
@@ -206,6 +202,8 @@ export default function App() {
   const pathHistoryRef = useRef<string[]>([])
   const historyIndexRef = useRef(-1)
   const contextMenuRef = useRef<HTMLDivElement>(null)
+  const imageViewportRef = useRef<HTMLDivElement>(null)
+  const previewImageRef = useRef<HTMLImageElement>(null)
 
   const showToast = useCallback((kind: ToastNotice['kind'], message: string) => {
     setToast({ id: ++toastSequenceRef.current, kind, message })
@@ -262,7 +260,7 @@ export default function App() {
           direction: progress.direction,
           transferred: progress.transferred,
           total: progress.total,
-          finished: false,
+          state: current[progress.requestId]?.state ?? 'running',
         },
       }))
     })
@@ -553,7 +551,7 @@ export default function App() {
   const runTransfer = async (
     name: string,
     direction: TransferJob['direction'],
-    operation: (requestId: string) => Promise<boolean>,
+    operation: (requestId: string) => Promise<TransferResult>,
     refreshPath?: string,
     initialTotal = 0,
   ) => {
@@ -562,11 +560,11 @@ export default function App() {
     const requestId = crypto.randomUUID()
     setTransfers((current) => ({
       ...current,
-      [requestId]: { name, direction, transferred: 0, total: initialTotal, finished: false },
+      [requestId]: { name, direction, transferred: 0, total: initialTotal, state: 'running' },
     }))
     try {
-      const transferred = await operation(requestId)
-      if (!transferred) {
+      const result = await operation(requestId)
+      if (result === 'not-started') {
         setTransfers((current) => {
           const next = { ...current }
           delete next[requestId]
@@ -578,8 +576,10 @@ export default function App() {
         ...current,
         [requestId]: {
           ...current[requestId],
-          transferred: current[requestId]?.total ?? initialTotal,
-          finished: true,
+          transferred: result === 'completed'
+            ? current[requestId]?.total ?? initialTotal
+            : current[requestId]?.transferred ?? 0,
+          state: result === 'completed' ? 'complete' : 'cancelled',
         },
       }))
       window.setTimeout(() => {
@@ -589,15 +589,34 @@ export default function App() {
           return next
         })
       }, 2800)
-      if (refreshPath !== undefined) await loadDirectory(profileId, refreshPath)
+      if (refreshPath !== undefined && direction === 'upload') await loadDirectory(profileId, refreshPath)
     } catch (error) {
       setTransfers((current) => {
         const next = { ...current }
         delete next[requestId]
         return next
       })
+      if (refreshPath !== undefined && direction === 'upload') await loadDirectory(profileId, refreshPath)
       showToast('error', `${direction === 'upload' ? '上传' : '下载'}失败：${errorMessage(error)}`)
     }
+  }
+
+  const cancelTransferJob = (requestId: string) => {
+    const job = transfers[requestId]
+    if (!job || job.state !== 'running') return
+    setTransfers((current) => ({
+      ...current,
+      [requestId]: { ...current[requestId], state: 'cancelling' },
+    }))
+    void window.remoteFiles.cancelTransfer(requestId).catch((error) => {
+      setTransfers((current) => {
+        const active = current[requestId]
+        return active?.state === 'cancelling'
+          ? { ...current, [requestId]: { ...active, state: 'running' } }
+          : current
+      })
+      showToast('error', `取消传输失败：${errorMessage(error)}`)
+    })
   }
 
   const uploadFiles = () => {
@@ -626,6 +645,8 @@ export default function App() {
     const token = previewTokenRef.current
     previewTokenRef.current = null
     setPreviewDialog(null)
+    setImageZoom(1)
+    setImagePreviewSize(null)
     if (token) window.setTimeout(() => void window.remoteFiles.releasePreview(token), 0)
   }
 
@@ -659,12 +680,76 @@ export default function App() {
 
   const openEntryContextMenu = (entry: RemoteEntry, x: number, y: number) => {
     if (entry.type !== 'file' && entry.type !== 'directory') return
-    const menuWidth = 190
-    const menuHeight = entry.type === 'file' ? 82 : 46
+    const menuWidth = 204
+    const menuHeight = (entry.type === 'file' ? 4 : 3) * 34 + 14
     setEntryContextMenu({
       entry,
       x: Math.max(8, Math.min(x, window.innerWidth - menuWidth - 8)),
       y: Math.max(8, Math.min(y, window.innerHeight - menuHeight - 8)),
+    })
+  }
+
+  const copyAbsolutePath = async (entry: RemoteEntry) => {
+    if (!connectedProfileId) return
+    setEntryContextMenu(null)
+    try {
+      await window.remoteFiles.copyRemotePath(connectedProfileId, entry.path)
+      showToast('info', '绝对路径已复制')
+    } catch (error) {
+      showToast('error', `复制路径失败：${errorMessage(error)}`)
+    }
+  }
+
+  const deleteRemoteEntry = async (entry: RemoteEntry) => {
+    if (!connectedProfileId) return
+    const isDirectory = entry.type === 'directory'
+    const detail = isDirectory ? '及其中所有内容' : ''
+    if (!window.confirm(`确定删除“${entry.name}”${detail}？此操作无法撤销。`)) return
+    setEntryContextMenu(null)
+    try {
+      await window.remoteFiles.deleteRemoteEntry(connectedProfileId, entry.path)
+      if (await loadDirectory(connectedProfileId, currentPath)) {
+        showToast('info', `${isDirectory ? '文件夹' : '文件'}已删除`)
+      }
+    } catch (error) {
+      showToast('error', `删除失败：${errorMessage(error)}`)
+    }
+  }
+
+  const onPreviewImageLoad = (event: ReactSyntheticEvent<HTMLImageElement>) => {
+    const viewport = imageViewportRef.current
+    if (!viewport) return
+    const maxWidth = Math.max(1, viewport.clientWidth - 32)
+    const maxHeight = Math.max(1, viewport.clientHeight - 32)
+    const fit = Math.min(1, maxWidth / event.currentTarget.naturalWidth, maxHeight / event.currentTarget.naturalHeight)
+    setImagePreviewSize({
+      width: event.currentTarget.naturalWidth * fit,
+      height: event.currentTarget.naturalHeight * fit,
+    })
+    setImageZoom(1)
+  }
+
+  const zoomPreviewImage = (event: ReactWheelEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const viewport = imageViewportRef.current
+    const image = previewImageRef.current
+    if (!viewport || !image || !imagePreviewSize) return
+    const nextZoom = Math.max(0.25, Math.min(4, imageZoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15)))
+    if (nextZoom === imageZoom) return
+
+    const imageBounds = image.getBoundingClientRect()
+    const viewportBounds = viewport.getBoundingClientRect()
+    const anchorX = (event.clientX - imageBounds.left) / imageZoom
+    const anchorY = (event.clientY - imageBounds.top) / imageZoom
+    const pointerX = event.clientX - viewportBounds.left
+    const pointerY = event.clientY - viewportBounds.top
+    const canvasWidth = Math.max(viewport.clientWidth, imagePreviewSize.width * nextZoom)
+    const canvasHeight = Math.max(viewport.clientHeight, imagePreviewSize.height * nextZoom)
+    setImageZoom(nextZoom)
+    window.requestAnimationFrame(() => {
+      if (imageViewportRef.current !== viewport) return
+      viewport.scrollLeft = (canvasWidth - imagePreviewSize.width * nextZoom) / 2 + anchorX * nextZoom - pointerX
+      viewport.scrollTop = (canvasHeight - imagePreviewSize.height * nextZoom) / 2 + anchorY * nextZoom - pointerY
     })
   }
 
@@ -708,8 +793,6 @@ export default function App() {
     let comparison = 0
     if (sort.column === 'name') {
       comparison = entryNameCollator.compare(left.name, right.name)
-    } else if (sort.column === 'type') {
-      comparison = entryTypeOrder[left.type] - entryTypeOrder[right.type]
     } else if (sort.column === 'size') {
       comparison = left.type === 'directory' ? 0 : left.size - right.size
     } else if (sort.column === 'modifiedAt') {
@@ -911,7 +994,6 @@ export default function App() {
                   <thead>
                     <tr>
                       <th className="name-col" aria-sort={sort.column === 'name' ? sort.direction : 'none'}>{sortHeader('name', '名称')}</th>
-                      <th className="type-col" aria-sort={sort.column === 'type' ? sort.direction : 'none'}>{sortHeader('type', '类型')}</th>
                       <th className="size-col" aria-sort={sort.column === 'size' ? sort.direction : 'none'}>{sortHeader('size', '大小')}</th>
                       <th className="date-col" aria-sort={sort.column === 'modifiedAt' ? sort.direction : 'none'}>{sortHeader('modifiedAt', '修改时间')}</th>
                       <th className="permission-col" aria-sort={sort.column === 'permissions' ? sort.direction : 'none'}>{sortHeader('permissions', '权限')}</th>
@@ -926,15 +1008,14 @@ export default function App() {
                         onContextMenu={(event) => handleEntryContextMenu(event, entry)}
                         onKeyDown={(event) => handleEntryKeyDown(event, entry)}
                       >
-                        <td className="name-col">
-                          <button className={`entry-name ${entry.type === 'directory' ? 'directory-entry' : ''}`} onClick={() => entry.type === 'directory' && navigate(entry.path)} disabled={entry.type !== 'directory'}>
+                        <td className="name-col" title={entry.name}>
+                          <button className={`entry-name ${entry.type === 'directory' ? 'directory-entry' : ''}`} title={entry.name} onClick={() => entry.type === 'directory' && navigate(entry.path)} disabled={entry.type !== 'directory'}>
                             <span className={`entry-icon ${entry.type === 'directory' ? 'folder-icon' : ''}`}>
                               {entry.type === 'directory' ? <Folder size={17} fill="currentColor" strokeWidth={1.8} /> : <File size={16} />}
                             </span>
                             <span className="entry-label">{entry.name}</span>
                           </button>
                         </td>
-                        <td className="type-col">{getEntryTypeLabel(entry)}</td>
                         <td className="size-col">{entry.type === 'directory' ? '—' : formatSize(entry.size)}</td>
                         <td className="date-col">{formatDate(entry.modifiedAt)}</td>
                         <td className="permission-col"><code>{entry.permissions}</code></td>
@@ -948,6 +1029,7 @@ export default function App() {
                     <article
                       className="file-tile"
                       key={entry.path}
+                      title={entry.name}
                       tabIndex={entry.type === 'file' ? 0 : -1}
                       onContextMenu={(event) => handleEntryContextMenu(event, entry)}
                       onKeyDown={(event) => handleEntryKeyDown(event, entry)}
@@ -1051,27 +1133,60 @@ export default function App() {
             >
               <ArrowDownToLine size={16} /> {entryContextMenu.entry.type === 'directory' ? '下载文件夹' : '下载文件'}
             </button>
+            <button
+              className="entry-context-action"
+              role="menuitem"
+              onClick={() => void copyAbsolutePath(entryContextMenu.entry)}
+            >
+              <Copy size={16} /> 复制绝对路径
+            </button>
+            <button
+              className="entry-context-action danger-action"
+              role="menuitem"
+              onClick={() => void deleteRemoteEntry(entryContextMenu.entry)}
+            >
+              <Trash2 size={16} /> 删除
+            </button>
           </div>
         )}
 
         {transferJobs.length > 0 && (
           <div className="transfer-tray">
             {transferJobs.map(([id, job]) => {
-              const percent = job.total > 0 ? Math.min(100, Math.round(job.transferred * 100 / job.total)) : 0
+              const complete = job.state === 'complete'
+              const active = job.state === 'running' || job.state === 'cancelling'
+              const percent = complete ? 100 : job.total > 0 ? Math.min(100, Math.round(job.transferred * 100 / job.total)) : 0
+              const status = job.state === 'complete'
+                ? '已完成'
+                : job.state === 'cancelled'
+                  ? '已取消'
+                  : job.state === 'cancelling'
+                    ? '正在取消'
+                    : `${percent}%`
               return (
                 <div className="transfer-item" key={id}>
-                  <div className={`transfer-state-icon ${job.finished ? 'complete' : ''}`}>
-                    {job.finished ? <Check size={15} /> : job.direction === 'upload' ? <Upload size={15} /> : <ArrowDownToLine size={15} />}
+                  <div className={`transfer-state-icon ${complete ? 'complete' : ''} ${job.state === 'cancelled' ? 'cancelled' : ''}`}>
+                    {complete ? <Check size={15} /> : job.state === 'cancelled' ? <X size={15} /> : job.direction === 'upload' ? <Upload size={15} /> : <ArrowDownToLine size={15} />}
                   </div>
                   <div className="transfer-copy">
-                    <div className="transfer-line"><span>{job.name}</span><span>{job.finished ? '已完成' : `${percent}%`}</span></div>
-                    <div className="progress-track"><div className={`progress-fill ${job.finished ? 'complete' : ''}`} style={{ width: `${job.finished ? 100 : percent}%` }} /></div>
+                    <div className="transfer-line"><span>{job.name}</span><span>{status}</span></div>
+                    <div className="progress-track"><div className={`progress-fill ${complete ? 'complete' : ''} ${job.state === 'cancelled' ? 'cancelled' : ''}`} style={{ width: `${percent}%` }} /></div>
                   </div>
-                  <button className="icon-button subtle" title="隐藏传输状态" aria-label="隐藏传输状态" onClick={() => setTransfers((current) => {
-                    const next = { ...current }
-                    delete next[id]
-                    return next
-                  })}><X size={14} /></button>
+                  {active ? (
+                    <button
+                      className="icon-button subtle"
+                      title={job.state === 'cancelling' ? '正在取消传输' : '取消传输'}
+                      aria-label={job.state === 'cancelling' ? '正在取消传输' : '取消传输'}
+                      disabled={job.state === 'cancelling'}
+                      onClick={() => cancelTransferJob(id)}
+                    ><X size={14} /></button>
+                  ) : (
+                    <button className="icon-button subtle" title="隐藏传输状态" aria-label="隐藏传输状态" onClick={() => setTransfers((current) => {
+                      const next = { ...current }
+                      delete next[id]
+                      return next
+                    })}><X size={14} /></button>
+                  )}
                 </div>
               )
             })}
@@ -1194,13 +1309,46 @@ export default function App() {
               <pre className="preview-text">{previewDialog.result.content}</pre>
             )}
             {previewDialog.kind === 'ready' && previewDialog.result.type === 'image' && (
-              <div className="preview-media"><img className="preview-image" src={previewDialog.result.url} alt={previewDialog.result.name} /></div>
+              <div className="preview-media image-preview-viewport" ref={imageViewportRef} onWheel={zoomPreviewImage}>
+                <div
+                  className="preview-image-canvas"
+                  style={{
+                    width: `${Math.max(imageViewportRef.current?.clientWidth ?? 0, (imagePreviewSize?.width ?? 0) * imageZoom)}px`,
+                    height: `${Math.max(imageViewportRef.current?.clientHeight ?? 0, (imagePreviewSize?.height ?? 0) * imageZoom)}px`,
+                  }}
+                >
+                  <img
+                    ref={previewImageRef}
+                    className="preview-image"
+                    src={previewDialog.result.url}
+                    alt={previewDialog.result.name}
+                    draggable={false}
+                    style={imagePreviewSize ? {
+                      width: `${imagePreviewSize.width * imageZoom}px`,
+                      height: `${imagePreviewSize.height * imageZoom}px`,
+                    } : { maxWidth: '100%', maxHeight: '100%' }}
+                    onLoad={onPreviewImageLoad}
+                  />
+                </div>
+              </div>
             )}
             {previewDialog.kind === 'ready' && previewDialog.result.type === 'audio' && (
               <div className="preview-audio-wrap"><audio controls src={previewDialog.result.url}>浏览器不支持音频播放。</audio></div>
             )}
             {previewDialog.kind === 'ready' && previewDialog.result.type === 'video' && (
-              <div className="preview-media"><video className="preview-video" controls src={previewDialog.result.url}>浏览器不支持视频播放。</video></div>
+              <div className="preview-media"><video
+                className="preview-video"
+                controls
+                tabIndex={0}
+                src={previewDialog.result.url}
+                onKeyDown={(event) => {
+                  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+                  event.preventDefault()
+                  const video = event.currentTarget
+                  const nextTime = Math.max(0, video.currentTime + (event.key === 'ArrowRight' ? 5 : -5))
+                  video.currentTime = Number.isFinite(video.duration) ? Math.min(video.duration, nextTime) : nextTime
+                }}
+              >浏览器不支持视频播放。</video></div>
             )}
           </section>
         </div>

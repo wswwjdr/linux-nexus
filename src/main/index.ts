@@ -1,13 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, session } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, protocol, session } from 'electron'
 import { safeStorage } from 'electron'
 import { createHash, randomUUID } from 'node:crypto'
-import { closeSync, createWriteStream, existsSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
-import { lstat as localLstat, mkdir, readdir as localReaddir, rename, rm, unlink } from 'node:fs/promises'
+import { closeSync, createReadStream as localCreateReadStream, createWriteStream, existsSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { lstat as localLstat, mkdir, readdir as localReaddir, rename, rm, stat as localStat, unlink } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
-import { Transform } from 'node:stream'
+import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import { pathToFileURL } from 'node:url'
-import { Client, type SFTPWrapper } from 'ssh2'
+import { Client, type ClientChannel, type SFTPWrapper } from 'ssh2'
 import type {
   ConnectResult,
   PreviewLimits,
@@ -16,6 +15,7 @@ import type {
   SaveProfileInput,
   ServerProfile,
   TransferProgress,
+  TransferResult,
   TrustHostKeyInput,
 } from '@shared/types'
 
@@ -53,6 +53,12 @@ interface TransferItem {
   remotePath?: string
 }
 
+interface ActiveTransfer {
+  profileId: string
+  controller: AbortController
+  settled: Promise<void>
+}
+
 interface SftpAttributes {
   mode?: number
   size?: number
@@ -66,7 +72,7 @@ interface SftpDirectoryEntry {
 
 const sessions = new Map<string, ActiveSession>()
 const previewAssets = new Map<string, string>()
-const activeTransfers = new Set<string>()
+const activeTransfers = new Map<string, ActiveTransfer>()
 let mainWindow: BrowserWindow | null = null
 let stateFile = ''
 let settingsFile = ''
@@ -101,6 +107,12 @@ function fileType(mode?: number): 'directory' | 'file' | 'symlink' | 'other' {
 
 function messageFromError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function isAbortError(error: unknown): boolean {
+  if (error instanceof Error) return error.name === 'AbortError' || (error as NodeJS.ErrnoException).code === 'ABORT_ERR'
+  if (typeof error !== 'object' || error === null) return false
+  return ('name' in error && error.name === 'AbortError') || ('code' in error && error.code === 'ABORT_ERR')
 }
 
 function sftpLstat(sftp: SFTPWrapper, remotePath: string): Promise<SftpAttributes> {
@@ -148,25 +160,111 @@ function sftpUnlink(sftp: SFTPWrapper, remotePath: string): Promise<void> {
   })
 }
 
+function normalizedRemotePath(remotePath: string): string {
+  if (typeof remotePath !== 'string' || !remotePath || remotePath.includes('\0')) {
+    throw new Error('远程路径无效')
+  }
+  return posix.resolve('/', remotePath)
+}
+
+function shellQuote(value: string): string {
+  return "'" + value.replace(/'/g, "'\\''") + "'"
+}
+
+function executeRemoteCommand(client: Client, command: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let stream: ClientChannel | null = null
+    let exitCode: number | null = null
+    let settled = false
+    const stderr: Buffer[] = []
+    const cleanup = () => {
+      client.removeListener('error', onClientError)
+      client.removeListener('end', onClientEnd)
+      client.removeListener('close', onClientClose)
+      stream?.stderr.removeListener('data', onStderrData)
+      stream?.stderr.removeListener('error', onStreamError)
+      stream?.removeListener('error', onStreamError)
+      stream?.removeListener('exit', onExit)
+      stream?.removeListener('close', onStreamClose)
+    }
+    const finish = (reason?: Error) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      if (reason) reject(reason)
+      else resolve()
+    }
+    const onClientError = (clientError: Error) => finish(new Error(`SSH 连接失败：${clientError.message}`))
+    const onClientEnd = () => finish(new Error('SSH 连接已结束'))
+    const onClientClose = () => finish(new Error('SSH 连接已关闭'))
+    const onStderrData = (chunk: Buffer) => stderr.push(Buffer.from(chunk))
+    const onStreamError = (streamError: Error) => finish(streamError)
+    const onExit = (code: number | null) => {
+      exitCode = typeof code === 'number' ? code : null
+    }
+    const onStreamClose = () => {
+      if (exitCode === 0) {
+        finish()
+        return
+      }
+      const detail = Buffer.concat(stderr).toString('utf8').trim()
+      finish(new Error(detail || `远程命令失败（退出码 ${exitCode ?? '未知'}）`))
+    }
+
+    client.on('error', onClientError)
+    client.once('end', onClientEnd)
+    client.once('close', onClientClose)
+    try {
+      client.exec(command, (error, commandStream) => {
+        if (error) {
+          finish(error)
+          return
+        }
+        stream = commandStream
+        if (settled) {
+          stream.destroy()
+          return
+        }
+        stream.stderr.on('data', onStderrData)
+        stream.stderr.once('error', onStreamError)
+        stream.once('error', onStreamError)
+        stream.once('exit', onExit)
+        stream.once('close', onStreamClose)
+      })
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error(String(error)))
+    }
+  })
+}
+
 function transferFile(
   operation: 'get' | 'put',
   sftp: SFTPWrapper,
   sourcePath: string,
   destinationPath: string,
-  onProgress: (transferred: number, total: number) => void,
+  signal: AbortSignal,
+  onProgress: (transferred: number) => void,
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const options = { step: (transferred: number, _chunk: number, total: number) => onProgress(transferred, total) }
-    const callback = (error?: Error) => error ? reject(error) : resolve()
-    if (operation === 'get') sftp.fastGet(sourcePath, destinationPath, options, callback)
-    else sftp.fastPut(sourcePath, destinationPath, options, callback)
+  let transferred = 0
+  const progress = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      transferred += chunk.length
+      onProgress(transferred)
+      callback(null, chunk)
+    },
   })
+  const source = operation === 'get' ? sftp.createReadStream(sourcePath) : localCreateReadStream(sourcePath)
+  const destination = operation === 'get'
+    ? createWriteStream(destinationPath, { flags: 'wx' })
+    : sftp.createWriteStream(destinationPath, { flags: 'wx' })
+  return pipeline(source, progress, destination, { signal }).then(() => undefined)
 }
 
-async function collectRemoteTree(sftp: SFTPWrapper, remoteRoot: string): Promise<TransferItem[]> {
+async function collectRemoteTree(sftp: SFTPWrapper, remoteRoot: string, signal: AbortSignal): Promise<TransferItem[]> {
   const items: TransferItem[] = []
 
   const visit = async (remotePath: string, relativePath: string, attrs: SftpAttributes) => {
+    signal.throwIfAborted()
     const type = fileType(attrs.mode)
     if (type === 'symlink') throw new Error(`目录包含符号链接，无法传输：${remotePath}`)
     if (type === 'other') throw new Error(`目录包含暂不支持的文件类型：${remotePath}`)
@@ -175,6 +273,7 @@ async function collectRemoteTree(sftp: SFTPWrapper, remoteRoot: string): Promise
 
     const entries = await sftpReaddir(sftp, remotePath)
     for (const entry of entries) {
+      signal.throwIfAborted()
       if (entry.filename === '.' || entry.filename === '..') continue
       const childPath = posix.join(remotePath, entry.filename)
       const childRelativePath = relativePath ? posix.join(relativePath, entry.filename) : entry.filename
@@ -186,16 +285,18 @@ async function collectRemoteTree(sftp: SFTPWrapper, remoteRoot: string): Promise
   return items
 }
 
-async function collectLocalTree(localRoot: string): Promise<TransferItem[]> {
+async function collectLocalTree(localRoot: string, signal: AbortSignal): Promise<TransferItem[]> {
   const items: TransferItem[] = []
 
   const visit = async (localPath: string, relativePath: string) => {
+    signal.throwIfAborted()
     const attrs = await localLstat(localPath)
     if (attrs.isSymbolicLink()) throw new Error(`目录包含符号链接，无法传输：${localPath}`)
     if (attrs.isDirectory()) {
       items.push({ relativePath, type: 'directory', size: 0, localPath })
       const entries = await localReaddir(localPath, { withFileTypes: true })
       for (const entry of entries) {
+        signal.throwIfAborted()
         const childPath = join(localPath, entry.name)
         const childRelativePath = relativePath ? posix.join(relativePath, entry.name) : entry.name
         await visit(childPath, childRelativePath)
@@ -233,14 +334,44 @@ async function confirmOverwrite(collisions: string[], operation: string): Promis
   return result.response === 1
 }
 
-async function withTransferLock<T>(profileId: string, operation: () => Promise<T>): Promise<T> {
-  if (activeTransfers.has(profileId)) throw new Error('此服务器已有文件传输正在进行')
-  activeTransfers.add(profileId)
-  try {
-    return await operation()
-  } finally {
-    activeTransfers.delete(profileId)
+async function withTransferLock(
+  profileId: string,
+  requestId: string,
+  operation: (signal: AbortSignal) => Promise<TransferResult>,
+): Promise<TransferResult> {
+  if ([...activeTransfers.values()].some((transfer) => transfer.profileId === profileId)) {
+    throw new Error('此服务器已有文件传输正在进行')
   }
+  if (activeTransfers.has(requestId)) throw new Error('传输请求标识重复')
+  const transfer: ActiveTransfer = {
+    profileId,
+    controller: new AbortController(),
+    settled: Promise.resolve(),
+  }
+  activeTransfers.set(requestId, transfer)
+  try {
+    const operationPromise = operation(transfer.controller.signal)
+    transfer.settled = operationPromise.then(() => undefined, () => undefined)
+    return await operationPromise
+  } catch (error) {
+    if (transfer.controller.signal.aborted && isAbortError(error)) return 'cancelled'
+    throw error
+  } finally {
+    activeTransfers.delete(requestId)
+  }
+}
+
+function cancelTransfer(requestId: string): boolean {
+  const transfer = activeTransfers.get(requestId)
+  if (!transfer) return false
+  transfer.controller.abort()
+  return true
+}
+
+function cancelTransfersForProfile(profileId: string): ActiveTransfer[] {
+  const transfers = [...activeTransfers.values()].filter((transfer) => transfer.profileId === profileId)
+  for (const transfer of transfers) transfer.controller.abort()
+  return transfers
 }
 
 function sendTransferProgress(
@@ -328,13 +459,16 @@ async function uploadSelection(
   profileId: string,
   remoteDirectory: string,
   uploadFolder: boolean,
-): Promise<boolean> {
+  signal: AbortSignal,
+): Promise<TransferResult> {
+  signal.throwIfAborted()
   const session = sessions.get(profileId)
   if (!session) throw new Error('服务器未连接')
   const selection = await dialog.showOpenDialog(mainWindow ?? undefined, uploadFolder
     ? { title: '选择要上传的文件夹', properties: ['openDirectory'] }
     : { title: '选择要上传的文件', properties: ['openFile', 'multiSelections'] })
-  if (selection.canceled || selection.filePaths.length === 0) return false
+  signal.throwIfAborted()
+  if (selection.canceled || selection.filePaths.length === 0) return 'not-started'
 
   const normalizedDirectory = posix.resolve('/', remoteDirectory || '/')
   const directoryAttributes = await sftpLstat(session.sftp, normalizedDirectory)
@@ -344,11 +478,12 @@ async function uploadSelection(
   let items: TransferItem[]
   if (uploadFolder) {
     const localRoot = selection.filePaths[0]
-    items = await collectLocalTree(localRoot)
+    items = await collectLocalTree(localRoot, signal)
     remoteRoot = posix.join(normalizedDirectory, basename(localRoot))
   } else {
     items = []
     for (const localPath of selection.filePaths) {
+      signal.throwIfAborted()
       const attrs = await localLstat(localPath)
       if (attrs.isSymbolicLink()) throw new Error(`不能上传符号链接：${localPath}`)
       if (!attrs.isFile()) throw new Error(`只能上传普通文件：${localPath}`)
@@ -356,31 +491,38 @@ async function uploadSelection(
     }
   }
 
+  signal.throwIfAborted()
   const { collisions, existingDirectories } = await prepareRemoteDestination(session.sftp, items, remoteRoot)
-  if (!await confirmOverwrite(collisions, '上传')) return false
+  signal.throwIfAborted()
+  if (!await confirmOverwrite(collisions, '上传')) return 'not-started'
+  signal.throwIfAborted()
 
   const collisionSet = new Set(collisions)
   const total = items.reduce((sum, item) => sum + (item.type === 'file' ? item.size : 0), 0)
   let completed = 0
 
   for (const item of items) {
+    signal.throwIfAborted()
     const destination = item.relativePath ? posix.join(remoteRoot, item.relativePath) : remoteRoot
     if (item.type === 'directory') {
       if (!existingDirectories.has(destination)) await sftpMkdir(session.sftp, destination)
+      signal.throwIfAborted()
       continue
     }
 
     const temporaryPath = posix.join(posix.dirname(destination), `.${posix.basename(destination)}.${randomUUID()}.upload`)
     let committed = false
     try {
-      await transferFile('put', session.sftp, item.localPath!, temporaryPath, (transferred) => {
+      await transferFile('put', session.sftp, item.localPath!, temporaryPath, signal, (transferred) => {
         sendTransferProgress(event.sender, requestId, profileId, destination, 'upload', completed + transferred, total)
       })
+      signal.throwIfAborted()
       const backupPath = collisionSet.has(destination)
         ? posix.join(posix.dirname(destination), `.${posix.basename(destination)}.${randomUUID()}.backup`)
         : null
       if (backupPath) await sftpRename(session.sftp, destination, backupPath)
       try {
+        signal.throwIfAborted()
         await sftpRename(session.sftp, temporaryPath, destination)
       } catch (error) {
         if (backupPath) {
@@ -401,12 +543,21 @@ async function uploadSelection(
         }
       }
     } finally {
-      if (!committed) await sftpUnlink(session.sftp, temporaryPath).catch(() => undefined)
+      if (!committed) {
+        try {
+          await sftpUnlink(session.sftp, temporaryPath)
+        } catch (error) {
+          if (!isRemoteNotFound(error)) {
+            throw new Error(`未完成的上传文件无法清理 ${temporaryPath}：${messageFromError(error)}`)
+          }
+        }
+      }
     }
     completed += item.size
     sendTransferProgress(event.sender, requestId, profileId, destination, 'upload', completed, total)
   }
-  return true
+  signal.throwIfAborted()
+  return 'completed'
 }
 
 async function downloadRemoteItems(
@@ -415,6 +566,7 @@ async function downloadRemoteItems(
   profileId: string,
   items: TransferItem[],
   destinationRoot: string,
+  signal: AbortSignal,
 ): Promise<void> {
   const session = sessions.get(profileId)
   if (!session) throw new Error('服务器未连接')
@@ -422,9 +574,11 @@ async function downloadRemoteItems(
   let completed = 0
 
   for (const item of items) {
+    signal.throwIfAborted()
     const destination = localDestination(destinationRoot, item.relativePath)
     if (item.type === 'directory') {
       await mkdir(destination, { recursive: true })
+      signal.throwIfAborted()
       continue
     }
 
@@ -432,13 +586,22 @@ async function downloadRemoteItems(
     const temporaryPath = join(dirname(destination), `.${basename(destination)}.${randomUUID()}.download`)
     let committed = false
     try {
-      await transferFile('get', session.sftp, item.remotePath!, temporaryPath, (transferred) => {
+      await transferFile('get', session.sftp, item.remotePath!, temporaryPath, signal, (transferred) => {
         sendTransferProgress(event.sender, requestId, profileId, item.remotePath!, 'download', completed + transferred, total)
       })
+      signal.throwIfAborted()
       await rename(temporaryPath, destination)
       committed = true
     } finally {
-      if (!committed) await unlink(temporaryPath).catch(() => undefined)
+      if (!committed) {
+        try {
+          await unlink(temporaryPath)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            throw new Error(`未完成的下载文件无法清理 ${temporaryPath}：${messageFromError(error)}`)
+          }
+        }
+      }
     }
     completed += item.size
     sendTransferProgress(event.sender, requestId, profileId, item.remotePath!, 'download', completed, total)
@@ -450,11 +613,14 @@ async function downloadEntry(
   requestId: string,
   profileId: string,
   remotePath: string,
-): Promise<boolean> {
+  signal: AbortSignal,
+): Promise<TransferResult> {
+  signal.throwIfAborted()
   const session = sessions.get(profileId)
   if (!session) throw new Error('服务器未连接')
   const normalizedPath = posix.resolve('/', remotePath)
   const attributes = await sftpLstat(session.sftp, normalizedPath)
+  signal.throwIfAborted()
   const type = fileType(attributes.mode)
   if (type === 'symlink') throw new Error(`不能下载符号链接：${normalizedPath}`)
 
@@ -463,15 +629,19 @@ async function downloadEntry(
       title: '选择文件下载位置',
       properties: ['openDirectory'],
     })
-    if (destination.canceled || !destination.filePaths[0]) return false
+    signal.throwIfAborted()
+    if (destination.canceled || !destination.filePaths[0]) return 'not-started'
     const fileName = posix.basename(normalizedPath)
     assertWindowsPath(fileName)
     const localPath = join(destination.filePaths[0], fileName)
     const item: TransferItem = { relativePath: '', type: 'file', size: attributes.size ?? 0, remotePath: normalizedPath }
     const collisions = await prepareLocalDestination([item], localPath)
-    if (!await confirmOverwrite(collisions, '下载')) return false
-    await downloadRemoteItems(event, requestId, profileId, [item], localPath)
-    return true
+    signal.throwIfAborted()
+    if (!await confirmOverwrite(collisions, '下载')) return 'not-started'
+    signal.throwIfAborted()
+    await downloadRemoteItems(event, requestId, profileId, [item], localPath, signal)
+    signal.throwIfAborted()
+    return 'completed'
   }
 
   if (type !== 'directory') throw new Error('只能下载普通文件或文件夹')
@@ -480,16 +650,20 @@ async function downloadEntry(
     title: '选择文件夹下载位置',
     properties: ['openDirectory'],
   })
-  if (destination.canceled || !destination.filePaths[0]) return false
+  signal.throwIfAborted()
+  if (destination.canceled || !destination.filePaths[0]) return 'not-started'
 
   const folderName = posix.basename(normalizedPath)
   assertWindowsPath(folderName)
   const localRoot = join(destination.filePaths[0], folderName)
-  const items = await collectRemoteTree(session.sftp, normalizedPath)
+  const items = await collectRemoteTree(session.sftp, normalizedPath, signal)
   const collisions = await prepareLocalDestination(items, localRoot)
-  if (!await confirmOverwrite(collisions, '下载')) return false
-  await downloadRemoteItems(event, requestId, profileId, items, localRoot)
-  return true
+  signal.throwIfAborted()
+  if (!await confirmOverwrite(collisions, '下载')) return 'not-started'
+  signal.throwIfAborted()
+  await downloadRemoteItems(event, requestId, profileId, items, localRoot, signal)
+  signal.throwIfAborted()
+  return 'completed'
 }
 
 function previewType(remotePath: string): PreviewResult['type'] | null {
@@ -726,10 +900,15 @@ function sendConnectionClosed(profileId: string, message: string): void {
 
 function stopSession(profileId: string): void {
   if (pendingConnection?.profileId === profileId) pendingConnection.cancel()
-  const session = sessions.get(profileId)
-  if (!session) return
+  const transfers = cancelTransfersForProfile(profileId)
+  const activeSession = sessions.get(profileId)
+  if (!activeSession) return
   sessions.delete(profileId)
-  session.client.end()
+  if (transfers.length === 0) {
+    activeSession.client.end()
+  } else {
+    void Promise.all(transfers.map((transfer) => transfer.settled)).then(() => activeSession.client.end())
+  }
 }
 
 function stopAllSessions(): void {
@@ -788,6 +967,7 @@ function connectProfile(profileId: string): Promise<ConnectResult> {
 
     client.on('error', (error: Error & { level?: string }) => {
       if (sessions.get(profileId)?.client === client) {
+        cancelTransfersForProfile(profileId)
         sessions.delete(profileId)
         sendConnectionClosed(profileId, error.message)
         return
@@ -810,6 +990,7 @@ function connectProfile(profileId: string): Promise<ConnectResult> {
 
     client.on('close', () => {
       if (sessions.get(profileId)?.client === client) {
+        cancelTransfersForProfile(profileId)
         sessions.delete(profileId)
         sendConnectionClosed(profileId, 'SSH 连接已关闭')
       }
@@ -886,6 +1067,24 @@ function listDirectory(profileId: string, remotePath: string): Promise<RemoteEnt
   })
 }
 
+function copyRemotePath(profileId: string, remotePath: string): void {
+  if (!sessions.has(profileId)) throw new Error('服务器未连接')
+  clipboard.writeText(normalizedRemotePath(remotePath))
+}
+
+async function deleteRemoteEntry(profileId: string, remotePath: string): Promise<void> {
+  const activeSession = sessions.get(profileId)
+  if (!activeSession) throw new Error('服务器未连接')
+  const normalizedPath = normalizedRemotePath(remotePath)
+  if (normalizedPath === '/') throw new Error('不能删除服务器根目录')
+  const attributes = await sftpLstat(activeSession.sftp, normalizedPath)
+  const type = fileType(attributes.mode)
+  if (type !== 'file' && type !== 'directory') {
+    throw new Error('只能删除普通文件或文件夹')
+  }
+  await executeRemoteCommand(activeSession.client, `rm -rf -- ${shellQuote(normalizedPath)}`)
+}
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1160,
@@ -926,11 +1125,67 @@ function createWindow(): void {
 }
 
 function registerPreviewProtocol(): void {
-  session.defaultSession.protocol.handle('remote-preview', (request) => {
+  session.defaultSession.protocol.handle('remote-preview', async (request) => {
     const token = new URL(request.url).hostname
     const filePath = previewAssets.get(token)
     if (!filePath) return new Response(null, { status: 404 })
-    return net.fetch(pathToFileURL(filePath).toString(), { headers: request.headers })
+    const { size } = await localStat(filePath)
+    const extension = extname(filePath).toLowerCase()
+    const contentType: Record<string, string> = {
+      '.gif': 'image/gif',
+      '.jpeg': 'image/jpeg',
+      '.jpg': 'image/jpeg',
+      '.mp3': 'audio/mpeg',
+      '.mp4': 'video/mp4',
+      '.png': 'image/png',
+      '.sh': 'text/plain; charset=utf-8',
+      '.txt': 'text/plain; charset=utf-8',
+    }
+    const headers = new Headers({
+      'Accept-Ranges': 'bytes',
+      'Content-Type': contentType[extension] ?? 'application/octet-stream',
+    })
+    const rangeHeader = request.headers.get('range')
+    let range: { start: number; end: number } | null = null
+    if (rangeHeader) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim())
+      if (!match || size === 0 || (!match[1] && !match[2])) {
+        headers.set('Content-Range', `bytes */${size}`)
+        headers.set('Content-Length', '0')
+        return new Response(null, { status: 416, headers })
+      }
+      if (!match[1]) {
+        const suffixLength = Number(match[2])
+        if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) {
+          headers.set('Content-Range', `bytes */${size}`)
+          headers.set('Content-Length', '0')
+          return new Response(null, { status: 416, headers })
+        }
+        range = { start: Math.max(0, size - suffixLength), end: size - 1 }
+      } else {
+        const start = Number(match[1])
+        const requestedEnd = match[2] ? Number(match[2]) : size - 1
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd)
+          || start >= size || requestedEnd < start) {
+          headers.set('Content-Range', `bytes */${size}`)
+          headers.set('Content-Length', '0')
+          return new Response(null, { status: 416, headers })
+        }
+        range = { start, end: Math.min(requestedEnd, size - 1) }
+      }
+      headers.set('Content-Range', `bytes ${range.start}-${range.end}/${size}`)
+      headers.set('Content-Length', String(range.end - range.start + 1))
+    } else {
+      headers.set('Content-Length', String(size))
+    }
+
+    const status = range ? 206 : 200
+    if (request.method === 'HEAD') return new Response(null, { status, headers })
+    const source = range
+      ? localCreateReadStream(filePath, { start: range.start, end: range.end })
+      : localCreateReadStream(filePath)
+    request.signal.addEventListener('abort', () => source.destroy(), { once: true })
+    return new Response(Readable.toWeb(source), { status, headers })
   })
 }
 
@@ -1014,11 +1269,14 @@ function registerIpc(): void {
   ipcMain.handle('files:list', (_event, profileId: string, remotePath: string) =>
     listDirectory(profileId, remotePath))
   ipcMain.handle('files:upload-files', (event, requestId: string, profileId: string, remoteDirectory: string) =>
-    withTransferLock(profileId, () => uploadSelection(event, requestId, profileId, remoteDirectory, false)))
+    withTransferLock(profileId, requestId, (signal) => uploadSelection(event, requestId, profileId, remoteDirectory, false, signal)))
   ipcMain.handle('files:upload-folder', (event, requestId: string, profileId: string, remoteDirectory: string) =>
-    withTransferLock(profileId, () => uploadSelection(event, requestId, profileId, remoteDirectory, true)))
+    withTransferLock(profileId, requestId, (signal) => uploadSelection(event, requestId, profileId, remoteDirectory, true, signal)))
   ipcMain.handle('files:download', (event, requestId: string, profileId: string, remotePath: string) =>
-    withTransferLock(profileId, () => downloadEntry(event, requestId, profileId, remotePath)))
+    withTransferLock(profileId, requestId, (signal) => downloadEntry(event, requestId, profileId, remotePath, signal)))
+  ipcMain.handle('files:transfer-cancel', (_event, requestId: string) => cancelTransfer(requestId))
+  ipcMain.handle('files:path-copy', (_event, profileId: string, remotePath: string) => copyRemotePath(profileId, remotePath))
+  ipcMain.handle('files:delete', (_event, profileId: string, remotePath: string) => deleteRemoteEntry(profileId, remotePath))
   ipcMain.handle('files:preview', (_event, profileId: string, remotePath: string) => previewFile(profileId, remotePath))
   ipcMain.handle('files:preview-release', (_event, token: string) => releasePreview(token))
 }

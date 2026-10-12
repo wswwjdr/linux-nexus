@@ -27,6 +27,11 @@ const api: RemoteFilesApi = {
     ipcRenderer.invoke('files:upload-folder', requestId, profileId, remoteDirectory),
   downloadEntry: (requestId: string, profileId: string, remotePath: string) =>
     ipcRenderer.invoke('files:download', requestId, profileId, remotePath),
+  cancelTransfer: (requestId: string) => ipcRenderer.invoke('files:transfer-cancel', requestId),
+  copyRemotePath: (profileId: string, remotePath: string) =>
+    ipcRenderer.invoke('files:path-copy', profileId, remotePath),
+  deleteRemoteEntry: (profileId: string, remotePath: string) =>
+    ipcRenderer.invoke('files:delete', profileId, remotePath),
   previewFile: (profileId: string, remotePath: string): Promise<PreviewResult> =>
     ipcRenderer.invoke('files:preview', profileId, remotePath),
   releasePreview: (token: string) => ipcRenderer.invoke('files:preview-release', token),

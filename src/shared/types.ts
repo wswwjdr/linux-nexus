@@ -61,6 +61,8 @@ export interface TransferProgress {
   total: number
 }
 
+export type TransferResult = 'completed' | 'not-started' | 'cancelled'
+
 export type PreviewResult =
   | { type: 'text'; name: string; content: string }
   | { type: 'image' | 'audio' | 'video'; name: string; url: string; token: string }
@@ -80,9 +82,12 @@ export interface RemoteFilesApi {
   getPreviewLimits(): Promise<PreviewLimits>
   savePreviewLimits(limits: PreviewLimits): Promise<PreviewLimits>
   listDirectory(profileId: string, remotePath: string): Promise<RemoteEntry[]>
-  uploadFiles(requestId: string, profileId: string, remoteDirectory: string): Promise<boolean>
-  uploadFolder(requestId: string, profileId: string, remoteDirectory: string): Promise<boolean>
-  downloadEntry(requestId: string, profileId: string, remotePath: string): Promise<boolean>
+  uploadFiles(requestId: string, profileId: string, remoteDirectory: string): Promise<TransferResult>
+  uploadFolder(requestId: string, profileId: string, remoteDirectory: string): Promise<TransferResult>
+  downloadEntry(requestId: string, profileId: string, remotePath: string): Promise<TransferResult>
+  cancelTransfer(requestId: string): Promise<boolean>
+  copyRemotePath(profileId: string, remotePath: string): Promise<void>
+  deleteRemoteEntry(profileId: string, remotePath: string): Promise<void>
   previewFile(profileId: string, remotePath: string): Promise<PreviewResult>
   releasePreview(token: string): Promise<void>
   onTransferProgress(callback: (progress: TransferProgress) => void): () => void
