@@ -153,9 +153,24 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; clip: rect(0, 0, 0, 0); overflow: hidden; white-space: nowrap; }
 
 .welcome-state { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; padding: 28px; text-align: center; }
+.welcome-state.welcome-history { align-items: stretch; text-align: left; }
 .welcome-icon { width: 52px; height: 52px; display: grid; place-items: center; color: var(--green); background: var(--green-soft); border: 1px solid #d8eade; border-radius: 9px; }
 .welcome-state h1 { margin: 19px 0 7px; color: #2a3830; font-size: 17px; font-weight: 600; }
 .welcome-state p { margin: 0 0 18px; color: #849087; font-size: 12px; }
+.recent-connections { width: min(100%, 620px); margin: auto; }
+.recent-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; }
+.recent-heading-icon { width: 32px; height: 32px; display: grid; place-items: center; color: var(--green); background: var(--green-soft); border: 1px solid #d8eade; border-radius: 6px; }
+.recent-heading h1 { margin: 0; color: #2a3830; font-size: 16px; font-weight: 600; }
+.recent-list { max-height: min(60vh, 470px); overflow-y: auto; border-top: 1px solid var(--line); }
+.recent-connection { width: 100%; min-height: 68px; display: grid; grid-template-columns: 34px minmax(0, 1fr) 150px 18px; align-items: center; gap: 12px; padding: 9px 8px; border: 0; border-bottom: 1px solid var(--line); color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.recent-connection:hover { background: #f8faf8; }
+.recent-server-icon { width: 32px; height: 32px; display: grid; place-items: center; color: #688675; background: #eef4ef; border-radius: 5px; }
+.recent-server-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.recent-server-name, .recent-server-address { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-server-name { color: #2d3b32; font-weight: 600; }
+.recent-server-address { color: var(--muted); font-size: 11px; }
+.recent-connected-at { color: #89958d; font-size: 11px; white-space: nowrap; }
+.recent-chevron { justify-self: end; color: #a1ada4; }
 .welcome-loading { display: flex; align-items: center; gap: 7px; margin-top: 9px; color: #6d7c72; font-size: 12px; }
 .primary-button, .secondary-button { height: 35px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border: 1px solid transparent; border-radius: var(--radius); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s, border-color .15s; }
 .primary-button { color: white; background: var(--green); border-color: var(--green); }

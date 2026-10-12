@@ -12,6 +12,7 @@ import {
   Folder,
   FolderUp,
   HardDrive,
+  History,
   House,
   KeyRound,
   LayoutGrid,
@@ -61,6 +62,11 @@ interface TransferJob {
   transferred: number
   total: number
   finished: boolean
+}
+
+interface RecentConnection {
+  profileId: string
+  connectedAt: number
 }
 
 interface EntryContextMenu {
@@ -133,6 +139,11 @@ function readSidebarCollapsed(): boolean {
   return window.localStorage.getItem('remote-files:sidebar-collapsed') === 'true'
 }
 
+function readRecentConnections(): RecentConnection[] {
+  const savedConnections = window.localStorage.getItem('remote-files:recent-connections')
+  return savedConnections ? JSON.parse(savedConnections) as RecentConnection[] : []
+}
+
 function getParentPath(remotePath: string): string {
   const parts = remotePath.split('/').filter(Boolean)
   parts.pop()
@@ -162,6 +173,7 @@ export default function App() {
   const [toast, setToast] = useState<ToastNotice | null>(null)
   const [viewMode, setViewMode] = useState<FileViewMode>(readViewMode)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
+  const [recentConnections, setRecentConnections] = useState<RecentConnection[]>(readRecentConnections)
   const [sort, setSort] = useState<{ column: SortColumn; direction: SortDirection }>({
     column: 'name',
     direction: 'ascending',
@@ -197,6 +209,15 @@ export default function App() {
     () => profiles.find((profile) => profile.id === connectedProfileId) ?? null,
     [profiles, connectedProfileId],
   )
+  const recentProfiles = useMemo(
+    () => recentConnections
+      .flatMap((connection) => {
+        const profile = profiles.find((candidate) => candidate.id === connection.profileId)
+        return profile ? [{ profile, connectedAt: connection.connectedAt }] : []
+      })
+      .sort((left, right) => right.connectedAt - left.connectedAt),
+    [profiles, recentConnections],
+  )
 
   const refreshProfiles = async () => {
     setProfiles(await window.remoteFiles.listProfiles())
@@ -209,6 +230,10 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem('remote-files:sidebar-collapsed', String(sidebarCollapsed))
   }, [sidebarCollapsed])
+
+  useEffect(() => {
+    window.localStorage.setItem('remote-files:recent-connections', JSON.stringify(recentConnections))
+  }, [recentConnections])
 
   useEffect(() => {
     void window.remoteFiles.listProfiles().then(setProfiles).catch((error) => showToast('error', errorMessage(error)))
@@ -319,6 +344,10 @@ export default function App() {
         }
         return
       }
+      setRecentConnections((current) => [
+        { profileId: profile.id, connectedAt: Date.now() },
+        ...current.filter((connection) => connection.profileId !== profile.id),
+      ])
       setConnectedProfileId(profile.id)
       pathHistoryRef.current = [result.path]
       historyIndexRef.current = 0
@@ -421,6 +450,7 @@ export default function App() {
     if (!window.confirm(`删除“${profile.name}”的连接配置？`)) return
     try {
       await window.remoteFiles.deleteProfile(profile.id)
+      setRecentConnections((current) => current.filter((connection) => connection.profileId !== profile.id))
       if (connectedProfileId === profile.id) {
         resetPathNavigation()
         setConnectedProfileId(null)
@@ -880,12 +910,42 @@ export default function App() {
             </div>
           </>
         ) : (
-          <div className="welcome-state">
-            <div className="welcome-icon"><HardDrive size={25} /></div>
-            <h1>{profiles.length ? '选择服务器以浏览文件' : '添加一台服务器'}</h1>
-            <p>{profiles.length ? '选择左侧的服务器建立连接' : '保存 SSH 连接信息，开始浏览远程目录'}</p>
-            {profiles.length === 0 && <button className="primary-button" onClick={() => openProfileDialog('create')}><Plus size={16} /> 添加服务器</button>}
-            {connectionPending && <div className="welcome-loading"><LoaderCircle className="spin" size={16} /> 正在连接</div>}
+          <div className={`welcome-state ${recentProfiles.length ? 'welcome-history' : ''}`}>
+            {recentProfiles.length ? (
+              <section className="recent-connections" aria-labelledby="recent-connections-title">
+                <div className="recent-heading">
+                  <div className="recent-heading-icon"><History size={18} /></div>
+                  <h1 id="recent-connections-title">最近连接</h1>
+                </div>
+                <div className="recent-list">
+                  {recentProfiles.map(({ profile, connectedAt }) => (
+                    <button
+                      className="recent-connection"
+                      key={profile.id}
+                      disabled={connectionPending}
+                      onClick={() => void connectTo(profile)}
+                    >
+                      <span className="recent-server-icon"><Server size={17} /></span>
+                      <span className="recent-server-copy">
+                        <span className="recent-server-name">{profile.name}</span>
+                        <span className="recent-server-address">{profile.username}@{profile.host}:{profile.port}</span>
+                      </span>
+                      <span className="recent-connected-at">{formatDate(new Date(connectedAt).toISOString())}</span>
+                      <ChevronRight className="recent-chevron" size={16} />
+                    </button>
+                  ))}
+                </div>
+                {connectionPending && <div className="welcome-loading"><LoaderCircle className="spin" size={16} /> 正在连接</div>}
+              </section>
+            ) : (
+              <>
+                <div className="welcome-icon"><HardDrive size={25} /></div>
+                <h1>{profiles.length ? '选择服务器以浏览文件' : '添加一台服务器'}</h1>
+                <p>{profiles.length ? '选择左侧的服务器建立连接' : '保存 SSH 连接信息，开始浏览远程目录'}</p>
+                {profiles.length === 0 && <button className="primary-button" onClick={() => openProfileDialog('create')}><Plus size={16} /> 添加服务器</button>}
+                {connectionPending && <div className="welcome-loading"><LoaderCircle className="spin" size={16} /> 正在连接</div>}
+              </>
+            )}
           </div>
         )}
 
