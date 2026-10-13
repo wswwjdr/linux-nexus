@@ -48,3 +48,6 @@ export type SortColumn = 'name' | 'size' | 'modifiedAt' | 'permissions'
 export type SortDirection = 'ascending' | 'descending'
 export type PreviewLimitKey = keyof PreviewLimits
 export type PreviewLimitsForm = Record<PreviewLimitKey, string>
+export interface SettingsForm extends PreviewLimitsForm {
+  defaultView: FileViewMode
+}

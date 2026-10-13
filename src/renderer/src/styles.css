@@ -190,6 +190,13 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .field input { width: 100%; height: 36px; padding: 0 10px; border: 1px solid #dce4dd; border-radius: var(--radius); color: #25352b; background: #fff; font-size: 12px; font-weight: 400; }
 .field input::placeholder { color: #abb5ad; }
 .field input:focus { border-color: #7eae96; outline: 2px solid #dbece2; }
+.settings-view-field { min-width: 0; margin: 0 0 16px; padding: 0; border: 0; color: #59685f; font-size: 11px; font-weight: 600; }
+.settings-view-field legend { margin-bottom: 7px; padding: 0; }
+.settings-view-options { height: 36px; display: grid; grid-template-columns: 1fr 1fr; overflow: hidden; border: 1px solid var(--line-strong); border-radius: var(--radius); background: #f7f9f7; }
+.settings-view-option { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 8px; border: 0; color: #6c7a70; background: transparent; font-size: 12px; font-weight: 500; cursor: pointer; }
+.settings-view-option + .settings-view-option { border-left: 1px solid var(--line-strong); }
+.settings-view-option[aria-pressed="true"] { color: var(--green-deep); background: var(--green-soft); }
+.settings-view-option:hover:not(:disabled) { color: var(--green-deep); background: #edf4ef; }
 .field-row { display: flex; gap: 11px; }
 .host-field { min-width: 0; flex: 1; }
 .port-field { width: 88px; flex: 0 0 auto; }

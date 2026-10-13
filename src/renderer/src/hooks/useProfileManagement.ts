@@ -1,19 +1,20 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type { PreviewLimits, SaveProfileInput, ServerProfile } from '@shared/types'
-import type { PreviewLimitKey, PreviewLimitsForm, ProfileForm } from '../app-types'
+import type { FileViewMode, PreviewLimitKey, ProfileForm, SettingsForm } from '../app-types'
 import type { ToastNotice } from '../GlobalToast'
-import { emptyForm, errorMessage, previewLimitFields, toPreviewLimitsForm } from '../app-utils'
+import { emptyForm, errorMessage, previewLimitFields, readDefaultView, toPreviewLimitsForm } from '../app-utils'
 
 interface UseProfileManagementOptions {
   showToast: (kind: ToastNotice['kind'], message: string) => void
   clearToast: () => void
   onProfileDeleted: (profileId: string) => void
+  onDefaultViewChange: (mode: FileViewMode) => void
 }
 
-export function useProfileManagement({ showToast, clearToast, onProfileDeleted }: UseProfileManagementOptions) {
+export function useProfileManagement({ showToast, clearToast, onProfileDeleted, onDefaultViewChange }: UseProfileManagementOptions) {
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
   const [dialog, setDialog] = useState<{ mode: 'create' | 'edit'; form: ProfileForm } | null>(null)
-  const [settingsForm, setSettingsForm] = useState<PreviewLimitsForm | null>(null)
+  const [settingsForm, setSettingsForm] = useState<SettingsForm | null>(null)
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [settingsSaving, setSettingsSaving] = useState(false)
 
@@ -46,7 +47,7 @@ export function useProfileManagement({ showToast, clearToast, onProfileDeleted }
     if (settingsLoading || settingsSaving) return
     setSettingsLoading(true)
     try {
-      setSettingsForm(toPreviewLimitsForm(await window.remoteFiles.getPreviewLimits()))
+      setSettingsForm({ ...toPreviewLimitsForm(await window.remoteFiles.getPreviewLimits()), defaultView: readDefaultView() })
     } catch (error) {
       showToast('error', '读取设置失败：' + errorMessage(error))
     } finally {
@@ -56,6 +57,10 @@ export function useProfileManagement({ showToast, clearToast, onProfileDeleted }
 
   const updateSettingsForm = (key: PreviewLimitKey, value: string) => {
     setSettingsForm((current) => current ? { ...current, [key]: value } : current)
+  }
+
+  const updateDefaultView = (defaultView: FileViewMode) => {
+    setSettingsForm((current) => current ? { ...current, defaultView } : current)
   }
 
   const submitSettings = async (event: FormEvent<HTMLFormElement>) => {
@@ -72,6 +77,8 @@ export function useProfileManagement({ showToast, clearToast, onProfileDeleted }
     setSettingsSaving(true)
     try {
       await window.remoteFiles.savePreviewLimits(limits)
+      window.localStorage.setItem('remote-files:default-view', settingsForm.defaultView)
+      onDefaultViewChange(settingsForm.defaultView)
       setSettingsForm(null)
       clearToast()
     } catch (error) {
@@ -136,6 +143,7 @@ export function useProfileManagement({ showToast, clearToast, onProfileDeleted }
     submitProfile,
     removeProfile,
     updateSettingsForm,
+    updateDefaultView,
     submitSettings,
     closeProfileDialog,
     closeSettingsDialog,

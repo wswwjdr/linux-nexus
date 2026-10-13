@@ -27,7 +27,7 @@ import {
   entryNameCollator,
   errorMessage,
   readRecentConnections,
-  readViewMode,
+  readDefaultView,
 } from './app-utils'
 
 export default function App() {
@@ -37,7 +37,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [connectionPending, setConnectionPending] = useState(false)
   const [toast, setToast] = useState<ToastNotice | null>(null)
-  const [viewMode, setViewMode] = useState<FileViewMode>(readViewMode)
+  const [viewMode, setViewMode] = useState<FileViewMode>(readDefaultView)
   const [recentConnections, setRecentConnections] = useState<RecentConnection[]>(readRecentConnections)
   const [sort, setSort] = useState<{ column: SortColumn; direction: SortDirection }>({
     column: 'name',
@@ -79,6 +79,7 @@ export default function App() {
     submitProfile,
     removeProfile,
     updateSettingsForm,
+    updateDefaultView,
     submitSettings,
     closeProfileDialog,
     closeSettingsDialog,
@@ -88,6 +89,7 @@ export default function App() {
     onProfileDeleted: (profileId) => {
       setRecentConnections((current) => current.filter((connection) => connection.profileId !== profileId))
     },
+    onDefaultViewChange: setViewMode,
   })
   const resetPathNavigation = useCallback(() => {
     pathHistoryRef.current = []
@@ -118,10 +120,6 @@ export default function App() {
     },
     [profiles, recentConnections],
   )
-
-  useEffect(() => {
-    window.localStorage.setItem('remote-files:view-mode', viewMode)
-  }, [viewMode])
 
   useEffect(() => {
     window.localStorage.setItem('remote-files:recent-connections', JSON.stringify(recentConnections))
@@ -522,6 +520,7 @@ export default function App() {
         onSubmitProfile={(event) => void submitProfile(event)}
         onCloseSettings={closeSettingsDialog}
         onUpdateSettings={updateSettingsForm}
+        onUpdateDefaultView={updateDefaultView}
         onSubmitSettings={(event) => void submitSettings(event)}
         onClosePreview={closePreview}
         onPreviewImageLoad={onImageLoad}

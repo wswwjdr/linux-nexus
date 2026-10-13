@@ -1,18 +1,19 @@
 import type { FormEvent, KeyboardEvent, RefObject, SyntheticEvent, WheelEvent } from 'react'
-import { Check, Eye, KeyRound, LoaderCircle, Server, Settings, ShieldCheck, X } from 'lucide-react'
+import { Check, Eye, KeyRound, LayoutGrid, List, LoaderCircle, Server, Settings, ShieldCheck, X } from 'lucide-react'
 import type {
+  FileViewMode,
   ImagePreviewSize,
   PendingHostKey,
   PreviewDialog as PreviewDialogState,
   PreviewLimitKey,
-  PreviewLimitsForm,
   ProfileForm,
+  SettingsForm,
 } from '../app-types'
 import { previewLimitFields } from '../app-utils'
 
 interface DialogLayerProps {
   profileDialog: { mode: 'create' | 'edit'; form: ProfileForm } | null
-  settingsForm: PreviewLimitsForm | null
+  settingsForm: SettingsForm | null
   settingsSaving: boolean
   previewDialog: PreviewDialogState | null
   pendingHostKey: PendingHostKey | null
@@ -25,6 +26,7 @@ interface DialogLayerProps {
   onSubmitProfile: (event: FormEvent<HTMLFormElement>) => void
   onCloseSettings: () => void
   onUpdateSettings: (key: PreviewLimitKey, value: string) => void
+  onUpdateDefaultView: (mode: FileViewMode) => void
   onSubmitSettings: (event: FormEvent<HTMLFormElement>) => void
   onClosePreview: () => void
   onPreviewImageLoad: (event: SyntheticEvent<HTMLImageElement>) => void
@@ -48,6 +50,7 @@ export default function DialogLayer({
   onSubmitProfile,
   onCloseSettings,
   onUpdateSettings,
+  onUpdateDefaultView,
   onSubmitSettings,
   onClosePreview,
   onPreviewImageLoad,
@@ -109,13 +112,34 @@ export default function DialogLayer({
             <div className="modal-heading">
               <div>
                 <div className="modal-kicker"><Settings size={14} /> 应用设置</div>
-                <h2 id="settings-modal-title">文件预览上限</h2>
+                <h2 id="settings-modal-title">浏览与预览</h2>
               </div>
               <button className="icon-button modal-close" title="关闭设置" aria-label="关闭设置" disabled={settingsSaving} onClick={onCloseSettings}>
                 <X size={18} />
               </button>
             </div>
             <form onSubmit={onSubmitSettings}>
+              <fieldset className="settings-view-field" disabled={settingsSaving}>
+                <legend>默认文件视图</legend>
+                <div className="settings-view-options" role="group" aria-label="默认文件视图">
+                  <button
+                    type="button"
+                    className="settings-view-option"
+                    aria-pressed={settingsForm.defaultView === 'icons'}
+                    onClick={() => onUpdateDefaultView('icons')}
+                  >
+                    <LayoutGrid size={15} /> 图标视图
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-view-option"
+                    aria-pressed={settingsForm.defaultView === 'details'}
+                    onClick={() => onUpdateDefaultView('details')}
+                  >
+                    <List size={16} /> 详细信息
+                  </button>
+                </div>
+              </fieldset>
               {previewLimitFields.map(({ key, label }) => (
                 <label className="field" key={key}>
                   <span>{label}</span>

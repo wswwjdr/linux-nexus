@@ -42,8 +42,9 @@ export function formatDate(value: string | null): string {
   }).format(new Date(value))
 }
 
-export function readViewMode(): FileViewMode {
-  const savedMode = window.localStorage.getItem('remote-files:view-mode')
+export function readDefaultView(): FileViewMode {
+  const savedMode = window.localStorage.getItem('remote-files:default-view')
+    ?? window.localStorage.getItem('remote-files:view-mode')
   return savedMode === 'icons' || savedMode === 'details' ? savedMode : 'details'
 }
 
