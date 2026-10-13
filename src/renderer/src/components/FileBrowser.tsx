@@ -10,7 +10,7 @@ import {
   List,
   LoaderCircle,
 } from 'lucide-react'
-import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import type { RemoteEntry } from '@shared/types'
 import type { FileViewMode, SortColumn, SortDirection } from '@/app-types'
 import { formatDate, formatSize, getParentPath } from '@/app-utils'
@@ -82,6 +82,32 @@ export default function FileBrowser({
   onBackgroundContextMenu,
 }: FileBrowserProps) {
   const contentRef = useRef<HTMLDivElement>(null)
+  const hoverCardRef = useRef<HTMLDivElement>(null)
+  const [hoveredEntry, setHoveredEntry] = useState<{
+    entry: RemoteEntry
+    anchorLeft: number
+    anchorTop: number
+    anchorBottom: number
+    left: number
+    top: number
+  } | null>(null)
+
+  const showEntryDetails = (entry: RemoteEntry, element: HTMLElement) => {
+    const bounds = element.getBoundingClientRect()
+    setHoveredEntry({
+      entry,
+      anchorLeft: bounds.left,
+      anchorTop: bounds.top,
+      anchorBottom: bounds.bottom,
+      left: bounds.left,
+      top: bounds.bottom + 6,
+    })
+  }
+
+  const hideEntryDetailsOnBlur = (event: ReactFocusEvent<HTMLElement>) => {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+    setHoveredEntry(null)
+  }
 
   useEffect(() => {
     if (!highlightedPath) return
@@ -90,6 +116,39 @@ export default function FileBrowser({
     target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
     target?.focus({ preventScroll: true })
   }, [highlightedPath, sortedEntries, viewMode])
+
+  useEffect(() => {
+    setHoveredEntry(null)
+  }, [currentPath, entries, sortedEntries, viewMode])
+
+  useLayoutEffect(() => {
+    if (!hoveredEntry || !hoverCardRef.current) return
+
+    const cardBounds = hoverCardRef.current.getBoundingClientRect()
+    const viewportPadding = 8
+    const gap = 6
+    const belowTop = hoveredEntry.anchorBottom + gap
+    const aboveTop = hoveredEntry.anchorTop - cardBounds.height - gap
+    const spaceBelow = window.innerHeight - belowTop - viewportPadding
+    const spaceAbove = hoveredEntry.anchorTop - gap - viewportPadding
+    const canFitBelow = cardBounds.height <= spaceBelow
+    const canFitAbove = cardBounds.height <= spaceAbove
+    const preferredTop = canFitBelow
+      ? belowTop
+      : canFitAbove
+        ? aboveTop
+        : spaceBelow >= spaceAbove
+          ? belowTop
+          : aboveTop
+    const top = Math.max(viewportPadding, Math.min(preferredTop, window.innerHeight - cardBounds.height - viewportPadding))
+    const left = Math.max(viewportPadding, Math.min(hoveredEntry.anchorLeft, window.innerWidth - cardBounds.width - viewportPadding))
+
+    if (left !== hoveredEntry.left || top !== hoveredEntry.top) {
+      setHoveredEntry((current) => current?.entry.path === hoveredEntry.entry.path
+        ? { ...current, left, top }
+        : current)
+    }
+  }, [hoveredEntry])
 
   return (
     <>
@@ -121,7 +180,7 @@ export default function FileBrowser({
         </div>
       </div>
 
-      <div className="file-content-wrap" ref={contentRef} onContextMenu={onBackgroundContextMenu}>
+      <div className="file-content-wrap" ref={contentRef} onContextMenu={onBackgroundContextMenu} onScroll={() => setHoveredEntry(null)}>
         {viewMode === 'details' ? (
           <table className="file-table">
             <thead>
@@ -172,14 +231,22 @@ export default function FileBrowser({
                 className={'file-tile ' + (entry.path === highlightedPath ? 'search-highlight' : '')}
                 key={entry.path}
                 data-entry-path={entry.path}
-                title={entry.name}
+                aria-label={entry.name}
+                aria-describedby={hoveredEntry?.entry.path === entry.path ? 'entry-hover-details' : undefined}
                 tabIndex={entry.type === 'file' || entry.path === highlightedPath ? 0 : -1}
+                onMouseEnter={(event) => showEntryDetails(entry, event.currentTarget)}
+                onMouseLeave={(event) => {
+                  if (event.relatedTarget instanceof Node && hoverCardRef.current?.contains(event.relatedTarget)) return
+                  setHoveredEntry(null)
+                }}
+                onFocus={(event) => showEntryDetails(entry, event.currentTarget)}
+                onBlur={hideEntryDetailsOnBlur}
                 onContextMenu={(event) => onEntryContextMenu(event, entry)}
                 onKeyDown={(event) => onEntryKeyDown(event, entry)}
               >
                 <button
                   className={'file-tile-main ' + (entry.type === 'directory' ? 'directory-entry' : '')}
-                  title={entry.name}
+                  aria-label={entry.name}
                   onClick={() => entry.type === 'directory' && onNavigate(entry.path)}
                   disabled={entry.type !== 'directory'}
                 >
@@ -197,6 +264,22 @@ export default function FileBrowser({
         {loading && <div className="table-state"><LoaderCircle className="spin" size={19} /> 正在读取目录</div>}
         {!loading && entries.length === 0 && <div className="table-state empty-directory"><Folder size={22} /> 此目录为空</div>}
       </div>
+      {viewMode === 'icons' && hoveredEntry && (
+        <div
+          className="entry-hover-card"
+          id="entry-hover-details"
+          ref={hoverCardRef}
+          role="tooltip"
+          style={{ left: hoveredEntry.left, top: hoveredEntry.top }}
+          onMouseLeave={() => setHoveredEntry(null)}
+        >
+          <div className="entry-hover-row"><span>名称</span><strong>{hoveredEntry.entry.name}</strong></div>
+          <div className="entry-hover-row"><span>路径</span><span className="entry-hover-value path-value">{hoveredEntry.entry.path}</span></div>
+          <div className="entry-hover-row"><span>大小</span><span className="entry-hover-value">{hoveredEntry.entry.type === 'directory' ? '—' : formatSize(hoveredEntry.entry.size)}</span></div>
+          <div className="entry-hover-row"><span>修改时间</span><span className="entry-hover-value">{formatDate(hoveredEntry.entry.modifiedAt)}</span></div>
+          <div className="entry-hover-row"><span>权限</span><code>{hoveredEntry.entry.permissions}</code></div>
+        </div>
+      )}
     </>
   )
 }

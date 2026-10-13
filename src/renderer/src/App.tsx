@@ -33,6 +33,20 @@ import {
   getParentPath,
 } from './app-utils'
 
+const entryTypeLabels: Record<RemoteEntry['type'], string> = {
+  directory: '文件夹',
+  file: '文件',
+  symlink: '符号链接',
+  other: '其他',
+}
+
+function getEntryTypeExtension(name: string): string {
+  const extensionStart = name.lastIndexOf('.')
+  return extensionStart > 0 && extensionStart < name.length - 1
+    ? name.slice(extensionStart + 1).toLocaleLowerCase('zh-CN')
+    : ''
+}
+
 export default function App() {
   const [connectedProfileId, setConnectedProfileId] = useState<string | null>(null)
   const [currentPath, setCurrentPath] = useState('/')
@@ -176,7 +190,7 @@ export default function App() {
     window.addEventListener('blur', dismiss)
     window.addEventListener('resize', dismiss)
     window.addEventListener('scroll', dismiss, true)
-    contextMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    contextMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not([aria-haspopup="menu"])')?.focus()
     return () => {
       document.removeEventListener('pointerdown', dismissOutside, true)
       window.removeEventListener('keydown', dismissOnEscape)
@@ -331,7 +345,7 @@ export default function App() {
   }
 
   const openBrowserContextMenu = (menu: BrowserContextMenuState) => {
-    const itemCount = menu.kind === 'directory' ? 3 : menu.entry.type === 'file' ? 4 : 3
+    const itemCount = menu.kind === 'directory' ? 4 : menu.entry.type === 'file' ? 4 : 3
     const menuWidth = 204
     const menuHeight = itemCount * 34 + 14
     setBrowserContextMenu({
@@ -430,10 +444,22 @@ export default function App() {
   }
 
   const handleContextMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const activeItem = document.activeElement as HTMLElement
+    if (event.key === 'ArrowRight' && activeItem.getAttribute('aria-haspopup') === 'menu') {
+      event.preventDefault()
+      activeItem.parentElement?.querySelector<HTMLElement>('.sort-menu-item')?.focus()
+      return
+    }
+    if (event.key === 'ArrowLeft' && activeItem.closest('.sort-submenu-panel')) {
+      event.preventDefault()
+      activeItem.closest('.context-submenu')?.querySelector<HTMLElement>('.submenu-trigger')?.focus()
+      return
+    }
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
     event.preventDefault()
-    const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'))
-    const index = items.indexOf(document.activeElement as HTMLElement)
+    const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]'))
+      .filter((item) => item.getClientRects().length > 0)
+    const index = items.indexOf(activeItem)
     const step = event.key === 'ArrowDown' ? 1 : -1
     items[(index + step + items.length) % items.length]?.focus()
   }
@@ -458,6 +484,11 @@ export default function App() {
       comparison = entryNameCollator.compare(left.name, right.name)
     } else if (sort.column === 'size') {
       comparison = left.type === 'directory' ? 0 : left.size - right.size
+    } else if (sort.column === 'type') {
+      comparison = entryNameCollator.compare(entryTypeLabels[left.type], entryTypeLabels[right.type])
+      if (comparison === 0 && left.type === 'file' && right.type === 'file') {
+        comparison = entryNameCollator.compare(getEntryTypeExtension(left.name), getEntryTypeExtension(right.name))
+      }
     } else if (sort.column === 'modifiedAt') {
       if (left.modifiedAt === null || right.modifiedAt === null) {
         if (left.modifiedAt === null && right.modifiedAt !== null) return 1
@@ -558,8 +589,11 @@ export default function App() {
         {browserContextMenu && (
           <FileContextMenu
             menu={browserContextMenu}
+            sort={sort}
             elementRef={contextMenuRef}
             onKeyDown={handleContextMenuKeyDown}
+            onSelectSortColumn={(column) => setSort((current) => ({ ...current, column }))}
+            onSelectSortDirection={(direction) => setSort((current) => ({ ...current, direction }))}
             onPreview={(entry) => {
               setBrowserContextMenu(null)
               void previewFile(entry)

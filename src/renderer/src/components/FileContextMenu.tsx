@@ -1,12 +1,24 @@
-import { ArrowDownToLine, Copy, Eye, FolderPlus, Trash2, Upload } from 'lucide-react'
-import type { KeyboardEvent, RefObject } from 'react'
+import { ArrowDownToLine, ArrowUpDown, Check, ChevronRight, Copy, Eye, FolderPlus, Trash2, Upload } from 'lucide-react'
+import { useState, type KeyboardEvent, type RefObject } from 'react'
 import type { RemoteEntry } from '@shared/types'
+import type { SortColumn, SortDirection } from '@/app-types'
 import type { BrowserContextMenu as BrowserContextMenuState } from '@/app-types'
+
+const sortOptions: { column: SortColumn; label: string }[] = [
+  { column: 'name', label: '名称' },
+  { column: 'modifiedAt', label: '修改日期' },
+  { column: 'type', label: '类型' },
+  { column: 'size', label: '大小' },
+  { column: 'permissions', label: '权限' },
+]
 
 interface FileContextMenuProps {
   menu: BrowserContextMenuState
+  sort: { column: SortColumn; direction: SortDirection }
   elementRef: RefObject<HTMLDivElement | null>
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
+  onSelectSortColumn: (column: SortColumn) => void
+  onSelectSortDirection: (direction: SortDirection) => void
   onPreview: (entry: RemoteEntry) => void
   onDownload: (entry: RemoteEntry) => void
   onCopyPath: (entry: RemoteEntry) => void
@@ -18,8 +30,11 @@ interface FileContextMenuProps {
 
 export default function FileContextMenu({
   menu,
+  sort,
   elementRef,
   onKeyDown,
+  onSelectSortColumn,
+  onSelectSortDirection,
   onPreview,
   onDownload,
   onCopyPath,
@@ -28,6 +43,13 @@ export default function FileContextMenu({
   onCreateDirectory,
   onUpload,
 }: FileContextMenuProps) {
+  const [sortMenuOpen, setSortMenuOpen] = useState(false)
+  const menuWidth = 204
+  const submenuWidth = 184
+  const submenuHeight = sortOptions.length * 34 + 2 + 9 + 2 * 34 + 16
+  const opensLeft = menu.x + menuWidth + submenuWidth > window.innerWidth - 8
+  const opensUp = menu.y + submenuHeight > window.innerHeight - 8
+
   return (
     <div
       className="browser-context-menu"
@@ -57,6 +79,64 @@ export default function FileContextMenu({
         </>
       ) : (
         <>
+          <div
+            className="context-submenu"
+            onMouseEnter={() => setSortMenuOpen(true)}
+            onMouseLeave={() => {
+              if (!(document.activeElement as HTMLElement).closest('.sort-submenu-panel')) setSortMenuOpen(false)
+            }}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setSortMenuOpen(false)
+            }}
+          >
+            <button
+              className="entry-context-action submenu-trigger"
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={sortMenuOpen}
+              onFocus={() => setSortMenuOpen(true)}
+              onClick={() => setSortMenuOpen(true)}
+            >
+              <span className="submenu-trigger-label"><ArrowUpDown size={16} /> 排序方式</span>
+              <ChevronRight size={14} />
+            </button>
+            {sortMenuOpen && (
+              <div
+                className={'sort-submenu-panel' + (opensLeft ? ' opens-left' : '') + (opensUp ? ' opens-up' : '')}
+                role="menu"
+                aria-label="排序方式"
+              >
+                {sortOptions.map((option) => (
+                  <button
+                    key={option.column}
+                    className="sort-menu-item"
+                    role="menuitemradio"
+                    aria-checked={sort.column === option.column}
+                    onClick={() => onSelectSortColumn(option.column)}
+                  >
+                    <span className="sort-menu-mark">{sort.column === option.column && <Check size={14} />}</span>
+                    {option.label}
+                  </button>
+                ))}
+                <div className="sort-menu-divider" role="separator" />
+                {([
+                  ['ascending', '递增'],
+                  ['descending', '递减'],
+                ] as const).map(([direction, label]) => (
+                  <button
+                    key={direction}
+                    className="sort-menu-item"
+                    role="menuitemradio"
+                    aria-checked={sort.direction === direction}
+                    onClick={() => onSelectSortDirection(direction)}
+                  >
+                    <span className="sort-menu-mark">{sort.direction === direction && <Check size={14} />}</span>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button className="entry-context-action" role="menuitem" onClick={onCopyCurrentPath}>
             <Copy size={16} /> 复制路径
           </button>
