@@ -5,19 +5,14 @@ import { mkdir, unlink } from 'node:fs/promises'
 import { extname, join, posix } from 'node:path'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import type { PreviewLimits, PreviewResult } from '@shared/types'
+import type { SFTPWrapper } from 'ssh2'
+import type { LogPreviewPage, PreviewLimits, PreviewResult } from '@shared/types'
+import { previewFileType } from '@shared/preview-file-type'
 import { previewAssets, sessions } from './runtime'
 import { readPreviewLimits } from './state-store'
-import { fileType, sftpLstat } from './sftp-utils'
+import { fileType, normalizedRemotePath, sftpLstat } from './sftp-utils'
 
-function previewType(remotePath: string): PreviewResult['type'] | null {
-  const extension = extname(remotePath).toLowerCase()
-  if (['.jpg', '.jpeg', '.png', '.gif'].includes(extension)) return 'image'
-  if (['.txt', '.sh'].includes(extension)) return 'text'
-  if (extension === '.mp3') return 'audio'
-  if (extension === '.mp4') return 'video'
-  return null
-}
+const LOG_PREVIEW_PAGE_BYTES = 256 * 1024
 
 function previewSizeError(limitMiB: number): Error {
   return new Error('文件超过预览上限（' + limitMiB + ' MiB），请下载后查看')
@@ -27,7 +22,7 @@ export async function previewFile(profileId: string, remotePath: string): Promis
   const session = sessions.get(profileId)
   if (!session) throw new Error('服务器未连接')
   const normalizedPath = posix.resolve('/', remotePath)
-  const type = previewType(normalizedPath)
+  const type = previewFileType(normalizedPath)
   if (!type) throw new Error('暂不支持的文件类型')
   const attrs = await sftpLstat(session.sftp, normalizedPath)
   if (fileType(attrs.mode) !== 'file') throw new Error('只能预览普通文件')
@@ -91,6 +86,97 @@ export async function previewFile(profileId: string, remotePath: string): Promis
   }
   previewAssets.set(token, { kind: 'local', filePath })
   return { type, name, url: 'remote-preview://' + token + '/' + encodeURIComponent(name), token }
+}
+
+async function readSftpRange(sftp: SFTPWrapper, remotePath: string, startOffset: number, endOffset: number): Promise<Buffer> {
+  if (startOffset >= endOffset) return Buffer.alloc(0)
+  const stream = sftp.createReadStream(remotePath, { start: startOffset, end: endOffset - 1 })
+  const chunks: Buffer[] = []
+  let received = 0
+  try {
+    for await (const chunk of stream) {
+      const buffer = Buffer.from(chunk)
+      received += buffer.length
+      if (received > endOffset - startOffset) throw new Error('远程文件读取范围无效')
+      chunks.push(buffer)
+    }
+  } finally {
+    if (!stream.destroyed) stream.destroy()
+  }
+  if (received !== endOffset - startOffset) throw new Error('日志文件已变化，请重新打开预览')
+  return Buffer.concat(chunks, received)
+}
+
+function utf8ContinuationLength(buffer: Buffer): number {
+  let offset = 0
+  while (offset < buffer.length && (buffer[offset] & 0xc0) === 0x80) offset += 1
+  return offset
+}
+
+export async function readLogPreview(
+  profileId: string,
+  remotePath: string,
+  beforeOffset?: number,
+  snapshotSize?: number,
+): Promise<LogPreviewPage> {
+  if (typeof profileId !== 'string' || !profileId) throw new Error('服务器未连接')
+  if ((beforeOffset === undefined) !== (snapshotSize === undefined)) {
+    throw new Error('日志预览位置无效')
+  }
+  if (beforeOffset !== undefined && (!Number.isSafeInteger(beforeOffset) || beforeOffset < 0)) {
+    throw new Error('日志预览位置无效')
+  }
+  if (snapshotSize !== undefined && (!Number.isSafeInteger(snapshotSize) || snapshotSize < 0)) {
+    throw new Error('日志文件大小无效')
+  }
+
+  const session = sessions.get(profileId)
+  if (!session) throw new Error('服务器未连接')
+  const normalizedPath = normalizedRemotePath(remotePath)
+  const attrs = await sftpLstat(session.sftp, normalizedPath)
+  if (fileType(attrs.mode) !== 'file') throw new Error('只能预览普通文件')
+
+  const currentSize = attrs.size ?? 0
+  if (!Number.isSafeInteger(currentSize) || currentSize < 0) throw new Error('日志文件大小无效')
+  const fileSize = snapshotSize ?? currentSize
+  if (fileSize > currentSize) throw new Error('日志文件已变化，请重新打开预览')
+  const endOffset = beforeOffset ?? fileSize
+  if (endOffset > fileSize) throw new Error('日志预览位置无效')
+
+  const limitBytes = readPreviewLimits().textMiB * 1024 * 1024
+  const loadedBytes = fileSize - endOffset
+  const remainingBytes = limitBytes - loadedBytes
+  if (remainingBytes <= 0) throw new Error('已达到文本预览上限')
+
+  const pageBytes = Math.min(LOG_PREVIEW_PAGE_BYTES, remainingBytes, endOffset)
+  const candidateStart = endOffset - pageBytes
+  const range = await readSftpRange(session.sftp, normalizedPath, candidateStart, endOffset)
+  let skip = 0
+  if (candidateStart > 0) {
+    const firstLineBreak = range.indexOf(0x0a)
+    if (firstLineBreak >= 0 && firstLineBreak + 1 < range.length) {
+      skip = firstLineBreak + 1
+    } else {
+      skip = utf8ContinuationLength(range)
+    }
+    if (skip >= range.length) skip = 0
+  }
+
+  let startOffset = candidateStart + skip
+  let content = range.subarray(skip).toString('utf8')
+  if (startOffset >= endOffset && endOffset > 0) {
+    startOffset = candidateStart
+    content = range.toString('utf8')
+  }
+
+  return {
+    name: posix.basename(normalizedPath),
+    content,
+    startOffset,
+    fileSize,
+    limitBytes,
+    hasEarlier: startOffset > 0 && fileSize - startOffset < limitBytes,
+  }
 }
 
 export async function releasePreview(token: string): Promise<void> {

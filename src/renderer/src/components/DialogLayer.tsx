@@ -1,8 +1,9 @@
 import { useEffect, type FormEvent, type KeyboardEvent, type RefObject, type SyntheticEvent, type WheelEvent } from 'react'
-import { Check, Eye, FolderPlus, KeyRound, LayoutGrid, List, LoaderCircle, Server, ShieldCheck, X } from 'lucide-react'
+import { Check, Eye, FileText, FolderPlus, KeyRound, LayoutGrid, List, LoaderCircle, Server, ShieldCheck, X } from 'lucide-react'
 import type {
   FileViewMode,
   ImagePreviewSize,
+  LogPreviewDialog as LogPreviewDialogState,
   PendingHostKey,
   PreviewDialog as PreviewDialogState,
   PreviewLimitKey,
@@ -18,11 +19,13 @@ interface DialogLayerProps {
   settingsForm: SettingsForm | null
   settingsSaving: boolean
   previewDialog: PreviewDialogState | null
+  logPreviewDialog: LogPreviewDialogState | null
   pendingHostKey: PendingHostKey | null
   imageZoom: number
   imagePreviewSize: ImagePreviewSize | null
   imageViewportRef: RefObject<HTMLDivElement | null>
   previewImageRef: RefObject<HTMLImageElement | null>
+  logViewportRef: RefObject<HTMLPreElement | null>
   onCloseProfile: () => void
   onCloseCreateDirectory: () => void
   onUpdateCreateDirectoryName: (name: string) => void
@@ -34,6 +37,7 @@ interface DialogLayerProps {
   onUpdateDefaultView: (mode: FileViewMode) => void
   onSubmitSettings: (event: FormEvent<HTMLFormElement>) => void
   onClosePreview: () => void
+  onLogPreviewScroll: () => void
   onPreviewImageLoad: (event: SyntheticEvent<HTMLImageElement>) => void
   onZoomPreviewImage: (event: WheelEvent<HTMLDivElement>) => void
   onTrustHostKey: () => void
@@ -47,11 +51,13 @@ export default function DialogLayer({
   settingsForm,
   settingsSaving,
   previewDialog,
+  logPreviewDialog,
   pendingHostKey,
   imageZoom,
   imagePreviewSize,
   imageViewportRef,
   previewImageRef,
+  logViewportRef,
   onCloseProfile,
   onCloseCreateDirectory,
   onUpdateCreateDirectoryName,
@@ -63,6 +69,7 @@ export default function DialogLayer({
   onUpdateDefaultView,
   onSubmitSettings,
   onClosePreview,
+  onLogPreviewScroll,
   onPreviewImageLoad,
   onZoomPreviewImage,
   onTrustHostKey,
@@ -78,6 +85,11 @@ export default function DialogLayer({
         return
       }
       if (previewDialog) {
+        event.preventDefault()
+        onClosePreview()
+        return
+      }
+      if (logPreviewDialog) {
         event.preventDefault()
         onClosePreview()
         return
@@ -108,6 +120,7 @@ export default function DialogLayer({
     onDismissHostKey,
     pendingHostKey,
     previewDialog,
+    logPreviewDialog,
     profileDialog,
     createDirectoryDialog,
     creatingDirectory,
@@ -300,6 +313,35 @@ export default function DialogLayer({
                   }}
                 >浏览器不支持视频播放。</video>
               </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {logPreviewDialog && (
+        <div className="modal-backdrop log-preview-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClosePreview()}>
+          <section className="modal preview-modal log-preview-modal" role="dialog" aria-modal="true" aria-labelledby="log-preview-title">
+            <div className="modal-heading">
+              <div>
+                <div className="modal-kicker"><FileText size={14} /> 倒序预览</div>
+                <h2 id="log-preview-title">{logPreviewDialog.name}</h2>
+              </div>
+              <button className="icon-button modal-close" title="关闭预览" aria-label="关闭预览" onClick={onClosePreview}><X size={18} /></button>
+            </div>
+            {logPreviewDialog.kind === 'loading' && (
+              <div className="preview-loading"><LoaderCircle className="spin" size={20} /> 正在读取日志</div>
+            )}
+            {logPreviewDialog.kind === 'ready' && (
+              <>
+                <div className="log-preview-status" aria-live="polite">
+                  {logPreviewDialog.loadingEarlier
+                    ? <><LoaderCircle className="spin" size={14} /> 正在读取更早内容</>
+                    : !logPreviewDialog.hasEarlier
+                      ? logPreviewDialog.startOffset === 0 ? '已到文件开头' : '已达到文本预览上限'
+                      : ''}
+                </div>
+                <pre ref={logViewportRef} className="preview-text log-preview-text" tabIndex={0} onScroll={onLogPreviewScroll}>{logPreviewDialog.content}</pre>
+              </>
             )}
           </section>
         </div>

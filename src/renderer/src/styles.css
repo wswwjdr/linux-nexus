@@ -123,6 +123,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .entry-context-action:hover, .entry-context-action:focus-visible { outline: 0; background: #f0f5f1; }
 .entry-context-action svg { flex: 0 0 auto; color: #77877c; }
 .entry-context-action.preview-action svg { color: var(--blue); }
+.entry-context-action.log-preview-action svg { color: var(--green); }
 .entry-context-action.danger-action { color: #a83e3e; }
 .entry-context-action.danger-action svg { color: #c44f4f; }
 .entry-context-action.danger-action:hover, .entry-context-action.danger-action:focus-visible { background: #fff1f0; }
@@ -238,7 +239,11 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .preview-modal .modal-heading { flex: 0 0 auto; margin-bottom: 14px; }
 .preview-modal .modal-heading h2 { max-width: min(78vw, 480px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .media-preview-modal { width: min(100%, 960px); }
+.log-preview-modal { width: min(100%, 1040px); height: min(820px, calc(100vh - 48px)); }
+.log-preview-status { min-height: 20px; flex: 0 0 auto; display: flex; align-items: center; gap: 6px; color: #829087; font-size: 10px; }
+.log-preview-status svg { color: var(--blue); }
 .preview-text { min-height: 100px; max-height: 65vh; margin: 0; padding: 13px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); color: #2e3c33; background: #f8faf8; font-family: 'Cascadia Code', Consolas, monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.log-preview-text { min-width: 0; min-height: 0; max-height: none; flex: 1; white-space: pre-wrap; overflow-wrap: anywhere; }
 .preview-media { height: min(calc(100vh - 180px), 70vh); min-height: 120px; display: grid; place-items: center; overflow: auto; border-radius: var(--radius); background: #141916; }
 .image-preview-viewport { min-height: 180px; display: block; }
 .preview-image-canvas { min-width: 100%; min-height: 100%; display: flex; justify-content: safe center; align-items: safe center; }
@@ -349,6 +354,8 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 }
 
 @media (max-width: 780px) {
+  .log-preview-backdrop { padding: 8px; }
+  .log-preview-modal { width: 100%; height: calc(100vh - 16px); padding: 15px; }
   .search-backdrop { padding: 8px; }
   .search-modal { width: 100%; height: calc(100vh - 16px); padding: 15px; }
   .search-dialog-header { margin-bottom: 10px; }

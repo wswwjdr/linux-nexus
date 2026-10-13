@@ -78,12 +78,16 @@ export default function App() {
   }, [])
   const {
     previewDialog,
+    logPreviewDialog,
     imageZoom,
     imagePreviewSize,
     imageViewportRef,
     previewImageRef,
+    logViewportRef,
     closePreview,
     previewFile,
+    previewLogFile,
+    onLogPreviewScroll,
     onImageLoad,
     zoomImage,
   } = usePreview({ connectedProfileId, showToast })
@@ -598,6 +602,10 @@ export default function App() {
               setBrowserContextMenu(null)
               void previewFile(entry)
             }}
+            onPreviewLog={(entry) => {
+              setBrowserContextMenu(null)
+              void previewLogFile(entry)
+            }}
             onDownload={(entry) => {
               setBrowserContextMenu(null)
               download(entry)
@@ -632,11 +640,13 @@ export default function App() {
         settingsForm={settingsForm}
         settingsSaving={settingsSaving}
         previewDialog={previewDialog}
+        logPreviewDialog={logPreviewDialog}
         pendingHostKey={pendingHostKey}
         imageZoom={imageZoom}
         imagePreviewSize={imagePreviewSize}
         imageViewportRef={imageViewportRef}
         previewImageRef={previewImageRef}
+        logViewportRef={logViewportRef}
         onCloseProfile={closeProfileDialog}
         onCloseCreateDirectory={() => {
           if (!creatingDirectory) setCreateDirectoryDialog(null)
@@ -650,6 +660,7 @@ export default function App() {
         onUpdateDefaultView={updateDefaultView}
         onSubmitSettings={(event) => void submitSettings(event)}
         onClosePreview={closePreview}
+        onLogPreviewScroll={onLogPreviewScroll}
         onPreviewImageLoad={onImageLoad}
         onZoomPreviewImage={zoomImage}
         onTrustHostKey={() => void trustAndReconnect()}

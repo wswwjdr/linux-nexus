@@ -114,6 +114,15 @@ export type PreviewResult =
   | { type: 'text'; name: string; content: string }
   | { type: 'image' | 'audio' | 'video'; name: string; url: string; token: string }
 
+export interface LogPreviewPage {
+  name: string
+  content: string
+  startOffset: number
+  fileSize: number
+  limitBytes: number
+  hasEarlier: boolean
+}
+
 export interface ConnectionClosedEvent {
   profileId: string
   message: string
@@ -139,6 +148,12 @@ export interface RemoteFilesApi {
   copyRemotePath(profileId: string, remotePath: string): Promise<void>
   deleteRemoteEntry(profileId: string, remotePath: string): Promise<void>
   previewFile(profileId: string, remotePath: string): Promise<PreviewResult>
+  readLogPreview(
+    profileId: string,
+    remotePath: string,
+    beforeOffset?: number,
+    snapshotSize?: number,
+  ): Promise<LogPreviewPage>
   releasePreview(token: string): Promise<void>
   onTransferProgress(callback: (progress: TransferProgress) => void): () => void
   onSearchEvent(callback: (event: RemoteSearchEvent) => void): () => void

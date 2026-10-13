@@ -1,4 +1,4 @@
-import type { PreviewLimits, PreviewResult, RemoteEntry, ServerProfile } from '@shared/types'
+import type { LogPreviewPage, PreviewLimits, PreviewResult, RemoteEntry, ServerProfile } from '@shared/types'
 
 export interface ProfileForm {
   id: string
@@ -40,6 +40,10 @@ export type BrowserContextMenu =
 export type PreviewDialog =
   | { kind: 'loading'; name: string }
   | { kind: 'ready'; result: PreviewResult }
+
+export type LogPreviewDialog =
+  | { kind: 'loading'; name: string }
+  | (LogPreviewPage & { kind: 'ready'; profileId: string; path: string; loadingEarlier: boolean })
 
 export type FileViewMode = 'icons' | 'details'
 export type SortColumn = 'name' | 'size' | 'modifiedAt' | 'permissions' | 'type'

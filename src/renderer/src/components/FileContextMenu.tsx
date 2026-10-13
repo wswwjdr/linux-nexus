@@ -1,6 +1,7 @@
-import { ArrowDownToLine, ArrowUpDown, Check, ChevronRight, Copy, Eye, FolderPlus, Trash2, Upload } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpDown, Check, ChevronRight, Copy, Eye, FileText, FolderPlus, Trash2, Upload } from 'lucide-react'
 import { useState, type KeyboardEvent, type RefObject } from 'react'
 import type { RemoteEntry } from '@shared/types'
+import { previewFileType } from '@shared/preview-file-type'
 import type { SortColumn, SortDirection } from '@/app-types'
 import type { BrowserContextMenu as BrowserContextMenuState } from '@/app-types'
 
@@ -20,6 +21,7 @@ interface FileContextMenuProps {
   onSelectSortColumn: (column: SortColumn) => void
   onSelectSortDirection: (direction: SortDirection) => void
   onPreview: (entry: RemoteEntry) => void
+  onPreviewLog: (entry: RemoteEntry) => void
   onDownload: (entry: RemoteEntry) => void
   onCopyPath: (entry: RemoteEntry) => void
   onDelete: (entry: RemoteEntry) => void
@@ -36,6 +38,7 @@ export default function FileContextMenu({
   onSelectSortColumn,
   onSelectSortDirection,
   onPreview,
+  onPreviewLog,
   onDownload,
   onCopyPath,
   onDelete,
@@ -63,9 +66,16 @@ export default function FileContextMenu({
       {menu.kind === 'entry' ? (
         <>
           {menu.entry.type === 'file' && (
-            <button className="entry-context-action preview-action" role="menuitem" onClick={() => onPreview(menu.entry)}>
-              <Eye size={16} /> 预览
-            </button>
+            <>
+              <button className="entry-context-action preview-action" role="menuitem" onClick={() => onPreview(menu.entry)}>
+                <Eye size={16} /> 预览
+              </button>
+              {previewFileType(menu.entry.name) === 'text' && (
+                <button className="entry-context-action log-preview-action" role="menuitem" onClick={() => onPreviewLog(menu.entry)}>
+                  <FileText size={16} /> 倒序预览
+                </button>
+              )}
+            </>
           )}
           <button className="entry-context-action download-action" role="menuitem" onClick={() => onDownload(menu.entry)}>
             <ArrowDownToLine size={16} /> {menu.entry.type === 'directory' ? '下载文件夹' : '下载文件'}

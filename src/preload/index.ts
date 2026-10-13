@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   ConnectionClosedEvent,
+  LogPreviewPage,
   PreviewResult,
   PreviewLimits,
   RemoteFilesApi,
@@ -40,6 +41,8 @@ const api: RemoteFilesApi = {
     ipcRenderer.invoke('files:delete', profileId, remotePath),
   previewFile: (profileId: string, remotePath: string): Promise<PreviewResult> =>
     ipcRenderer.invoke('files:preview', profileId, remotePath),
+  readLogPreview: (profileId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number): Promise<LogPreviewPage> =>
+    ipcRenderer.invoke('files:preview-log', profileId, remotePath, beforeOffset, snapshotSize),
   releasePreview: (token: string) => ipcRenderer.invoke('files:preview-release', token),
   onTransferProgress: (callback: (progress: TransferProgress) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progress: TransferProgress) => callback(progress)

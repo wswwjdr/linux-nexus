@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type SyntheticEvent, type WheelEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type SyntheticEvent, type WheelEvent } from 'react'
 import type { RemoteEntry } from '@shared/types'
-import type { ImagePreviewSize, PreviewDialog } from '@/app-types'
+import { previewFileType } from '@shared/preview-file-type'
+import type { ImagePreviewSize, LogPreviewDialog, PreviewDialog } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { errorMessage } from '@/app-utils'
 
@@ -11,12 +12,38 @@ interface UsePreviewOptions {
 
 export function usePreview({ connectedProfileId, showToast }: UsePreviewOptions) {
   const [previewDialog, setPreviewDialog] = useState<PreviewDialog | null>(null)
+  const [logPreviewDialog, setLogPreviewDialog] = useState<LogPreviewDialog | null>(null)
   const [imageZoom, setImageZoom] = useState(1)
   const [imagePreviewSize, setImagePreviewSize] = useState<ImagePreviewSize | null>(null)
   const previewTokenRef = useRef<string | null>(null)
   const previewRequestRef = useRef(0)
   const imageViewportRef = useRef<HTMLDivElement>(null)
   const previewImageRef = useRef<HTMLImageElement>(null)
+  const logPreviewRef = useRef<LogPreviewDialog | null>(null)
+  const logViewportRef = useRef<HTMLPreElement>(null)
+  const logScrollRestoreRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null)
+  const logStartAtBottomRef = useRef(false)
+
+  const updateLogPreview = (dialog: LogPreviewDialog | null) => {
+    logPreviewRef.current = dialog
+    setLogPreviewDialog(dialog)
+  }
+
+  useLayoutEffect(() => {
+    if (logPreviewDialog?.kind !== 'ready') return
+    const viewport = logViewportRef.current
+    if (!viewport) return
+    const restore = logScrollRestoreRef.current
+    if (restore) {
+      viewport.scrollTop = restore.scrollTop + viewport.scrollHeight - restore.scrollHeight
+      logScrollRestoreRef.current = null
+      return
+    }
+    if (logStartAtBottomRef.current) {
+      viewport.scrollTop = viewport.scrollHeight
+      logStartAtBottomRef.current = false
+    }
+  }, [logPreviewDialog])
 
   useEffect(() => () => {
     if (previewTokenRef.current) void window.remoteFiles.releasePreview(previewTokenRef.current)
@@ -27,6 +54,9 @@ export function usePreview({ connectedProfileId, showToast }: UsePreviewOptions)
     const token = previewTokenRef.current
     previewTokenRef.current = null
     setPreviewDialog(null)
+    updateLogPreview(null)
+    logScrollRestoreRef.current = null
+    logStartAtBottomRef.current = false
     setImageZoom(1)
     setImagePreviewSize(null)
     if (token) window.setTimeout(() => void window.remoteFiles.releasePreview(token), 0)
@@ -34,9 +64,7 @@ export function usePreview({ connectedProfileId, showToast }: UsePreviewOptions)
 
   const previewFile = async (entry: RemoteEntry) => {
     closePreview()
-    const supportedExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.txt', '.sh', '.mp3', '.mp4'])
-    const extension = entry.name.slice(entry.name.lastIndexOf('.')).toLowerCase()
-    if (!supportedExtensions.has(extension)) {
+    if (!previewFileType(entry.name)) {
       showToast('info', '暂不支持的文件类型：' + entry.name)
       return
     }
@@ -58,6 +86,73 @@ export function usePreview({ connectedProfileId, showToast }: UsePreviewOptions)
         showToast('error', '预览失败：' + errorMessage(error))
       }
     }
+  }
+
+  const previewLogFile = async (entry: RemoteEntry) => {
+    closePreview()
+    if (!connectedProfileId) return
+
+    const profileId = connectedProfileId
+    const requestId = previewRequestRef.current
+    updateLogPreview({ kind: 'loading', name: entry.name })
+    try {
+      const page = await window.remoteFiles.readLogPreview(profileId, entry.path)
+      if (requestId !== previewRequestRef.current) return
+      logStartAtBottomRef.current = true
+      updateLogPreview({
+        ...page,
+        kind: 'ready',
+        profileId,
+        path: entry.path,
+        loadingEarlier: false,
+      })
+    } catch (error) {
+      if (requestId === previewRequestRef.current) {
+        updateLogPreview(null)
+        showToast('error', '倒序预览失败：' + errorMessage(error))
+      }
+    }
+  }
+
+  const loadEarlierLogPreview = async () => {
+    const current = logPreviewRef.current
+    if (current?.kind !== 'ready' || !current.hasEarlier || current.loadingEarlier) return
+    const requestId = previewRequestRef.current
+    updateLogPreview({ ...current, loadingEarlier: true })
+    try {
+      const page = await window.remoteFiles.readLogPreview(
+        current.profileId,
+        current.path,
+        current.startOffset,
+        current.fileSize,
+      )
+      if (requestId !== previewRequestRef.current) return
+      const previous = logPreviewRef.current
+      if (previous?.kind !== 'ready') return
+      const viewport = logViewportRef.current
+      if (viewport) {
+        logScrollRestoreRef.current = { scrollHeight: viewport.scrollHeight, scrollTop: viewport.scrollTop }
+      }
+      updateLogPreview({
+        ...page,
+        kind: 'ready',
+        profileId: current.profileId,
+        path: current.path,
+        content: page.content + previous.content,
+        loadingEarlier: false,
+      })
+    } catch (error) {
+      if (requestId === previewRequestRef.current) {
+        const latest = logPreviewRef.current
+        if (latest?.kind === 'ready') updateLogPreview({ ...latest, loadingEarlier: false })
+        showToast('error', '读取更早日志失败：' + errorMessage(error))
+      }
+    }
+  }
+
+  const onLogPreviewScroll = () => {
+    const viewport = logViewportRef.current
+    if (viewport && viewport.scrollTop <= 48) void loadEarlierLogPreview()
   }
 
   const onImageLoad = (event: SyntheticEvent<HTMLImageElement>) => {
@@ -99,12 +194,16 @@ export function usePreview({ connectedProfileId, showToast }: UsePreviewOptions)
 
   return {
     previewDialog,
+    logPreviewDialog,
     imageZoom,
     imagePreviewSize,
     imageViewportRef,
     previewImageRef,
+    logViewportRef,
     closePreview,
     previewFile,
+    previewLogFile,
+    onLogPreviewScroll,
     onImageLoad,
     zoomImage,
   }
