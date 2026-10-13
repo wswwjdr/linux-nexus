@@ -55,6 +55,18 @@ export async function previewFile(profileId: string, remotePath: string): Promis
   }
 
   const token = randomUUID()
+  if (type === 'audio' || type === 'video') {
+    previewAssets.set(token, {
+      kind: 'remote',
+      profileId,
+      sftp: session.sftp,
+      remotePath: normalizedPath,
+      size: attrs.size ?? 0,
+      activeStreams: new Set(),
+    })
+    return { type, name, url: 'remote-preview://' + token + '/' + encodeURIComponent(name), token }
+  }
+
   const extension = extname(normalizedPath).toLowerCase()
   const directory = join(app.getPath('temp'), 'linux-nexus-preview')
   const filePath = join(directory, token + extension)
@@ -77,13 +89,17 @@ export async function previewFile(profileId: string, remotePath: string): Promis
     await unlink(filePath).catch(() => undefined)
     throw error
   }
-  previewAssets.set(token, filePath)
+  previewAssets.set(token, { kind: 'local', filePath })
   return { type, name, url: 'remote-preview://' + token + '/' + encodeURIComponent(name), token }
 }
 
 export async function releasePreview(token: string): Promise<void> {
-  const filePath = previewAssets.get(token)
-  if (!filePath) return
+  const asset = previewAssets.get(token)
+  if (!asset) return
   previewAssets.delete(token)
-  await unlink(filePath).catch(() => undefined)
+  if (asset.kind === 'local') {
+    await unlink(asset.filePath).catch(() => undefined)
+    return
+  }
+  for (const stream of asset.activeStreams) stream.destroy()
 }

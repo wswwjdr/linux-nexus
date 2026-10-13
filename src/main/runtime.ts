@@ -1,4 +1,5 @@
 import type { BrowserWindow } from 'electron'
+import type { Readable } from 'node:stream'
 import type { Client, SFTPWrapper } from 'ssh2'
 
 export interface ActiveSession {
@@ -21,8 +22,12 @@ export interface ActiveTransfer {
   settled: Promise<void>
 }
 
+export type PreviewAsset =
+  | { kind: 'local'; filePath: string }
+  | { kind: 'remote'; profileId: string; sftp: SFTPWrapper; remotePath: string; size: number; activeStreams: Set<Readable> }
+
 export const sessions = new Map<string, ActiveSession>()
-export const previewAssets = new Map<string, string>()
+export const previewAssets = new Map<string, PreviewAsset>()
 export const activeTransfers = new Map<string, ActiveTransfer>()
 
 let mainWindow: BrowserWindow | null = null
@@ -33,6 +38,15 @@ export function getMainWindow(): BrowserWindow | null {
 
 export function setMainWindow(window: BrowserWindow | null): void {
   mainWindow = window
+}
+
+export function clearPreviewAssets(): void {
+  for (const asset of previewAssets.values()) {
+    if (asset.kind === 'remote') {
+      for (const stream of asset.activeStreams) stream.destroy()
+    }
+  }
+  previewAssets.clear()
 }
 
 export function messageFromError(error: unknown): string {

@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { stopAllSessions } from './connections'
 import { registerIpc } from './ipc'
 import { registerPreviewProtocol } from './preview-protocol'
-import { getMainWindow, messageFromError, previewAssets, setMainWindow } from './runtime'
+import { clearPreviewAssets, getMainWindow, messageFromError, setMainWindow } from './runtime'
 import { configureStateFiles, readPreviewLimits, readState } from './state-store'
 
 protocol.registerSchemesAsPrivileged([{
@@ -60,6 +60,9 @@ function focusMainWindow(): void {
 }
 
 function createWindow(): void {
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'app.ico')
+    : join(app.getAppPath(), 'resources', 'app.ico')
   const window = new BrowserWindow({
     width: 1160,
     height: 760,
@@ -67,6 +70,7 @@ function createWindow(): void {
     minHeight: 560,
     backgroundColor: '#f3f6f3',
     title: 'Linux Nexus',
+    icon: iconPath,
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -85,7 +89,7 @@ function createWindow(): void {
 
   window.on('closed', () => {
     setMainWindow(null)
-    previewAssets.clear()
+    clearPreviewAssets()
     void rm(join(app.getPath('temp'), 'linux-nexus-preview'), { recursive: true, force: true })
   })
 
@@ -132,8 +136,8 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', () => {
+  clearPreviewAssets()
   stopAllSessions()
-  previewAssets.clear()
 })
 
 app.on('will-quit', () => {

@@ -36,6 +36,12 @@
     "files": [
       "out/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "resources/app.ico",
+        "to": "app.ico"
+      }
+    ],
     "asar": true,
     "win": {
       "icon": "resources/app.ico",

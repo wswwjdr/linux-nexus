@@ -3,15 +3,23 @@ import { createReadStream as localCreateReadStream } from 'node:fs'
 import { stat as localStat } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { Readable } from 'node:stream'
-import { previewAssets } from './runtime'
+import { previewAssets, sessions } from './runtime'
 
 export function registerPreviewProtocol(): void {
   session.defaultSession.protocol.handle('remote-preview', async (request) => {
     const token = new URL(request.url).hostname
-    const filePath = previewAssets.get(token)
-    if (!filePath) return new Response(null, { status: 404 })
-    const { size } = await localStat(filePath)
-    const extension = extname(filePath).toLowerCase()
+    const asset = previewAssets.get(token)
+    if (!asset) return new Response(null, { status: 404 })
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD' } })
+    }
+
+    const remoteSession = asset.kind === 'remote' ? sessions.get(asset.profileId) : null
+    if (asset.kind === 'remote' && (!remoteSession || remoteSession.sftp !== asset.sftp)) {
+      return new Response(null, { status: 503 })
+    }
+    const size = asset.kind === 'local' ? (await localStat(asset.filePath)).size : asset.size
+    const extension = extname(asset.kind === 'local' ? asset.filePath : asset.remotePath).toLowerCase()
     const contentType: Record<string, string> = {
       '.gif': 'image/gif',
       '.jpeg': 'image/jpeg',
@@ -62,10 +70,22 @@ export function registerPreviewProtocol(): void {
 
     const status = range ? 206 : 200
     if (request.method === 'HEAD') return new Response(null, { status, headers })
-    const source = range
-      ? localCreateReadStream(filePath, { start: range.start, end: range.end })
-      : localCreateReadStream(filePath)
-    request.signal.addEventListener('abort', () => source.destroy(), { once: true })
-    return new Response(Readable.toWeb(source), { status, headers })
+    const readOptions = range
+      ? { start: range.start, end: range.end }
+      : asset.kind === 'remote' && size > 0 ? { start: 0, end: size - 1 } : undefined
+    const source = asset.kind === 'local'
+      ? localCreateReadStream(asset.filePath, readOptions)
+      : asset.sftp.createReadStream(asset.remotePath, readOptions)
+    const abortSource = () => source.destroy()
+    source.once('close', () => {
+      request.signal.removeEventListener('abort', abortSource)
+      if (asset.kind === 'remote') asset.activeStreams.delete(source)
+    })
+    if (asset.kind === 'remote') {
+      asset.activeStreams.add(source)
+    }
+    if (request.signal.aborted) abortSource()
+    else request.signal.addEventListener('abort', abortSource, { once: true })
+    return new Response(Readable.toWeb(source) as unknown as BodyInit, { status, headers })
   })
 }
