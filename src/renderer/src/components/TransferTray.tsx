@@ -31,6 +31,7 @@ export default function TransferTray({ transfers, onCancel, onDismiss }: Transfe
             </div>
             <div className="transfer-copy">
               <div className="transfer-line"><span>{job.name}</span><span>{status}</span></div>
+              {job.profileName && <div className="transfer-source">{job.profileName}</div>}
               <div className="progress-track">
                 <div className={'progress-fill ' + (complete ? 'complete' : '') + ' ' + (job.state === 'cancelled' ? 'cancelled' : '')} style={{ width: percent + '%' }} />
               </div>

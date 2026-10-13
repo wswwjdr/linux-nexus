@@ -5,9 +5,10 @@ import type { ToastNotice } from '@/GlobalToast'
 import { errorMessage } from '@/app-utils'
 
 interface UseTransfersOptions {
-  connectedProfileId: string | null
+  sessionId: string | null
   currentPath: string
-  loadDirectory: (profileId: string, remotePath: string) => Promise<boolean>
+  profileName: string
+  loadDirectory: (sessionId: string, remotePath: string) => Promise<boolean>
   showToast: (kind: ToastNotice['kind'], message: string) => void
 }
 
@@ -18,8 +19,9 @@ interface RunTransferOptions {
 }
 
 export function useTransfers({
-  connectedProfileId,
+  sessionId,
   currentPath,
+  profileName,
   loadDirectory,
   showToast,
 }: UseTransfersOptions) {
@@ -29,6 +31,8 @@ export function useTransfers({
     setTransfers((current) => ({
       ...current,
       [progress.requestId]: {
+        sessionId: progress.sessionId,
+        profileName: current[progress.requestId]?.profileName ?? '',
         name: current[progress.requestId]?.name ?? progress.remotePath.split('/').pop() ?? '文件',
         direction: progress.direction,
         transferred: progress.transferred,
@@ -46,12 +50,14 @@ export function useTransfers({
     operation: (requestId: string) => Promise<TransferResult>,
     { refreshPath, initialTotal = 0, deferTrayUntilProgress = false }: RunTransferOptions = {},
   ) => {
-    if (!connectedProfileId) return
-    const profileId = connectedProfileId
+    if (!sessionId) return
+    const activeSessionId = sessionId
     const requestId = crypto.randomUUID()
     setTransfers((current) => ({
       ...current,
       [requestId]: {
+        sessionId: activeSessionId,
+        profileName,
         name,
         direction,
         transferred: 0,
@@ -73,6 +79,8 @@ export function useTransfers({
         ...current,
         [requestId]: {
           ...current[requestId],
+          sessionId: activeSessionId,
+          profileName,
           transferred: result === 'completed'
             ? current[requestId]?.total ?? initialTotal
             : current[requestId]?.transferred ?? 0,
@@ -86,14 +94,14 @@ export function useTransfers({
           return next
         })
       }, 2800)
-      if (refreshPath !== undefined && direction === 'upload') await loadDirectory(profileId, refreshPath)
+      if (refreshPath !== undefined && direction === 'upload') await loadDirectory(activeSessionId, refreshPath)
     } catch (error) {
       setTransfers((current) => {
         const next = { ...current }
         delete next[requestId]
         return next
       })
-      if (refreshPath !== undefined && direction === 'upload') await loadDirectory(profileId, refreshPath)
+      if (refreshPath !== undefined && direction === 'upload') await loadDirectory(activeSessionId, refreshPath)
       showToast('error', (direction === 'upload' ? '上传' : '下载') + '失败：' + errorMessage(error))
     }
   }
@@ -117,28 +125,28 @@ export function useTransfers({
   }
 
   const uploadFiles = () => {
-    if (!connectedProfileId) return
-    const profileId = connectedProfileId
+    if (!sessionId) return
+    const activeSessionId = sessionId
     const remoteDirectory = currentPath
     void runTransfer('上传文件', 'upload', (requestId) =>
-      window.remoteFiles.uploadFiles(requestId, profileId, remoteDirectory),
+      window.remoteFiles.uploadFiles(requestId, activeSessionId, remoteDirectory),
     { refreshPath: remoteDirectory, deferTrayUntilProgress: true })
   }
 
   const uploadFolder = () => {
-    if (!connectedProfileId) return
-    const profileId = connectedProfileId
+    if (!sessionId) return
+    const activeSessionId = sessionId
     const remoteDirectory = currentPath
     void runTransfer('上传文件夹', 'upload', (requestId) =>
-      window.remoteFiles.uploadFolder(requestId, profileId, remoteDirectory),
+      window.remoteFiles.uploadFolder(requestId, activeSessionId, remoteDirectory),
     { refreshPath: remoteDirectory, deferTrayUntilProgress: true })
   }
 
   const download = (entry: RemoteEntry) => {
-    if (!connectedProfileId) return
-    const profileId = connectedProfileId
+    if (!sessionId) return
+    const activeSessionId = sessionId
     void runTransfer(entry.name, 'download', (requestId) =>
-      window.remoteFiles.downloadEntry(requestId, profileId, entry.path),
+      window.remoteFiles.downloadEntry(requestId, activeSessionId, entry.path),
     { initialTotal: entry.type === 'file' ? entry.size : 0 })
   }
 

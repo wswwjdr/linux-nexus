@@ -17,17 +17,22 @@ import { fileType, isRemoteNotFound, sftpLstat, sftpMkdir, sftpRename, sftpUnlin
 export async function uploadSelection(
   event: Electron.IpcMainInvokeEvent,
   requestId: string,
+  sessionId: string,
   profileId: string,
   remoteDirectory: string,
   uploadFolder: boolean,
   signal: AbortSignal,
 ): Promise<TransferResult> {
   signal.throwIfAborted()
-  const session = sessions.get(profileId)
-  if (!session) throw new Error('服务器未连接')
-  const selection = await dialog.showOpenDialog(getMainWindow() ?? undefined, uploadFolder
+  const session = sessions.get(sessionId)
+  if (!session?.sftp) throw new Error('SFTP 会话未连接')
+  const options: Electron.OpenDialogOptions = uploadFolder
     ? { title: '选择要上传的文件夹', properties: ['openDirectory'] }
-    : { title: '选择要上传的文件', properties: ['openFile', 'multiSelections'] })
+    : { title: '选择要上传的文件', properties: ['openFile', 'multiSelections'] }
+  const window = getMainWindow()
+  const selection = window
+    ? await dialog.showOpenDialog(window, options)
+    : await dialog.showOpenDialog(options)
   signal.throwIfAborted()
   if (selection.canceled || selection.filePaths.length === 0) return 'not-started'
 
@@ -75,7 +80,7 @@ export async function uploadSelection(
     let committed = false
     try {
       await transferFile('put', session.sftp, item.localPath!, temporaryPath, signal, (transferred) => {
-        sendTransferProgress(event.sender, requestId, profileId, destination, 'upload', completed + transferred, total)
+        sendTransferProgress(event.sender, requestId, sessionId, profileId, destination, 'upload', completed + transferred, total)
       })
       signal.throwIfAborted()
       const backupPath = collisionSet.has(destination)
@@ -115,7 +120,7 @@ export async function uploadSelection(
       }
     }
     completed += item.size
-    sendTransferProgress(event.sender, requestId, profileId, destination, 'upload', completed, total)
+    sendTransferProgress(event.sender, requestId, sessionId, profileId, destination, 'upload', completed, total)
   }
   signal.throwIfAborted()
   return 'completed'

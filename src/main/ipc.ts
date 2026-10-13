@@ -1,14 +1,18 @@
 import { ipcMain, safeStorage } from 'electron'
 import { randomUUID } from 'node:crypto'
-import type { PreviewLimits, RemoteSearchRequest, SaveProfileInput, ServerProfile, TrustHostKeyInput } from '@shared/types'
+import type { PreviewLimits, RemoteSearchRequest, SaveProfileInput, ServerProfile, SessionKind, TrustHostKeyInput } from '@shared/types'
 import {
   connectProfile,
   copyRemotePath,
   createRemoteDirectory,
   deleteRemoteEntry,
   listDirectory,
+  resizeTerminal,
   stopSession,
+  stopSessionsForProfile,
+  writeTerminal,
 } from './connections'
+import { sessions } from './runtime'
 import {
   endpointKey,
   profileFromState,
@@ -61,20 +65,40 @@ export function registerIpc(): void {
     else state.profiles[existingIndex] = savedProfile
     if (password) state.passwords[id] = safeStorage.encryptString(password).toString('base64')
     writeState(state)
-    stopSession(id)
+    stopSessionsForProfile(id)
     return savedProfile
   })
 
   ipcMain.handle('profiles:delete', (_event, profileId: string) => {
-    stopSession(profileId)
+    stopSessionsForProfile(profileId)
     const state = readState()
     state.profiles = state.profiles.filter((profile) => profile.id !== profileId)
     delete state.passwords[profileId]
     writeState(state)
   })
 
-  ipcMain.handle('connection:connect', (_event, profileId: string) => connectProfile(profileId))
-  ipcMain.handle('connection:disconnect', (_event, profileId: string) => stopSession(profileId))
+  ipcMain.handle('connection:connect', (_event, sessionId: string, profileId: string, kind: SessionKind, cols: number, rows: number, startPath: string) => {
+    if (typeof sessionId !== 'string' || !sessionId || typeof profileId !== 'string' || !profileId
+      || (kind !== 'sftp' && kind !== 'terminal')
+      || !Number.isInteger(cols) || cols < 1 || cols > 500
+      || !Number.isInteger(rows) || rows < 1 || rows > 200
+      || typeof startPath !== 'string') {
+      throw new Error('会话连接参数无效')
+    }
+    if (sessions.has(sessionId)) throw new Error('会话编号已在使用')
+    return connectProfile(sessionId, profileId, kind, cols, rows, startPath)
+  })
+  ipcMain.handle('connection:disconnect', (_event, sessionId: string) => stopSession(sessionId))
+  ipcMain.handle('terminal:write', (_event, sessionId: string, data: string) => {
+    if (typeof data !== 'string' || data.length > 65536) throw new Error('终端输入无效')
+    writeTerminal(sessionId, data)
+  })
+  ipcMain.handle('terminal:resize', (_event, sessionId: string, cols: number, rows: number) => {
+    if (!Number.isInteger(cols) || cols < 1 || cols > 500 || !Number.isInteger(rows) || rows < 1 || rows > 200) {
+      throw new Error('终端尺寸无效')
+    }
+    resizeTerminal(sessionId, cols, rows)
+  })
   ipcMain.handle('settings:preview-limits:get', () => readPreviewLimits())
   ipcMain.handle('settings:preview-limits:save', (_event, limits: PreviewLimits) => writePreviewLimits(limits))
   ipcMain.handle('host-key:trust', (_event, input: TrustHostKeyInput) => {
@@ -98,23 +122,37 @@ export function registerIpc(): void {
     writeState(state)
   })
 
-  ipcMain.handle('files:list', (_event, profileId: string, remotePath: string) =>
-    listDirectory(profileId, remotePath))
+  ipcMain.handle('files:list', (_event, sessionId: string, remotePath: string) =>
+    listDirectory(sessionId, remotePath))
   ipcMain.handle('files:search', (_event, request: RemoteSearchRequest) => startRemoteSearch(request))
   ipcMain.handle('files:search-cancel', (_event, requestId: string) => cancelRemoteSearch(requestId))
-  ipcMain.handle('files:upload-files', (event, requestId: string, profileId: string, remoteDirectory: string) =>
-    withTransferLock(profileId, requestId, (signal) => uploadSelection(event, requestId, profileId, remoteDirectory, false, signal)))
-  ipcMain.handle('files:upload-folder', (event, requestId: string, profileId: string, remoteDirectory: string) =>
-    withTransferLock(profileId, requestId, (signal) => uploadSelection(event, requestId, profileId, remoteDirectory, true, signal)))
-  ipcMain.handle('files:download', (event, requestId: string, profileId: string, remotePath: string) =>
-    withTransferLock(profileId, requestId, (signal) => downloadEntry(event, requestId, profileId, remotePath, signal)))
+  const transferSession = (sessionId: string) => {
+    const session = sessions.get(sessionId)
+    if (!session?.sftp) throw new Error('SFTP 会话未连接')
+    return session
+  }
+  ipcMain.handle('files:upload-files', (event, requestId: string, sessionId: string, remoteDirectory: string) => {
+    const { profileId } = transferSession(sessionId)
+    return withTransferLock(profileId, sessionId, requestId,
+      (signal) => uploadSelection(event, requestId, sessionId, profileId, remoteDirectory, false, signal))
+  })
+  ipcMain.handle('files:upload-folder', (event, requestId: string, sessionId: string, remoteDirectory: string) => {
+    const { profileId } = transferSession(sessionId)
+    return withTransferLock(profileId, sessionId, requestId,
+      (signal) => uploadSelection(event, requestId, sessionId, profileId, remoteDirectory, true, signal))
+  })
+  ipcMain.handle('files:download', (event, requestId: string, sessionId: string, remotePath: string) => {
+    const { profileId } = transferSession(sessionId)
+    return withTransferLock(profileId, sessionId, requestId,
+      (signal) => downloadEntry(event, requestId, sessionId, profileId, remotePath, signal))
+  })
   ipcMain.handle('files:transfer-cancel', (_event, requestId: string) => cancelTransfer(requestId))
-  ipcMain.handle('files:create-directory', (_event, profileId: string, remoteDirectory: string, name: string) =>
-    createRemoteDirectory(profileId, remoteDirectory, name))
-  ipcMain.handle('files:path-copy', (_event, profileId: string, remotePath: string) => copyRemotePath(profileId, remotePath))
-  ipcMain.handle('files:delete', (_event, profileId: string, remotePath: string) => deleteRemoteEntry(profileId, remotePath))
-  ipcMain.handle('files:preview', (_event, profileId: string, remotePath: string) => previewFile(profileId, remotePath))
-  ipcMain.handle('files:preview-log', (_event, profileId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number) =>
-    readLogPreview(profileId, remotePath, beforeOffset, snapshotSize))
+  ipcMain.handle('files:create-directory', (_event, sessionId: string, remoteDirectory: string, name: string) =>
+    createRemoteDirectory(sessionId, remoteDirectory, name))
+  ipcMain.handle('files:path-copy', (_event, sessionId: string, remotePath: string) => copyRemotePath(sessionId, remotePath))
+  ipcMain.handle('files:delete', (_event, sessionId: string, remotePath: string) => deleteRemoteEntry(sessionId, remotePath))
+  ipcMain.handle('files:preview', (_event, sessionId: string, remotePath: string) => previewFile(sessionId, remotePath))
+  ipcMain.handle('files:preview-log', (_event, sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number) =>
+    readLogPreview(sessionId, remotePath, beforeOffset, snapshotSize))
   ipcMain.handle('files:preview-release', (_event, token: string) => releasePreview(token))
 }

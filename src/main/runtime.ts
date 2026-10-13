@@ -1,10 +1,13 @@
 import type { BrowserWindow } from 'electron'
 import type { Readable } from 'node:stream'
-import type { Client, SFTPWrapper } from 'ssh2'
+import type { Client, ClientChannel, SFTPWrapper } from 'ssh2'
 
 export interface ActiveSession {
+  sessionId: string
   client: Client
-  sftp: SFTPWrapper
+  kind: 'sftp' | 'terminal'
+  sftp?: SFTPWrapper
+  shell?: ClientChannel
   profileId: string
 }
 
@@ -17,6 +20,7 @@ export interface TransferItem {
 }
 
 export interface ActiveTransfer {
+  sessionId: string
   profileId: string
   controller: AbortController
   settled: Promise<void>
@@ -24,7 +28,7 @@ export interface ActiveTransfer {
 
 export type PreviewAsset =
   | { kind: 'local'; filePath: string }
-  | { kind: 'remote'; profileId: string; sftp: SFTPWrapper; remotePath: string; size: number; activeStreams: Set<Readable> }
+  | { kind: 'remote'; sessionId: string; profileId: string; sftp: SFTPWrapper; remotePath: string; size: number; activeStreams: Set<Readable> }
 
 export const sessions = new Map<string, ActiveSession>()
 export const previewAssets = new Map<string, PreviewAsset>()

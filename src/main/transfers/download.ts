@@ -58,13 +58,14 @@ async function publishDownloadedFile(
 async function downloadRemoteItems(
   event: Electron.IpcMainInvokeEvent,
   requestId: string,
+  sessionId: string,
   profileId: string,
   items: TransferItem[],
   destinationRoot: string,
   signal: AbortSignal,
 ): Promise<void> {
-  const session = sessions.get(profileId)
-  if (!session) throw new Error('服务器未连接')
+  const session = sessions.get(sessionId)
+  if (!session?.sftp) throw new Error('SFTP 会话未连接')
   const total = items.reduce((sum, item) => sum + (item.type === 'file' ? item.size : 0), 0)
   const temporaryDirectory = join(app.getPath('temp'), 'linux-nexus-downloads')
   await mkdir(temporaryDirectory, { recursive: true })
@@ -84,7 +85,7 @@ async function downloadRemoteItems(
     let committed = false
     try {
       await transferFile('get', session.sftp, item.remotePath!, temporaryPath, signal, (transferred) => {
-        sendTransferProgress(event.sender, requestId, profileId, item.remotePath!, 'download', completed + transferred, total)
+        sendTransferProgress(event.sender, requestId, sessionId, profileId, item.remotePath!, 'download', completed + transferred, total)
       })
       signal.throwIfAborted()
       await publishDownloadedFile(temporaryPath, destination, () => { committed = true })
@@ -92,20 +93,21 @@ async function downloadRemoteItems(
       if (!committed) await removeTemporaryFile(temporaryPath)
     }
     completed += item.size
-    sendTransferProgress(event.sender, requestId, profileId, item.remotePath!, 'download', completed, total)
+    sendTransferProgress(event.sender, requestId, sessionId, profileId, item.remotePath!, 'download', completed, total)
   }
 }
 
 export async function downloadEntry(
   event: Electron.IpcMainInvokeEvent,
   requestId: string,
+  sessionId: string,
   profileId: string,
   remotePath: string,
   signal: AbortSignal,
 ): Promise<TransferResult> {
   signal.throwIfAborted()
-  const session = sessions.get(profileId)
-  if (!session) throw new Error('服务器未连接')
+  const session = sessions.get(sessionId)
+  if (!session?.sftp) throw new Error('SFTP 会话未连接')
   const normalizedPath = posix.resolve('/', remotePath)
   const attributes = await sftpLstat(session.sftp, normalizedPath)
   signal.throwIfAborted()
@@ -113,10 +115,14 @@ export async function downloadEntry(
   if (type === 'symlink') throw new Error('不能下载符号链接：' + normalizedPath)
 
   if (type === 'file') {
-    const destination = await dialog.showOpenDialog(getMainWindow() ?? undefined, {
+    const options: Electron.OpenDialogOptions = {
       title: '选择文件下载位置',
       properties: ['openDirectory'],
-    })
+    }
+    const window = getMainWindow()
+    const destination = window
+      ? await dialog.showOpenDialog(window, options)
+      : await dialog.showOpenDialog(options)
     signal.throwIfAborted()
     if (destination.canceled || !destination.filePaths[0]) return 'not-started'
     const fileName = posix.basename(normalizedPath)
@@ -127,17 +133,21 @@ export async function downloadEntry(
     signal.throwIfAborted()
     if (!await confirmOverwrite(collisions, '下载')) return 'not-started'
     signal.throwIfAborted()
-    await downloadRemoteItems(event, requestId, profileId, [item], localPath, signal)
+    await downloadRemoteItems(event, requestId, sessionId, profileId, [item], localPath, signal)
     signal.throwIfAborted()
     return 'completed'
   }
 
   if (type !== 'directory') throw new Error('只能下载普通文件或文件夹')
   if (normalizedPath === '/') throw new Error('暂不支持下载服务器根目录')
-  const destination = await dialog.showOpenDialog(getMainWindow() ?? undefined, {
+  const options: Electron.OpenDialogOptions = {
     title: '选择文件夹下载位置',
     properties: ['openDirectory'],
-  })
+  }
+  const window = getMainWindow()
+  const destination = window
+    ? await dialog.showOpenDialog(window, options)
+    : await dialog.showOpenDialog(options)
   signal.throwIfAborted()
   if (destination.canceled || !destination.filePaths[0]) return 'not-started'
 
@@ -149,7 +159,7 @@ export async function downloadEntry(
   signal.throwIfAborted()
   if (!await confirmOverwrite(collisions, '下载')) return 'not-started'
   signal.throwIfAborted()
-  await downloadRemoteItems(event, requestId, profileId, items, localRoot, signal)
+  await downloadRemoteItems(event, requestId, sessionId, profileId, items, localRoot, signal)
   signal.throwIfAborted()
   return 'completed'
 }

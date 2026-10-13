@@ -104,7 +104,7 @@ export function assertWindowsPath(relativePath: string): void {
 
 export async function confirmOverwrite(collisions: string[], operation: string): Promise<boolean> {
   if (!collisions.length) return true
-  const result = await dialog.showMessageBox(getMainWindow() ?? undefined, {
+  const options: Electron.MessageBoxOptions = {
     type: 'warning',
     title: '确认覆盖文件',
     message: '本次' + operation + '发现 ' + collisions.length + ' 个同名文件。',
@@ -112,12 +112,17 @@ export async function confirmOverwrite(collisions: string[], operation: string):
     buttons: ['取消传输', '覆盖并继续'],
     defaultId: 0,
     cancelId: 0,
-  })
+  }
+  const window = getMainWindow()
+  const result = window
+    ? await dialog.showMessageBox(window, options)
+    : await dialog.showMessageBox(options)
   return result.response === 1
 }
 
 export async function withTransferLock(
   profileId: string,
+  sessionId: string,
   requestId: string,
   operation: (signal: AbortSignal) => Promise<TransferResult>,
 ): Promise<TransferResult> {
@@ -125,7 +130,7 @@ export async function withTransferLock(
     throw new Error('此服务器已有文件传输正在进行')
   }
   if (activeTransfers.has(requestId)) throw new Error('传输请求标识重复')
-  const transfer = { profileId, controller: new AbortController(), settled: Promise.resolve() }
+  const transfer = { profileId, sessionId, controller: new AbortController(), settled: Promise.resolve() }
   activeTransfers.set(requestId, transfer)
   try {
     const operationPromise = operation(transfer.controller.signal)
@@ -146,8 +151,8 @@ export function cancelTransfer(requestId: string): boolean {
   return true
 }
 
-export function cancelTransfersForProfile(profileId: string) {
-  const transfers = [...activeTransfers.values()].filter((transfer) => transfer.profileId === profileId)
+export function cancelTransfersForSession(sessionId: string) {
+  const transfers = [...activeTransfers.values()].filter((transfer) => transfer.sessionId === sessionId)
   for (const transfer of transfers) transfer.controller.abort()
   return transfers
 }
@@ -155,6 +160,7 @@ export function cancelTransfersForProfile(profileId: string) {
 export function sendTransferProgress(
   sender: Electron.WebContents,
   requestId: string,
+  sessionId: string,
   profileId: string,
   remotePath: string,
   direction: TransferProgress['direction'],
@@ -162,7 +168,7 @@ export function sendTransferProgress(
   total: number,
 ): void {
   if (sender.isDestroyed()) return
-  sender.send('files:transfer-progress', { requestId, profileId, remotePath, direction, transferred, total } satisfies TransferProgress)
+  sender.send('files:transfer-progress', { requestId, sessionId, profileId, remotePath, direction, transferred, total } satisfies TransferProgress)
 }
 
 export async function prepareLocalDestination(items: TransferItem[], destinationRoot: string): Promise<string[]> {

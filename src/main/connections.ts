@@ -1,12 +1,14 @@
 import { clipboard } from 'electron'
 import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
+import { StringDecoder } from 'node:string_decoder'
 import { Client } from 'ssh2'
-import type { ConnectResult, RemoteEntry } from '@shared/types'
-import { cancelSearchesForProfile, failSearchesForProfile } from './search'
-import { cancelTransfersForProfile } from './transfers'
+import type { ConnectResult, RemoteEntry, SessionKind } from '@shared/types'
+import { cancelSearchesForSession, failSearchesForSession } from './search'
+import { cancelTransfersForSession } from './transfers'
 import { getMainWindow, sessions, type ActiveSession } from './runtime'
 import { endpointKey, passwordFor, profileFromState, readState } from './state-store'
+import { clearPreviewAssetsForSession } from './previews'
 import {
   executeRemoteCommand,
   fileType,
@@ -16,23 +18,32 @@ import {
   sftpMkdir,
 } from './sftp-utils'
 
-let pendingConnection: { profileId: string; client: Client; generation: number; cancel: () => void } | null = null
-let connectionGeneration = 0
+const pendingConnections = new Map<string, { profileId: string; client: Client; cancel: () => void }>()
 
-function sendConnectionClosed(profileId: string, message: string): void {
+function sendConnectionClosed(sessionId: string, profileId: string, message: string): void {
   const window = getMainWindow()
   if (window && !window.isDestroyed()) {
-    window.webContents.send('connection:closed', { profileId, message })
+    window.webContents.send('connection:closed', { sessionId, profileId, message })
   }
 }
 
-export function stopSession(profileId: string): void {
-  if (pendingConnection?.profileId === profileId) pendingConnection.cancel()
-  cancelSearchesForProfile(profileId)
-  const transfers = cancelTransfersForProfile(profileId)
-  const activeSession = sessions.get(profileId)
+function failActiveSession(activeSession: ActiveSession, message: string): void {
+  if (sessions.get(activeSession.sessionId) !== activeSession) return
+  sessions.delete(activeSession.sessionId)
+  failSearchesForSession(activeSession.sessionId, message)
+  cancelTransfersForSession(activeSession.sessionId)
+  clearPreviewAssetsForSession(activeSession.sessionId)
+  sendConnectionClosed(activeSession.sessionId, activeSession.profileId, message)
+}
+
+export function stopSession(sessionId: string): void {
+  pendingConnections.get(sessionId)?.cancel()
+  cancelSearchesForSession(sessionId)
+  const transfers = cancelTransfersForSession(sessionId)
+  clearPreviewAssetsForSession(sessionId)
+  const activeSession = sessions.get(sessionId)
   if (!activeSession) return
-  sessions.delete(profileId)
+  sessions.delete(sessionId)
   if (transfers.length === 0) {
     activeSession.client.end()
   } else {
@@ -40,14 +51,32 @@ export function stopSession(profileId: string): void {
   }
 }
 
-export function stopAllSessions(): void {
-  pendingConnection?.cancel()
-  for (const profileId of sessions.keys()) stopSession(profileId)
+export function stopSessionsForProfile(profileId: string): void {
+  for (const [sessionId, pending] of pendingConnections) {
+    if (pending.profileId !== profileId) continue
+    stopSession(sessionId)
+    sendConnectionClosed(sessionId, profileId, '服务器配置已更新')
+  }
+  for (const activeSession of sessions.values()) {
+    if (activeSession.profileId !== profileId) continue
+    stopSession(activeSession.sessionId)
+    sendConnectionClosed(activeSession.sessionId, profileId, '服务器配置已更新')
+  }
 }
 
-export function connectProfile(profileId: string): Promise<ConnectResult> {
-  stopAllSessions()
-  const generation = ++connectionGeneration
+export function stopAllSessions(): void {
+  for (const sessionId of pendingConnections.keys()) stopSession(sessionId)
+  for (const sessionId of sessions.keys()) stopSession(sessionId)
+}
+
+export function connectProfile(
+  sessionId: string,
+  profileId: string,
+  kind: SessionKind,
+  cols: number,
+  rows: number,
+  startPath: string,
+): Promise<ConnectResult> {
   const state = readState()
   const profile = profileFromState(state, profileId)
   const password = passwordFor(state, profileId)
@@ -56,51 +85,83 @@ export function connectProfile(profileId: string): Promise<ConnectResult> {
     const client = new Client()
     let settled = false
     let keyIssue: ConnectResult | null = null
-    const isCurrentAttempt = () => connectionGeneration === generation
-      && pendingConnection?.client === client
-      && pendingConnection.generation === generation
+    const isCurrentAttempt = () => pendingConnections.get(sessionId)?.client === client
 
     const finish = (result: ConnectResult) => {
       if (settled) return
       settled = true
-      if (pendingConnection?.client === client) pendingConnection = null
+      if (pendingConnections.get(sessionId)?.client === client) pendingConnections.delete(sessionId)
       if (!result.ok) client.end()
       resolve(result)
     }
 
-    pendingConnection = {
+    pendingConnections.set(sessionId, {
       profileId,
       client,
-      generation,
       cancel: () => finish({ ok: false, reason: 'other', message: '连接已取消' }),
-    }
+    })
 
     client.on('ready', () => {
       if (!isCurrentAttempt()) {
         finish({ ok: false, reason: 'other', message: '连接已取消' })
         return
       }
-      client.sftp((error, sftp) => {
+      const activate = (sftp?: ActiveSession['sftp'], shell?: ActiveSession['shell']) => {
         if (!isCurrentAttempt()) {
           finish({ ok: false, reason: 'other', message: '连接已取消' })
           return
         }
-        if (error) {
-          finish({ ok: false, reason: 'sftp-unavailable', message: error.message })
-          return
+        const activeSession: ActiveSession = { sessionId, client, kind, profileId, sftp, shell }
+        sessions.set(sessionId, activeSession)
+        if (shell) {
+          const stdoutDecoder = new StringDecoder('utf8')
+          const stderrDecoder = new StringDecoder('utf8')
+          const sendOutput = (data: string) => {
+            if (!data) return
+            const window = getMainWindow()
+            if (window && !window.isDestroyed()) {
+              window.webContents.send('terminal:output', { sessionId, data })
+            }
+          }
+          shell.on('data', (chunk: Buffer) => sendOutput(stdoutDecoder.write(chunk)))
+          shell.stderr.on('data', (chunk: Buffer) => sendOutput(stderrDecoder.write(chunk)))
+          shell.on('close', () => {
+            sendOutput(stdoutDecoder.end())
+            sendOutput(stderrDecoder.end())
+            if (sessions.get(sessionId) === activeSession) {
+              failActiveSession(activeSession, 'SSH 终端已退出')
+              client.end()
+            }
+          })
+          shell.on('error', (shellError: Error) => failActiveSession(activeSession, shellError.message))
+          if (startPath) shell.write('cd -- ' + shellQuote(normalizedRemotePath(startPath)) + '\n')
         }
-        const activeSession: ActiveSession = { client, sftp, profileId }
-        sessions.set(profileId, activeSession)
-        finish({ ok: true, path: '/' })
-      })
+        finish({ ok: true, path: kind === 'sftp' ? '/' : startPath })
+      }
+
+      if (kind === 'sftp') {
+        client.sftp((error, sftp) => {
+          if (error) {
+            finish({ ok: false, reason: 'sftp-unavailable', message: error.message })
+            return
+          }
+          activate(sftp)
+        })
+      } else {
+        client.shell({ term: 'xterm-256color', cols, rows }, (error, shell) => {
+          if (error) {
+            finish({ ok: false, reason: 'other', message: error.message })
+            return
+          }
+          activate(undefined, shell)
+        })
+      }
     })
 
     client.on('error', (error: Error & { level?: string }) => {
-      if (sessions.get(profileId)?.client === client) {
-        cancelTransfersForProfile(profileId)
-        failSearchesForProfile(profileId, error.message)
-        sessions.delete(profileId)
-        sendConnectionClosed(profileId, error.message)
+      const activeSession = sessions.get(sessionId)
+      if (activeSession?.client === client) {
+        failActiveSession(activeSession, error.message)
         return
       }
       if (!isCurrentAttempt() || settled) return
@@ -120,12 +181,8 @@ export function connectProfile(profileId: string): Promise<ConnectResult> {
     })
 
     client.on('close', () => {
-      if (sessions.get(profileId)?.client === client) {
-        cancelTransfersForProfile(profileId)
-        failSearchesForProfile(profileId, 'SSH 连接已关闭')
-        sessions.delete(profileId)
-        sendConnectionClosed(profileId, 'SSH 连接已关闭')
-      }
+      const activeSession = sessions.get(sessionId)
+      if (activeSession?.client === client) failActiveSession(activeSession, 'SSH 连接已关闭')
       if (!settled && isCurrentAttempt()) {
         finish({ ok: false, reason: 'unreachable', message: '连接在完成前关闭' })
       }
@@ -137,7 +194,7 @@ export function connectProfile(profileId: string): Promise<ConnectResult> {
       username: profile.username,
       password,
       readyTimeout: 15000,
-      hostVerifier: (hash, callback) => {
+      hostVerifier: (hash: Buffer, callback: (verified: boolean) => void) => {
         if (!isCurrentAttempt()) {
           callback(false)
           return
@@ -157,9 +214,26 @@ export function connectProfile(profileId: string): Promise<ConnectResult> {
   })
 }
 
-export function listDirectory(profileId: string, remotePath: string): Promise<RemoteEntry[]> {
-  const activeSession = sessions.get(profileId)
-  if (!activeSession) throw new Error('服务器未连接')
+function getSftpSession(sessionId: string): ActiveSession & { sftp: NonNullable<ActiveSession['sftp']> } {
+  const activeSession = sessions.get(sessionId)
+  if (!activeSession?.sftp) throw new Error('SFTP 会话未连接')
+  return activeSession as ActiveSession & { sftp: NonNullable<ActiveSession['sftp']> }
+}
+
+export function writeTerminal(sessionId: string, data: string): void {
+  const shell = sessions.get(sessionId)?.shell
+  if (!shell || shell.destroyed) throw new Error('SSH 终端未连接')
+  shell.write(data)
+}
+
+export function resizeTerminal(sessionId: string, cols: number, rows: number): void {
+  const shell = sessions.get(sessionId)?.shell
+  if (!shell || shell.destroyed) throw new Error('SSH 终端未连接')
+  shell.setWindow(rows, cols, 0, 0)
+}
+
+export function listDirectory(sessionId: string, remotePath: string): Promise<RemoteEntry[]> {
+  const activeSession = getSftpSession(sessionId)
   const normalizedPath = posix.resolve('/', remotePath || '/')
 
   return new Promise((resolve, reject) => {
@@ -199,18 +273,17 @@ export function listDirectory(profileId: string, remotePath: string): Promise<Re
   })
 }
 
-export function copyRemotePath(profileId: string, remotePath: string): void {
-  if (!sessions.has(profileId)) throw new Error('服务器未连接')
+export function copyRemotePath(sessionId: string, remotePath: string): void {
+  getSftpSession(sessionId)
   clipboard.writeText(normalizedRemotePath(remotePath))
 }
 
 export async function createRemoteDirectory(
-  profileId: string,
+  sessionId: string,
   remoteDirectory: string,
   name: string,
 ): Promise<void> {
-  const activeSession = sessions.get(profileId)
-  if (!activeSession) throw new Error('服务器未连接')
+  const activeSession = getSftpSession(sessionId)
   if (typeof name !== 'string' || !name || name === '.' || name === '..' || name.includes('/') || name.includes('\0')) {
     throw new Error('名称无效：不能包含路径分隔符，也不能是 . 或 ..')
   }
@@ -222,9 +295,8 @@ export async function createRemoteDirectory(
   await sftpMkdir(activeSession.sftp, targetPath)
 }
 
-export async function deleteRemoteEntry(profileId: string, remotePath: string): Promise<void> {
-  const activeSession = sessions.get(profileId)
-  if (!activeSession) throw new Error('服务器未连接')
+export async function deleteRemoteEntry(sessionId: string, remotePath: string): Promise<void> {
+  const activeSession = getSftpSession(sessionId)
   const normalizedPath = normalizedRemotePath(remotePath)
   if (normalizedPath === '/') throw new Error('不能删除服务器根目录')
   const attributes = await sftpLstat(activeSession.sftp, normalizedPath)

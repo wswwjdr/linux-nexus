@@ -14,7 +14,7 @@ export function registerPreviewProtocol(): void {
       return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD' } })
     }
 
-    const remoteSession = asset.kind === 'remote' ? sessions.get(asset.profileId) : null
+    const remoteSession = asset.kind === 'remote' ? sessions.get(asset.sessionId) : null
     if (asset.kind === 'remote' && (!remoteSession || remoteSession.sftp !== asset.sftp)) {
       return new Response(null, { status: 503 })
     }

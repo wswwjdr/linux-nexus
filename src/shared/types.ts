@@ -26,6 +26,7 @@ export type RemoteSearchScope = 'current' | 'root'
 
 export interface RemoteSearchRequest {
   requestId: string
+  sessionId: string
   profileId: string
   query: string
   mode: RemoteSearchMode
@@ -54,6 +55,7 @@ export interface RemoteSearchResult {
 
 export interface RemoteSearchProgress {
   requestId: string
+  sessionId: string
   profileId: string
   scannedEntries: number
   matchedFiles: number
@@ -92,6 +94,13 @@ export interface TrustHostKeyInput {
   previousFingerprint?: string
 }
 
+export type SessionKind = 'sftp' | 'terminal'
+
+export interface TerminalOutputEvent {
+  sessionId: string
+  data: string
+}
+
 export interface PreviewLimits {
   textMiB: number
   imageMiB: number
@@ -101,6 +110,7 @@ export interface PreviewLimits {
 
 export interface TransferProgress {
   requestId: string
+  sessionId: string
   profileId: string
   remotePath: string
   direction: 'upload' | 'download'
@@ -124,6 +134,7 @@ export interface LogPreviewPage {
 }
 
 export interface ConnectionClosedEvent {
+  sessionId: string
   profileId: string
   message: string
 }
@@ -132,24 +143,26 @@ export interface RemoteFilesApi {
   listProfiles(): Promise<ServerProfile[]>
   saveProfile(input: SaveProfileInput): Promise<ServerProfile>
   deleteProfile(profileId: string): Promise<void>
-  connect(profileId: string): Promise<ConnectResult>
+  connect(sessionId: string, profileId: string, kind: SessionKind, cols: number, rows: number, startPath: string): Promise<ConnectResult>
   trustHostKey(input: TrustHostKeyInput): Promise<void>
-  disconnect(profileId: string): Promise<void>
+  disconnect(sessionId: string): Promise<void>
+  writeTerminal(sessionId: string, data: string): Promise<void>
+  resizeTerminal(sessionId: string, cols: number, rows: number): Promise<void>
   getPreviewLimits(): Promise<PreviewLimits>
   savePreviewLimits(limits: PreviewLimits): Promise<PreviewLimits>
-  listDirectory(profileId: string, remotePath: string): Promise<RemoteEntry[]>
+  listDirectory(sessionId: string, remotePath: string): Promise<RemoteEntry[]>
   searchFiles(request: RemoteSearchRequest): Promise<void>
   cancelSearch(requestId: string): Promise<boolean>
-  uploadFiles(requestId: string, profileId: string, remoteDirectory: string): Promise<TransferResult>
-  uploadFolder(requestId: string, profileId: string, remoteDirectory: string): Promise<TransferResult>
-  downloadEntry(requestId: string, profileId: string, remotePath: string): Promise<TransferResult>
+  uploadFiles(requestId: string, sessionId: string, remoteDirectory: string): Promise<TransferResult>
+  uploadFolder(requestId: string, sessionId: string, remoteDirectory: string): Promise<TransferResult>
+  downloadEntry(requestId: string, sessionId: string, remotePath: string): Promise<TransferResult>
   cancelTransfer(requestId: string): Promise<boolean>
-  createRemoteDirectory(profileId: string, remoteDirectory: string, name: string): Promise<void>
-  copyRemotePath(profileId: string, remotePath: string): Promise<void>
-  deleteRemoteEntry(profileId: string, remotePath: string): Promise<void>
-  previewFile(profileId: string, remotePath: string): Promise<PreviewResult>
+  createRemoteDirectory(sessionId: string, remoteDirectory: string, name: string): Promise<void>
+  copyRemotePath(sessionId: string, remotePath: string): Promise<void>
+  deleteRemoteEntry(sessionId: string, remotePath: string): Promise<void>
+  previewFile(sessionId: string, remotePath: string): Promise<PreviewResult>
   readLogPreview(
-    profileId: string,
+    sessionId: string,
     remotePath: string,
     beforeOffset?: number,
     snapshotSize?: number,
@@ -158,4 +171,5 @@ export interface RemoteFilesApi {
   onTransferProgress(callback: (progress: TransferProgress) => void): () => void
   onSearchEvent(callback: (event: RemoteSearchEvent) => void): () => void
   onConnectionClosed(callback: (event: ConnectionClosedEvent) => void): () => void
+  onTerminalOutput(callback: (event: TerminalOutputEvent) => void): () => void
 }

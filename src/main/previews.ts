@@ -18,9 +18,9 @@ function previewSizeError(limitMiB: number): Error {
   return new Error('文件超过预览上限（' + limitMiB + ' MiB），请下载后查看')
 }
 
-export async function previewFile(profileId: string, remotePath: string): Promise<PreviewResult> {
-  const session = sessions.get(profileId)
-  if (!session) throw new Error('服务器未连接')
+export async function previewFile(sessionId: string, remotePath: string): Promise<PreviewResult> {
+  const session = sessions.get(sessionId)
+  if (!session?.sftp) throw new Error('SFTP 会话未连接')
   const normalizedPath = posix.resolve('/', remotePath)
   const type = previewFileType(normalizedPath)
   if (!type) throw new Error('暂不支持的文件类型')
@@ -53,7 +53,8 @@ export async function previewFile(profileId: string, remotePath: string): Promis
   if (type === 'audio' || type === 'video') {
     previewAssets.set(token, {
       kind: 'remote',
-      profileId,
+      sessionId,
+      profileId: session.profileId,
       sftp: session.sftp,
       remotePath: normalizedPath,
       size: attrs.size ?? 0,
@@ -114,12 +115,12 @@ function utf8ContinuationLength(buffer: Buffer): number {
 }
 
 export async function readLogPreview(
-  profileId: string,
+  sessionId: string,
   remotePath: string,
   beforeOffset?: number,
   snapshotSize?: number,
 ): Promise<LogPreviewPage> {
-  if (typeof profileId !== 'string' || !profileId) throw new Error('服务器未连接')
+  if (typeof sessionId !== 'string' || !sessionId) throw new Error('SFTP 会话未连接')
   if ((beforeOffset === undefined) !== (snapshotSize === undefined)) {
     throw new Error('日志预览位置无效')
   }
@@ -130,8 +131,8 @@ export async function readLogPreview(
     throw new Error('日志文件大小无效')
   }
 
-  const session = sessions.get(profileId)
-  if (!session) throw new Error('服务器未连接')
+  const session = sessions.get(sessionId)
+  if (!session?.sftp) throw new Error('SFTP 会话未连接')
   const normalizedPath = normalizedRemotePath(remotePath)
   const attrs = await sftpLstat(session.sftp, normalizedPath)
   if (fileType(attrs.mode) !== 'file') throw new Error('只能预览普通文件')
@@ -176,6 +177,14 @@ export async function readLogPreview(
     fileSize,
     limitBytes,
     hasEarlier: startOffset > 0 && fileSize - startOffset < limitBytes,
+  }
+}
+
+export function clearPreviewAssetsForSession(sessionId: string): void {
+  for (const [token, asset] of previewAssets) {
+    if (asset.kind !== 'remote' || asset.sessionId !== sessionId) continue
+    for (const stream of asset.activeStreams) stream.destroy()
+    previewAssets.delete(token)
   }
 }
 

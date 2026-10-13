@@ -1,4 +1,4 @@
-import type { LogPreviewPage, PreviewLimits, PreviewResult, RemoteEntry, ServerProfile } from '@shared/types'
+import type { LogPreviewPage, PreviewLimits, PreviewResult, RemoteEntry, ServerProfile, SessionKind } from '@shared/types'
 
 export interface ProfileForm {
   id: string
@@ -10,17 +10,39 @@ export interface ProfileForm {
 }
 
 export interface PendingHostKey {
+  sessionId: string
   profile: ServerProfile
+  kind: SessionKind
+  startPath: string
   fingerprint: string
   previousFingerprint?: string
 }
 
 export interface TransferJob {
+  sessionId: string
+  profileName: string
   name: string
   direction: 'upload' | 'download'
   transferred: number
   total: number
   state: 'starting' | 'running' | 'cancelling' | 'complete' | 'cancelled'
+}
+
+export interface SessionTab {
+  id: string
+  profileId: string
+  kind: SessionKind
+  status: 'connecting' | 'connected' | 'disconnected' | 'awaiting-trust'
+  currentPath: string
+  startPath: string
+  entries: RemoteEntry[]
+  loading: boolean
+  viewMode: FileViewMode
+  sort: { column: SortColumn; direction: SortDirection }
+  highlightedPath: string | null
+  history: string[]
+  historyIndex: number
+  error: string | null
 }
 
 export interface ImagePreviewSize {
@@ -43,7 +65,7 @@ export type PreviewDialog =
 
 export type LogPreviewDialog =
   | { kind: 'loading'; name: string }
-  | (LogPreviewPage & { kind: 'ready'; profileId: string; path: string; loadingEarlier: boolean })
+  | (LogPreviewPage & { kind: 'ready'; sessionId: string; path: string; loadingEarlier: boolean })
 
 export type FileViewMode = 'icons' | 'details'
 export type SortColumn = 'name' | 'size' | 'modifiedAt' | 'permissions' | 'type'

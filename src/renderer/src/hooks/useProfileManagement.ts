@@ -7,11 +7,12 @@ import { emptyForm, errorMessage, previewLimitFields, readDefaultView, toPreview
 interface UseProfileManagementOptions {
   showToast: (kind: ToastNotice['kind'], message: string) => void
   clearToast: () => void
+  onProfileSaved: (profile: ServerProfile) => void
   onProfileDeleted: (profileId: string) => void
   onDefaultViewChange: (mode: FileViewMode) => void
 }
 
-export function useProfileManagement({ showToast, clearToast, onProfileDeleted, onDefaultViewChange }: UseProfileManagementOptions) {
+export function useProfileManagement({ showToast, clearToast, onProfileSaved, onProfileDeleted, onDefaultViewChange }: UseProfileManagementOptions) {
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
   const [dialog, setDialog] = useState<{ mode: 'create' | 'edit'; form: ProfileForm } | null>(null)
   const [settingsForm, setSettingsForm] = useState<SettingsForm | null>(null)
@@ -66,9 +67,12 @@ export function useProfileManagement({ showToast, clearToast, onProfileDeleted, 
   const submitSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!settingsForm) return
-    const limits = Object.fromEntries(
-      previewLimitFields.map(({ key }) => [key, Number(settingsForm[key])]),
-    ) as PreviewLimits
+    const limits: PreviewLimits = {
+      textMiB: Number(settingsForm.textMiB),
+      imageMiB: Number(settingsForm.imageMiB),
+      audioMiB: Number(settingsForm.audioMiB),
+      videoMiB: Number(settingsForm.videoMiB),
+    }
     if (previewLimitFields.some(({ key }) => !Number.isInteger(limits[key]) || limits[key] < 1 || limits[key] > 1024)) {
       showToast('error', '预览上限必须是 1 到 1024 之间的整数')
       return
@@ -108,7 +112,8 @@ export function useProfileManagement({ showToast, clearToast, onProfileDeleted, 
       password: dialog.form.password || undefined,
     }
     try {
-      await window.remoteFiles.saveProfile(input)
+      const savedProfile = await window.remoteFiles.saveProfile(input)
+      onProfileSaved(savedProfile)
       await refreshProfiles()
       setDialog(null)
       clearToast()

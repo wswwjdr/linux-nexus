@@ -50,6 +50,7 @@ const MAX_FILE_SIZE_MIB = 102400
 function validateRequest(value: RemoteSearchRequest): RemoteSearchRequest {
   if (!value || typeof value !== 'object'
     || typeof value.requestId !== 'string' || !value.requestId
+    || typeof value.sessionId !== 'string' || !value.sessionId
     || typeof value.profileId !== 'string' || !value.profileId
     || typeof value.query !== 'string' || !value.query || value.query.length > MAX_QUERY_LENGTH
     || value.query.includes('\0') || value.query.includes('\n') || value.query.includes('\r')
@@ -78,6 +79,7 @@ function validateRequest(value: RemoteSearchRequest): RemoteSearchRequest {
 function progress(task: SearchTask) {
   return {
     requestId: task.request.requestId,
+    sessionId: task.request.sessionId,
     profileId: task.request.profileId,
     scannedEntries: task.scannedEntries,
     matchedFiles: task.matchedFiles,
@@ -398,8 +400,8 @@ printf 'D\\0%s\\0' "$find_status"
 export function startRemoteSearch(input: RemoteSearchRequest): void {
   const request = validateRequest(input)
   if (activeSearches.has(request.requestId)) throw new Error('搜索请求编号已在使用')
-  const session = sessions.get(request.profileId)
-  if (!session) throw new Error('服务器未连接')
+  const session = sessions.get(request.sessionId)
+  if (!session?.sftp || session.profileId !== request.profileId) throw new Error('SFTP 会话未连接')
 
   let expression: RegExp | null = null
   if (request.mode === 'name' && request.matcher === 'regex') expression = new RegExp(request.query)
@@ -502,16 +504,16 @@ export function cancelRemoteSearch(requestId: string): boolean {
   return true
 }
 
-export function cancelSearchesForProfile(profileId: string): void {
+export function cancelSearchesForSession(sessionId: string): void {
   for (const task of activeSearches.values()) {
-    if (task.request.profileId !== profileId) continue
+    if (task.request.sessionId !== sessionId) continue
     cancelRemoteSearch(task.request.requestId)
   }
 }
 
-export function failSearchesForProfile(profileId: string, message: string): void {
+export function failSearchesForSession(sessionId: string, message: string): void {
   for (const task of activeSearches.values()) {
-    if (task.request.profileId !== profileId) continue
+    if (task.request.sessionId !== sessionId) continue
     const stream = task.stream
     finishSearch(task, 'failed', 'SSH 连接中断：' + message)
     stream?.close()

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent as ReactFormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { Cloud, FolderUp, RefreshCw, Search, Settings, Upload, WifiOff } from 'lucide-react'
+import { Cloud, FolderOpen, FolderUp, LoaderCircle, Plus, RefreshCw, Search, Settings, Terminal, Upload, X } from 'lucide-react'
 import GlobalToast, { type ToastNotice } from './GlobalToast'
 import FileBrowser from './components/FileBrowser'
 import FileContextMenu from './components/FileContextMenu'
@@ -7,6 +7,8 @@ import ServerList from './components/ServerList'
 import TransferTray from './components/TransferTray'
 import SearchDialog from './components/SearchDialog'
 import DialogLayer from './components/DialogLayer'
+import SessionChooser from './components/SessionChooser'
+import TerminalPanel from './components/TerminalPanel'
 import { usePreview } from './hooks/usePreview'
 import { useTransfers } from './hooks/useTransfers'
 import { useProfileManagement } from './hooks/useProfileManagement'
@@ -14,6 +16,7 @@ import type {
   RemoteEntry,
   RemoteSearchResult,
   ServerProfile,
+  SessionKind,
   TrustHostKeyInput,
 } from '@shared/types'
 import type {
@@ -21,6 +24,7 @@ import type {
   FileViewMode,
   PendingHostKey,
   RecentConnection,
+  SessionTab,
   SortColumn,
   SortDirection,
 } from './app-types'
@@ -48,31 +52,31 @@ function getEntryTypeExtension(name: string): string {
 }
 
 export default function App() {
-  const [connectedProfileId, setConnectedProfileId] = useState<string | null>(null)
-  const [currentPath, setCurrentPath] = useState('/')
-  const [entries, setEntries] = useState<RemoteEntry[]>([])
-  const [loading, setLoading] = useState(false)
-  const [connectionPending, setConnectionPending] = useState(false)
+  const [sessions, setSessions] = useState<SessionTab[]>([])
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [sessionChooserOpen, setSessionChooserOpen] = useState(false)
+  const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>(readDefaultView)
   const [toast, setToast] = useState<ToastNotice | null>(null)
-  const [viewMode, setViewMode] = useState<FileViewMode>(readDefaultView)
   const [recentConnections, setRecentConnections] = useState<RecentConnection[]>(readRecentConnections)
-  const [sort, setSort] = useState<{ column: SortColumn; direction: SortDirection }>({
-    column: 'name',
-    direction: 'ascending',
-  })
-  const [pendingHostKey, setPendingHostKey] = useState<PendingHostKey | null>(null)
+  const [pendingHostKeys, setPendingHostKeys] = useState<PendingHostKey[]>([])
   const [browserContextMenu, setBrowserContextMenu] = useState<BrowserContextMenuState | null>(null)
   const [createDirectoryDialog, setCreateDirectoryDialog] = useState<{ name: string } | null>(null)
   const [creatingDirectory, setCreatingDirectory] = useState(false)
-  const [searchProfileId, setSearchProfileId] = useState<string | null>(null)
-  const [highlightedPath, setHighlightedPath] = useState<string | null>(null)
+  const [searchSessionId, setSearchSessionId] = useState<string | null>(null)
   const toastSequenceRef = useRef(0)
-  const connectionAttemptRef = useRef(0)
-  const connectingProfilesRef = useRef(new Set<string>())
-  const directoryLoadRef = useRef(0)
-  const pathHistoryRef = useRef<string[]>([])
-  const historyIndexRef = useRef(-1)
+  const connectingSessionsRef = useRef(new Set<string>())
+  const directoryLoadIdsRef = useRef(new Map<string, number>())
   const contextMenuRef = useRef<HTMLDivElement>(null)
+  const sessionsRef = useRef(sessions)
+  sessionsRef.current = sessions
+  const patchSession = useCallback((sessionId: string, patch: Partial<SessionTab>) => {
+    sessionsRef.current = sessionsRef.current.map((session) => session.id === sessionId ? { ...session, ...patch } : session)
+    setSessions((current) => current.map((session) => session.id === sessionId ? { ...session, ...patch } : session))
+  }, [])
+  const updateSession = useCallback((sessionId: string, update: (session: SessionTab) => SessionTab) => {
+    sessionsRef.current = sessionsRef.current.map((session) => session.id === sessionId ? update(session) : session)
+    setSessions((current) => current.map((session) => session.id === sessionId ? update(session) : session))
+  }, [])
   const showToast = useCallback((kind: ToastNotice['kind'], message: string) => {
     setToast({ id: ++toastSequenceRef.current, kind, message })
   }, [])
@@ -90,7 +94,13 @@ export default function App() {
     onLogPreviewScroll,
     onImageLoad,
     zoomImage,
-  } = usePreview({ connectedProfileId, showToast })
+  } = usePreview({
+    sessionId: sessions.find((session) => session.id === activeSessionId)?.kind === 'sftp'
+      && sessions.find((session) => session.id === activeSessionId)?.status === 'connected'
+      ? activeSessionId
+      : null,
+    showToast,
+  })
   const dismissToast = useCallback(() => setToast(null), [])
   const {
     profiles,
@@ -111,28 +121,65 @@ export default function App() {
   } = useProfileManagement({
     showToast,
     clearToast: dismissToast,
+    onProfileSaved: (profile) => {
+      const affectedSessions = sessionsRef.current.filter((session) => session.profileId === profile.id)
+      const activeProfileId = sessionsRef.current.find((session) => session.id === activeSessionId)?.profileId
+      if (activeProfileId === profile.id) closePreview()
+      setPendingHostKeys((current) => current.filter((pending) => pending.profile.id !== profile.id))
+      for (const session of affectedSessions) {
+        patchSession(session.id, { status: 'disconnected', error: '服务器配置已更新', loading: false })
+      }
+      if (searchSessionId && affectedSessions.some((session) => session.id === searchSessionId)) setSearchSessionId(null)
+    },
     onProfileDeleted: (profileId) => {
       setRecentConnections((current) => current.filter((connection) => connection.profileId !== profileId))
+      const affectedSessions = sessionsRef.current.filter((session) => session.profileId === profileId)
+      const activeProfileId = sessionsRef.current.find((session) => session.id === activeSessionId)?.profileId
+      if (activeProfileId === profileId) closePreview()
+      setPendingHostKeys((current) => current.filter((pending) => pending.profile.id !== profileId))
+      const remaining = sessionsRef.current.filter((session) => session.profileId !== profileId)
+      sessionsRef.current = remaining
+      setSessions(remaining)
+      for (const session of affectedSessions) {
+        directoryLoadIdsRef.current.delete(session.id)
+        connectingSessionsRef.current.delete(session.id)
+      }
+      if (searchSessionId && affectedSessions.some((session) => session.id === searchSessionId)) setSearchSessionId(null)
+      if (activeSessionId && !remaining.some((session) => session.id === activeSessionId)) {
+        setActiveSessionId(remaining.at(-1)?.id ?? null)
+      }
     },
-    onDefaultViewChange: setViewMode,
+    onDefaultViewChange: (mode) => {
+      setViewModeDefault(mode)
+      setSessions((current) => current.map((session) => session.kind === 'sftp' ? { ...session, viewMode: mode } : session))
+    },
   })
-  const resetPathNavigation = useCallback(() => {
-    pathHistoryRef.current = []
-    historyIndexRef.current = -1
-    directoryLoadRef.current += 1
-    setBrowserContextMenu(null)
-    setCreateDirectoryDialog(null)
-    setLoading(false)
-  }, [])
 
+  const activeSession = useMemo(
+    () => sessions.find((session) => session.id === activeSessionId) ?? null,
+    [sessions, activeSessionId],
+  )
+  const connectedProfileId = activeSession?.status === 'connected' ? activeSession.profileId : null
+  const connectedSessionId = connectedProfileId ? activeSessionId : null
+  const currentPath = activeSession?.currentPath ?? '/'
+  const entries = activeSession?.entries ?? []
+  const loading = activeSession?.loading ?? false
+  const viewMode = activeSession?.viewMode ?? viewModeDefault
+  const sort = activeSession?.sort ?? { column: 'name' as SortColumn, direction: 'ascending' as SortDirection }
+  const highlightedPath = activeSession?.highlightedPath ?? null
   const connectedProfile = useMemo(
-    () => profiles.find((profile) => profile.id === connectedProfileId) ?? null,
-    [profiles, connectedProfileId],
+    () => profiles.find((profile) => profile.id === activeSession?.profileId) ?? null,
+    [profiles, activeSession?.profileId],
+  )
+  const searchSession = useMemo(
+    () => sessions.find((session) => session.id === searchSessionId) ?? null,
+    [sessions, searchSessionId],
   )
   const searchProfile = useMemo(
-    () => profiles.find((profile) => profile.id === searchProfileId) ?? null,
-    [profiles, searchProfileId],
+    () => profiles.find((profile) => profile.id === searchSession?.profileId) ?? null,
+    [profiles, searchSession?.profileId],
   )
+  const pendingHostKey = pendingHostKeys[0] ?? null
   const offlineProfiles = useMemo(
     () => {
       const connectionTimes = new Map(
@@ -157,26 +204,24 @@ export default function App() {
 
   useEffect(() => {
     const openSearchShortcut = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f' || !connectedProfileId) return
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f'
+        || activeSession?.kind !== 'sftp' || activeSession.status !== 'connected') return
       event.preventDefault()
-      if (!searchProfileId) setSearchProfileId(connectedProfileId)
+      if (!searchSessionId) setSearchSessionId(activeSession.id)
     }
     window.addEventListener('keydown', openSearchShortcut)
     return () => window.removeEventListener('keydown', openSearchShortcut)
-  }, [connectedProfileId, searchProfileId])
+  }, [activeSession, searchSessionId])
 
   useEffect(() => {
     const removeClosedListener = window.remoteFiles.onConnectionClosed((event) => {
-      if (event.profileId !== connectedProfileId) return
-      resetPathNavigation()
-      setConnectedProfileId(null)
-      setEntries([])
-      showToast('error', `连接已断开：${event.message}`)
+      const session = sessionsRef.current.find((candidate) => candidate.id === event.sessionId)
+      if (!session) return
+      patchSession(event.sessionId, { status: 'disconnected', error: event.message, loading: false })
+      if (activeSessionId === event.sessionId) showToast('error', `连接已断开：${event.message}`)
     })
-    return () => {
-      removeClosedListener()
-    }
-  }, [connectedProfileId, resetPathNavigation, showToast])
+    return removeClosedListener
+  }, [activeSessionId, patchSession, showToast])
 
   useEffect(() => {
     if (!browserContextMenu) return
@@ -204,22 +249,25 @@ export default function App() {
     }
   }, [browserContextMenu])
 
-  const loadDirectory = async (profileId: string, remotePath: string) => {
-    const requestId = ++directoryLoadRef.current
-    setHighlightedPath(null)
-    setLoading(true)
+  const loadDirectory = async (sessionId: string, remotePath: string) => {
+    if (!sessionsRef.current.some((session) => session.id === sessionId && session.status === 'connected')) return false
+    const requestId = (directoryLoadIdsRef.current.get(sessionId) ?? 0) + 1
+    directoryLoadIdsRef.current.set(sessionId, requestId)
+    patchSession(sessionId, { highlightedPath: null, loading: true, error: null })
     try {
-      const nextEntries = await window.remoteFiles.listDirectory(profileId, remotePath)
-      if (requestId !== directoryLoadRef.current) return false
-      setEntries(nextEntries)
-      setCurrentPath(remotePath)
-      setToast(null)
+      const nextEntries = await window.remoteFiles.listDirectory(sessionId, remotePath)
+      if (directoryLoadIdsRef.current.get(sessionId) !== requestId
+        || !sessionsRef.current.some((session) => session.id === sessionId && session.status === 'connected')) return false
+      patchSession(sessionId, { entries: nextEntries, currentPath: remotePath, loading: false })
+      if (activeSessionId === sessionId) setToast(null)
       return true
     } catch (error) {
-      if (requestId === directoryLoadRef.current) showToast('error', errorMessage(error))
+      if (directoryLoadIdsRef.current.get(sessionId) === requestId
+        && sessionsRef.current.some((session) => session.id === sessionId && session.status === 'connected')) {
+        patchSession(sessionId, { loading: false })
+        if (activeSessionId === sessionId) showToast('error', errorMessage(error))
+      }
       return false
-    } finally {
-      if (requestId === directoryLoadRef.current) setLoading(false)
     }
   }
 
@@ -230,104 +278,200 @@ export default function App() {
     uploadFolder,
     download,
     dismissTransfer,
-  } = useTransfers({ connectedProfileId, currentPath, loadDirectory, showToast })
+  } = useTransfers({
+    sessionId: connectedSessionId,
+    currentPath,
+    profileName: connectedProfile?.name ?? '',
+    loadDirectory,
+    showToast,
+  })
 
-  const connectTo = async (profile: ServerProfile) => {
-    if (connectedProfileId === profile.id || connectingProfilesRef.current.has(profile.id)) return
-
-    resetPathNavigation()
-    const attempt = ++connectionAttemptRef.current
-    connectingProfilesRef.current.add(profile.id)
-    setConnectionPending(true)
-    setToast(null)
-    setEntries([])
-    setConnectedProfileId(null)
+  const connectSession = async (session: SessionTab, profile: ServerProfile) => {
+    if (connectingSessionsRef.current.has(session.id)) return
+    connectingSessionsRef.current.add(session.id)
+    patchSession(session.id, { status: 'connecting', error: null })
     try {
-      const result = await window.remoteFiles.connect(profile.id)
-      if (attempt !== connectionAttemptRef.current) {
-        if (result.ok) await window.remoteFiles.disconnect(profile.id)
+      const result = await window.remoteFiles.connect(
+        session.id,
+        profile.id,
+        session.kind,
+        100,
+        30,
+        session.kind === 'terminal' ? session.startPath : '',
+      )
+      if (!sessionsRef.current.some((candidate) => candidate.id === session.id)) {
+        if (result.ok) await window.remoteFiles.disconnect(session.id)
         return
       }
       if (!result.ok) {
+        const latestSession = sessionsRef.current.find((candidate) => candidate.id === session.id)
+        if (result.reason === 'other' && result.message === '连接已取消'
+          && latestSession?.status !== 'connecting') return
         if (result.reason === 'host-key-unknown') {
-          setPendingHostKey({ profile, fingerprint: result.fingerprint })
-        } else if (result.reason === 'host-key-changed') {
-          setPendingHostKey({
+          patchSession(session.id, { status: 'awaiting-trust' })
+          setPendingHostKeys((current) => [...current, {
+            sessionId: session.id,
             profile,
+            kind: session.kind,
+            startPath: session.startPath,
+            fingerprint: result.fingerprint,
+          }])
+        } else if (result.reason === 'host-key-changed') {
+          patchSession(session.id, { status: 'awaiting-trust' })
+          setPendingHostKeys((current) => [...current, {
+            sessionId: session.id,
+            profile,
+            kind: session.kind,
+            startPath: session.startPath,
             fingerprint: result.fingerprint,
             previousFingerprint: result.previousFingerprint,
-          })
+          }])
         } else {
-          showToast('error', connectFailureText(result))
+          const message = connectFailureText(result)
+          patchSession(session.id, { status: 'disconnected', error: message })
+          if (activeSessionId === session.id) showToast('error', message)
         }
         return
       }
+      patchSession(session.id, { status: 'connected', error: null })
       setRecentConnections((current) => [
         { profileId: profile.id, connectedAt: Date.now() },
         ...current.filter((connection) => connection.profileId !== profile.id),
       ])
-      setConnectedProfileId(profile.id)
-      pathHistoryRef.current = [result.path]
-      historyIndexRef.current = 0
-      await loadDirectory(profile.id, result.path)
+      if (session.kind === 'sftp') {
+        const path = session.currentPath || result.path
+        patchSession(session.id, {
+          currentPath: path,
+          history: session.history.length ? session.history : [path],
+          historyIndex: session.history.length ? session.historyIndex : 0,
+        })
+        await loadDirectory(session.id, path)
+      }
     } catch (error) {
-      if (attempt === connectionAttemptRef.current) showToast('error', errorMessage(error))
+      const message = errorMessage(error)
+      patchSession(session.id, { status: 'disconnected', error: message })
+      if (activeSessionId === session.id) showToast('error', message)
     } finally {
-      connectingProfilesRef.current.delete(profile.id)
-      if (attempt === connectionAttemptRef.current) setConnectionPending(false)
+      connectingSessionsRef.current.delete(session.id)
     }
   }
 
-  const navigate = (remotePath: string): Promise<boolean> => {
-    if (!connectedProfileId) return Promise.resolve(false)
-    if (remotePath === currentPath) {
-      return loadDirectory(connectedProfileId, remotePath)
+  const openSession = (profile: ServerProfile, kind: SessionKind, startPath = '') => {
+    const id = crypto.randomUUID()
+    const session: SessionTab = {
+      id,
+      profileId: profile.id,
+      kind,
+      status: 'connecting',
+      currentPath: kind === 'sftp' ? '/' : '',
+      startPath,
+      entries: [],
+      loading: kind === 'sftp',
+      viewMode: viewModeDefault,
+      sort: { column: 'name', direction: 'ascending' },
+      highlightedPath: null,
+      history: kind === 'sftp' ? ['/'] : [],
+      historyIndex: kind === 'sftp' ? 0 : -1,
+      error: null,
     }
+    setBrowserContextMenu(null)
+    setSearchSessionId(null)
+    closePreview()
+    setActiveSessionId(id)
+    const nextSessions = [...sessionsRef.current, session]
+    sessionsRef.current = nextSessions
+    setSessions(nextSessions)
+    setSessionChooserOpen(false)
+    setToast(null)
+    void connectSession(session, profile)
+  }
 
-    const previousHistory = pathHistoryRef.current
-    const previousIndex = historyIndexRef.current
-    const nextHistory = previousHistory.slice(0, previousIndex + 1)
+  const connectTo = (profile: ServerProfile) => openSession(profile, 'sftp')
+
+  const createChosenSession = (profileId: string, kind: SessionKind) => {
+    const profile = profiles.find((candidate) => candidate.id === profileId)
+    if (profile) openSession(profile, kind)
+  }
+
+  const reconnectSession = (sessionId: string) => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    const profile = profiles.find((candidate) => candidate.id === session?.profileId)
+    if (!session || !profile) return
+    setActiveSessionId(session.id)
+    void connectSession(session, profile)
+  }
+
+  const closeSession = (sessionId: string) => {
+    const previousSessions = sessionsRef.current
+    const closing = previousSessions.find((session) => session.id === sessionId)
+    if (!closing) return
+    const previousIndex = previousSessions.findIndex((session) => session.id === sessionId)
+    directoryLoadIdsRef.current.delete(sessionId)
+    const remaining = previousSessions.filter((session) => session.id !== sessionId)
+    sessionsRef.current = remaining
+    setSessions(remaining)
+    setPendingHostKeys((current) => current.filter((pending) => pending.sessionId !== sessionId))
+    if (activeSessionId === sessionId) {
+      const next = remaining[previousIndex] ?? remaining[previousIndex - 1]
+      setActiveSessionId(next?.id ?? null)
+      closePreview()
+    }
+    if (searchSessionId === sessionId) setSearchSessionId(null)
+    setBrowserContextMenu(null)
+    void window.remoteFiles.disconnect(sessionId).catch((error) => showToast('error', errorMessage(error)))
+  }
+
+  const activateSession = (sessionId: string) => {
+    if (activeSessionId === sessionId) return
+    closePreview()
+    setSearchSessionId(null)
+    setBrowserContextMenu(null)
+    setCreateDirectoryDialog(null)
+    setActiveSessionId(sessionId)
+  }
+
+  const navigateSession = (sessionId: string, remotePath: string): Promise<boolean> => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (session?.kind !== 'sftp' || session.status !== 'connected') return Promise.resolve(false)
+    const nextHistory = session.history.slice(0, session.historyIndex + 1)
     if (nextHistory.at(-1) !== remotePath) nextHistory.push(remotePath)
-    pathHistoryRef.current = nextHistory
-    historyIndexRef.current = nextHistory.length - 1
-    const nextIndex = historyIndexRef.current
-    return loadDirectory(connectedProfileId, remotePath).then((loaded) => {
-      if (!loaded && historyIndexRef.current === nextIndex) {
-        pathHistoryRef.current = previousHistory
-        historyIndexRef.current = previousIndex
+    updateSession(sessionId, (current) => ({
+      ...current,
+      history: nextHistory,
+      historyIndex: nextHistory.length - 1,
+    }))
+    return loadDirectory(sessionId, remotePath).then((loaded) => {
+      if (!loaded && sessionsRef.current.some((candidate) => candidate.id === sessionId)) {
+        updateSession(sessionId, (current) => ({ ...current, history: session.history, historyIndex: session.historyIndex }))
       }
       return loaded
     })
   }
 
+  const navigate = (remotePath: string): Promise<boolean> => activeSession
+    ? navigateSession(activeSession.id, remotePath)
+    : Promise.resolve(false)
+
   const locateSearchResult = async (result: RemoteSearchResult) => {
-    const profileId = searchProfileId
-    setSearchProfileId(null)
-    if (!profileId || profileId !== connectedProfileId) return
-    const loaded = await navigate(getParentPath(result.path))
-    if (loaded) setHighlightedPath(result.path)
+    const sessionId = searchSessionId
+    setSearchSessionId(null)
+    if (!sessionId) return
+    activateSession(sessionId)
+    const loaded = await navigateSession(sessionId, getParentPath(result.path))
+    if (loaded) patchSession(sessionId, { highlightedPath: result.path })
   }
 
   const movePathHistory = (offset: -1 | 1) => {
-    if (!connectedProfileId) return
-    const previousIndex = historyIndexRef.current
+    if (!activeSession || activeSession.kind !== 'sftp' || activeSession.status !== 'connected') return
+    const previousIndex = activeSession.historyIndex
     const nextIndex = previousIndex + offset
-    const remotePath = pathHistoryRef.current[nextIndex]
+    const remotePath = activeSession.history[nextIndex]
     if (remotePath === undefined) return
 
-    historyIndexRef.current = nextIndex
-    void loadDirectory(connectedProfileId, remotePath).then((loaded) => {
-      if (!loaded && historyIndexRef.current === nextIndex) historyIndexRef.current = previousIndex
+    patchSession(activeSession.id, { historyIndex: nextIndex })
+    void loadDirectory(activeSession.id, remotePath).then((loaded) => {
+      if (!loaded) patchSession(activeSession.id, { historyIndex: previousIndex })
     })
-  }
-  const disconnect = async () => {
-    if (!connectedProfileId) return
-    const profileId = connectedProfileId
-    await window.remoteFiles.disconnect(profileId)
-    resetPathNavigation()
-    setConnectedProfileId(null)
-    setEntries([])
-    setToast(null)
   }
 
   const trustAndReconnect = async () => {
@@ -339,13 +483,20 @@ export default function App() {
     }
     try {
       await window.remoteFiles.trustHostKey(trust)
-      const profile = pendingHostKey.profile
-      setPendingHostKey(null)
-      await connectTo(profile)
+      setPendingHostKeys((current) => current.filter((pending) => pending.sessionId !== pendingHostKey.sessionId))
+      const session = sessionsRef.current.find((candidate) => candidate.id === pendingHostKey.sessionId)
+      if (session) void connectSession(session, pendingHostKey.profile)
     } catch (error) {
-      setPendingHostKey(null)
+      setPendingHostKeys((current) => current.filter((pending) => pending.sessionId !== pendingHostKey.sessionId))
+      patchSession(pendingHostKey.sessionId, { status: 'disconnected', error: errorMessage(error) })
       showToast('error', errorMessage(error))
     }
+  }
+
+  const dismissHostKey = () => {
+    if (!pendingHostKey) return
+    setPendingHostKeys((current) => current.filter((pending) => pending.sessionId !== pendingHostKey.sessionId))
+    patchSession(pendingHostKey.sessionId, { status: 'disconnected', error: '服务器指纹尚未验证' })
   }
 
   const openBrowserContextMenu = (menu: BrowserContextMenuState) => {
@@ -374,10 +525,10 @@ export default function App() {
   }
 
   const copyPath = async (remotePath: string) => {
-    if (!connectedProfileId) return
+    if (!connectedSessionId) return
     setBrowserContextMenu(null)
     try {
-      await window.remoteFiles.copyRemotePath(connectedProfileId, remotePath)
+      await window.remoteFiles.copyRemotePath(connectedSessionId, remotePath)
       showToast('info', '路径已复制')
     } catch (error) {
       showToast('error', `复制路径失败：${errorMessage(error)}`)
@@ -389,15 +540,15 @@ export default function App() {
 
   const submitCreateDirectory = async (event: ReactFormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!connectedProfileId || !createDirectoryDialog) return
-    const profileId = connectedProfileId
+    if (!connectedSessionId || !createDirectoryDialog) return
+    const sessionId = connectedSessionId
     const directory = currentPath
     const { name } = createDirectoryDialog
     setCreatingDirectory(true)
     try {
-      await window.remoteFiles.createRemoteDirectory(profileId, directory, name)
+      await window.remoteFiles.createRemoteDirectory(sessionId, directory, name)
       setCreateDirectoryDialog(null)
-      if (await loadDirectory(profileId, directory)) {
+      if (await loadDirectory(sessionId, directory)) {
         showToast('info', '文件夹已创建')
       }
     } catch (error) {
@@ -408,18 +559,20 @@ export default function App() {
   }
 
   const deleteRemoteEntry = async (entry: RemoteEntry) => {
-    if (!connectedProfileId) return
-    const profileId = connectedProfileId
+    if (!connectedSessionId) return
+    const sessionId = connectedSessionId
     const directory = currentPath
     const isDirectory = entry.type === 'directory'
     const detail = isDirectory ? '及其中所有内容' : ''
     if (!window.confirm(`确定删除“${entry.name}”${detail}？此操作无法撤销。`)) return
     setBrowserContextMenu(null)
     try {
-      await window.remoteFiles.deleteRemoteEntry(profileId, entry.path)
-      setEntries((current) => current.filter((item) => item.path !== entry.path))
-      const refreshed = await loadDirectory(profileId, directory)
-      setEntries((current) => current.filter((item) => item.path !== entry.path))
+      await window.remoteFiles.deleteRemoteEntry(sessionId, entry.path)
+      updateSession(sessionId, (session) => ({
+        ...session,
+        entries: session.entries.filter((item) => item.path !== entry.path),
+      }))
+      const refreshed = await loadDirectory(sessionId, directory)
       if (refreshed) {
         showToast('info', `${isDirectory ? '文件夹' : '文件'}已删除`)
       }
@@ -509,14 +662,39 @@ export default function App() {
   }), [entries, sort])
 
   const toggleSort = (column: SortColumn) => {
-    setSort((current) => current.column === column
-      ? { column, direction: current.direction === 'ascending' ? 'descending' : 'ascending' }
-      : { column, direction: 'ascending' })
+    if (!activeSession || activeSession.kind !== 'sftp') return
+    patchSession(activeSession.id, {
+      sort: activeSession.sort.column === column
+        ? { column, direction: activeSession.sort.direction === 'ascending' ? 'descending' : 'ascending' }
+        : { column, direction: 'ascending' },
+    })
   }
 
   const openSearch = () => {
-    if (connectedProfileId) setSearchProfileId(connectedProfileId)
+    if (activeSession?.kind === 'sftp' && activeSession.status === 'connected') setSearchSessionId(activeSession.id)
   }
+
+  const openTerminalForCurrentPath = () => {
+    if (!connectedProfile || activeSession?.kind !== 'sftp') return
+    openSession(connectedProfile, 'terminal', currentPath)
+  }
+
+  const openSftpForCurrentProfile = () => {
+    if (!activeSession || activeSession.kind !== 'terminal') return
+    const existingSession = sessionsRef.current.find((session) =>
+      session.profileId === activeSession.profileId && session.kind === 'sftp')
+    if (existingSession) {
+      activateSession(existingSession.id)
+      return
+    }
+    if (connectedProfile) openSession(connectedProfile, 'sftp')
+  }
+
+  const reportTerminalError = useCallback((message: string) => {
+    showToast('error', '终端操作失败：' + message)
+  }, [showToast])
+
+  const profileForSession = (session: SessionTab) => profiles.find((profile) => profile.id === session.profileId)
 
   return (
     <div className="app-shell" onAuxClick={(event) => {
@@ -538,12 +716,22 @@ export default function App() {
             </button>
             {connectedProfile && <span className="topbar-separator" />}
             {connectedProfile && <span className="connected-host"><Cloud size={14} /> {connectedProfile.username}@{connectedProfile.host}</span>}
+            {activeSession && activeSession.status !== 'connected' && (
+              <span className={'active-session-status ' + activeSession.status}>
+                {activeSession.status === 'connecting' ? '连接中'
+                  : activeSession.status === 'awaiting-trust' ? '等待确认指纹'
+                    : '已断开'}
+              </span>
+            )}
           </div>
           <div className="topbar-actions">
-            {connectedProfileId ? (
+            {activeSession?.kind === 'sftp' && connectedSessionId ? (
               <>
                 <button className="icon-button toolbar-button" title="搜索文件（Ctrl+F）" aria-label="搜索文件（Ctrl+F）" onClick={openSearch}>
                   <Search size={16} />
+                </button>
+                <button className="icon-button toolbar-button" title="新建 SSH 终端" aria-label="新建 SSH 终端" onClick={openTerminalForCurrentPath}>
+                  <Terminal size={16} />
                 </button>
                 <button className="text-button upload-button" title="上传文件到当前目录" aria-label="上传文件到当前目录" onClick={uploadFiles}>
                   <Upload size={15} /> 上传文件
@@ -551,53 +739,134 @@ export default function App() {
                 <button className="text-button upload-button" title="上传文件夹到当前目录" aria-label="上传文件夹到当前目录" onClick={uploadFolder}>
                   <FolderUp size={15} /> 上传文件夹
                 </button>
-                <button className="icon-button toolbar-button" title="刷新目录" aria-label="刷新目录" disabled={loading} onClick={() => void loadDirectory(connectedProfileId, currentPath)}>
+                <button className="icon-button toolbar-button" title="刷新目录" aria-label="刷新目录" disabled={loading} onClick={() => void loadDirectory(connectedSessionId, currentPath)}>
                   <RefreshCw className={loading ? 'spin' : ''} size={17} />
                 </button>
-                <button className="text-button disconnect-button" onClick={() => void disconnect()}><WifiOff size={15} /> 断开</button>
               </>
-            ) : (
-              <span className="connection-pill"><WifiOff size={14} /> 未连接</span>
-            )}
+            ) : activeSession?.kind === 'terminal' && connectedSessionId ? (
+              <button className="text-button" onClick={openSftpForCurrentProfile}><FolderOpen size={15} /> 文件管理</button>
+            ) : activeSession?.status === 'disconnected' ? (
+              <button className="text-button" onClick={() => reconnectSession(activeSession.id)}><RefreshCw size={14} /> 重连</button>
+            ) : activeSession?.status === 'connecting' ? <LoaderCircle className="spin" size={17} /> : null}
           </div>
         </header>
 
-        {connectedProfile ? (
-          <FileBrowser
-            currentPath={currentPath}
-            entries={entries}
-            loading={loading}
-            viewMode={viewMode}
-            breadcrumbs={breadcrumbs}
-            sort={sort}
-            sortedEntries={sortedEntries}
-            highlightedPath={highlightedPath}
-            onViewModeChange={setViewMode}
-            onNavigate={navigate}
-            onToggleSort={toggleSort}
-            onEntryContextMenu={handleEntryContextMenu}
-            onEntryKeyDown={handleEntryKeyDown}
-            onBackgroundContextMenu={handleBackgroundContextMenu}
-          />
-        ) : (
+        <nav className="session-tabbar" role="tablist" aria-label="会话标签">
+          <div className="session-tab-list">
+            {sessions.map((session) => {
+              const profile = profileForSession(session)
+              const isActive = activeSessionId === session.id
+              const kindLabel = session.kind === 'sftp' ? 'SFTP' : 'SSH'
+              const sameKindSessions = sessions.filter((candidate) =>
+                candidate.profileId === session.profileId && candidate.kind === session.kind)
+              const duplicateIndex = sameKindSessions.findIndex((candidate) => candidate.id === session.id)
+              const baseLabel = profile?.name ?? '服务器'
+              const label = sameKindSessions.length > 1 ? `${baseLabel} (${duplicateIndex + 1})` : baseLabel
+              const title = `${label} · ${kindLabel}${session.kind === 'sftp' ? ' · ' + session.currentPath : ''}`
+              return (
+                <div className={'session-tab ' + (isActive ? 'active' : '')} key={session.id}>
+                  <button
+                    className="session-tab-select"
+                    id={'session-tab-' + session.id}
+                    role="tab"
+                    aria-selected={isActive}
+                    aria-controls={'session-panel-' + session.id}
+                    title={title}
+                    onClick={() => activateSession(session.id)}
+                  >
+                    {session.kind === 'sftp' ? <FolderOpen size={14} /> : <Terminal size={14} />}
+                    <span className="session-tab-label">{label}</span>
+                    <small>{kindLabel}</small>
+                    {session.status === 'connecting' || session.status === 'awaiting-trust'
+                      ? <LoaderCircle className="spin session-tab-state" size={12} />
+                      : <span className={'session-tab-state-dot ' + session.status} />}
+                  </button>
+                  <button
+                    className="session-tab-close"
+                    title={'关闭 ' + label + ' ' + kindLabel}
+                    aria-label={'关闭 ' + label + ' ' + kindLabel}
+                    onClick={() => closeSession(session.id)}
+                  ><X size={13} /></button>
+                </div>
+              )
+            })}
+          </div>
+          <button className="icon-button session-add-button" title="新建会话" aria-label="新建会话" onClick={() => setSessionChooserOpen(true)}>
+            <Plus size={16} />
+          </button>
+        </nav>
+
+        {activeSession?.kind === 'sftp' && connectedSessionId ? (
+          <div className="sftp-session-panel" id={'session-panel-' + activeSession.id} role="tabpanel" aria-labelledby={'session-tab-' + activeSession.id}>
+            <FileBrowser
+              currentPath={currentPath}
+              entries={entries}
+              loading={loading}
+              viewMode={viewMode}
+              breadcrumbs={breadcrumbs}
+              sort={sort}
+              sortedEntries={sortedEntries}
+              highlightedPath={highlightedPath}
+              onViewModeChange={(mode) => patchSession(activeSession.id, { viewMode: mode })}
+              onNavigate={navigate}
+              onToggleSort={toggleSort}
+              onEntryContextMenu={handleEntryContextMenu}
+              onEntryKeyDown={handleEntryKeyDown}
+              onBackgroundContextMenu={handleBackgroundContextMenu}
+            />
+          </div>
+        ) : !activeSession ? (
           <ServerList
             profiles={offlineProfiles}
-            connectionPending={connectionPending}
+            connectionPending={false}
             onAdd={() => openProfileDialog('create')}
             onConnect={(profile) => void connectTo(profile)}
             onEdit={(profile) => openProfileDialog('edit', profile)}
             onDelete={(profile) => void removeProfile(profile)}
           />
-        )}
+        ) : activeSession?.kind === 'terminal' ? null : activeSession ? (
+          <div className="session-connection-state" id={'session-panel-' + activeSession.id} role="tabpanel" aria-labelledby={'session-tab-' + activeSession.id}>
+            {activeSession.status === 'connecting' ? <LoaderCircle className="spin" size={20} /> : <Cloud size={20} />}
+            <strong>{activeSession.status === 'connecting' ? '正在连接服务器' : '会话已断开'}</strong>
+            {activeSession.error && <span>{activeSession.error}</span>}
+            {activeSession.status === 'disconnected' && <button className="text-button" onClick={() => reconnectSession(activeSession.id)}>重连</button>}
+          </div>
+        ) : null}
 
-        {browserContextMenu && (
+        <div className="terminal-session-stack" hidden={activeSession?.kind !== 'terminal'}>
+          {sessions.filter((session) => session.kind === 'terminal').map((session) => (
+            <div
+              className="terminal-session-pane"
+              id={'session-panel-' + session.id}
+              role="tabpanel"
+              aria-labelledby={'session-tab-' + session.id}
+              hidden={activeSessionId !== session.id || activeSession?.kind !== 'terminal'}
+              key={session.id}
+            >
+              {session.status !== 'connected' && (
+                <div className={'terminal-session-notice ' + session.status}>
+                  {session.error ?? (session.status === 'connecting' ? '正在连接 SSH 终端…' : '等待确认服务器指纹')}
+                  {session.status === 'disconnected' && <button className="text-button" onClick={() => reconnectSession(session.id)}>重连</button>}
+                </div>
+              )}
+              <TerminalPanel
+                sessionId={session.id}
+                active={activeSessionId === session.id && activeSession?.kind === 'terminal'}
+                connected={session.status === 'connected'}
+                onError={reportTerminalError}
+              />
+            </div>
+          ))}
+        </div>
+
+        {browserContextMenu && activeSession?.kind === 'sftp' && (
           <FileContextMenu
             menu={browserContextMenu}
             sort={sort}
             elementRef={contextMenuRef}
             onKeyDown={handleContextMenuKeyDown}
-            onSelectSortColumn={(column) => setSort((current) => ({ ...current, column }))}
-            onSelectSortDirection={(direction) => setSort((current) => ({ ...current, direction }))}
+            onSelectSortColumn={(column) => patchSession(activeSession.id, { sort: { ...sort, column } })}
+            onSelectSortDirection={(direction) => patchSession(activeSession.id, { sort: { ...sort, direction } })}
             onPreview={(entry) => {
               setBrowserContextMenu(null)
               void previewFile(entry)
@@ -664,16 +933,29 @@ export default function App() {
         onPreviewImageLoad={onImageLoad}
         onZoomPreviewImage={zoomImage}
         onTrustHostKey={() => void trustAndReconnect()}
-        onDismissHostKey={() => setPendingHostKey(null)}
+        onDismissHostKey={dismissHostKey}
       />
 
-      {searchProfile && searchProfileId && (
+      {searchProfile && searchSession && searchSessionId && (
         <SearchDialog
-          key={searchProfileId}
-          profileId={searchProfileId}
-          currentPath={currentPath}
-          onClose={() => setSearchProfileId(null)}
+          key={searchSessionId}
+          sessionId={searchSessionId}
+          profileId={searchSession.profileId}
+          currentPath={searchSession.currentPath}
+          onClose={() => setSearchSessionId(null)}
           onSelectResult={(result) => void locateSearchResult(result)}
+        />
+      )}
+
+      {sessionChooserOpen && (
+        <SessionChooser
+          profiles={profiles}
+          onClose={() => setSessionChooserOpen(false)}
+          onAddProfile={() => {
+            setSessionChooserOpen(false)
+            openProfileDialog('create')
+          }}
+          onCreate={createChosenSession}
         />
       )}
 

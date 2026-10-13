@@ -6,11 +6,11 @@ import type { ToastNotice } from '@/GlobalToast'
 import { errorMessage } from '@/app-utils'
 
 interface UsePreviewOptions {
-  connectedProfileId: string | null
+  sessionId: string | null
   showToast: (kind: ToastNotice['kind'], message: string) => void
 }
 
-export function usePreview({ connectedProfileId, showToast }: UsePreviewOptions) {
+export function usePreview({ sessionId, showToast }: UsePreviewOptions) {
   const [previewDialog, setPreviewDialog] = useState<PreviewDialog | null>(null)
   const [logPreviewDialog, setLogPreviewDialog] = useState<LogPreviewDialog | null>(null)
   const [imageZoom, setImageZoom] = useState(1)
@@ -68,12 +68,12 @@ export function usePreview({ connectedProfileId, showToast }: UsePreviewOptions)
       showToast('info', '暂不支持的文件类型：' + entry.name)
       return
     }
-    if (!connectedProfileId) return
+    if (!sessionId) return
 
     const requestId = previewRequestRef.current
     setPreviewDialog({ kind: 'loading', name: entry.name })
     try {
-      const result = await window.remoteFiles.previewFile(connectedProfileId, entry.path)
+      const result = await window.remoteFiles.previewFile(sessionId, entry.path)
       if (requestId !== previewRequestRef.current) {
         if (result.type !== 'text') void window.remoteFiles.releasePreview(result.token)
         return
@@ -90,19 +90,19 @@ export function usePreview({ connectedProfileId, showToast }: UsePreviewOptions)
 
   const previewLogFile = async (entry: RemoteEntry) => {
     closePreview()
-    if (!connectedProfileId) return
+    if (!sessionId) return
 
-    const profileId = connectedProfileId
+    const activeSessionId = sessionId
     const requestId = previewRequestRef.current
     updateLogPreview({ kind: 'loading', name: entry.name })
     try {
-      const page = await window.remoteFiles.readLogPreview(profileId, entry.path)
+      const page = await window.remoteFiles.readLogPreview(activeSessionId, entry.path)
       if (requestId !== previewRequestRef.current) return
       logStartAtBottomRef.current = true
       updateLogPreview({
         ...page,
         kind: 'ready',
-        profileId,
+        sessionId: activeSessionId,
         path: entry.path,
         loadingEarlier: false,
       })
@@ -121,7 +121,7 @@ export function usePreview({ connectedProfileId, showToast }: UsePreviewOptions)
     updateLogPreview({ ...current, loadingEarlier: true })
     try {
       const page = await window.remoteFiles.readLogPreview(
-        current.profileId,
+        current.sessionId,
         current.path,
         current.startOffset,
         current.fileSize,
@@ -136,7 +136,7 @@ export function usePreview({ connectedProfileId, showToast }: UsePreviewOptions)
       updateLogPreview({
         ...page,
         kind: 'ready',
-        profileId: current.profileId,
+        sessionId: current.sessionId,
         path: current.path,
         content: page.content + previous.content,
         loadingEarlier: false,

@@ -54,11 +54,47 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .topbar-separator { width: 1px; height: 17px; background: var(--line-strong); }
 .connected-host { display: flex; align-items: center; gap: 6px; color: #64736a; font-size: 12px; }
 .connected-host svg { color: var(--blue); }
+.active-session-status { overflow: hidden; color: #8a7760; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.active-session-status.disconnected { color: var(--red); }
+.active-session-status.connecting { color: var(--blue); }
+.active-session-status.awaiting-trust { color: var(--gold); }
 .connection-pill { display: flex; align-items: center; gap: 7px; color: #859188; font-size: 12px; }
 .text-button { height: 31px; display: inline-flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius); color: #5e6d63; background: white; cursor: pointer; }
 .text-button:hover { background: #f8faf8; border-color: var(--line-strong); }
 .disconnect-button svg { color: var(--red); }
 .toolbar-button { width: 32px; height: 32px; border-color: var(--line); background: white; }
+.session-tabbar { height: 42px; flex: 0 0 42px; display: flex; align-items: center; gap: 7px; padding: 0 14px; border-bottom: 1px solid var(--line); background: #f8faf8; }
+.session-tab-list { min-width: 0; height: 100%; flex: 1; display: flex; align-items: stretch; gap: 3px; overflow-x: auto; scrollbar-width: thin; }
+.session-tab { min-width: 105px; max-width: 230px; flex: 0 1 205px; display: flex; align-items: center; margin-top: 5px; border: 1px solid transparent; border-bottom: 0; border-radius: 5px 5px 0 0; color: #738078; background: transparent; }
+.session-tab.active { border-color: var(--line); color: #35443a; background: white; box-shadow: 0 -1px 0 white; }
+.session-tab-select { min-width: 0; height: 35px; flex: 1; display: flex; align-items: center; gap: 7px; padding: 0 5px 0 10px; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.session-tab-select > svg { flex: 0 0 auto; color: #63816e; }
+.session-tab-label { min-width: 0; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.session-tab-select small { flex: 0 0 auto; color: #98a39b; font-size: 9px; }
+.session-tab-state { flex: 0 0 auto; color: var(--blue); }
+.session-tab-state-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #8d9a91; }
+.session-tab-state-dot.connected { background: #4d9a70; }
+.session-tab-state-dot.disconnected { background: #c56658; }
+.session-tab-state-dot.awaiting-trust { background: #c29547; }
+.session-tab-close { width: 25px; height: 25px; flex: 0 0 auto; display: grid; place-items: center; margin-right: 4px; padding: 0; border: 0; border-radius: 4px; color: #9aa59d; background: transparent; cursor: pointer; }
+.session-tab-close:hover { color: var(--red); background: var(--red-soft); }
+.session-add-button { width: 28px; height: 28px; flex: 0 0 auto; border-color: var(--line); color: #5e7566; background: white; }
+.sftp-session-panel { min-width: 0; min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.session-connection-state { min-height: 0; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; color: #87948b; text-align: center; }
+.session-connection-state > svg { color: #84958a; }
+.session-connection-state strong { color: #536258; font-size: 13px; font-weight: 600; }
+.session-connection-state > span { max-width: 560px; color: #87948b; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.terminal-session-stack { position: relative; min-width: 0; min-height: 0; flex: 1; overflow: hidden; background: #17211d; }
+.terminal-session-stack[hidden] { display: none; }
+.terminal-session-pane { position: absolute; inset: 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.terminal-session-pane[hidden] { display: none; }
+.terminal-host { min-width: 0; min-height: 0; flex: 1; padding: 12px 15px; overflow: hidden; background: #17211d; }
+.terminal-host .xterm { height: 100%; }
+.terminal-session-notice { min-height: 36px; flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 5px 14px; border-bottom: 1px solid #435149; color: #bdc8c0; background: #25312a; font-size: 11px; }
+.terminal-session-notice.disconnected { color: #f0b2a7; background: #352824; border-bottom-color: #5c3832; }
+.terminal-session-notice.awaiting-trust { color: #e8ca8c; }
+.terminal-session-notice .text-button { height: 25px; padding: 0 8px; border-color: #58665d; color: #e0e8e2; background: #334139; }
+.terminal-session-notice .text-button:hover { background: #405047; }
 .pathbar { height: 56px; flex: 0 0 56px; display: flex; align-items: center; gap: 4px; padding: 0 26px; border-bottom: 1px solid var(--line); }
 .path-nav { width: 27px; height: 27px; color: #7b8980; }
 .nav-group-end { margin-right: 9px; }
@@ -188,10 +224,27 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .transfer-line { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; color: #526158; font-size: 11px; }
 .transfer-line span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .transfer-line span:last-child { flex: 0 0 auto; color: #819087; }
+.transfer-source { margin: -3px 0 5px; overflow: hidden; color: #8a978e; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .progress-track { height: 3px; overflow: hidden; background: #e8eeea; border-radius: 2px; }
 .progress-fill { height: 100%; background: var(--blue); transition: width .15s; }
 .progress-fill.complete { background: var(--green); }
 .progress-fill.cancelled { background: #9ba59d; }
+.session-launcher-backdrop { position: fixed; z-index: 7; inset: 0; display: grid; place-items: center; padding: 20px; background: #18241d55; backdrop-filter: blur(2px); }
+.session-launcher { width: min(100%, 440px); padding: 20px; border: 1px solid #dce5de; border-radius: 6px; background: white; box-shadow: 0 18px 55px #15241d2c; }
+.session-launcher-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.session-launcher-header h2 { margin: 0; color: #26362c; font-size: 16px; font-weight: 650; }
+.session-launcher-label { display: block; margin: 0 0 8px; color: #69776e; font-size: 11px; font-weight: 600; }
+.session-launcher select { width: 100%; height: 38px; margin-bottom: 18px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); color: #35443a; background: white; font: inherit; }
+.session-kind-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.session-kind-switch button { min-height: 64px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius); color: #68766d; background: #fbfcfb; font-size: 11px; cursor: pointer; }
+.session-kind-switch button:hover { border-color: #c6d8ca; background: #f6faf7; }
+.session-kind-switch button[aria-pressed="true"] { border-color: #83ae92; color: var(--green-deep); background: var(--green-soft); box-shadow: inset 0 0 0 1px #83ae9240; }
+.session-kind-switch button svg { flex: 0 0 auto; }
+.session-launcher-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.primary-action { border-color: var(--green); color: white; background: var(--green); }
+.primary-action:hover:not(:disabled) { border-color: var(--green-deep); color: white; background: var(--green-deep); }
+.session-launcher-empty { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 8px 0 2px; }
+.session-launcher-empty p { margin: 0; color: #839087; font-size: 12px; }
 
 .modal-backdrop { position: fixed; z-index: 5; inset: 0; display: grid; place-items: center; padding: 24px; background: #18241d55; backdrop-filter: blur(2px); }
 .modal { width: min(100%, 440px); padding: 22px; border: 1px solid #e3e9e4; border-radius: 7px; background: white; box-shadow: 0 18px 55px #15241d2c; }
@@ -339,6 +392,11 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 @media (max-width: 780px) {
   body { min-width: 0; }
   .topbar { padding: 0 16px; }
+  .session-tabbar { padding: 0 9px; }
+  .session-tab { min-width: 94px; flex-basis: 170px; }
+  .session-tab-select { gap: 5px; padding-left: 7px; }
+  .session-tab-select small { font-size: 8px; }
+  .terminal-host { padding: 9px; }
   .pathbar { padding: 0 15px; }
   .connected-host { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pathbar-tools { gap: 8px; }

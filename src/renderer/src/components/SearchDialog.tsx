@@ -19,10 +19,11 @@ import type {
 import { remoteRegexError } from '@shared/search-utils'
 import { errorMessage, formatSize } from '@/app-utils'
 
-type SearchConditions = Omit<RemoteSearchRequest, 'requestId' | 'profileId'>
+type SearchConditions = Omit<RemoteSearchRequest, 'requestId' | 'profileId' | 'sessionId'>
 type SearchStatus = 'idle' | 'running' | 'cancelling' | 'completed' | 'cancelled' | 'failed'
 
 interface SearchDialogProps {
+  sessionId: string
   profileId: string
   currentPath: string
   onClose: () => void
@@ -84,7 +85,7 @@ function Counter({ label, value }: { label: string; value: number }) {
   return <span className="search-counter"><strong>{value.toLocaleString()}</strong> {label}</span>
 }
 
-export default function SearchDialog({ profileId, currentPath, onClose, onSelectResult }: SearchDialogProps) {
+export default function SearchDialog({ sessionId, profileId, currentPath, onClose, onSelectResult }: SearchDialogProps) {
   const [conditions, setConditions] = useState(() => initialConditions(currentPath))
   const [history, setHistory] = useState(() => readHistory(profileId))
   const [results, setResults] = useState<RemoteSearchResult[]>([])
@@ -129,6 +130,7 @@ export default function SearchDialog({ profileId, currentPath, onClose, onSelect
     return () => {
       removeListener()
       window.removeEventListener('keydown', dismissOnEscape, true)
+      if (activeRequestRef.current) void window.remoteFiles.cancelSearch(activeRequestRef.current)
     }
   }, [])
 
@@ -153,6 +155,7 @@ export default function SearchDialog({ profileId, currentPath, onClose, onSelect
     const request: RemoteSearchRequest = {
       ...conditions,
       requestId: crypto.randomUUID(),
+      sessionId,
       profileId,
     }
     activeRequestRef.current = request.requestId
