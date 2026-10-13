@@ -197,6 +197,10 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .settings-view-option + .settings-view-option { border-left: 1px solid var(--line-strong); }
 .settings-view-option[aria-pressed="true"] { color: var(--green-deep); background: var(--green-soft); }
 .settings-view-option:hover:not(:disabled) { color: var(--green-deep); background: #edf4ef; }
+.settings-preview-field { min-width: 0; margin: 0; padding: 15px 0 0; border: 0; border-top: 1px solid var(--line); color: #59685f; font-size: 11px; font-weight: 600; }
+.settings-preview-field legend { margin-bottom: 9px; padding: 0; }
+.settings-preview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+.settings-preview-grid .field { min-width: 0; margin: 0; }
 .field-row { display: flex; gap: 11px; }
 .host-field { min-width: 0; flex: 1; }
 .port-field { width: 88px; flex: 0 0 auto; }

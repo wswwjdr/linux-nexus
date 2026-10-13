@@ -1,5 +1,5 @@
 import type { FormEvent, KeyboardEvent, RefObject, SyntheticEvent, WheelEvent } from 'react'
-import { Check, Eye, KeyRound, LayoutGrid, List, LoaderCircle, Server, Settings, ShieldCheck, X } from 'lucide-react'
+import { Check, Eye, KeyRound, LayoutGrid, List, LoaderCircle, Server, ShieldCheck, X } from 'lucide-react'
 import type {
   FileViewMode,
   ImagePreviewSize,
@@ -108,16 +108,7 @@ export default function DialogLayer({
 
       {settingsForm && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !settingsSaving && onCloseSettings()}>
-          <section className="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
-            <div className="modal-heading">
-              <div>
-                <div className="modal-kicker"><Settings size={14} /> 应用设置</div>
-                <h2 id="settings-modal-title">浏览与预览</h2>
-              </div>
-              <button className="icon-button modal-close" title="关闭设置" aria-label="关闭设置" disabled={settingsSaving} onClick={onCloseSettings}>
-                <X size={18} />
-              </button>
-            </div>
+          <section className="modal settings-modal" role="dialog" aria-modal="true" aria-label="应用设置">
             <form onSubmit={onSubmitSettings}>
               <fieldset className="settings-view-field" disabled={settingsSaving}>
                 <legend>默认文件视图</legend>
@@ -140,12 +131,17 @@ export default function DialogLayer({
                   </button>
                 </div>
               </fieldset>
-              {previewLimitFields.map(({ key, label }) => (
-                <label className="field" key={key}>
-                  <span>{label}</span>
-                  <input required type="number" min="1" max="1024" step="1" value={settingsForm[key]} onChange={(event) => onUpdateSettings(key, event.target.value)} />
-                </label>
-              ))}
+              <fieldset className="settings-preview-field">
+                <legend>预览大小上限</legend>
+                <div className="settings-preview-grid">
+                  {previewLimitFields.map(({ key, label }) => (
+                    <label className="field" key={key}>
+                      <span>{label}</span>
+                      <input required type="number" min="1" max="1024" step="1" value={settingsForm[key]} onChange={(event) => onUpdateSettings(key, event.target.value)} />
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
               <div className="modal-footer">
                 <button type="button" className="secondary-button" disabled={settingsSaving} onClick={onCloseSettings}>取消</button>
                 <button type="submit" className="primary-button" disabled={settingsSaving}><Check size={15} /> 保存设置</button>
