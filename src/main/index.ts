@@ -715,7 +715,7 @@ async function previewFile(profileId: string, remotePath: string): Promise<Previ
 
   const token = randomUUID()
   const extension = extname(normalizedPath).toLowerCase()
-  const directory = join(app.getPath('temp'), 'ubuntu-server-files-preview')
+  const directory = join(app.getPath('temp'), 'linux-nexus-preview')
   const filePath = join(directory, `${token}${extension}`)
   await mkdir(directory, { recursive: true })
   try {
@@ -1098,7 +1098,7 @@ function createWindow(): void {
     minWidth: 820,
     minHeight: 560,
     backgroundColor: '#f3f6f3',
-    title: 'Ubuntu Server Files',
+    title: 'Linux Nexus',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -1117,7 +1117,7 @@ function createWindow(): void {
   window.on('closed', () => {
     mainWindow = null
     previewAssets.clear()
-    void rm(join(app.getPath('temp'), 'ubuntu-server-files-preview'), { recursive: true, force: true })
+    void rm(join(app.getPath('temp'), 'linux-nexus-preview'), { recursive: true, force: true })
   })
 
   if (focusWindowWhenCreated) {
@@ -1289,9 +1289,10 @@ function registerIpc(): void {
 
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return
-  stateFile = join(app.getPath('userData'), 'servers.json')
-  settingsFile = join(app.getPath('userData'), 'settings.json')
-  await mkdir(app.getPath('userData'), { recursive: true })
+  const userDataDirectory = app.getPath('userData')
+  await mkdir(userDataDirectory, { recursive: true })
+  stateFile = join(userDataDirectory, 'servers.json')
+  settingsFile = join(userDataDirectory, 'settings.json')
   try {
     readState(true)
     readPreviewLimits()
@@ -1303,7 +1304,7 @@ app.whenReady().then(async () => {
     app.exit(1)
     return
   }
-  const previewDirectory = join(app.getPath('temp'), 'ubuntu-server-files-preview')
+  const previewDirectory = join(app.getPath('temp'), 'linux-nexus-preview')
   await rm(previewDirectory, { recursive: true, force: true })
   await mkdir(previewDirectory, { recursive: true })
   registerPreviewProtocol()
@@ -1324,7 +1325,7 @@ app.on('before-quit', () => {
 
 app.on('will-quit', () => {
   if (hasSingleInstanceLock) {
-    rmSync(join(app.getPath('temp'), 'ubuntu-server-files-preview'), { recursive: true, force: true })
+    rmSync(join(app.getPath('temp'), 'linux-nexus-preview'), { recursive: true, force: true })
   }
 })
 

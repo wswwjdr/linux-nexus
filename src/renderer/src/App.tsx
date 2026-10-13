@@ -13,14 +13,11 @@ import {
   Folder,
   FolderUp,
   HardDrive,
-  History,
   House,
   KeyRound,
   LayoutGrid,
   List,
   LoaderCircle,
-  PanelLeftClose,
-  PanelLeftOpen,
   Pencil,
   Plus,
   RefreshCw,
@@ -140,10 +137,6 @@ function readViewMode(): FileViewMode {
   return savedMode === 'icons' || savedMode === 'details' ? savedMode : 'details'
 }
 
-function readSidebarCollapsed(): boolean {
-  return window.localStorage.getItem('remote-files:sidebar-collapsed') === 'true'
-}
-
 function readRecentConnections(): RecentConnection[] {
   const savedConnections = window.localStorage.getItem('remote-files:recent-connections')
   return savedConnections ? JSON.parse(savedConnections) as RecentConnection[] : []
@@ -169,7 +162,6 @@ function connectFailureText(result: Exclude<ConnectResult, { ok: true }>): strin
 
 export default function App() {
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
   const [connectedProfileId, setConnectedProfileId] = useState<string | null>(null)
   const [currentPath, setCurrentPath] = useState('/')
   const [entries, setEntries] = useState<RemoteEntry[]>([])
@@ -177,7 +169,6 @@ export default function App() {
   const [connectionPending, setConnectionPending] = useState(false)
   const [toast, setToast] = useState<ToastNotice | null>(null)
   const [viewMode, setViewMode] = useState<FileViewMode>(readViewMode)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
   const [recentConnections, setRecentConnections] = useState<RecentConnection[]>(readRecentConnections)
   const [sort, setSort] = useState<{ column: SortColumn; direction: SortDirection }>({
     column: 'name',
@@ -221,13 +212,21 @@ export default function App() {
     () => profiles.find((profile) => profile.id === connectedProfileId) ?? null,
     [profiles, connectedProfileId],
   )
-  const recentProfiles = useMemo(
-    () => recentConnections
-      .flatMap((connection) => {
-        const profile = profiles.find((candidate) => candidate.id === connection.profileId)
-        return profile ? [{ profile, connectedAt: connection.connectedAt }] : []
-      })
-      .sort((left, right) => right.connectedAt - left.connectedAt),
+  const offlineProfiles = useMemo(
+    () => {
+      const connectionTimes = new Map(
+        recentConnections.map((connection) => [connection.profileId, connection.connectedAt] as const),
+      )
+      return profiles
+        .map((profile, index) => ({ profile, index, connectedAt: connectionTimes.get(profile.id) }))
+        .sort((left, right) => {
+          if (left.connectedAt === undefined) {
+            return right.connectedAt === undefined ? left.index - right.index : 1
+          }
+          if (right.connectedAt === undefined) return -1
+          return right.connectedAt - left.connectedAt || left.index - right.index
+        })
+    },
     [profiles, recentConnections],
   )
 
@@ -238,10 +237,6 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem('remote-files:view-mode', viewMode)
   }, [viewMode])
-
-  useEffect(() => {
-    window.localStorage.setItem('remote-files:sidebar-collapsed', String(sidebarCollapsed))
-  }, [sidebarCollapsed])
 
   useEffect(() => {
     window.localStorage.setItem('remote-files:recent-connections', JSON.stringify(recentConnections))
@@ -331,7 +326,6 @@ export default function App() {
     resetPathNavigation()
     const attempt = ++connectionAttemptRef.current
     connectingProfilesRef.current.add(profile.id)
-    setSelectedProfileId(profile.id)
     setConnectionPending(true)
     setToast(null)
     setEntries([])
@@ -488,14 +482,8 @@ export default function App() {
       password: dialog.form.password || undefined,
     }
     try {
-      const savedProfile = await window.remoteFiles.saveProfile(input)
+      await window.remoteFiles.saveProfile(input)
       await refreshProfiles()
-      if (connectedProfileId === savedProfile.id) {
-        resetPathNavigation()
-        setConnectedProfileId(null)
-        setEntries([])
-      }
-      setSelectedProfileId(savedProfile.id)
       setDialog(null)
       setToast(null)
     } catch (error) {
@@ -508,12 +496,6 @@ export default function App() {
     try {
       await window.remoteFiles.deleteProfile(profile.id)
       setRecentConnections((current) => current.filter((connection) => connection.profileId !== profile.id))
-      if (connectedProfileId === profile.id) {
-        resetPathNavigation()
-        setConnectedProfileId(null)
-        setEntries([])
-      }
-      if (selectedProfileId === profile.id) setSelectedProfileId(null)
       await refreshProfiles()
     } catch (error) {
       showToast('error', errorMessage(error))
@@ -842,83 +824,20 @@ export default function App() {
   const transferJobs = Object.entries(transfers)
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} onAuxClick={(event) => {
+    <div className="app-shell" onAuxClick={(event) => {
       if (event.button !== 3 && event.button !== 4) return
       event.preventDefault()
       movePathHistory(event.button === 3 ? -1 : 1)
     }}>
-      <aside id="app-sidebar" className="sidebar" aria-hidden={sidebarCollapsed} inert={sidebarCollapsed}>
-        <div className="brand-row">
-          <div className="brand-mark"><HardDrive size={18} strokeWidth={2.1} /></div>
-          <div className="brand-name">远程文件</div>
-        </div>
-
-        <div className="sidebar-section">
-          <div className="section-heading">
-            <span>服务器</span>
-            <button className="icon-button add-button" title="添加服务器" aria-label="添加服务器" onClick={() => openProfileDialog('create')}>
-              <Plus size={17} />
-            </button>
-          </div>
-          <div className="server-list">
-            {profiles.map((profile) => {
-              const isSelected = selectedProfileId === profile.id
-              const isConnected = connectedProfileId === profile.id
-              return (
-                <div className={`server-item ${isSelected ? 'selected' : ''}`} key={profile.id}>
-                  <button className="server-select" onClick={() => void connectTo(profile)}>
-                    <span className={`server-icon ${isConnected ? 'connected' : ''}`}>
-                      <Server size={16} />
-                    </span>
-                    <span className="server-copy">
-                      <span className="server-name">{profile.name}</span>
-                      <span className="server-address">{profile.username}@{profile.host}</span>
-                    </span>
-                    {isConnected && <span className="connected-dot" title="已连接" />}
-                  </button>
-                  <div className="server-actions">
-                    <button className="icon-button subtle" title="编辑连接" aria-label={`编辑 ${profile.name}`} onClick={() => openProfileDialog('edit', profile)}>
-                      <Pencil size={14} />
-                    </button>
-                    <button className="icon-button subtle danger-hover" title="删除连接" aria-label={`删除 ${profile.name}`} onClick={() => void removeProfile(profile)}>
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-            {profiles.length === 0 && (
-              <div className="empty-servers">
-                <Server size={19} />
-                <span>还没有服务器</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="sidebar-bottom">
-          <div className="connection-status">
-            <span className={`status-light ${connectedProfileId ? 'online' : ''}`} />
-            <span>{connectedProfile ? `已连接到 ${connectedProfile.name}` : '未连接'}</span>
-          </div>
-          <div className="security-note"><ShieldCheck size={14} /> 密码由 Windows 加密保存</div>
-        </div>
-      </aside>
-
       <main className="main-area">
         <header className="topbar">
           <div className="topbar-left">
-            <button
-              className="icon-button toolbar-button"
-              title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
-              aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
-              aria-expanded={!sidebarCollapsed}
-              aria-controls="app-sidebar"
-              onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
-            >
-              {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-            </button>
-            <div className="page-title">文件</div>
+            <div className="topbar-brand">
+              <div className="brand-mark"><HardDrive size={18} strokeWidth={2.1} /></div>
+              <div className="brand-name">Linux Nexus</div>
+            </div>
+            <span className="topbar-separator" />
+            <div className="page-title">{connectedProfile ? '文件' : '服务器'}</div>
             <button
               className="icon-button toolbar-button"
               title="设置"
@@ -1065,42 +984,56 @@ export default function App() {
             </div>
           </>
         ) : (
-          <div className={`welcome-state ${recentProfiles.length ? 'welcome-history' : ''}`}>
-            {recentProfiles.length ? (
-              <section className="recent-connections" aria-labelledby="recent-connections-title">
-                <div className="recent-heading">
-                  <div className="recent-heading-icon"><History size={18} /></div>
-                  <h1 id="recent-connections-title">最近连接</h1>
+          <div className="welcome-state welcome-servers">
+            <section className="server-connections" aria-labelledby="server-connections-title">
+              <div className="server-list-heading">
+                <div className="server-list-title-group">
+                  <div className="server-list-heading-icon"><Server size={18} /></div>
+                  <h1 id="server-connections-title">服务器</h1>
                 </div>
-                <div className="recent-list">
-                  {recentProfiles.map(({ profile, connectedAt }) => (
-                    <button
-                      className="recent-connection"
-                      key={profile.id}
-                      disabled={connectionPending}
-                      onClick={() => void connectTo(profile)}
-                    >
-                      <span className="recent-server-icon"><Server size={17} /></span>
-                      <span className="recent-server-copy">
-                        <span className="recent-server-name">{profile.name}</span>
-                        <span className="recent-server-address">{profile.username}@{profile.host}:{profile.port}</span>
-                      </span>
-                      <span className="recent-connected-at">{formatDate(new Date(connectedAt).toISOString())}</span>
-                      <ChevronRight className="recent-chevron" size={16} />
-                    </button>
+                <button className="primary-button" onClick={() => openProfileDialog('create')}>
+                  <Plus size={16} /> 添加服务器
+                </button>
+              </div>
+              {offlineProfiles.length ? (
+                <div className="server-list">
+                  {offlineProfiles.map(({ profile, connectedAt }) => (
+                    <div className="server-entry" key={profile.id}>
+                      <button
+                        className="server-entry-connect"
+                        disabled={connectionPending}
+                        onClick={() => void connectTo(profile)}
+                      >
+                        <span className="server-entry-icon"><Server size={17} /></span>
+                        <span className="server-entry-copy">
+                          <span className="server-entry-name">{profile.name}</span>
+                          <span className="server-entry-address">{profile.username}@{profile.host}:{profile.port}</span>
+                        </span>
+                        <span className="server-entry-connected-at">
+                          {connectedAt === undefined ? '尚未连接' : formatDate(new Date(connectedAt).toISOString())}
+                        </span>
+                        <ChevronRight className="server-entry-chevron" size={16} />
+                      </button>
+                      <div className="server-entry-actions">
+                        <button className="icon-button subtle" title="编辑连接" aria-label={`编辑 ${profile.name}`} onClick={() => openProfileDialog('edit', profile)}>
+                          <Pencil size={14} />
+                        </button>
+                        <button className="icon-button subtle danger-hover" title="删除连接" aria-label={`删除 ${profile.name}`} onClick={() => void removeProfile(profile)}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
-                {connectionPending && <div className="welcome-loading"><LoaderCircle className="spin" size={16} /> 正在连接</div>}
-              </section>
-            ) : (
-              <>
-                <div className="welcome-icon"><HardDrive size={25} /></div>
-                <h1>{profiles.length ? '选择服务器以浏览文件' : '添加一台服务器'}</h1>
-                <p>{profiles.length ? '选择左侧的服务器建立连接' : '保存 SSH 连接信息，开始浏览远程目录'}</p>
-                {profiles.length === 0 && <button className="primary-button" onClick={() => openProfileDialog('create')}><Plus size={16} /> 添加服务器</button>}
-                {connectionPending && <div className="welcome-loading"><LoaderCircle className="spin" size={16} /> 正在连接</div>}
-              </>
-            )}
+              ) : (
+                <div className="empty-server-list">
+                  <div className="welcome-icon"><HardDrive size={25} /></div>
+                  <h2>还没有服务器配置</h2>
+                  <p>添加 SSH 连接信息以开始浏览远程目录</p>
+                </div>
+              )}
+              {connectionPending && <div className="welcome-loading"><LoaderCircle className="spin" size={16} /> 正在连接</div>}
+            </section>
           </div>
         )}
 
