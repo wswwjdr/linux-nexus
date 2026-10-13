@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { Cloud, FolderUp, RefreshCw, Settings, Upload, WifiOff } from 'lucide-react'
+import { Cloud, FolderUp, RefreshCw, Search, Settings, Upload, WifiOff } from 'lucide-react'
 import GlobalToast, { type ToastNotice } from './GlobalToast'
 import FileBrowser from './components/FileBrowser'
 import EntryContextMenu from './components/EntryContextMenu'
 import ServerList from './components/ServerList'
 import TransferTray from './components/TransferTray'
+import SearchDialog from './components/SearchDialog'
 import DialogLayer from './components/DialogLayer'
 import { usePreview } from './hooks/usePreview'
 import { useTransfers } from './hooks/useTransfers'
 import { useProfileManagement } from './hooks/useProfileManagement'
 import type {
   RemoteEntry,
+  RemoteSearchResult,
   ServerProfile,
   TrustHostKeyInput,
 } from '@shared/types'
@@ -28,6 +30,7 @@ import {
   errorMessage,
   readRecentConnections,
   readDefaultView,
+  getParentPath,
 } from './app-utils'
 
 export default function App() {
@@ -45,6 +48,8 @@ export default function App() {
   })
   const [pendingHostKey, setPendingHostKey] = useState<PendingHostKey | null>(null)
   const [entryContextMenu, setEntryContextMenu] = useState<EntryContextMenuState | null>(null)
+  const [searchProfileId, setSearchProfileId] = useState<string | null>(null)
+  const [highlightedPath, setHighlightedPath] = useState<string | null>(null)
   const toastSequenceRef = useRef(0)
   const connectionAttemptRef = useRef(0)
   const connectingProfilesRef = useRef(new Set<string>())
@@ -103,6 +108,10 @@ export default function App() {
     () => profiles.find((profile) => profile.id === connectedProfileId) ?? null,
     [profiles, connectedProfileId],
   )
+  const searchProfile = useMemo(
+    () => profiles.find((profile) => profile.id === searchProfileId) ?? null,
+    [profiles, searchProfileId],
+  )
   const offlineProfiles = useMemo(
     () => {
       const connectionTimes = new Map(
@@ -124,6 +133,16 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem('remote-files:recent-connections', JSON.stringify(recentConnections))
   }, [recentConnections])
+
+  useEffect(() => {
+    const openSearchShortcut = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f' || !connectedProfileId) return
+      event.preventDefault()
+      if (!searchProfileId) setSearchProfileId(connectedProfileId)
+    }
+    window.addEventListener('keydown', openSearchShortcut)
+    return () => window.removeEventListener('keydown', openSearchShortcut)
+  }, [connectedProfileId, searchProfileId])
 
   useEffect(() => {
     const removeClosedListener = window.remoteFiles.onConnectionClosed((event) => {
@@ -166,6 +185,7 @@ export default function App() {
 
   const loadDirectory = async (profileId: string, remotePath: string) => {
     const requestId = ++directoryLoadRef.current
+    setHighlightedPath(null)
     setLoading(true)
     try {
       const nextEntries = await window.remoteFiles.listDirectory(profileId, remotePath)
@@ -237,11 +257,10 @@ export default function App() {
     }
   }
 
-  const navigate = (remotePath: string) => {
-    if (!connectedProfileId) return
+  const navigate = (remotePath: string): Promise<boolean> => {
+    if (!connectedProfileId) return Promise.resolve(false)
     if (remotePath === currentPath) {
-      void loadDirectory(connectedProfileId, remotePath)
-      return
+      return loadDirectory(connectedProfileId, remotePath)
     }
 
     const previousHistory = pathHistoryRef.current
@@ -251,12 +270,21 @@ export default function App() {
     pathHistoryRef.current = nextHistory
     historyIndexRef.current = nextHistory.length - 1
     const nextIndex = historyIndexRef.current
-    void loadDirectory(connectedProfileId, remotePath).then((loaded) => {
+    return loadDirectory(connectedProfileId, remotePath).then((loaded) => {
       if (!loaded && historyIndexRef.current === nextIndex) {
         pathHistoryRef.current = previousHistory
         historyIndexRef.current = previousIndex
       }
+      return loaded
     })
+  }
+
+  const locateSearchResult = async (result: RemoteSearchResult) => {
+    const profileId = searchProfileId
+    setSearchProfileId(null)
+    if (!profileId || profileId !== connectedProfileId) return
+    const loaded = await navigate(getParentPath(result.path))
+    if (loaded) setHighlightedPath(result.path)
   }
 
   const movePathHistory = (offset: -1 | 1) => {
@@ -405,6 +433,10 @@ export default function App() {
       : { column, direction: 'ascending' })
   }
 
+  const openSearch = () => {
+    if (connectedProfileId) setSearchProfileId(connectedProfileId)
+  }
+
   return (
     <div className="app-shell" onAuxClick={(event) => {
       if (event.button !== 3 && event.button !== 4) return
@@ -429,6 +461,9 @@ export default function App() {
           <div className="topbar-actions">
             {connectedProfileId ? (
               <>
+                <button className="icon-button toolbar-button" title="搜索文件（Ctrl+F）" aria-label="搜索文件（Ctrl+F）" onClick={openSearch}>
+                  <Search size={16} />
+                </button>
                 <button className="text-button upload-button" title="上传文件到当前目录" aria-label="上传文件到当前目录" onClick={uploadFiles}>
                   <Upload size={15} /> 上传文件
                 </button>
@@ -455,6 +490,7 @@ export default function App() {
             breadcrumbs={breadcrumbs}
             sort={sort}
             sortedEntries={sortedEntries}
+            highlightedPath={highlightedPath}
             onViewModeChange={setViewMode}
             onNavigate={navigate}
             onToggleSort={toggleSort}
@@ -522,6 +558,16 @@ export default function App() {
         onTrustHostKey={() => void trustAndReconnect()}
         onDismissHostKey={() => setPendingHostKey(null)}
       />
+
+      {searchProfile && searchProfileId && (
+        <SearchDialog
+          key={searchProfileId}
+          profileId={searchProfileId}
+          currentPath={currentPath}
+          onClose={() => setSearchProfileId(null)}
+          onSelectResult={(result) => void locateSearchResult(result)}
+        />
+      )}
 
     </div>
   )

@@ -4,6 +4,8 @@ import type {
   PreviewResult,
   PreviewLimits,
   RemoteFilesApi,
+  RemoteSearchEvent,
+  RemoteSearchRequest,
   SaveProfileInput,
   TransferProgress,
   TrustHostKeyInput,
@@ -21,6 +23,8 @@ const api: RemoteFilesApi = {
     ipcRenderer.invoke('settings:preview-limits:save', limits),
   listDirectory: (profileId: string, remotePath: string) =>
     ipcRenderer.invoke('files:list', profileId, remotePath),
+  searchFiles: (request: RemoteSearchRequest) => ipcRenderer.invoke('files:search', request),
+  cancelSearch: (requestId: string) => ipcRenderer.invoke('files:search-cancel', requestId),
   uploadFiles: (requestId: string, profileId: string, remoteDirectory: string) =>
     ipcRenderer.invoke('files:upload-files', requestId, profileId, remoteDirectory),
   uploadFolder: (requestId: string, profileId: string, remoteDirectory: string) =>
@@ -39,6 +43,11 @@ const api: RemoteFilesApi = {
     const listener = (_event: Electron.IpcRendererEvent, progress: TransferProgress) => callback(progress)
     ipcRenderer.on('files:transfer-progress', listener)
     return () => ipcRenderer.removeListener('files:transfer-progress', listener)
+  },
+  onSearchEvent: (callback: (event: RemoteSearchEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, searchEvent: RemoteSearchEvent) => callback(searchEvent)
+    ipcRenderer.on('files:search-event', listener)
+    return () => ipcRenderer.removeListener('files:search-event', listener)
   },
   onConnectionClosed: (callback: (event: ConnectionClosedEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, event: ConnectionClosedEvent) => callback(event)

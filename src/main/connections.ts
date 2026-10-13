@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
 import { Client } from 'ssh2'
 import type { ConnectResult, RemoteEntry } from '@shared/types'
+import { cancelSearchesForProfile, failSearchesForProfile } from './search'
 import { cancelTransfersForProfile } from './transfers'
 import { getMainWindow, sessions, type ActiveSession } from './runtime'
 import { endpointKey, passwordFor, profileFromState, readState } from './state-store'
@@ -26,6 +27,7 @@ function sendConnectionClosed(profileId: string, message: string): void {
 
 export function stopSession(profileId: string): void {
   if (pendingConnection?.profileId === profileId) pendingConnection.cancel()
+  cancelSearchesForProfile(profileId)
   const transfers = cancelTransfersForProfile(profileId)
   const activeSession = sessions.get(profileId)
   if (!activeSession) return
@@ -95,6 +97,7 @@ export function connectProfile(profileId: string): Promise<ConnectResult> {
     client.on('error', (error: Error & { level?: string }) => {
       if (sessions.get(profileId)?.client === client) {
         cancelTransfersForProfile(profileId)
+        failSearchesForProfile(profileId, error.message)
         sessions.delete(profileId)
         sendConnectionClosed(profileId, error.message)
         return
@@ -118,6 +121,7 @@ export function connectProfile(profileId: string): Promise<ConnectResult> {
     client.on('close', () => {
       if (sessions.get(profileId)?.client === client) {
         cancelTransfersForProfile(profileId)
+        failSearchesForProfile(profileId, 'SSH 连接已关闭')
         sessions.delete(profileId)
         sendConnectionClosed(profileId, 'SSH 连接已关闭')
       }

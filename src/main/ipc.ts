@@ -1,6 +1,6 @@
 import { ipcMain, safeStorage } from 'electron'
 import { randomUUID } from 'node:crypto'
-import type { PreviewLimits, SaveProfileInput, ServerProfile, TrustHostKeyInput } from '@shared/types'
+import type { PreviewLimits, RemoteSearchRequest, SaveProfileInput, ServerProfile, TrustHostKeyInput } from '@shared/types'
 import {
   connectProfile,
   copyRemotePath,
@@ -18,6 +18,7 @@ import {
 } from './state-store'
 import { cancelTransfer, downloadEntry, uploadSelection, withTransferLock } from './transfers'
 import { previewFile, releasePreview } from './previews'
+import { cancelRemoteSearch, startRemoteSearch } from './search'
 
 export function registerIpc(): void {
   ipcMain.handle('profiles:list', () => readState().profiles)
@@ -98,6 +99,8 @@ export function registerIpc(): void {
 
   ipcMain.handle('files:list', (_event, profileId: string, remotePath: string) =>
     listDirectory(profileId, remotePath))
+  ipcMain.handle('files:search', (_event, request: RemoteSearchRequest) => startRemoteSearch(request))
+  ipcMain.handle('files:search-cancel', (_event, requestId: string) => cancelRemoteSearch(requestId))
   ipcMain.handle('files:upload-files', (event, requestId: string, profileId: string, remoteDirectory: string) =>
     withTransferLock(profileId, requestId, (signal) => uploadSelection(event, requestId, profileId, remoteDirectory, false, signal)))
   ipcMain.handle('files:upload-folder', (event, requestId: string, profileId: string, remoteDirectory: string) =>

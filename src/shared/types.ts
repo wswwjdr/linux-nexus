@@ -20,6 +20,53 @@ export interface RemoteEntry {
   permissions: string
 }
 
+export type RemoteSearchMode = 'name' | 'content'
+export type RemoteSearchMatcher = 'literal' | 'regex'
+export type RemoteSearchScope = 'current' | 'root'
+
+export interface RemoteSearchRequest {
+  requestId: string
+  profileId: string
+  query: string
+  mode: RemoteSearchMode
+  matcher: RemoteSearchMatcher
+  scope: RemoteSearchScope
+  rootPath: string
+  maxFileSizeMiB: number
+  includeSystemPaths: boolean
+  includeMountedFilesystems: boolean
+}
+
+export interface RemoteSearchLineMatch {
+  lineNumber: number
+  before?: { lineNumber: number; text: string }
+  text: string
+  after?: { lineNumber: number; text: string }
+}
+
+export interface RemoteSearchResult {
+  name: string
+  path: string
+  type: RemoteEntry['type']
+  size: number
+  matches: RemoteSearchLineMatch[]
+}
+
+export interface RemoteSearchProgress {
+  requestId: string
+  profileId: string
+  scannedEntries: number
+  matchedFiles: number
+  matchedLines: number
+  skippedEntries: number
+  incomplete: boolean
+}
+
+export type RemoteSearchEvent =
+  | ({ type: 'progress' } & RemoteSearchProgress)
+  | ({ type: 'results'; results: RemoteSearchResult[] } & RemoteSearchProgress)
+  | ({ type: 'finished'; status: 'completed' | 'cancelled' | 'failed'; message?: string } & RemoteSearchProgress)
+
 export type ConnectResult =
   | { ok: true; path: string }
   | {
@@ -82,6 +129,8 @@ export interface RemoteFilesApi {
   getPreviewLimits(): Promise<PreviewLimits>
   savePreviewLimits(limits: PreviewLimits): Promise<PreviewLimits>
   listDirectory(profileId: string, remotePath: string): Promise<RemoteEntry[]>
+  searchFiles(request: RemoteSearchRequest): Promise<void>
+  cancelSearch(requestId: string): Promise<boolean>
   uploadFiles(requestId: string, profileId: string, remoteDirectory: string): Promise<TransferResult>
   uploadFolder(requestId: string, profileId: string, remoteDirectory: string): Promise<TransferResult>
   downloadEntry(requestId: string, profileId: string, remotePath: string): Promise<TransferResult>
@@ -91,5 +140,6 @@ export interface RemoteFilesApi {
   previewFile(profileId: string, remotePath: string): Promise<PreviewResult>
   releasePreview(token: string): Promise<void>
   onTransferProgress(callback: (progress: TransferProgress) => void): () => void
+  onSearchEvent(callback: (event: RemoteSearchEvent) => void): () => void
   onConnectionClosed(callback: (event: ConnectionClosedEvent) => void): () => void
 }

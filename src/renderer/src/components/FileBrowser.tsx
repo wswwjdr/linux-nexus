@@ -10,7 +10,7 @@ import {
   List,
   LoaderCircle,
 } from 'lucide-react'
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import type { RemoteEntry } from '@shared/types'
 import type { FileViewMode, SortColumn, SortDirection } from '../app-types'
 import { formatDate, formatSize, getParentPath } from '../app-utils'
@@ -28,6 +28,7 @@ interface FileBrowserProps {
   breadcrumbs: Breadcrumb[]
   sort: { column: SortColumn; direction: SortDirection }
   sortedEntries: RemoteEntry[]
+  highlightedPath: string | null
   onViewModeChange: (mode: FileViewMode) => void
   onNavigate: (path: string) => void
   onToggleSort: (column: SortColumn) => void
@@ -71,12 +72,23 @@ export default function FileBrowser({
   breadcrumbs,
   sort,
   sortedEntries,
+  highlightedPath,
   onViewModeChange,
   onNavigate,
   onToggleSort,
   onEntryContextMenu,
   onEntryKeyDown,
 }: FileBrowserProps) {
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!highlightedPath) return
+    const target = Array.from(contentRef.current?.querySelectorAll<HTMLElement>('[data-entry-path]') ?? [])
+      .find((element) => element.dataset.entryPath === highlightedPath)
+    target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    target?.focus({ preventScroll: true })
+  }, [highlightedPath, sortedEntries, viewMode])
+
   return (
     <>
       <div className="pathbar">
@@ -107,7 +119,7 @@ export default function FileBrowser({
         </div>
       </div>
 
-      <div className="file-content-wrap">
+      <div className="file-content-wrap" ref={contentRef}>
         {viewMode === 'details' ? (
           <table className="file-table">
             <thead>
@@ -129,9 +141,10 @@ export default function FileBrowser({
             <tbody>
               {sortedEntries.map((entry) => (
                 <tr
-                  className="file-row"
+                  className={'file-row ' + (entry.path === highlightedPath ? 'search-highlight' : '')}
                   key={entry.path}
-                  tabIndex={entry.type === 'file' ? 0 : -1}
+                  data-entry-path={entry.path}
+                  tabIndex={entry.type === 'file' || entry.path === highlightedPath ? 0 : -1}
                   onContextMenu={(event) => onEntryContextMenu(event, entry)}
                   onKeyDown={(event) => onEntryKeyDown(event, entry)}
                 >
@@ -154,10 +167,11 @@ export default function FileBrowser({
           <div className="file-icon-grid">
             {sortedEntries.map((entry) => (
               <article
-                className="file-tile"
+                className={'file-tile ' + (entry.path === highlightedPath ? 'search-highlight' : '')}
                 key={entry.path}
+                data-entry-path={entry.path}
                 title={entry.name}
-                tabIndex={entry.type === 'file' ? 0 : -1}
+                tabIndex={entry.type === 'file' || entry.path === highlightedPath ? 0 : -1}
                 onContextMenu={(event) => onEntryContextMenu(event, entry)}
                 onKeyDown={(event) => onEntryKeyDown(event, entry)}
               >
