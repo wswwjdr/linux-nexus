@@ -1,167 +1,36 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type SyntheticEvent as ReactSyntheticEvent, type WheelEvent as ReactWheelEvent } from 'react'
-import {
-  ArrowDown,
-  ArrowDownToLine,
-  ArrowUp,
-  ArrowUpDown,
-  Check,
-  ChevronRight,
-  Cloud,
-  Copy,
-  Eye,
-  File,
-  Folder,
-  FolderUp,
-  HardDrive,
-  House,
-  KeyRound,
-  LayoutGrid,
-  List,
-  LoaderCircle,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Server,
-  Settings,
-  ShieldCheck,
-  Trash2,
-  Upload,
-  WifiOff,
-  X,
-} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { Cloud, FolderUp, HardDrive, RefreshCw, Settings, Upload, WifiOff } from 'lucide-react'
 import GlobalToast, { type ToastNotice } from './GlobalToast'
+import FileBrowser from './components/FileBrowser'
+import EntryContextMenu from './components/EntryContextMenu'
+import ServerList from './components/ServerList'
+import TransferTray from './components/TransferTray'
+import DialogLayer from './components/DialogLayer'
+import { usePreview } from './hooks/usePreview'
+import { useTransfers } from './hooks/useTransfers'
+import { useProfileManagement } from './hooks/useProfileManagement'
 import type {
-  ConnectResult,
-  PreviewLimits,
-  PreviewResult,
   RemoteEntry,
-  SaveProfileInput,
   ServerProfile,
-  TransferProgress,
-  TransferResult,
   TrustHostKeyInput,
 } from '@shared/types'
-
-interface ProfileForm {
-  id: string
-  name: string
-  host: string
-  port: string
-  username: string
-  password: string
-}
-
-interface PendingHostKey {
-  profile: ServerProfile
-  fingerprint: string
-  previousFingerprint?: string
-}
-
-interface TransferJob {
-  name: string
-  direction: 'upload' | 'download'
-  transferred: number
-  total: number
-  state: 'running' | 'cancelling' | 'complete' | 'cancelled'
-}
-
-interface ImagePreviewSize {
-  width: number
-  height: number
-}
-
-interface RecentConnection {
-  profileId: string
-  connectedAt: number
-}
-
-interface EntryContextMenu {
-  entry: RemoteEntry
-  x: number
-  y: number
-}
-
-type PreviewDialog =
-  | { kind: 'loading'; name: string }
-  | { kind: 'ready'; result: PreviewResult }
-
-type FileViewMode = 'icons' | 'details'
-type SortColumn = 'name' | 'size' | 'modifiedAt' | 'permissions'
-type SortDirection = 'ascending' | 'descending'
-type PreviewLimitKey = keyof PreviewLimits
-type PreviewLimitsForm = Record<PreviewLimitKey, string>
-
-const previewLimitFields: { key: PreviewLimitKey; label: string }[] = [
-  { key: 'textMiB', label: '文本文件上限（MiB）' },
-  { key: 'imageMiB', label: '图片文件上限（MiB）' },
-  { key: 'audioMiB', label: '音频文件上限（MiB）' },
-  { key: 'videoMiB', label: '视频文件上限（MiB）' },
-]
-
-const entryNameCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' })
-
-const emptyForm = (): ProfileForm => ({
-  id: '',
-  name: '',
-  host: '',
-  port: '22',
-  username: '',
-  password: '',
-})
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  const units = ['KB', 'MB', 'GB', 'TB']
-  let value = bytes / 1024
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit += 1
-  }
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return '—'
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value))
-}
-
-function readViewMode(): FileViewMode {
-  const savedMode = window.localStorage.getItem('remote-files:view-mode')
-  return savedMode === 'icons' || savedMode === 'details' ? savedMode : 'details'
-}
-
-function readRecentConnections(): RecentConnection[] {
-  const savedConnections = window.localStorage.getItem('remote-files:recent-connections')
-  return savedConnections ? JSON.parse(savedConnections) as RecentConnection[] : []
-}
-
-function getParentPath(remotePath: string): string {
-  const parts = remotePath.split('/').filter(Boolean)
-  parts.pop()
-  return parts.length ? `/${parts.join('/')}` : '/'
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : '操作失败，请重试'
-}
-
-function connectFailureText(result: Exclude<ConnectResult, { ok: true }>): string {
-  if (result.reason === 'auth-failed') return result.message
-  if (result.reason === 'unreachable') return result.message
-  if (result.reason === 'sftp-unavailable') return `服务器未提供 SFTP：${result.message}`
-  if (result.reason === 'other') return result.message
-  return ''
-}
+import type {
+  EntryContextMenu as EntryContextMenuState,
+  FileViewMode,
+  PendingHostKey,
+  RecentConnection,
+  SortColumn,
+  SortDirection,
+} from './app-types'
+import {
+  connectFailureText,
+  entryNameCollator,
+  errorMessage,
+  readRecentConnections,
+  readViewMode,
+} from './app-utils'
 
 export default function App() {
-  const [profiles, setProfiles] = useState<ServerProfile[]>([])
   const [connectedProfileId, setConnectedProfileId] = useState<string | null>(null)
   const [currentPath, setCurrentPath] = useState('/')
   const [entries, setEntries] = useState<RemoteEntry[]>([])
@@ -174,32 +43,52 @@ export default function App() {
     column: 'name',
     direction: 'ascending',
   })
-  const [dialog, setDialog] = useState<{ mode: 'create' | 'edit'; form: ProfileForm } | null>(null)
-  const [settingsForm, setSettingsForm] = useState<PreviewLimitsForm | null>(null)
-  const [settingsLoading, setSettingsLoading] = useState(false)
-  const [settingsSaving, setSettingsSaving] = useState(false)
   const [pendingHostKey, setPendingHostKey] = useState<PendingHostKey | null>(null)
-  const [transfers, setTransfers] = useState<Record<string, TransferJob>>({})
-  const [previewDialog, setPreviewDialog] = useState<PreviewDialog | null>(null)
-  const [imageZoom, setImageZoom] = useState(1)
-  const [imagePreviewSize, setImagePreviewSize] = useState<ImagePreviewSize | null>(null)
-  const [entryContextMenu, setEntryContextMenu] = useState<EntryContextMenu | null>(null)
+  const [entryContextMenu, setEntryContextMenu] = useState<EntryContextMenuState | null>(null)
   const toastSequenceRef = useRef(0)
   const connectionAttemptRef = useRef(0)
   const connectingProfilesRef = useRef(new Set<string>())
-  const previewTokenRef = useRef<string | null>(null)
-  const previewRequestRef = useRef(0)
   const directoryLoadRef = useRef(0)
   const pathHistoryRef = useRef<string[]>([])
   const historyIndexRef = useRef(-1)
   const contextMenuRef = useRef<HTMLDivElement>(null)
-  const imageViewportRef = useRef<HTMLDivElement>(null)
-  const previewImageRef = useRef<HTMLImageElement>(null)
-
   const showToast = useCallback((kind: ToastNotice['kind'], message: string) => {
     setToast({ id: ++toastSequenceRef.current, kind, message })
   }, [])
+  const {
+    previewDialog,
+    imageZoom,
+    imagePreviewSize,
+    imageViewportRef,
+    previewImageRef,
+    closePreview,
+    previewFile,
+    onImageLoad,
+    zoomImage,
+  } = usePreview({ connectedProfileId, showToast })
   const dismissToast = useCallback(() => setToast(null), [])
+  const {
+    profiles,
+    profileDialog,
+    settingsForm,
+    settingsLoading,
+    settingsSaving,
+    openProfileDialog,
+    openSettingsDialog,
+    updateProfileForm,
+    submitProfile,
+    removeProfile,
+    updateSettingsForm,
+    submitSettings,
+    closeProfileDialog,
+    closeSettingsDialog,
+  } = useProfileManagement({
+    showToast,
+    clearToast: dismissToast,
+    onProfileDeleted: (profileId) => {
+      setRecentConnections((current) => current.filter((connection) => connection.profileId !== profileId))
+    },
+  })
   const resetPathNavigation = useCallback(() => {
     pathHistoryRef.current = []
     historyIndexRef.current = -1
@@ -230,10 +119,6 @@ export default function App() {
     [profiles, recentConnections],
   )
 
-  const refreshProfiles = async () => {
-    setProfiles(await window.remoteFiles.listProfiles())
-  }
-
   useEffect(() => {
     window.localStorage.setItem('remote-files:view-mode', viewMode)
   }, [viewMode])
@@ -243,22 +128,6 @@ export default function App() {
   }, [recentConnections])
 
   useEffect(() => {
-    void window.remoteFiles.listProfiles().then(setProfiles).catch((error) => showToast('error', errorMessage(error)))
-  }, [showToast])
-
-  useEffect(() => {
-    const removeProgressListener = window.remoteFiles.onTransferProgress((progress: TransferProgress) => {
-      setTransfers((current) => ({
-        ...current,
-        [progress.requestId]: {
-          name: current[progress.requestId]?.name ?? progress.remotePath.split('/').pop() ?? '文件',
-          direction: progress.direction,
-          transferred: progress.transferred,
-          total: progress.total,
-          state: current[progress.requestId]?.state ?? 'running',
-        },
-      }))
-    })
     const removeClosedListener = window.remoteFiles.onConnectionClosed((event) => {
       if (event.profileId !== connectedProfileId) return
       resetPathNavigation()
@@ -267,7 +136,6 @@ export default function App() {
       showToast('error', `连接已断开：${event.message}`)
     })
     return () => {
-      removeProgressListener()
       removeClosedListener()
     }
   }, [connectedProfileId, resetPathNavigation, showToast])
@@ -298,10 +166,6 @@ export default function App() {
     }
   }, [entryContextMenu])
 
-  useEffect(() => () => {
-    if (previewTokenRef.current) void window.remoteFiles.releasePreview(previewTokenRef.current)
-  }, [])
-
   const loadDirectory = async (profileId: string, remotePath: string) => {
     const requestId = ++directoryLoadRef.current
     setLoading(true)
@@ -319,6 +183,15 @@ export default function App() {
       if (requestId === directoryLoadRef.current) setLoading(false)
     }
   }
+
+  const {
+    transfers,
+    cancelTransfer: cancelTransferJob,
+    uploadFiles,
+    uploadFolder,
+    download,
+    dismissTransfer,
+  } = useTransfers({ connectedProfileId, currentPath, loadDirectory, showToast })
 
   const connectTo = async (profile: ServerProfile) => {
     if (connectedProfileId === profile.id || connectingProfilesRef.current.has(profile.id)) return
@@ -400,108 +273,6 @@ export default function App() {
       if (!loaded && historyIndexRef.current === nextIndex) historyIndexRef.current = previousIndex
     })
   }
-  const openProfileDialog = (mode: 'create' | 'edit', profile?: ServerProfile) => {
-    setToast(null)
-    setDialog({
-      mode,
-      form: profile
-        ? {
-            id: profile.id,
-            name: profile.name,
-            host: profile.host,
-            port: String(profile.port),
-            username: profile.username,
-            password: '',
-          }
-        : emptyForm(),
-    })
-  }
-
-  const openSettingsDialog = async () => {
-    if (settingsLoading || settingsSaving) return
-    setSettingsLoading(true)
-    try {
-      const limits = await window.remoteFiles.getPreviewLimits()
-      setSettingsForm({
-        textMiB: String(limits.textMiB),
-        imageMiB: String(limits.imageMiB),
-        audioMiB: String(limits.audioMiB),
-        videoMiB: String(limits.videoMiB),
-      })
-    } catch (error) {
-      showToast('error', `读取设置失败：${errorMessage(error)}`)
-    } finally {
-      setSettingsLoading(false)
-    }
-  }
-
-  const updateSettingsForm = (key: PreviewLimitKey, value: string) => {
-    setSettingsForm((current) => current ? { ...current, [key]: value } : current)
-  }
-
-  const submitSettings = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!settingsForm) return
-    const limits = Object.fromEntries(
-      previewLimitFields.map(({ key }) => [key, Number(settingsForm[key])]),
-    ) as PreviewLimits
-    if (previewLimitFields.some(({ key }) => !Number.isInteger(limits[key]) || limits[key] < 1 || limits[key] > 1024)) {
-      showToast('error', '预览上限必须是 1 到 1024 之间的整数')
-      return
-    }
-
-    setSettingsSaving(true)
-    try {
-      await window.remoteFiles.savePreviewLimits(limits)
-      setSettingsForm(null)
-      setToast(null)
-    } catch (error) {
-      showToast('error', `保存设置失败：${errorMessage(error)}`)
-    } finally {
-      setSettingsSaving(false)
-    }
-  }
-
-  const updateProfileForm = (patch: Partial<ProfileForm>) => {
-    setDialog((current) =>
-      current ? { ...current, form: { ...current.form, ...patch } } : current,
-    )
-  }
-
-  const submitProfile = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!dialog) return
-    const input: SaveProfileInput = {
-      profile: {
-        id: dialog.form.id,
-        name: dialog.form.name,
-        host: dialog.form.host,
-        port: Number(dialog.form.port),
-        username: dialog.form.username,
-      },
-      password: dialog.form.password || undefined,
-    }
-    try {
-      await window.remoteFiles.saveProfile(input)
-      await refreshProfiles()
-      setDialog(null)
-      setToast(null)
-    } catch (error) {
-      showToast('error', errorMessage(error))
-    }
-  }
-
-  const removeProfile = async (profile: ServerProfile) => {
-    if (!window.confirm(`删除“${profile.name}”的连接配置？`)) return
-    try {
-      await window.remoteFiles.deleteProfile(profile.id)
-      setRecentConnections((current) => current.filter((connection) => connection.profileId !== profile.id))
-      await refreshProfiles()
-    } catch (error) {
-      showToast('error', errorMessage(error))
-    }
-  }
-
   const disconnect = async () => {
     if (!connectedProfileId) return
     const profileId = connectedProfileId
@@ -527,136 +298,6 @@ export default function App() {
     } catch (error) {
       setPendingHostKey(null)
       showToast('error', errorMessage(error))
-    }
-  }
-
-  const runTransfer = async (
-    name: string,
-    direction: TransferJob['direction'],
-    operation: (requestId: string) => Promise<TransferResult>,
-    refreshPath?: string,
-    initialTotal = 0,
-  ) => {
-    if (!connectedProfileId) return
-    const profileId = connectedProfileId
-    const requestId = crypto.randomUUID()
-    setTransfers((current) => ({
-      ...current,
-      [requestId]: { name, direction, transferred: 0, total: initialTotal, state: 'running' },
-    }))
-    try {
-      const result = await operation(requestId)
-      if (result === 'not-started') {
-        setTransfers((current) => {
-          const next = { ...current }
-          delete next[requestId]
-          return next
-        })
-        return
-      }
-      setTransfers((current) => ({
-        ...current,
-        [requestId]: {
-          ...current[requestId],
-          transferred: result === 'completed'
-            ? current[requestId]?.total ?? initialTotal
-            : current[requestId]?.transferred ?? 0,
-          state: result === 'completed' ? 'complete' : 'cancelled',
-        },
-      }))
-      window.setTimeout(() => {
-        setTransfers((current) => {
-          const next = { ...current }
-          delete next[requestId]
-          return next
-        })
-      }, 2800)
-      if (refreshPath !== undefined && direction === 'upload') await loadDirectory(profileId, refreshPath)
-    } catch (error) {
-      setTransfers((current) => {
-        const next = { ...current }
-        delete next[requestId]
-        return next
-      })
-      if (refreshPath !== undefined && direction === 'upload') await loadDirectory(profileId, refreshPath)
-      showToast('error', `${direction === 'upload' ? '上传' : '下载'}失败：${errorMessage(error)}`)
-    }
-  }
-
-  const cancelTransferJob = (requestId: string) => {
-    const job = transfers[requestId]
-    if (!job || job.state !== 'running') return
-    setTransfers((current) => ({
-      ...current,
-      [requestId]: { ...current[requestId], state: 'cancelling' },
-    }))
-    void window.remoteFiles.cancelTransfer(requestId).catch((error) => {
-      setTransfers((current) => {
-        const active = current[requestId]
-        return active?.state === 'cancelling'
-          ? { ...current, [requestId]: { ...active, state: 'running' } }
-          : current
-      })
-      showToast('error', `取消传输失败：${errorMessage(error)}`)
-    })
-  }
-
-  const uploadFiles = () => {
-    if (!connectedProfileId) return
-    const remoteDirectory = currentPath
-    void runTransfer('上传文件', 'upload', (requestId) =>
-      window.remoteFiles.uploadFiles(requestId, connectedProfileId, remoteDirectory), remoteDirectory)
-  }
-
-  const uploadFolder = () => {
-    if (!connectedProfileId) return
-    const remoteDirectory = currentPath
-    void runTransfer('上传文件夹', 'upload', (requestId) =>
-      window.remoteFiles.uploadFolder(requestId, connectedProfileId, remoteDirectory), remoteDirectory)
-  }
-
-  const download = (entry: RemoteEntry) => {
-    if (!connectedProfileId) return
-    void runTransfer(entry.name, 'download', (requestId) =>
-      window.remoteFiles.downloadEntry(requestId, connectedProfileId!, entry.path), undefined,
-    entry.type === 'file' ? entry.size : 0)
-  }
-
-  const closePreview = () => {
-    previewRequestRef.current += 1
-    const token = previewTokenRef.current
-    previewTokenRef.current = null
-    setPreviewDialog(null)
-    setImageZoom(1)
-    setImagePreviewSize(null)
-    if (token) window.setTimeout(() => void window.remoteFiles.releasePreview(token), 0)
-  }
-
-  const previewFile = async (entry: RemoteEntry) => {
-    closePreview()
-    const supportedExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.txt', '.sh', '.mp3', '.mp4'])
-    const extension = entry.name.slice(entry.name.lastIndexOf('.')).toLowerCase()
-    if (!supportedExtensions.has(extension)) {
-      showToast('info', `暂不支持的文件类型：${entry.name}`)
-      return
-    }
-    if (!connectedProfileId) return
-
-    const requestId = previewRequestRef.current
-    setPreviewDialog({ kind: 'loading', name: entry.name })
-    try {
-      const result = await window.remoteFiles.previewFile(connectedProfileId, entry.path)
-      if (requestId !== previewRequestRef.current) {
-        if (result.type !== 'text') void window.remoteFiles.releasePreview(result.token)
-        return
-      }
-      if (result.type !== 'text') previewTokenRef.current = result.token
-      setPreviewDialog({ kind: 'ready', result })
-    } catch (error) {
-      if (requestId === previewRequestRef.current) {
-        setPreviewDialog(null)
-        showToast('error', `预览失败：${errorMessage(error)}`)
-      }
     }
   }
 
@@ -701,43 +342,6 @@ export default function App() {
     } catch (error) {
       showToast('error', `删除失败：${errorMessage(error)}`)
     }
-  }
-
-  const onPreviewImageLoad = (event: ReactSyntheticEvent<HTMLImageElement>) => {
-    const viewport = imageViewportRef.current
-    if (!viewport) return
-    const maxWidth = Math.max(1, viewport.clientWidth - 32)
-    const maxHeight = Math.max(1, viewport.clientHeight - 32)
-    const fit = Math.min(1, maxWidth / event.currentTarget.naturalWidth, maxHeight / event.currentTarget.naturalHeight)
-    setImagePreviewSize({
-      width: event.currentTarget.naturalWidth * fit,
-      height: event.currentTarget.naturalHeight * fit,
-    })
-    setImageZoom(1)
-  }
-
-  const zoomPreviewImage = (event: ReactWheelEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    const viewport = imageViewportRef.current
-    const image = previewImageRef.current
-    if (!viewport || !image || !imagePreviewSize) return
-    const nextZoom = Math.max(0.25, Math.min(4, imageZoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15)))
-    if (nextZoom === imageZoom) return
-
-    const imageBounds = image.getBoundingClientRect()
-    const viewportBounds = viewport.getBoundingClientRect()
-    const anchorX = (event.clientX - imageBounds.left) / imageZoom
-    const anchorY = (event.clientY - imageBounds.top) / imageZoom
-    const pointerX = event.clientX - viewportBounds.left
-    const pointerY = event.clientY - viewportBounds.top
-    const canvasWidth = Math.max(viewport.clientWidth, imagePreviewSize.width * nextZoom)
-    const canvasHeight = Math.max(viewport.clientHeight, imagePreviewSize.height * nextZoom)
-    setImageZoom(nextZoom)
-    window.requestAnimationFrame(() => {
-      if (imageViewportRef.current !== viewport) return
-      viewport.scrollLeft = (canvasWidth - imagePreviewSize.width * nextZoom) / 2 + anchorX * nextZoom - pointerX
-      viewport.scrollTop = (canvasHeight - imagePreviewSize.height * nextZoom) / 2 + anchorY * nextZoom - pointerY
-    })
   }
 
   const handleEntryContextMenu = (event: ReactMouseEvent<HTMLElement>, entry: RemoteEntry) => {
@@ -803,26 +407,6 @@ export default function App() {
       : { column, direction: 'ascending' })
   }
 
-  const sortHeader = (column: SortColumn, label: string) => {
-    const active = sort.column === column
-    const directionLabel = sort.direction === 'ascending' ? '升序' : '降序'
-    return (
-      <button
-        className={`sort-header ${active ? 'active' : ''}`}
-        title={`按${label}排序${active ? `，当前${directionLabel}` : ''}`}
-        aria-label={`按${label}排序${active ? `，当前${directionLabel}` : ''}`}
-        onClick={() => toggleSort(column)}
-      >
-        <span>{label}</span>
-        {active
-          ? sort.direction === 'ascending' ? <ArrowUp size={13} /> : <ArrowDown size={13} />
-          : <ArrowUpDown size={13} />}
-      </button>
-    )
-  }
-
-  const transferJobs = Object.entries(transfers)
-
   return (
     <div className="app-shell" onAuxClick={(event) => {
       if (event.button !== 3 && event.button !== 4) return
@@ -871,452 +455,81 @@ export default function App() {
         </header>
 
         {connectedProfile ? (
-          <>
-            <div className="pathbar">
-              <button className="icon-button path-nav" title="返回根目录" aria-label="返回根目录" disabled={currentPath === '/'} onClick={() => navigate('/')}>
-                <House size={16} />
-              </button>
-              <button className="icon-button path-nav nav-group-end" title="返回上级目录" aria-label="返回上级目录" disabled={currentPath === '/'} onClick={() => navigate(getParentPath(currentPath))}>
-                <ArrowUp size={16} />
-              </button>
-              <nav className="breadcrumbs" aria-label="当前路径">
-                {breadcrumbs.map((crumb, index) => (
-                  <span className="breadcrumb-piece" key={crumb.path}>
-                    {index > 0 && <ChevronRight size={13} />}
-                    <button className={index === breadcrumbs.length - 1 ? 'current-crumb' : ''} onClick={() => navigate(crumb.path)}>{crumb.label}</button>
-                  </span>
-                ))}
-              </nav>
-              <div className="pathbar-tools">
-                <div className="view-toggle" role="group" aria-label="文件视图">
-                  <button
-                    className="view-toggle-button"
-                    title="图标视图"
-                    aria-label="图标视图"
-                    aria-pressed={viewMode === 'icons'}
-                    onClick={() => setViewMode('icons')}
-                  >
-                    <LayoutGrid size={16} />
-                  </button>
-                  <button
-                    className="view-toggle-button"
-                    title="详细信息视图"
-                    aria-label="详细信息视图"
-                    aria-pressed={viewMode === 'details'}
-                    onClick={() => setViewMode('details')}
-                  >
-                    <List size={17} />
-                  </button>
-                </div>
-                <div className="path-count">{entries.length} 项</div>
-              </div>
-            </div>
-
-            <div className="file-content-wrap">
-              {viewMode === 'details' ? (
-                <table className="file-table">
-                  <thead>
-                    <tr>
-                      <th className="name-col" aria-sort={sort.column === 'name' ? sort.direction : 'none'}>{sortHeader('name', '名称')}</th>
-                      <th className="size-col" aria-sort={sort.column === 'size' ? sort.direction : 'none'}>{sortHeader('size', '大小')}</th>
-                      <th className="date-col" aria-sort={sort.column === 'modifiedAt' ? sort.direction : 'none'}>{sortHeader('modifiedAt', '修改时间')}</th>
-                      <th className="permission-col" aria-sort={sort.column === 'permissions' ? sort.direction : 'none'}>{sortHeader('permissions', '权限')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedEntries.map((entry) => (
-                      <tr
-                        className="file-row"
-                        key={entry.path}
-                        tabIndex={entry.type === 'file' ? 0 : -1}
-                        onContextMenu={(event) => handleEntryContextMenu(event, entry)}
-                        onKeyDown={(event) => handleEntryKeyDown(event, entry)}
-                      >
-                        <td className="name-col" title={entry.name}>
-                          <button className={`entry-name ${entry.type === 'directory' ? 'directory-entry' : ''}`} title={entry.name} onClick={() => entry.type === 'directory' && navigate(entry.path)} disabled={entry.type !== 'directory'}>
-                            <span className={`entry-icon ${entry.type === 'directory' ? 'folder-icon' : ''}`}>
-                              {entry.type === 'directory' ? <Folder size={17} fill="currentColor" strokeWidth={1.8} /> : <File size={16} />}
-                            </span>
-                            <span className="entry-label">{entry.name}</span>
-                          </button>
-                        </td>
-                        <td className="size-col">{entry.type === 'directory' ? '—' : formatSize(entry.size)}</td>
-                        <td className="date-col">{formatDate(entry.modifiedAt)}</td>
-                        <td className="permission-col"><code>{entry.permissions}</code></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="file-icon-grid">
-                  {sortedEntries.map((entry) => (
-                    <article
-                      className="file-tile"
-                      key={entry.path}
-                      title={entry.name}
-                      tabIndex={entry.type === 'file' ? 0 : -1}
-                      onContextMenu={(event) => handleEntryContextMenu(event, entry)}
-                      onKeyDown={(event) => handleEntryKeyDown(event, entry)}
-                    >
-                      <button
-                        className={`file-tile-main ${entry.type === 'directory' ? 'directory-entry' : ''}`}
-                        title={entry.name}
-                        onClick={() => entry.type === 'directory' && navigate(entry.path)}
-                        disabled={entry.type !== 'directory'}
-                      >
-                        <span className={`tile-glyph ${entry.type === 'directory' ? 'folder-glyph' : ''}`}>
-                          {entry.type === 'directory'
-                            ? <Folder size={31} fill="currentColor" strokeWidth={1.7} />
-                            : <File size={29} />}
-                        </span>
-                        <span className="tile-name">{entry.name}</span>
-                      </button>
-                    </article>
-                  ))}
-                </div>
-              )}
-              {loading && (
-                <div className="table-state"><LoaderCircle className="spin" size={19} /> 正在读取目录</div>
-              )}
-              {!loading && entries.length === 0 && (
-                <div className="table-state empty-directory"><Folder size={22} /> 此目录为空</div>
-              )}
-            </div>
-          </>
+          <FileBrowser
+            currentPath={currentPath}
+            entries={entries}
+            loading={loading}
+            viewMode={viewMode}
+            breadcrumbs={breadcrumbs}
+            sort={sort}
+            sortedEntries={sortedEntries}
+            onViewModeChange={setViewMode}
+            onNavigate={navigate}
+            onToggleSort={toggleSort}
+            onEntryContextMenu={handleEntryContextMenu}
+            onEntryKeyDown={handleEntryKeyDown}
+          />
         ) : (
-          <div className="welcome-state welcome-servers">
-            <section className="server-connections" aria-labelledby="server-connections-title">
-              <div className="server-list-heading">
-                <div className="server-list-title-group">
-                  <div className="server-list-heading-icon"><Server size={18} /></div>
-                  <h1 id="server-connections-title">服务器</h1>
-                </div>
-                <button className="primary-button" onClick={() => openProfileDialog('create')}>
-                  <Plus size={16} /> 添加服务器
-                </button>
-              </div>
-              {offlineProfiles.length ? (
-                <div className="server-list">
-                  {offlineProfiles.map(({ profile, connectedAt }) => (
-                    <div className="server-entry" key={profile.id}>
-                      <button
-                        className="server-entry-connect"
-                        disabled={connectionPending}
-                        onClick={() => void connectTo(profile)}
-                      >
-                        <span className="server-entry-icon"><Server size={17} /></span>
-                        <span className="server-entry-copy">
-                          <span className="server-entry-name">{profile.name}</span>
-                          <span className="server-entry-address">{profile.username}@{profile.host}:{profile.port}</span>
-                        </span>
-                        <span className="server-entry-connected-at">
-                          {connectedAt === undefined ? '尚未连接' : formatDate(new Date(connectedAt).toISOString())}
-                        </span>
-                        <ChevronRight className="server-entry-chevron" size={16} />
-                      </button>
-                      <div className="server-entry-actions">
-                        <button className="icon-button subtle" title="编辑连接" aria-label={`编辑 ${profile.name}`} onClick={() => openProfileDialog('edit', profile)}>
-                          <Pencil size={14} />
-                        </button>
-                        <button className="icon-button subtle danger-hover" title="删除连接" aria-label={`删除 ${profile.name}`} onClick={() => void removeProfile(profile)}>
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="empty-server-list">
-                  <div className="welcome-icon"><HardDrive size={25} /></div>
-                  <h2>还没有服务器配置</h2>
-                  <p>添加 SSH 连接信息以开始浏览远程目录</p>
-                </div>
-              )}
-              {connectionPending && <div className="welcome-loading"><LoaderCircle className="spin" size={16} /> 正在连接</div>}
-            </section>
-          </div>
+          <ServerList
+            profiles={offlineProfiles}
+            connectionPending={connectionPending}
+            onAdd={() => openProfileDialog('create')}
+            onConnect={(profile) => void connectTo(profile)}
+            onEdit={(profile) => openProfileDialog('edit', profile)}
+            onDelete={(profile) => void removeProfile(profile)}
+          />
         )}
 
         {entryContextMenu && (
-          <div
-            className="entry-context-menu"
-            ref={contextMenuRef}
-            role="menu"
-            aria-label={`${entryContextMenu.entry.name}的操作`}
-            style={{ left: entryContextMenu.x, top: entryContextMenu.y }}
-            onContextMenu={(event) => event.preventDefault()}
+          <EntryContextMenu
+            menu={entryContextMenu}
+            elementRef={contextMenuRef}
             onKeyDown={handleContextMenuKeyDown}
-          >
-            {entryContextMenu.entry.type === 'file' && (
-              <button
-                className="entry-context-action preview-action"
-                role="menuitem"
-                onClick={() => {
-                  const { entry } = entryContextMenu
-                  setEntryContextMenu(null)
-                  void previewFile(entry)
-                }}
-              >
-                <Eye size={16} /> 预览
-              </button>
-            )}
-            <button
-              className="entry-context-action download-action"
-              role="menuitem"
-              onClick={() => {
-                const { entry } = entryContextMenu
-                setEntryContextMenu(null)
-                void download(entry)
-              }}
-            >
-              <ArrowDownToLine size={16} /> {entryContextMenu.entry.type === 'directory' ? '下载文件夹' : '下载文件'}
-            </button>
-            <button
-              className="entry-context-action"
-              role="menuitem"
-              onClick={() => void copyAbsolutePath(entryContextMenu.entry)}
-            >
-              <Copy size={16} /> 复制绝对路径
-            </button>
-            <button
-              className="entry-context-action danger-action"
-              role="menuitem"
-              onClick={() => void deleteRemoteEntry(entryContextMenu.entry)}
-            >
-              <Trash2 size={16} /> 删除
-            </button>
-          </div>
+            onPreview={(entry) => {
+              setEntryContextMenu(null)
+              void previewFile(entry)
+            }}
+            onDownload={(entry) => {
+              setEntryContextMenu(null)
+              download(entry)
+            }}
+            onCopyPath={(entry) => void copyAbsolutePath(entry)}
+            onDelete={(entry) => void deleteRemoteEntry(entry)}
+          />
         )}
 
-        {transferJobs.length > 0 && (
-          <div className="transfer-tray">
-            {transferJobs.map(([id, job]) => {
-              const complete = job.state === 'complete'
-              const active = job.state === 'running' || job.state === 'cancelling'
-              const percent = complete ? 100 : job.total > 0 ? Math.min(100, Math.round(job.transferred * 100 / job.total)) : 0
-              const status = job.state === 'complete'
-                ? '已完成'
-                : job.state === 'cancelled'
-                  ? '已取消'
-                  : job.state === 'cancelling'
-                    ? '正在取消'
-                    : `${percent}%`
-              return (
-                <div className="transfer-item" key={id}>
-                  <div className={`transfer-state-icon ${complete ? 'complete' : ''} ${job.state === 'cancelled' ? 'cancelled' : ''}`}>
-                    {complete ? <Check size={15} /> : job.state === 'cancelled' ? <X size={15} /> : job.direction === 'upload' ? <Upload size={15} /> : <ArrowDownToLine size={15} />}
-                  </div>
-                  <div className="transfer-copy">
-                    <div className="transfer-line"><span>{job.name}</span><span>{status}</span></div>
-                    <div className="progress-track"><div className={`progress-fill ${complete ? 'complete' : ''} ${job.state === 'cancelled' ? 'cancelled' : ''}`} style={{ width: `${percent}%` }} /></div>
-                  </div>
-                  {active ? (
-                    <button
-                      className="icon-button subtle"
-                      title={job.state === 'cancelling' ? '正在取消传输' : '取消传输'}
-                      aria-label={job.state === 'cancelling' ? '正在取消传输' : '取消传输'}
-                      disabled={job.state === 'cancelling'}
-                      onClick={() => cancelTransferJob(id)}
-                    ><X size={14} /></button>
-                  ) : (
-                    <button className="icon-button subtle" title="隐藏传输状态" aria-label="隐藏传输状态" onClick={() => setTransfers((current) => {
-                      const next = { ...current }
-                      delete next[id]
-                      return next
-                    })}><X size={14} /></button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
+        <TransferTray
+          transfers={transfers}
+          onCancel={cancelTransferJob}
+          onDismiss={dismissTransfer}
+        />
       </main>
 
       <GlobalToast notice={toast} onDismiss={dismissToast} />
 
-      {dialog && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setDialog(null)}>
-          <section className="modal profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
-            <div className="modal-heading">
-              <div>
-                <div className="modal-kicker"><Server size={14} /> SSH / SFTP</div>
-                <h2 id="profile-modal-title">{dialog.mode === 'create' ? '添加服务器' : '编辑服务器'}</h2>
-              </div>
-              <button className="icon-button modal-close" title="关闭" aria-label="关闭" onClick={() => setDialog(null)}><X size={18} /></button>
-            </div>
-            <form onSubmit={(event) => void submitProfile(event)}>
-              <label className="field">
-                <span>连接名称</span>
-                <input autoFocus required value={dialog.form.name} onChange={(event) => updateProfileForm({ name: event.target.value })} placeholder="例如：生产环境" />
-              </label>
-              <div className="field-row">
-                <label className="field host-field">
-                  <span>主机地址</span>
-                  <input required value={dialog.form.host} onChange={(event) => updateProfileForm({ host: event.target.value })} placeholder="IP 地址或域名" autoCapitalize="none" />
-                </label>
-                <label className="field port-field">
-                  <span>端口</span>
-                  <input required type="number" min="1" max="65535" value={dialog.form.port} onChange={(event) => updateProfileForm({ port: event.target.value })} />
-                </label>
-              </div>
-              <label className="field">
-                <span>用户名</span>
-                <input required value={dialog.form.username} onChange={(event) => updateProfileForm({ username: event.target.value })} placeholder="Ubuntu 用户名" autoCapitalize="none" />
-              </label>
-              <label className="field">
-                <span>SSH 密码</span>
-                <div className="password-input-wrap">
-                  <KeyRound size={15} />
-                  <input required={dialog.mode === 'create'} type="password" autoComplete="new-password" value={dialog.form.password} onChange={(event) => updateProfileForm({ password: event.target.value })} placeholder={dialog.mode === 'edit' ? '留空以保留当前密码' : '输入登录密码'} />
-                </div>
-              </label>
-              <div className="credential-hint"><ShieldCheck size={14} /> 密码将由 Windows 加密保存在此电脑</div>
-              <div className="modal-footer">
-                <button type="button" className="secondary-button" onClick={() => setDialog(null)}>取消</button>
-                <button type="submit" className="primary-button"><Check size={15} /> 保存连接</button>
-              </div>
-            </form>
-          </section>
-        </div>
-      )}
+      <DialogLayer
+        profileDialog={profileDialog}
+        settingsForm={settingsForm}
+        settingsSaving={settingsSaving}
+        previewDialog={previewDialog}
+        pendingHostKey={pendingHostKey}
+        imageZoom={imageZoom}
+        imagePreviewSize={imagePreviewSize}
+        imageViewportRef={imageViewportRef}
+        previewImageRef={previewImageRef}
+        onCloseProfile={closeProfileDialog}
+        onUpdateProfile={updateProfileForm}
+        onSubmitProfile={(event) => void submitProfile(event)}
+        onCloseSettings={closeSettingsDialog}
+        onUpdateSettings={updateSettingsForm}
+        onSubmitSettings={(event) => void submitSettings(event)}
+        onClosePreview={closePreview}
+        onPreviewImageLoad={onImageLoad}
+        onZoomPreviewImage={zoomImage}
+        onTrustHostKey={() => void trustAndReconnect()}
+        onDismissHostKey={() => setPendingHostKey(null)}
+      />
 
-      {settingsForm && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onMouseDown={(event) => event.target === event.currentTarget && !settingsSaving && setSettingsForm(null)}
-        >
-          <section className="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
-            <div className="modal-heading">
-              <div>
-                <div className="modal-kicker"><Settings size={14} /> 应用设置</div>
-                <h2 id="settings-modal-title">文件预览上限</h2>
-              </div>
-              <button
-                className="icon-button modal-close"
-                title="关闭设置"
-                aria-label="关闭设置"
-                disabled={settingsSaving}
-                onClick={() => setSettingsForm(null)}
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <form onSubmit={(event) => void submitSettings(event)}>
-              {previewLimitFields.map(({ key, label }) => (
-                <label className="field" key={key}>
-                  <span>{label}</span>
-                  <input
-                    required
-                    type="number"
-                    min="1"
-                    max="1024"
-                    step="1"
-                    value={settingsForm[key]}
-                    onChange={(event) => updateSettingsForm(key, event.target.value)}
-                  />
-                </label>
-              ))}
-              <div className="modal-footer">
-                <button type="button" className="secondary-button" disabled={settingsSaving} onClick={() => setSettingsForm(null)}>
-                  取消
-                </button>
-                <button type="submit" className="primary-button" disabled={settingsSaving}>
-                  <Check size={15} /> 保存设置
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      )}
-
-      {previewDialog && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closePreview()}>
-          <section className={`modal preview-modal ${previewDialog.kind === 'ready' ? 'media-preview-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
-            <div className="modal-heading">
-              <div>
-                <div className="modal-kicker"><Eye size={14} /> 文件预览</div>
-                <h2 id="preview-modal-title">
-                  {previewDialog.kind === 'ready' ? previewDialog.result.name : previewDialog.name}
-                </h2>
-              </div>
-              <button className="icon-button modal-close" title="关闭预览" aria-label="关闭预览" onClick={closePreview}><X size={18} /></button>
-            </div>
-            {previewDialog.kind === 'loading' && <div className="preview-loading"><LoaderCircle className="spin" size={20} /> 正在读取文件</div>}
-            {previewDialog.kind === 'ready' && previewDialog.result.type === 'text' && (
-              <pre className="preview-text">{previewDialog.result.content}</pre>
-            )}
-            {previewDialog.kind === 'ready' && previewDialog.result.type === 'image' && (
-              <div className="preview-media image-preview-viewport" ref={imageViewportRef} onWheel={zoomPreviewImage}>
-                <div
-                  className="preview-image-canvas"
-                  style={{
-                    width: `${Math.max(imageViewportRef.current?.clientWidth ?? 0, (imagePreviewSize?.width ?? 0) * imageZoom)}px`,
-                    height: `${Math.max(imageViewportRef.current?.clientHeight ?? 0, (imagePreviewSize?.height ?? 0) * imageZoom)}px`,
-                  }}
-                >
-                  <img
-                    ref={previewImageRef}
-                    className="preview-image"
-                    src={previewDialog.result.url}
-                    alt={previewDialog.result.name}
-                    draggable={false}
-                    style={imagePreviewSize ? {
-                      width: `${imagePreviewSize.width * imageZoom}px`,
-                      height: `${imagePreviewSize.height * imageZoom}px`,
-                    } : { maxWidth: '100%', maxHeight: '100%' }}
-                    onLoad={onPreviewImageLoad}
-                  />
-                </div>
-              </div>
-            )}
-            {previewDialog.kind === 'ready' && previewDialog.result.type === 'audio' && (
-              <div className="preview-audio-wrap"><audio controls src={previewDialog.result.url}>浏览器不支持音频播放。</audio></div>
-            )}
-            {previewDialog.kind === 'ready' && previewDialog.result.type === 'video' && (
-              <div className="preview-media"><video
-                className="preview-video"
-                controls
-                tabIndex={0}
-                src={previewDialog.result.url}
-                onKeyDown={(event) => {
-                  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-                  event.preventDefault()
-                  const video = event.currentTarget
-                  const nextTime = Math.max(0, video.currentTime + (event.key === 'ArrowRight' ? 5 : -5))
-                  video.currentTime = Number.isFinite(video.duration) ? Math.min(video.duration, nextTime) : nextTime
-                }}
-              >浏览器不支持视频播放。</video></div>
-            )}
-          </section>
-        </div>
-      )}
-
-      {pendingHostKey && (
-        <div className="modal-backdrop">
-          <section className="modal fingerprint-modal" role="dialog" aria-modal="true" aria-labelledby="fingerprint-title">
-            <div className="fingerprint-icon"><ShieldCheck size={24} /></div>
-            <div className="modal-kicker centered">服务器身份校验</div>
-            <h2 id="fingerprint-title">{pendingHostKey.previousFingerprint ? '服务器指纹已变化' : '确认服务器指纹'}</h2>
-            <p className="fingerprint-host">{pendingHostKey.profile.username}@{pendingHostKey.profile.host}:{pendingHostKey.profile.port}</p>
-            {pendingHostKey.previousFingerprint && (
-              <div className="fingerprint-compare">
-                <span>已保存</span><code>{pendingHostKey.previousFingerprint}</code>
-              </div>
-            )}
-            <div className="fingerprint-compare new-fingerprint">
-              <span>当前指纹</span><code>{pendingHostKey.fingerprint}</code>
-            </div>
-            <p className="fingerprint-note">请与服务器管理员提供的指纹核对后再继续。</p>
-            <div className="modal-footer">
-              <button className="secondary-button" onClick={() => setPendingHostKey(null)}>取消</button>
-              <button className="primary-button" onClick={() => void trustAndReconnect()}>
-                <ShieldCheck size={15} /> {pendingHostKey.previousFingerprint ? '更新并重连' : '信任并重连'}
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
     </div>
   )
 }
