@@ -33,11 +33,9 @@ export interface RecentConnection {
   connectedAt: number
 }
 
-export interface EntryContextMenu {
-  entry: RemoteEntry
-  x: number
-  y: number
-}
+export type BrowserContextMenu =
+  | { kind: 'entry'; entry: RemoteEntry; x: number; y: number }
+  | { kind: 'directory'; x: number; y: number }
 
 export type PreviewDialog =
   | { kind: 'loading'; name: string }

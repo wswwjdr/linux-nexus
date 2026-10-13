@@ -4,6 +4,7 @@ import type { PreviewLimits, RemoteSearchRequest, SaveProfileInput, ServerProfil
 import {
   connectProfile,
   copyRemotePath,
+  createRemoteDirectory,
   deleteRemoteEntry,
   listDirectory,
   stopSession,
@@ -108,6 +109,8 @@ export function registerIpc(): void {
   ipcMain.handle('files:download', (event, requestId: string, profileId: string, remotePath: string) =>
     withTransferLock(profileId, requestId, (signal) => downloadEntry(event, requestId, profileId, remotePath, signal)))
   ipcMain.handle('files:transfer-cancel', (_event, requestId: string) => cancelTransfer(requestId))
+  ipcMain.handle('files:create-directory', (_event, profileId: string, remoteDirectory: string, name: string) =>
+    createRemoteDirectory(profileId, remoteDirectory, name))
   ipcMain.handle('files:path-copy', (_event, profileId: string, remotePath: string) => copyRemotePath(profileId, remotePath))
   ipcMain.handle('files:delete', (_event, profileId: string, remotePath: string) => deleteRemoteEntry(profileId, remotePath))
   ipcMain.handle('files:preview', (_event, profileId: string, remotePath: string) => previewFile(profileId, remotePath))

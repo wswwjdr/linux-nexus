@@ -13,6 +13,7 @@ import {
   normalizedRemotePath,
   shellQuote,
   sftpLstat,
+  sftpMkdir,
 } from './sftp-utils'
 
 let pendingConnection: { profileId: string; client: Client; generation: number; cancel: () => void } | null = null
@@ -201,6 +202,24 @@ export function listDirectory(profileId: string, remotePath: string): Promise<Re
 export function copyRemotePath(profileId: string, remotePath: string): void {
   if (!sessions.has(profileId)) throw new Error('服务器未连接')
   clipboard.writeText(normalizedRemotePath(remotePath))
+}
+
+export async function createRemoteDirectory(
+  profileId: string,
+  remoteDirectory: string,
+  name: string,
+): Promise<void> {
+  const activeSession = sessions.get(profileId)
+  if (!activeSession) throw new Error('服务器未连接')
+  if (typeof name !== 'string' || !name || name === '.' || name === '..' || name.includes('/') || name.includes('\0')) {
+    throw new Error('名称无效：不能包含路径分隔符，也不能是 . 或 ..')
+  }
+  const parentPath = normalizedRemotePath(remoteDirectory)
+  if (fileType((await sftpLstat(activeSession.sftp, parentPath)).mode) !== 'directory') {
+    throw new Error('当前路径不是文件夹')
+  }
+  const targetPath = posix.join(parentPath, name)
+  await sftpMkdir(activeSession.sftp, targetPath)
 }
 
 export async function deleteRemoteEntry(profileId: string, remotePath: string): Promise<void> {

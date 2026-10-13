@@ -135,6 +135,7 @@ export interface RemoteFilesApi {
   uploadFolder(requestId: string, profileId: string, remoteDirectory: string): Promise<TransferResult>
   downloadEntry(requestId: string, profileId: string, remotePath: string): Promise<TransferResult>
   cancelTransfer(requestId: string): Promise<boolean>
+  createRemoteDirectory(profileId: string, remoteDirectory: string, name: string): Promise<void>
   copyRemotePath(profileId: string, remotePath: string): Promise<void>
   deleteRemoteEntry(profileId: string, remotePath: string): Promise<void>
   previewFile(profileId: string, remotePath: string): Promise<PreviewResult>

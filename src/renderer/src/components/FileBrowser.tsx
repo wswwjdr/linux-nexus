@@ -34,6 +34,7 @@ interface FileBrowserProps {
   onToggleSort: (column: SortColumn) => void
   onEntryContextMenu: (event: ReactMouseEvent<HTMLElement>, entry: RemoteEntry) => void
   onEntryKeyDown: (event: ReactKeyboardEvent<HTMLElement>, entry: RemoteEntry) => void
+  onBackgroundContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => void
 }
 
 function SortHeader({
@@ -78,6 +79,7 @@ export default function FileBrowser({
   onToggleSort,
   onEntryContextMenu,
   onEntryKeyDown,
+  onBackgroundContextMenu,
 }: FileBrowserProps) {
   const contentRef = useRef<HTMLDivElement>(null)
 
@@ -119,7 +121,7 @@ export default function FileBrowser({
         </div>
       </div>
 
-      <div className="file-content-wrap" ref={contentRef}>
+      <div className="file-content-wrap" ref={contentRef} onContextMenu={onBackgroundContextMenu}>
         {viewMode === 'details' ? (
           <table className="file-table">
             <thead>

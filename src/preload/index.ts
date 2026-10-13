@@ -32,6 +32,8 @@ const api: RemoteFilesApi = {
   downloadEntry: (requestId: string, profileId: string, remotePath: string) =>
     ipcRenderer.invoke('files:download', requestId, profileId, remotePath),
   cancelTransfer: (requestId: string) => ipcRenderer.invoke('files:transfer-cancel', requestId),
+  createRemoteDirectory: (profileId: string, remoteDirectory: string, name: string) =>
+    ipcRenderer.invoke('files:create-directory', profileId, remoteDirectory, name),
   copyRemotePath: (profileId: string, remotePath: string) =>
     ipcRenderer.invoke('files:path-copy', profileId, remotePath),
   deleteRemoteEntry: (profileId: string, remotePath: string) =>

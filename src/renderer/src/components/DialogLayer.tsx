@@ -1,5 +1,5 @@
 import { useEffect, type FormEvent, type KeyboardEvent, type RefObject, type SyntheticEvent, type WheelEvent } from 'react'
-import { Check, Eye, KeyRound, LayoutGrid, List, LoaderCircle, Server, ShieldCheck, X } from 'lucide-react'
+import { Check, Eye, FolderPlus, KeyRound, LayoutGrid, List, LoaderCircle, Server, ShieldCheck, X } from 'lucide-react'
 import type {
   FileViewMode,
   ImagePreviewSize,
@@ -13,6 +13,8 @@ import { previewLimitFields } from '../app-utils'
 
 interface DialogLayerProps {
   profileDialog: { mode: 'create' | 'edit'; form: ProfileForm } | null
+  createDirectoryDialog: { name: string } | null
+  creatingDirectory: boolean
   settingsForm: SettingsForm | null
   settingsSaving: boolean
   previewDialog: PreviewDialogState | null
@@ -22,6 +24,9 @@ interface DialogLayerProps {
   imageViewportRef: RefObject<HTMLDivElement | null>
   previewImageRef: RefObject<HTMLImageElement | null>
   onCloseProfile: () => void
+  onCloseCreateDirectory: () => void
+  onUpdateCreateDirectoryName: (name: string) => void
+  onSubmitCreateDirectory: (event: FormEvent<HTMLFormElement>) => void
   onUpdateProfile: (patch: Partial<ProfileForm>) => void
   onSubmitProfile: (event: FormEvent<HTMLFormElement>) => void
   onCloseSettings: () => void
@@ -37,6 +42,8 @@ interface DialogLayerProps {
 
 export default function DialogLayer({
   profileDialog,
+  createDirectoryDialog,
+  creatingDirectory,
   settingsForm,
   settingsSaving,
   previewDialog,
@@ -46,6 +53,9 @@ export default function DialogLayer({
   imageViewportRef,
   previewImageRef,
   onCloseProfile,
+  onCloseCreateDirectory,
+  onUpdateCreateDirectoryName,
+  onSubmitCreateDirectory,
   onUpdateProfile,
   onSubmitProfile,
   onCloseSettings,
@@ -72,6 +82,11 @@ export default function DialogLayer({
         onClosePreview()
         return
       }
+      if (createDirectoryDialog) {
+        event.preventDefault()
+        if (!creatingDirectory) onCloseCreateDirectory()
+        return
+      }
       if (settingsForm) {
         event.preventDefault()
         if (!settingsSaving) onCloseSettings()
@@ -88,11 +103,14 @@ export default function DialogLayer({
   }, [
     onClosePreview,
     onCloseProfile,
+    onCloseCreateDirectory,
     onCloseSettings,
     onDismissHostKey,
     pendingHostKey,
     previewDialog,
     profileDialog,
+    createDirectoryDialog,
+    creatingDirectory,
     settingsForm,
     settingsSaving,
   ])
@@ -139,6 +157,42 @@ export default function DialogLayer({
               <div className="modal-footer">
                 <button type="button" className="secondary-button" onClick={onCloseProfile}>取消</button>
                 <button type="submit" className="primary-button"><Check size={15} /> 保存连接</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {createDirectoryDialog && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !creatingDirectory && onCloseCreateDirectory()}>
+          <section className="modal create-directory-modal" role="dialog" aria-modal="true" aria-labelledby="create-directory-title">
+            <div className="modal-heading">
+              <div>
+                <div className="modal-kicker"><FolderPlus size={14} /> 新建文件夹</div>
+                <h2 id="create-directory-title">新建文件夹</h2>
+              </div>
+              <button className="icon-button modal-close" title="关闭" aria-label="关闭" disabled={creatingDirectory} onClick={onCloseCreateDirectory}><X size={18} /></button>
+            </div>
+            <form onSubmit={onSubmitCreateDirectory}>
+              <label className="field">
+                <span>名称</span>
+                <input
+                  autoFocus
+                  autoCapitalize="none"
+                  autoComplete="off"
+                  required
+                  disabled={creatingDirectory}
+                  value={createDirectoryDialog.name}
+                  onChange={(event) => onUpdateCreateDirectoryName(event.target.value)}
+                  placeholder="文件夹名称"
+                />
+              </label>
+              <div className="modal-footer">
+                <button type="button" className="secondary-button" disabled={creatingDirectory} onClick={onCloseCreateDirectory}>取消</button>
+                <button type="submit" className="primary-button" disabled={creatingDirectory}>
+                  {creatingDirectory ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}
+                  {creatingDirectory ? '创建中' : '创建'}
+                </button>
               </div>
             </form>
           </section>

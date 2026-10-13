@@ -112,7 +112,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .tile-name { width: 100%; overflow: hidden; color: #35443a; font-size: 11px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .file-tile-main.directory-entry:hover .tile-name { color: var(--green); }
 .file-row:focus-visible { outline: 2px solid #73a997; outline-offset: -2px; }
-.entry-context-menu { position: fixed; z-index: 7; width: 204px; display: flex; flex-direction: column; gap: 2px; padding: 4px; border: 1px solid #dce4dd; border-radius: 5px; background: white; box-shadow: 0 8px 24px #26382e24; }
+.browser-context-menu { position: fixed; z-index: 7; width: 204px; display: flex; flex-direction: column; gap: 2px; padding: 4px; border: 1px solid #dce4dd; border-radius: 5px; background: white; box-shadow: 0 8px 24px #26382e24; }
 .entry-context-action { height: 34px; display: flex; align-items: center; gap: 9px; padding: 0 9px; border: 0; border-radius: 3px; color: #46564c; background: transparent; text-align: left; cursor: pointer; }
 .entry-context-action:hover, .entry-context-action:focus-visible { outline: 0; background: #f0f5f1; }
 .entry-context-action svg { flex: 0 0 auto; color: #77877c; }

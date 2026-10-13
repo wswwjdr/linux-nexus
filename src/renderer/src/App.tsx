@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent as ReactFormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { Cloud, FolderUp, RefreshCw, Search, Settings, Upload, WifiOff } from 'lucide-react'
 import GlobalToast, { type ToastNotice } from './GlobalToast'
 import FileBrowser from './components/FileBrowser'
-import EntryContextMenu from './components/EntryContextMenu'
+import FileContextMenu from './components/FileContextMenu'
 import ServerList from './components/ServerList'
 import TransferTray from './components/TransferTray'
 import SearchDialog from './components/SearchDialog'
@@ -17,7 +17,7 @@ import type {
   TrustHostKeyInput,
 } from '@shared/types'
 import type {
-  EntryContextMenu as EntryContextMenuState,
+  BrowserContextMenu as BrowserContextMenuState,
   FileViewMode,
   PendingHostKey,
   RecentConnection,
@@ -47,7 +47,9 @@ export default function App() {
     direction: 'ascending',
   })
   const [pendingHostKey, setPendingHostKey] = useState<PendingHostKey | null>(null)
-  const [entryContextMenu, setEntryContextMenu] = useState<EntryContextMenuState | null>(null)
+  const [browserContextMenu, setBrowserContextMenu] = useState<BrowserContextMenuState | null>(null)
+  const [createDirectoryDialog, setCreateDirectoryDialog] = useState<{ name: string } | null>(null)
+  const [creatingDirectory, setCreatingDirectory] = useState(false)
   const [searchProfileId, setSearchProfileId] = useState<string | null>(null)
   const [highlightedPath, setHighlightedPath] = useState<string | null>(null)
   const toastSequenceRef = useRef(0)
@@ -100,7 +102,8 @@ export default function App() {
     pathHistoryRef.current = []
     historyIndexRef.current = -1
     directoryLoadRef.current += 1
-    setEntryContextMenu(null)
+    setBrowserContextMenu(null)
+    setCreateDirectoryDialog(null)
     setLoading(false)
   }, [])
 
@@ -158,15 +161,15 @@ export default function App() {
   }, [connectedProfileId, resetPathNavigation, showToast])
 
   useEffect(() => {
-    if (!entryContextMenu) return
+    if (!browserContextMenu) return
 
     const dismissOutside = (event: PointerEvent) => {
-      if (!contextMenuRef.current?.contains(event.target as Node)) setEntryContextMenu(null)
+      if (!contextMenuRef.current?.contains(event.target as Node)) setBrowserContextMenu(null)
     }
     const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setEntryContextMenu(null)
+      if (event.key === 'Escape') setBrowserContextMenu(null)
     }
-    const dismiss = () => setEntryContextMenu(null)
+    const dismiss = () => setBrowserContextMenu(null)
 
     document.addEventListener('pointerdown', dismissOutside, true)
     window.addEventListener('keydown', dismissOnEscape)
@@ -181,7 +184,7 @@ export default function App() {
       window.removeEventListener('resize', dismiss)
       window.removeEventListener('scroll', dismiss, true)
     }
-  }, [entryContextMenu])
+  }, [browserContextMenu])
 
   const loadDirectory = async (profileId: string, remotePath: string) => {
     const requestId = ++directoryLoadRef.current
@@ -327,25 +330,62 @@ export default function App() {
     }
   }
 
-  const openEntryContextMenu = (entry: RemoteEntry, x: number, y: number) => {
-    if (entry.type !== 'file' && entry.type !== 'directory') return
+  const openBrowserContextMenu = (menu: BrowserContextMenuState) => {
+    const itemCount = menu.kind === 'directory' ? 3 : menu.entry.type === 'file' ? 4 : 3
     const menuWidth = 204
-    const menuHeight = (entry.type === 'file' ? 4 : 3) * 34 + 14
-    setEntryContextMenu({
-      entry,
-      x: Math.max(8, Math.min(x, window.innerWidth - menuWidth - 8)),
-      y: Math.max(8, Math.min(y, window.innerHeight - menuHeight - 8)),
+    const menuHeight = itemCount * 34 + 14
+    setBrowserContextMenu({
+      ...menu,
+      x: Math.max(8, Math.min(menu.x, window.innerWidth - menuWidth - 8)),
+      y: Math.max(8, Math.min(menu.y, window.innerHeight - menuHeight - 8)),
     })
   }
 
-  const copyAbsolutePath = async (entry: RemoteEntry) => {
+  const openEntryContextMenu = (entry: RemoteEntry, x: number, y: number) => {
+    if (entry.type !== 'file' && entry.type !== 'directory') return
+    openBrowserContextMenu({
+      kind: 'entry',
+      entry,
+      x,
+      y,
+    })
+  }
+
+  const openDirectoryContextMenu = (x: number, y: number) => {
+    openBrowserContextMenu({ kind: 'directory', x, y })
+  }
+
+  const copyPath = async (remotePath: string) => {
     if (!connectedProfileId) return
-    setEntryContextMenu(null)
+    setBrowserContextMenu(null)
     try {
-      await window.remoteFiles.copyRemotePath(connectedProfileId, entry.path)
-      showToast('info', '绝对路径已复制')
+      await window.remoteFiles.copyRemotePath(connectedProfileId, remotePath)
+      showToast('info', '路径已复制')
     } catch (error) {
       showToast('error', `复制路径失败：${errorMessage(error)}`)
+    }
+  }
+
+  const copyEntryPath = (entry: RemoteEntry) => copyPath(entry.path)
+  const copyCurrentPath = () => copyPath(currentPath)
+
+  const submitCreateDirectory = async (event: ReactFormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!connectedProfileId || !createDirectoryDialog) return
+    const profileId = connectedProfileId
+    const directory = currentPath
+    const { name } = createDirectoryDialog
+    setCreatingDirectory(true)
+    try {
+      await window.remoteFiles.createRemoteDirectory(profileId, directory, name)
+      setCreateDirectoryDialog(null)
+      if (await loadDirectory(profileId, directory)) {
+        showToast('info', '文件夹已创建')
+      }
+    } catch (error) {
+      showToast('error', `创建失败：${errorMessage(error)}`)
+    } finally {
+      setCreatingDirectory(false)
     }
   }
 
@@ -356,7 +396,7 @@ export default function App() {
     const isDirectory = entry.type === 'directory'
     const detail = isDirectory ? '及其中所有内容' : ''
     if (!window.confirm(`确定删除“${entry.name}”${detail}？此操作无法撤销。`)) return
-    setEntryContextMenu(null)
+    setBrowserContextMenu(null)
     try {
       await window.remoteFiles.deleteRemoteEntry(profileId, entry.path)
       setEntries((current) => current.filter((item) => item.path !== entry.path))
@@ -374,6 +414,12 @@ export default function App() {
     if (entry.type !== 'file' && entry.type !== 'directory') return
     event.preventDefault()
     openEntryContextMenu(entry, event.clientX, event.clientY)
+  }
+
+  const handleBackgroundContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if ((event.target as Element).closest('[data-entry-path], button, a, input, select, textarea, th')) return
+    event.preventDefault()
+    openDirectoryContextMenu(event.clientX, event.clientY)
   }
 
   const handleEntryKeyDown = (event: ReactKeyboardEvent<HTMLElement>, entry: RemoteEntry) => {
@@ -496,6 +542,7 @@ export default function App() {
             onToggleSort={toggleSort}
             onEntryContextMenu={handleEntryContextMenu}
             onEntryKeyDown={handleEntryKeyDown}
+            onBackgroundContextMenu={handleBackgroundContextMenu}
           />
         ) : (
           <ServerList
@@ -508,21 +555,30 @@ export default function App() {
           />
         )}
 
-        {entryContextMenu && (
-          <EntryContextMenu
-            menu={entryContextMenu}
+        {browserContextMenu && (
+          <FileContextMenu
+            menu={browserContextMenu}
             elementRef={contextMenuRef}
             onKeyDown={handleContextMenuKeyDown}
             onPreview={(entry) => {
-              setEntryContextMenu(null)
+              setBrowserContextMenu(null)
               void previewFile(entry)
             }}
             onDownload={(entry) => {
-              setEntryContextMenu(null)
+              setBrowserContextMenu(null)
               download(entry)
             }}
-            onCopyPath={(entry) => void copyAbsolutePath(entry)}
+            onCopyPath={(entry) => void copyEntryPath(entry)}
             onDelete={(entry) => void deleteRemoteEntry(entry)}
+            onCopyCurrentPath={() => void copyCurrentPath()}
+            onCreateDirectory={() => {
+              setBrowserContextMenu(null)
+              setCreateDirectoryDialog({ name: '' })
+            }}
+            onUpload={() => {
+              setBrowserContextMenu(null)
+              uploadFiles()
+            }}
           />
         )}
 
@@ -537,6 +593,8 @@ export default function App() {
 
       <DialogLayer
         profileDialog={profileDialog}
+        createDirectoryDialog={createDirectoryDialog}
+        creatingDirectory={creatingDirectory}
         settingsForm={settingsForm}
         settingsSaving={settingsSaving}
         previewDialog={previewDialog}
@@ -546,6 +604,11 @@ export default function App() {
         imageViewportRef={imageViewportRef}
         previewImageRef={previewImageRef}
         onCloseProfile={closeProfileDialog}
+        onCloseCreateDirectory={() => {
+          if (!creatingDirectory) setCreateDirectoryDialog(null)
+        }}
+        onUpdateCreateDirectoryName={(name) => setCreateDirectoryDialog((current) => current ? { ...current, name } : current)}
+        onSubmitCreateDirectory={(event) => void submitCreateDirectory(event)}
         onUpdateProfile={updateProfileForm}
         onSubmitProfile={(event) => void submitProfile(event)}
         onCloseSettings={closeSettingsDialog}
