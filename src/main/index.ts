@@ -40,6 +40,7 @@ function createWindow(): void {
     minHeight: 560,
     backgroundColor: '#f3f6f3',
     title: 'Linux Nexus',
+    autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
