@@ -1,6 +1,7 @@
-import { dialog } from 'electron'
+import { app, dialog } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { mkdir, rename, unlink } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { copyFile, mkdir, rename, unlink } from 'node:fs/promises'
 import { basename, dirname, join, posix } from 'node:path'
 import type { TransferResult } from '@shared/types'
 import { getMainWindow, messageFromError, sessions, type TransferItem } from '../runtime'
@@ -15,6 +16,45 @@ import {
   transferFile,
 } from './shared'
 
+async function removeTemporaryFile(filePath: string): Promise<void> {
+  try {
+    await unlink(filePath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw new Error('未完成的下载文件无法清理 ' + filePath + '：' + messageFromError(error))
+    }
+  }
+}
+
+async function publishDownloadedFile(
+  temporaryPath: string,
+  destination: string,
+  onCommitted: () => void,
+): Promise<void> {
+  try {
+    await rename(temporaryPath, destination)
+    onCommitted()
+    return
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error
+  }
+
+  const destinationTemporaryPath = join(
+    dirname(destination),
+    '.' + basename(destination) + '.' + randomUUID() + '.download',
+  )
+  let committed = false
+  try {
+    await copyFile(temporaryPath, destinationTemporaryPath, constants.COPYFILE_EXCL)
+    await rename(destinationTemporaryPath, destination)
+    committed = true
+    onCommitted()
+  } finally {
+    if (!committed) await removeTemporaryFile(destinationTemporaryPath)
+  }
+  await removeTemporaryFile(temporaryPath)
+}
+
 async function downloadRemoteItems(
   event: Electron.IpcMainInvokeEvent,
   requestId: string,
@@ -26,6 +66,8 @@ async function downloadRemoteItems(
   const session = sessions.get(profileId)
   if (!session) throw new Error('服务器未连接')
   const total = items.reduce((sum, item) => sum + (item.type === 'file' ? item.size : 0), 0)
+  const temporaryDirectory = join(app.getPath('temp'), 'linux-nexus-downloads')
+  await mkdir(temporaryDirectory, { recursive: true })
   let completed = 0
 
   for (const item of items) {
@@ -38,25 +80,16 @@ async function downloadRemoteItems(
     }
 
     await mkdir(dirname(destination), { recursive: true })
-    const temporaryPath = join(dirname(destination), '.' + basename(destination) + '.' + randomUUID() + '.download')
+    const temporaryPath = join(temporaryDirectory, randomUUID() + '.download')
     let committed = false
     try {
       await transferFile('get', session.sftp, item.remotePath!, temporaryPath, signal, (transferred) => {
         sendTransferProgress(event.sender, requestId, profileId, item.remotePath!, 'download', completed + transferred, total)
       })
       signal.throwIfAborted()
-      await rename(temporaryPath, destination)
-      committed = true
+      await publishDownloadedFile(temporaryPath, destination, () => { committed = true })
     } finally {
-      if (!committed) {
-        try {
-          await unlink(temporaryPath)
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-            throw new Error('未完成的下载文件无法清理 ' + temporaryPath + '：' + messageFromError(error))
-          }
-        }
-      }
+      if (!committed) await removeTemporaryFile(temporaryPath)
     }
     completed += item.size
     sendTransferProgress(event.sender, requestId, profileId, item.remotePath!, 'download', completed, total)

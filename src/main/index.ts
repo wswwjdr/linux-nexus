@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, protocol } from 'electron'
 import { mkdir, rm } from 'node:fs/promises'
-import { rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, rmSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { stopAllSessions } from './connections'
 import { registerIpc } from './ipc'
 import { registerPreviewProtocol } from './preview-protocol'
@@ -15,10 +15,37 @@ protocol.registerSchemesAsPrivileged([{
 
 let focusWindowWhenCreated = false
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
+let applicationDataConfigured = false
 if (!hasSingleInstanceLock) {
   app.quit()
 } else {
+  try {
+    configureApplicationData()
+    applicationDataConfigured = true
+  } catch (error) {
+    dialog.showErrorBox('启动失败', messageFromError(error))
+    app.quit()
+  }
   app.on('second-instance', focusMainWindow)
+}
+
+function configureApplicationData(): void {
+  const applicationDirectory = app.isPackaged ? dirname(app.getPath('exe')) : app.getAppPath()
+  const dataDirectory = join(applicationDirectory, 'data')
+  const sessionDirectory = join(dataDirectory, 'session')
+  const temporaryDirectory = join(dataDirectory, 'temp')
+  const logsDirectory = join(dataDirectory, 'logs')
+  const crashDumpsDirectory = join(dataDirectory, 'crash-dumps')
+
+  for (const directory of [dataDirectory, sessionDirectory, temporaryDirectory, logsDirectory, crashDumpsDirectory]) {
+    mkdirSync(directory, { recursive: true })
+  }
+
+  app.setPath('userData', dataDirectory)
+  app.setPath('sessionData', sessionDirectory)
+  app.setPath('temp', temporaryDirectory)
+  app.setPath('crashDumps', crashDumpsDirectory)
+  app.setAppLogsPath(logsDirectory)
 }
 
 function focusMainWindow(): void {
@@ -73,9 +100,8 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
-  if (!hasSingleInstanceLock) return
+  if (!hasSingleInstanceLock || !applicationDataConfigured) return
   const userDataDirectory = app.getPath('userData')
-  await mkdir(userDataDirectory, { recursive: true })
   configureStateFiles(join(userDataDirectory, 'servers.json'), join(userDataDirectory, 'settings.json'))
   try {
     readState(true)
@@ -89,8 +115,11 @@ app.whenReady().then(async () => {
     return
   }
   const previewDirectory = join(app.getPath('temp'), 'linux-nexus-preview')
+  const downloadDirectory = join(app.getPath('temp'), 'linux-nexus-downloads')
   await rm(previewDirectory, { recursive: true, force: true })
+  await rm(downloadDirectory, { recursive: true, force: true })
   await mkdir(previewDirectory, { recursive: true })
+  await mkdir(downloadDirectory, { recursive: true })
   registerPreviewProtocol()
   registerIpc()
   createWindow()
@@ -110,6 +139,7 @@ app.on('before-quit', () => {
 app.on('will-quit', () => {
   if (hasSingleInstanceLock) {
     rmSync(join(app.getPath('temp'), 'linux-nexus-preview'), { recursive: true, force: true })
+    rmSync(join(app.getPath('temp'), 'linux-nexus-downloads'), { recursive: true, force: true })
   }
 })
 
