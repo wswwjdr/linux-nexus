@@ -20,7 +20,7 @@ export interface TransferJob {
   direction: 'upload' | 'download'
   transferred: number
   total: number
-  state: 'running' | 'cancelling' | 'complete' | 'cancelled'
+  state: 'starting' | 'running' | 'cancelling' | 'complete' | 'cancelled'
 }
 
 export interface ImagePreviewSize {

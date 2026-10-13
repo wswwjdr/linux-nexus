@@ -11,6 +11,12 @@ interface UseTransfersOptions {
   showToast: (kind: ToastNotice['kind'], message: string) => void
 }
 
+interface RunTransferOptions {
+  refreshPath?: string
+  initialTotal?: number
+  deferTrayUntilProgress?: boolean
+}
+
 export function useTransfers({
   connectedProfileId,
   currentPath,
@@ -27,7 +33,9 @@ export function useTransfers({
         direction: progress.direction,
         transferred: progress.transferred,
         total: progress.total,
-        state: current[progress.requestId]?.state ?? 'running',
+        state: current[progress.requestId]?.state === 'starting'
+          ? 'running'
+          : current[progress.requestId]?.state ?? 'running',
       },
     }))
   }), [])
@@ -36,15 +44,20 @@ export function useTransfers({
     name: string,
     direction: TransferJob['direction'],
     operation: (requestId: string) => Promise<TransferResult>,
-    refreshPath?: string,
-    initialTotal = 0,
+    { refreshPath, initialTotal = 0, deferTrayUntilProgress = false }: RunTransferOptions = {},
   ) => {
     if (!connectedProfileId) return
     const profileId = connectedProfileId
     const requestId = crypto.randomUUID()
     setTransfers((current) => ({
       ...current,
-      [requestId]: { name, direction, transferred: 0, total: initialTotal, state: 'running' },
+      [requestId]: {
+        name,
+        direction,
+        transferred: 0,
+        total: initialTotal,
+        state: deferTrayUntilProgress ? 'starting' : 'running',
+      },
     }))
     try {
       const result = await operation(requestId)
@@ -108,7 +121,8 @@ export function useTransfers({
     const profileId = connectedProfileId
     const remoteDirectory = currentPath
     void runTransfer('上传文件', 'upload', (requestId) =>
-      window.remoteFiles.uploadFiles(requestId, profileId, remoteDirectory), remoteDirectory)
+      window.remoteFiles.uploadFiles(requestId, profileId, remoteDirectory),
+    { refreshPath: remoteDirectory, deferTrayUntilProgress: true })
   }
 
   const uploadFolder = () => {
@@ -116,15 +130,16 @@ export function useTransfers({
     const profileId = connectedProfileId
     const remoteDirectory = currentPath
     void runTransfer('上传文件夹', 'upload', (requestId) =>
-      window.remoteFiles.uploadFolder(requestId, profileId, remoteDirectory), remoteDirectory)
+      window.remoteFiles.uploadFolder(requestId, profileId, remoteDirectory),
+    { refreshPath: remoteDirectory, deferTrayUntilProgress: true })
   }
 
   const download = (entry: RemoteEntry) => {
     if (!connectedProfileId) return
     const profileId = connectedProfileId
     void runTransfer(entry.name, 'download', (requestId) =>
-      window.remoteFiles.downloadEntry(requestId, profileId, entry.path), undefined,
-    entry.type === 'file' ? entry.size : 0)
+      window.remoteFiles.downloadEntry(requestId, profileId, entry.path),
+    { initialTotal: entry.type === 'file' ? entry.size : 0 })
   }
 
   const dismissTransfer = (requestId: string) => {

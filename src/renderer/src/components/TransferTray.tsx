@@ -8,7 +8,7 @@ interface TransferTrayProps {
 }
 
 export default function TransferTray({ transfers, onCancel, onDismiss }: TransferTrayProps) {
-  const jobs = Object.entries(transfers)
+  const jobs = Object.entries(transfers).filter(([, job]) => job.state !== 'starting')
   if (jobs.length === 0) return null
 
   return (
