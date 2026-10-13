@@ -41,9 +41,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid #73a997; outline-
 button:disabled { cursor: not-allowed; opacity: .45; }
 
 .app-shell { display: flex; height: 100vh; min-height: 560px; background: var(--canvas); }
-.topbar-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }
-.brand-mark { width: 30px; height: 30px; display: grid; place-items: center; color: var(--green); background: var(--green-soft); border: 1px solid #d4e9dc; border-radius: 6px; }
-.brand-name { font-size: 14px; font-weight: 700; }
 .icon-button { width: 30px; height: 30px; display: inline-grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: var(--radius); color: var(--muted); background: transparent; cursor: pointer; transition: color .15s, background .15s, border-color .15s; }
 .icon-button:hover:not(:disabled) { color: var(--ink); background: #edf2ee; border-color: var(--line); }
 .icon-button.subtle { width: 27px; height: 27px; color: #819087; }
@@ -54,7 +51,6 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .topbar { height: 62px; flex: 0 0 62px; display: flex; align-items: center; justify-content: space-between; padding: 0 27px; border-bottom: 1px solid var(--line); }
 .topbar-left, .topbar-actions { display: flex; align-items: center; gap: 14px; }
 .topbar-actions { gap: 8px; }
-.page-title { font-size: 15px; font-weight: 700; }
 .topbar-separator { width: 1px; height: 17px; background: var(--line-strong); }
 .connected-host { display: flex; align-items: center; gap: 6px; color: #64736a; font-size: 12px; }
 .connected-host svg { color: var(--blue); }

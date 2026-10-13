@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { Cloud, FolderUp, HardDrive, RefreshCw, Settings, Upload, WifiOff } from 'lucide-react'
+import { Cloud, FolderUp, RefreshCw, Settings, Upload, WifiOff } from 'lucide-react'
 import GlobalToast, { type ToastNotice } from './GlobalToast'
 import FileBrowser from './components/FileBrowser'
 import EntryContextMenu from './components/EntryContextMenu'
@@ -414,12 +414,6 @@ export default function App() {
       <main className="main-area">
         <header className="topbar">
           <div className="topbar-left">
-            <div className="topbar-brand">
-              <div className="brand-mark"><HardDrive size={18} strokeWidth={2.1} /></div>
-              <div className="brand-name">Linux Nexus</div>
-            </div>
-            <span className="topbar-separator" />
-            <div className="page-title">{connectedProfile ? '文件' : '服务器'}</div>
             <button
               className="icon-button toolbar-button"
               title="设置"

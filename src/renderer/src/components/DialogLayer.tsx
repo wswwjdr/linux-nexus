@@ -1,4 +1,4 @@
-import type { FormEvent, KeyboardEvent, RefObject, SyntheticEvent, WheelEvent } from 'react'
+import { useEffect, type FormEvent, type KeyboardEvent, type RefObject, type SyntheticEvent, type WheelEvent } from 'react'
 import { Check, Eye, KeyRound, LayoutGrid, List, LoaderCircle, Server, ShieldCheck, X } from 'lucide-react'
 import type {
   FileViewMode,
@@ -58,6 +58,45 @@ export default function DialogLayer({
   onTrustHostKey,
   onDismissHostKey,
 }: DialogLayerProps) {
+  useEffect(() => {
+    const dismissOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+
+      if (pendingHostKey) {
+        event.preventDefault()
+        onDismissHostKey()
+        return
+      }
+      if (previewDialog) {
+        event.preventDefault()
+        onClosePreview()
+        return
+      }
+      if (settingsForm) {
+        event.preventDefault()
+        if (!settingsSaving) onCloseSettings()
+        return
+      }
+      if (profileDialog) {
+        event.preventDefault()
+        onCloseProfile()
+      }
+    }
+
+    window.addEventListener('keydown', dismissOnEscape)
+    return () => window.removeEventListener('keydown', dismissOnEscape)
+  }, [
+    onClosePreview,
+    onCloseProfile,
+    onCloseSettings,
+    onDismissHostKey,
+    pendingHostKey,
+    previewDialog,
+    profileDialog,
+    settingsForm,
+    settingsSaving,
+  ])
+
   return (
     <>
       {profileDialog && (
