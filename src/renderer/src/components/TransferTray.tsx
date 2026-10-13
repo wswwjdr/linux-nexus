@@ -1,5 +1,5 @@
 import { ArrowDownToLine, Check, Upload, X } from 'lucide-react'
-import type { TransferJob } from '../app-types'
+import type { TransferJob } from '@/app-types'
 
 interface TransferTrayProps {
   transfers: Record<string, TransferJob>

@@ -12,8 +12,8 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import type { RemoteEntry } from '@shared/types'
-import type { FileViewMode, SortColumn, SortDirection } from '../app-types'
-import { formatDate, formatSize, getParentPath } from '../app-utils'
+import type { FileViewMode, SortColumn, SortDirection } from '@/app-types'
+import { formatDate, formatSize, getParentPath } from '@/app-utils'
 
 interface Breadcrumb {
   label: string

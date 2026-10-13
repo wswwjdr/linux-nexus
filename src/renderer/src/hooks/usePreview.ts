@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type SyntheticEvent, type WheelEvent } from 'react'
 import type { RemoteEntry } from '@shared/types'
-import type { ImagePreviewSize, PreviewDialog } from '../app-types'
-import type { ToastNotice } from '../GlobalToast'
-import { errorMessage } from '../app-utils'
+import type { ImagePreviewSize, PreviewDialog } from '@/app-types'
+import type { ToastNotice } from '@/GlobalToast'
+import { errorMessage } from '@/app-utils'
 
 interface UsePreviewOptions {
   connectedProfileId: string | null

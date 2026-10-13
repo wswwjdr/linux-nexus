@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { RemoteEntry, TransferProgress, TransferResult } from '@shared/types'
-import type { TransferJob } from '../app-types'
-import type { ToastNotice } from '../GlobalToast'
-import { errorMessage } from '../app-utils'
+import type { TransferJob } from '@/app-types'
+import type { ToastNotice } from '@/GlobalToast'
+import { errorMessage } from '@/app-utils'
 
 interface UseTransfersOptions {
   connectedProfileId: string | null

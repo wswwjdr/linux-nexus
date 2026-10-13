@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type { PreviewLimits, SaveProfileInput, ServerProfile } from '@shared/types'
-import type { FileViewMode, PreviewLimitKey, ProfileForm, SettingsForm } from '../app-types'
-import type { ToastNotice } from '../GlobalToast'
-import { emptyForm, errorMessage, previewLimitFields, readDefaultView, toPreviewLimitsForm } from '../app-utils'
+import type { FileViewMode, PreviewLimitKey, ProfileForm, SettingsForm } from '@/app-types'
+import type { ToastNotice } from '@/GlobalToast'
+import { emptyForm, errorMessage, previewLimitFields, readDefaultView, toPreviewLimitsForm } from '@/app-utils'
 
 interface UseProfileManagementOptions {
   showToast: (kind: ToastNotice['kind'], message: string) => void

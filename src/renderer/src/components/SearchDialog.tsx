@@ -17,7 +17,7 @@ import type {
   RemoteSearchScope,
 } from '@shared/types'
 import { remoteRegexError } from '@shared/search-utils'
-import { errorMessage, formatSize } from '../app-utils'
+import { errorMessage, formatSize } from '@/app-utils'
 
 type SearchConditions = Omit<RemoteSearchRequest, 'requestId' | 'profileId'>
 type SearchStatus = 'idle' | 'running' | 'cancelling' | 'completed' | 'cancelled' | 'failed'

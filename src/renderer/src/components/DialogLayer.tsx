@@ -8,8 +8,8 @@ import type {
   PreviewLimitKey,
   ProfileForm,
   SettingsForm,
-} from '../app-types'
-import { previewLimitFields } from '../app-utils'
+} from '@/app-types'
+import { previewLimitFields } from '@/app-utils'
 
 interface DialogLayerProps {
   profileDialog: { mode: 'create' | 'edit'; form: ProfileForm } | null

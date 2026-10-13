@@ -1,7 +1,7 @@
 import { ArrowDownToLine, Copy, Eye, FolderPlus, Trash2, Upload } from 'lucide-react'
 import type { KeyboardEvent, RefObject } from 'react'
 import type { RemoteEntry } from '@shared/types'
-import type { BrowserContextMenu as BrowserContextMenuState } from '../app-types'
+import type { BrowserContextMenu as BrowserContextMenuState } from '@/app-types'
 
 interface FileContextMenuProps {
   menu: BrowserContextMenuState

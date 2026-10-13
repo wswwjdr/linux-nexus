@@ -1,6 +1,6 @@
 import { ChevronRight, HardDrive, LoaderCircle, Pencil, Plus, Server, Trash2 } from 'lucide-react'
 import type { ServerProfile } from '@shared/types'
-import { formatDate } from '../app-utils'
+import { formatDate } from '@/app-utils'
 
 interface ServerListProps {
   profiles: { profile: ServerProfile; connectedAt?: number }[]
