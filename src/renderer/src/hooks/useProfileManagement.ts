@@ -15,6 +15,9 @@ interface UseProfileManagementOptions {
 export function useProfileManagement({ showToast, clearToast, onProfileSaved, onProfileDeleted, onDefaultViewChange }: UseProfileManagementOptions) {
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
   const [dialog, setDialog] = useState<{ mode: 'create' | 'edit'; form: ProfileForm } | null>(null)
+  const [profileDeleteDialog, setProfileDeleteDialog] = useState<ServerProfile | null>(null)
+  const [profileDeleteError, setProfileDeleteError] = useState<string | null>(null)
+  const [profileDeleting, setProfileDeleting] = useState(false)
   const [settingsForm, setSettingsForm] = useState<SettingsForm | null>(null)
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [settingsSaving, setSettingsSaving] = useState(false)
@@ -122,14 +125,32 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
     }
   }
 
-  const removeProfile = async (profile: ServerProfile) => {
-    if (!window.confirm('删除“' + profile.name + '”的连接配置？')) return
+  const requestProfileDeletion = (profile: ServerProfile) => {
+    setProfileDeleteError(null)
+    setProfileDeleteDialog(profile)
+  }
+
+  const closeProfileDeleteDialog = () => {
+    if (profileDeleting) return
+    setProfileDeleteDialog(null)
+    setProfileDeleteError(null)
+  }
+
+  const confirmProfileDeletion = async () => {
+    if (!profileDeleteDialog || profileDeleting) return
+    const profile = profileDeleteDialog
+    setProfileDeleting(true)
+    setProfileDeleteError(null)
     try {
       await window.remoteFiles.deleteProfile(profile.id)
+      setProfiles((current) => current.filter((item) => item.id !== profile.id))
       onProfileDeleted(profile.id)
-      await refreshProfiles()
+      setProfileDeleteDialog(null)
+      clearToast()
     } catch (error) {
-      showToast('error', errorMessage(error))
+      setProfileDeleteError(errorMessage(error))
+    } finally {
+      setProfileDeleting(false)
     }
   }
 
@@ -139,6 +160,9 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
   return {
     profiles,
     profileDialog: dialog,
+    profileDeleteDialog,
+    profileDeleteError,
+    profileDeleting,
     settingsForm,
     settingsLoading,
     settingsSaving,
@@ -146,7 +170,9 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
     openSettingsDialog,
     updateProfileForm,
     submitProfile,
-    removeProfile,
+    requestProfileDeletion,
+    closeProfileDeleteDialog,
+    confirmProfileDeletion,
     updateSettingsForm,
     updateDefaultView,
     submitSettings,

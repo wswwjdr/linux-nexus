@@ -208,6 +208,10 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .primary-button:hover { background: var(--green-deep); border-color: var(--green-deep); }
 .secondary-button { color: #5d6a61; background: white; border-color: var(--line-strong); }
 .secondary-button:hover { background: #f7f9f7; }
+.danger-button { height: 35px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border: 1px solid var(--red); border-radius: var(--radius); color: white; background: var(--red); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s, border-color .15s; }
+.danger-button:hover:not(:disabled) { border-color: #963f36; background: #963f36; }
+.warning-button { height: 35px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border: 1px solid var(--gold); border-radius: var(--radius); color: white; background: var(--gold); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s, border-color .15s; }
+.warning-button:hover:not(:disabled) { border-color: #8d6021; background: #8d6021; }
 .global-toast { position: fixed; z-index: 8; top: 78px; right: 22px; width: min(420px, calc(100vw - 44px)); min-height: 44px; display: grid; grid-template-columns: 18px minmax(0, 1fr) 30px; align-items: center; gap: 9px; padding: 6px 8px 6px 12px; border: 1px solid; border-radius: var(--radius); box-shadow: 0 8px 24px #26382e1a; }
 .global-toast.error { border-color: #efd4c9; color: #825444; background: #fff8f4; }
 .global-toast.error > svg { color: var(--red); }
@@ -234,6 +238,10 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .session-launcher-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .session-launcher-header h2 { margin: 0; color: #26362c; font-size: 16px; font-weight: 650; }
 .session-launcher-label { display: block; margin: 0 0 8px; color: #69776e; font-size: 11px; font-weight: 600; }
+.session-launcher-server-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.session-launcher-server-heading .session-launcher-label { margin: 0; }
+.session-launcher-add-server { height: 27px; padding: 0 7px; font-size: 11px; }
+.modal-backdrop.session-launcher-profile-backdrop { z-index: 8; }
 .session-launcher select { width: 100%; height: 38px; margin-bottom: 18px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); color: #35443a; background: white; font: inherit; }
 .session-kind-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .session-kind-switch button { min-height: 64px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius); color: #68766d; background: #fbfcfb; font-size: 11px; cursor: pointer; }
@@ -252,6 +260,25 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .modal-kicker { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; color: var(--green); font-size: 11px; font-weight: 600; }
 .modal-heading h2, .modal h2 { margin: 0; color: #24332a; font-size: 17px; font-weight: 700; }
 .modal-close { margin-top: -3px; margin-right: -5px; }
+.confirmation-backdrop { z-index: 9; }
+.confirmation-dialog { width: min(100%, 430px); padding: 23px; }
+.confirmation-heading { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 17px; }
+.confirmation-icon { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid; border-radius: 6px; }
+.confirmation-icon.danger { border-color: #f0d7d2; color: var(--red); background: var(--red-soft); }
+.confirmation-icon.warning { border-color: #efdfbd; color: var(--gold); background: var(--gold-soft); }
+.confirmation-title-group { min-width: 0; padding-top: 1px; }
+.confirmation-title-group .modal-kicker { margin: 0 0 5px; }
+.confirmation-title-group .modal-kicker.danger { color: var(--red); }
+.confirmation-title-group .modal-kicker.warning { color: var(--gold); }
+.confirmation-title-group h2 { line-height: 1.35; }
+.confirmation-heading .modal-close { margin-left: auto; }
+.confirmation-details { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: #f8faf8; }
+.confirmation-detail { min-width: 0; display: grid; grid-template-columns: 68px minmax(0, 1fr); gap: 10px; }
+.confirmation-detail dt { color: #849087; font-size: 10px; }
+.confirmation-detail dd { min-width: 0; margin: 0; color: #536258; font-size: 11px; overflow-wrap: anywhere; }
+.confirmation-description { margin: 14px 0 0; color: #68766d; font-size: 12px; line-height: 1.65; }
+.confirmation-error { margin-top: 12px; padding: 8px 10px; border: 1px solid #efd4cf; border-radius: var(--radius); color: #984e44; background: #fff7f5; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.confirmation-dialog .modal-footer { margin-top: 21px; }
 .field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; color: #59685f; font-size: 11px; font-weight: 600; }
 .field input { width: 100%; height: 36px; padding: 0 10px; border: 1px solid #dce4dd; border-radius: var(--radius); color: #25352b; background: #fff; font-size: 12px; font-weight: 400; }
 .field input::placeholder { color: #abb5ad; }

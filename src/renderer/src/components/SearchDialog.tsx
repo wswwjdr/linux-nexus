@@ -16,11 +16,13 @@ import type {
   RemoteSearchResult,
   RemoteSearchScope,
 } from '@shared/types'
+import ConfirmationDialog from './ConfirmationDialog'
 import { remoteRegexError } from '@shared/search-utils'
 import { errorMessage, formatSize } from '@/app-utils'
 
 type SearchConditions = Omit<RemoteSearchRequest, 'requestId' | 'profileId' | 'sessionId'>
 type SearchStatus = 'idle' | 'running' | 'cancelling' | 'completed' | 'cancelled' | 'failed'
+type PendingConfirmation = { kind: 'close' } | { kind: 'select-result'; result: RemoteSearchResult }
 
 interface SearchDialogProps {
   sessionId: string
@@ -93,9 +95,12 @@ export default function SearchDialog({ sessionId, profileId, currentPath, onClos
   const [progress, setProgress] = useState({ scannedEntries: 0, matchedFiles: 0, matchedLines: 0, skippedEntries: 0, incomplete: false })
   const [status, setStatus] = useState<SearchStatus>('idle')
   const [error, setError] = useState<string | null>(null)
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
   const queryRef = useRef<HTMLInputElement>(null)
   const activeRequestRef = useRef<string | null>(null)
   const requestCloseRef = useRef<() => void>(() => {})
+  const pendingConfirmationRef = useRef(pendingConfirmation)
+  pendingConfirmationRef.current = pendingConfirmation
   const running = status === 'running' || status === 'cancelling'
   const expressionError = useMemo(() => validateExpression(conditions.query, conditions.matcher), [conditions.query, conditions.matcher])
   const invalidFileSize = conditions.mode === 'content'
@@ -123,6 +128,10 @@ export default function SearchDialog({ sessionId, profileId, currentPath, onClos
       if (event.key === 'Escape') {
         event.preventDefault()
         event.stopImmediatePropagation()
+        if (pendingConfirmationRef.current) {
+          setPendingConfirmation(null)
+          return
+        }
         requestCloseRef.current()
       }
     }
@@ -191,8 +200,8 @@ export default function SearchDialog({ sessionId, profileId, currentPath, onClos
 
   const requestClose = () => {
     if (running) {
-      if (!window.confirm('搜索仍在进行。取消搜索并关闭窗口吗？')) return
-      cancelSearch()
+      setPendingConfirmation({ kind: 'close' })
+      return
     }
     onClose()
   }
@@ -200,10 +209,22 @@ export default function SearchDialog({ sessionId, profileId, currentPath, onClos
 
   const selectResult = (result: RemoteSearchResult) => {
     if (running) {
-      if (!window.confirm('搜索仍在进行。取消搜索并打开此结果吗？')) return
-      cancelSearch()
+      setPendingConfirmation({ kind: 'select-result', result })
+      return
     }
     onSelectResult(result)
+  }
+
+  const confirmPendingAction = () => {
+    if (!pendingConfirmation) return
+    const action = pendingConfirmation
+    setPendingConfirmation(null)
+    if (running) cancelSearch()
+    if (action.kind === 'close') {
+      onClose()
+    } else {
+      onSelectResult(action.result)
+    }
   }
 
   const replayHistory = (savedConditions: SearchConditions) => {
@@ -409,6 +430,26 @@ export default function SearchDialog({ sessionId, profileId, currentPath, onClos
           </section>
         </div>
       </section>
+      {pendingConfirmation && (
+        <ConfirmationDialog
+          eyebrow="远端搜索"
+          title={running ? '搜索仍在进行' : '搜索已完成'}
+          description={running
+            ? pendingConfirmation.kind === 'close' ? '取消搜索并关闭窗口吗？' : '取消搜索并打开此搜索结果吗？'
+            : pendingConfirmation.kind === 'close' ? '关闭搜索窗口吗？' : '打开此搜索结果吗？'}
+          details={pendingConfirmation.kind === 'select-result'
+            ? [{ label: '结果路径', value: pendingConfirmation.result.path }]
+            : []}
+          tone="warning"
+          confirmLabel={running
+            ? pendingConfirmation.kind === 'close' ? '取消搜索并关闭' : '取消搜索并打开'
+            : pendingConfirmation.kind === 'close' ? '关闭搜索' : '打开结果'}
+          cancelLabel={running ? '继续搜索' : '返回搜索'}
+          onConfirm={confirmPendingAction}
+          onCancel={() => setPendingConfirmation(null)}
+        />
+      )}
     </div>
   )
 }
+

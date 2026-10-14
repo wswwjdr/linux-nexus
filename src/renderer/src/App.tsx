@@ -7,6 +7,7 @@ import ServerList from './components/ServerList'
 import TransferTray from './components/TransferTray'
 import SearchDialog from './components/SearchDialog'
 import DialogLayer from './components/DialogLayer'
+import ConfirmationDialog from './components/ConfirmationDialog'
 import SessionChooser from './components/SessionChooser'
 import TerminalPanel from './components/TerminalPanel'
 import { usePreview } from './hooks/usePreview'
@@ -55,11 +56,15 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionTab[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [sessionChooserOpen, setSessionChooserOpen] = useState(false)
+  const [sessionChooserSelectedProfileId, setSessionChooserSelectedProfileId] = useState<string | null>(null)
   const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>(readDefaultView)
   const [toast, setToast] = useState<ToastNotice | null>(null)
   const [recentConnections, setRecentConnections] = useState<RecentConnection[]>(readRecentConnections)
   const [pendingHostKeys, setPendingHostKeys] = useState<PendingHostKey[]>([])
   const [browserContextMenu, setBrowserContextMenu] = useState<BrowserContextMenuState | null>(null)
+  const [remoteEntryDeleteDialog, setRemoteEntryDeleteDialog] = useState<{ entry: RemoteEntry; sessionId: string; directory: string } | null>(null)
+  const [remoteEntryDeleteError, setRemoteEntryDeleteError] = useState<string | null>(null)
+  const [remoteEntryDeleting, setRemoteEntryDeleting] = useState(false)
   const [createDirectoryDialog, setCreateDirectoryDialog] = useState<{ name: string } | null>(null)
   const [creatingDirectory, setCreatingDirectory] = useState(false)
   const [searchSessionId, setSearchSessionId] = useState<string | null>(null)
@@ -102,9 +107,13 @@ export default function App() {
     showToast,
   })
   const dismissToast = useCallback(() => setToast(null), [])
+  const clearSessionChooserSelectedProfile = useCallback(() => setSessionChooserSelectedProfileId(null), [])
   const {
     profiles,
     profileDialog,
+    profileDeleteDialog,
+    profileDeleteError,
+    profileDeleting,
     settingsForm,
     settingsLoading,
     settingsSaving,
@@ -112,7 +121,9 @@ export default function App() {
     openSettingsDialog,
     updateProfileForm,
     submitProfile,
-    removeProfile,
+    requestProfileDeletion,
+    closeProfileDeleteDialog,
+    confirmProfileDeletion,
     updateSettingsForm,
     updateDefaultView,
     submitSettings,
@@ -122,6 +133,7 @@ export default function App() {
     showToast,
     clearToast: dismissToast,
     onProfileSaved: (profile) => {
+      if (sessionChooserOpen) setSessionChooserSelectedProfileId(profile.id)
       const affectedSessions = sessionsRef.current.filter((session) => session.profileId === profile.id)
       const activeProfileId = sessionsRef.current.find((session) => session.id === activeSessionId)?.profileId
       if (activeProfileId === profile.id) closePreview()
@@ -382,6 +394,7 @@ export default function App() {
     sessionsRef.current = nextSessions
     setSessions(nextSessions)
     setSessionChooserOpen(false)
+    setSessionChooserSelectedProfileId(null)
     setToast(null)
     void connectSession(session, profile)
   }
@@ -558,26 +571,42 @@ export default function App() {
     }
   }
 
-  const deleteRemoteEntry = async (entry: RemoteEntry) => {
+  const requestRemoteEntryDeletion = (entry: RemoteEntry) => {
     if (!connectedSessionId) return
-    const sessionId = connectedSessionId
-    const directory = currentPath
-    const isDirectory = entry.type === 'directory'
-    const detail = isDirectory ? '及其中所有内容' : ''
-    if (!window.confirm(`确定删除“${entry.name}”${detail}？此操作无法撤销。`)) return
     setBrowserContextMenu(null)
+    setRemoteEntryDeleteError(null)
+    setRemoteEntryDeleteDialog({ entry, sessionId: connectedSessionId, directory: currentPath })
+  }
+
+  const cancelRemoteEntryDeletion = () => {
+    if (remoteEntryDeleting) return
+    setRemoteEntryDeleteDialog(null)
+    setRemoteEntryDeleteError(null)
+  }
+
+  const confirmRemoteEntryDeletion = async () => {
+    if (!remoteEntryDeleteDialog || remoteEntryDeleting) return
+    const { entry, sessionId, directory } = remoteEntryDeleteDialog
+    const isDirectory = entry.type === 'directory'
+    setRemoteEntryDeleting(true)
+    setRemoteEntryDeleteError(null)
     try {
       await window.remoteFiles.deleteRemoteEntry(sessionId, entry.path)
-      updateSession(sessionId, (session) => ({
-        ...session,
-        entries: session.entries.filter((item) => item.path !== entry.path),
-      }))
-      const refreshed = await loadDirectory(sessionId, directory)
-      if (refreshed) {
-        showToast('info', `${isDirectory ? '文件夹' : '文件'}已删除`)
-      }
     } catch (error) {
-      showToast('error', `删除失败：${errorMessage(error)}`)
+      setRemoteEntryDeleteError(errorMessage(error))
+      return
+    } finally {
+      setRemoteEntryDeleting(false)
+    }
+
+    setRemoteEntryDeleteDialog(null)
+    updateSession(sessionId, (session) => ({
+      ...session,
+      entries: session.entries.filter((item) => item.path !== entry.path),
+    }))
+    const refreshed = await loadDirectory(sessionId, directory)
+    if (refreshed) {
+      showToast('info', `${isDirectory ? '文件夹' : '文件'}已删除`)
     }
   }
 
@@ -822,7 +851,7 @@ export default function App() {
             onAdd={() => openProfileDialog('create')}
             onConnect={(profile) => void connectTo(profile)}
             onEdit={(profile) => openProfileDialog('edit', profile)}
-            onDelete={(profile) => void removeProfile(profile)}
+            onDelete={requestProfileDeletion}
           />
         ) : activeSession?.kind === 'terminal' ? null : activeSession ? (
           <div className="session-connection-state" id={'session-panel-' + activeSession.id} role="tabpanel" aria-labelledby={'session-tab-' + activeSession.id}>
@@ -880,7 +909,7 @@ export default function App() {
               download(entry)
             }}
             onCopyPath={(entry) => void copyEntryPath(entry)}
-            onDelete={(entry) => void deleteRemoteEntry(entry)}
+            onDelete={requestRemoteEntryDeletion}
             onCopyCurrentPath={() => void copyCurrentPath()}
             onCreateDirectory={() => {
               setBrowserContextMenu(null)
@@ -904,6 +933,10 @@ export default function App() {
 
       <DialogLayer
         profileDialog={profileDialog}
+        profileDialogAboveSession={sessionChooserOpen}
+        profileDeleteDialog={profileDeleteDialog}
+        profileDeleteError={profileDeleteError}
+        profileDeleting={profileDeleting}
         createDirectoryDialog={createDirectoryDialog}
         creatingDirectory={creatingDirectory}
         settingsForm={settingsForm}
@@ -917,6 +950,8 @@ export default function App() {
         previewImageRef={previewImageRef}
         logViewportRef={logViewportRef}
         onCloseProfile={closeProfileDialog}
+        onCloseProfileDelete={closeProfileDeleteDialog}
+        onConfirmProfileDelete={() => void confirmProfileDeletion()}
         onCloseCreateDirectory={() => {
           if (!creatingDirectory) setCreateDirectoryDialog(null)
         }}
@@ -936,6 +971,28 @@ export default function App() {
         onDismissHostKey={dismissHostKey}
       />
 
+      {remoteEntryDeleteDialog && (
+        <ConfirmationDialog
+          eyebrow="远程文件操作"
+          title={remoteEntryDeleteDialog.entry.type === 'directory' ? '删除远程文件夹？' : '删除远程文件？'}
+          details={[
+            { label: '名称', value: remoteEntryDeleteDialog.entry.name },
+            { label: '远程路径', value: remoteEntryDeleteDialog.entry.path },
+          ]}
+          description={remoteEntryDeleteDialog.entry.type === 'directory'
+            ? '此操作无法撤销，文件夹中的所有内容也会一并删除。'
+            : '此操作无法撤销，远程文件将被永久删除。'}
+          tone="danger"
+          confirmLabel={remoteEntryDeleteDialog.entry.type === 'directory' ? '删除文件夹' : '删除文件'}
+          busyLabel="正在删除"
+          error={remoteEntryDeleteError}
+          errorLabel="删除失败"
+          busy={remoteEntryDeleting}
+          onConfirm={() => void confirmRemoteEntryDeletion()}
+          onCancel={cancelRemoteEntryDeletion}
+        />
+      )}
+
       {searchProfile && searchSession && searchSessionId && (
         <SearchDialog
           key={searchSessionId}
@@ -950,11 +1007,14 @@ export default function App() {
       {sessionChooserOpen && (
         <SessionChooser
           profiles={profiles}
-          onClose={() => setSessionChooserOpen(false)}
-          onAddProfile={() => {
+          selectedProfileId={sessionChooserSelectedProfileId}
+          profileDialogOpen={Boolean(profileDialog)}
+          onProfileSelectionApplied={clearSessionChooserSelectedProfile}
+          onClose={() => {
             setSessionChooserOpen(false)
-            openProfileDialog('create')
+            setSessionChooserSelectedProfileId(null)
           }}
+          onAddProfile={() => openProfileDialog('create')}
           onCreate={createChosenSession}
         />
       )}

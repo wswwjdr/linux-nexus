@@ -1,5 +1,7 @@
 import { useEffect, type FormEvent, type KeyboardEvent, type RefObject, type SyntheticEvent, type WheelEvent } from 'react'
 import { Check, Eye, FileText, FolderPlus, KeyRound, LayoutGrid, List, LoaderCircle, Server, ShieldCheck, X } from 'lucide-react'
+import type { ServerProfile } from '@shared/types'
+import ConfirmationDialog from './ConfirmationDialog'
 import type {
   FileViewMode,
   ImagePreviewSize,
@@ -14,6 +16,10 @@ import { previewLimitFields } from '@/app-utils'
 
 interface DialogLayerProps {
   profileDialog: { mode: 'create' | 'edit'; form: ProfileForm } | null
+  profileDialogAboveSession: boolean
+  profileDeleteDialog: ServerProfile | null
+  profileDeleteError: string | null
+  profileDeleting: boolean
   createDirectoryDialog: { name: string } | null
   creatingDirectory: boolean
   settingsForm: SettingsForm | null
@@ -27,6 +33,8 @@ interface DialogLayerProps {
   previewImageRef: RefObject<HTMLImageElement | null>
   logViewportRef: RefObject<HTMLPreElement | null>
   onCloseProfile: () => void
+  onCloseProfileDelete: () => void
+  onConfirmProfileDelete: () => void
   onCloseCreateDirectory: () => void
   onUpdateCreateDirectoryName: (name: string) => void
   onSubmitCreateDirectory: (event: FormEvent<HTMLFormElement>) => void
@@ -46,6 +54,10 @@ interface DialogLayerProps {
 
 export default function DialogLayer({
   profileDialog,
+  profileDialogAboveSession,
+  profileDeleteDialog,
+  profileDeleteError,
+  profileDeleting,
   createDirectoryDialog,
   creatingDirectory,
   settingsForm,
@@ -59,6 +71,8 @@ export default function DialogLayer({
   previewImageRef,
   logViewportRef,
   onCloseProfile,
+  onCloseProfileDelete,
+  onConfirmProfileDelete,
   onCloseCreateDirectory,
   onUpdateCreateDirectoryName,
   onSubmitCreateDirectory,
@@ -131,7 +145,7 @@ export default function DialogLayer({
   return (
     <>
       {profileDialog && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onCloseProfile()}>
+        <div className={'modal-backdrop' + (profileDialogAboveSession ? ' session-launcher-profile-backdrop' : '')} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onCloseProfile()}>
           <section className="modal profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
             <div className="modal-heading">
               <div>
@@ -174,6 +188,26 @@ export default function DialogLayer({
             </form>
           </section>
         </div>
+      )}
+
+      {profileDeleteDialog && (
+        <ConfirmationDialog
+          eyebrow="删除连接"
+          title="删除连接配置？"
+          details={[
+            { label: '连接名称', value: profileDeleteDialog.name },
+            { label: '连接地址', value: `${profileDeleteDialog.username}@${profileDeleteDialog.host}:${profileDeleteDialog.port}` },
+          ]}
+          description="删除后，此设备保存的连接配置和密码将被移除，对应会话也会断开。远程服务器上的文件不会受影响。"
+          tone="danger"
+          confirmLabel="删除连接"
+          busyLabel="正在删除"
+          error={profileDeleteError}
+          errorLabel="删除失败"
+          busy={profileDeleting}
+          onConfirm={onConfirmProfileDelete}
+          onCancel={onCloseProfileDelete}
+        />
       )}
 
       {createDirectoryDialog && (
