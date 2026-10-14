@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent as ReactFormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { Cloud, FolderOpen, FolderUp, LoaderCircle, Plus, RefreshCw, Search, Settings, Terminal, Upload, X } from 'lucide-react'
+import { Cloud, FolderOpen, FolderUp, House, LoaderCircle, Plus, RefreshCw, Search, Settings, Terminal, Upload, X } from 'lucide-react'
 import GlobalToast, { type ToastNotice } from './GlobalToast'
 import FileBrowser from './components/FileBrowser'
 import FileContextMenu from './components/FileContextMenu'
@@ -443,6 +443,14 @@ export default function App() {
     setActiveSessionId(sessionId)
   }
 
+  const goHome = () => {
+    closePreview()
+    setSearchSessionId(null)
+    setBrowserContextMenu(null)
+    setCreateDirectoryDialog(null)
+    setActiveSessionId(null)
+  }
+
   const navigateSession = (sessionId: string, remotePath: string): Promise<boolean> => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (session?.kind !== 'sftp' || session.status !== 'connected') return Promise.resolve(false)
@@ -734,6 +742,15 @@ export default function App() {
       <main className="main-area">
         <header className="topbar">
           <div className="topbar-left">
+            <button
+              className="icon-button toolbar-button"
+              title="首页"
+              aria-label="首页"
+              disabled={!activeSession}
+              onClick={goHome}
+            >
+              <House size={16} />
+            </button>
             <button
               className="icon-button toolbar-button"
               title="设置"
