@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, protocol } from 'electron'
+import { app, BrowserWindow, dialog, Menu, protocol } from 'electron'
 import { mkdir, rm } from 'node:fs/promises'
 import { mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -71,7 +71,6 @@ function createWindow(): void {
     backgroundColor: '#f3f6f3',
     title: 'Linux Nexus',
     icon: iconPath,
-    autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -79,6 +78,7 @@ function createWindow(): void {
       sandbox: true,
     },
   })
+  window.setMenu(null)
   setMainWindow(window)
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -105,6 +105,7 @@ function createWindow(): void {
 
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock || !applicationDataConfigured) return
+  Menu.setApplicationMenu(null)
   const userDataDirectory = app.getPath('userData')
   configureStateFiles(join(userDataDirectory, 'servers.json'), join(userDataDirectory, 'settings.json'))
   try {
