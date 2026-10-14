@@ -395,8 +395,6 @@ export default function App() {
     void connectSession(session, profile)
   }
 
-  const connectTo = (profile: ServerProfile) => openSession(profile, 'sftp')
-
   const createChosenSession = (profileId: string, kind: SessionKind) => {
     const profile = profiles.find((candidate) => candidate.id === profileId)
     if (profile) openSession(profile, kind)
@@ -862,7 +860,7 @@ export default function App() {
             profiles={offlineProfiles}
             connectionPending={false}
             onAdd={() => openProfileDialog('create')}
-            onConnect={(profile) => void connectTo(profile)}
+            onConnect={openSession}
             onEdit={(profile) => openProfileDialog('edit', profile)}
             onDelete={requestProfileDeletion}
           />
