@@ -238,10 +238,6 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .session-launcher-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .session-launcher-header h2 { margin: 0; color: #26362c; font-size: 16px; font-weight: 650; }
 .session-launcher-label { display: block; margin: 0 0 8px; color: #69776e; font-size: 11px; font-weight: 600; }
-.session-launcher-server-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.session-launcher-server-heading .session-launcher-label { margin: 0; }
-.session-launcher-add-server { height: 27px; padding: 0 7px; font-size: 11px; }
-.modal-backdrop.session-launcher-profile-backdrop { z-index: 8; }
 .session-launcher select { width: 100%; height: 38px; margin-bottom: 18px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); color: #35443a; background: white; font: inherit; }
 .session-kind-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .session-kind-switch button { min-height: 64px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius); color: #68766d; background: #fbfcfb; font-size: 11px; cursor: pointer; }

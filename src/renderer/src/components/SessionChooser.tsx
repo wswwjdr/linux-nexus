@@ -1,26 +1,14 @@
 import { useEffect, useState } from 'react'
-import { FolderOpen, Plus, Terminal, X } from 'lucide-react'
+import { FolderOpen, Terminal, X } from 'lucide-react'
 import type { ServerProfile, SessionKind } from '@shared/types'
 
 interface SessionChooserProps {
   profiles: ServerProfile[]
-  selectedProfileId: string | null
-  profileDialogOpen: boolean
-  onProfileSelectionApplied: () => void
   onClose: () => void
-  onAddProfile: () => void
   onCreate: (profileId: string, kind: SessionKind) => void
 }
 
-export default function SessionChooser({
-  profiles,
-  selectedProfileId,
-  profileDialogOpen,
-  onProfileSelectionApplied,
-  onClose,
-  onAddProfile,
-  onCreate,
-}: SessionChooserProps) {
+export default function SessionChooser({ profiles, onClose, onCreate }: SessionChooserProps) {
   const [profileId, setProfileId] = useState(profiles[0]?.id ?? '')
   const [kind, setKind] = useState<SessionKind>('sftp')
 
@@ -30,20 +18,14 @@ export default function SessionChooser({
   }, [profiles, profileId])
 
   useEffect(() => {
-    if (!selectedProfileId || !profiles.some((profile) => profile.id === selectedProfileId)) return
-    setProfileId(selectedProfileId)
-    onProfileSelectionApplied()
-  }, [profiles, selectedProfileId, onProfileSelectionApplied])
-
-  useEffect(() => {
     const dismissOnEscape = (event: KeyboardEvent) => {
-      if (profileDialogOpen || event.key !== 'Escape') return
+      if (event.key !== 'Escape') return
       event.preventDefault()
       onClose()
     }
     window.addEventListener('keydown', dismissOnEscape, true)
     return () => window.removeEventListener('keydown', dismissOnEscape, true)
-  }, [onClose, profileDialogOpen])
+  }, [onClose])
 
   return (
     <div className="session-launcher-backdrop" onMouseDown={(event) => {
@@ -56,12 +38,7 @@ export default function SessionChooser({
         </header>
         {profiles.length ? (
           <>
-            <div className="session-launcher-server-heading">
-              <label className="session-launcher-label" htmlFor="session-profile">服务器</label>
-              <button type="button" className="text-button session-launcher-add-server" onClick={onAddProfile}>
-                <Plus size={13} /> 添加服务器
-              </button>
-            </div>
+            <label className="session-launcher-label" htmlFor="session-profile">服务器</label>
             <select id="session-profile" autoFocus value={profileId} onChange={(event) => setProfileId(event.target.value)}>
               {profiles.map((profile) => (
                 <option key={profile.id} value={profile.id}>{profile.name} · {profile.username}@{profile.host}</option>
@@ -83,8 +60,7 @@ export default function SessionChooser({
           </>
         ) : (
           <div className="session-launcher-empty">
-            <p>还没有已保存的服务器</p>
-            <button className="text-button primary-action" onClick={onAddProfile}>添加服务器</button>
+            <p>还没有已保存的服务器，请关闭此窗口并返回主页添加。</p>
           </div>
         )}
       </section>

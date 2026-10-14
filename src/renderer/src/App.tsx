@@ -56,7 +56,6 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionTab[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [sessionChooserOpen, setSessionChooserOpen] = useState(false)
-  const [sessionChooserSelectedProfileId, setSessionChooserSelectedProfileId] = useState<string | null>(null)
   const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>(readDefaultView)
   const [toast, setToast] = useState<ToastNotice | null>(null)
   const [recentConnections, setRecentConnections] = useState<RecentConnection[]>(readRecentConnections)
@@ -107,7 +106,6 @@ export default function App() {
     showToast,
   })
   const dismissToast = useCallback(() => setToast(null), [])
-  const clearSessionChooserSelectedProfile = useCallback(() => setSessionChooserSelectedProfileId(null), [])
   const {
     profiles,
     profileDialog,
@@ -133,7 +131,6 @@ export default function App() {
     showToast,
     clearToast: dismissToast,
     onProfileSaved: (profile) => {
-      if (sessionChooserOpen) setSessionChooserSelectedProfileId(profile.id)
       const affectedSessions = sessionsRef.current.filter((session) => session.profileId === profile.id)
       const activeProfileId = sessionsRef.current.find((session) => session.id === activeSessionId)?.profileId
       if (activeProfileId === profile.id) closePreview()
@@ -394,7 +391,6 @@ export default function App() {
     sessionsRef.current = nextSessions
     setSessions(nextSessions)
     setSessionChooserOpen(false)
-    setSessionChooserSelectedProfileId(null)
     setToast(null)
     void connectSession(session, profile)
   }
@@ -950,7 +946,6 @@ export default function App() {
 
       <DialogLayer
         profileDialog={profileDialog}
-        profileDialogAboveSession={sessionChooserOpen}
         profileDeleteDialog={profileDeleteDialog}
         profileDeleteError={profileDeleteError}
         profileDeleting={profileDeleting}
@@ -1024,14 +1019,7 @@ export default function App() {
       {sessionChooserOpen && (
         <SessionChooser
           profiles={profiles}
-          selectedProfileId={sessionChooserSelectedProfileId}
-          profileDialogOpen={Boolean(profileDialog)}
-          onProfileSelectionApplied={clearSessionChooserSelectedProfile}
-          onClose={() => {
-            setSessionChooserOpen(false)
-            setSessionChooserSelectedProfileId(null)
-          }}
-          onAddProfile={() => openProfileDialog('create')}
+          onClose={() => setSessionChooserOpen(false)}
           onCreate={createChosenSession}
         />
       )}

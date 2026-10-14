@@ -16,7 +16,6 @@ import { previewLimitFields } from '@/app-utils'
 
 interface DialogLayerProps {
   profileDialog: { mode: 'create' | 'edit'; form: ProfileForm } | null
-  profileDialogAboveSession: boolean
   profileDeleteDialog: ServerProfile | null
   profileDeleteError: string | null
   profileDeleting: boolean
@@ -54,7 +53,6 @@ interface DialogLayerProps {
 
 export default function DialogLayer({
   profileDialog,
-  profileDialogAboveSession,
   profileDeleteDialog,
   profileDeleteError,
   profileDeleting,
@@ -145,7 +143,7 @@ export default function DialogLayer({
   return (
     <>
       {profileDialog && (
-        <div className={'modal-backdrop' + (profileDialogAboveSession ? ' session-launcher-profile-backdrop' : '')} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onCloseProfile()}>
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onCloseProfile()}>
           <section className="modal profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
             <div className="modal-heading">
               <div>
