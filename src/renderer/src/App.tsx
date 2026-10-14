@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent as ReactFormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { Cloud, FolderOpen, FolderUp, House, LoaderCircle, Plus, RefreshCw, Search, Settings, Terminal, Upload, X } from 'lucide-react'
+import { Cloud, Copy, FolderOpen, FolderUp, House, LoaderCircle, Plus, RefreshCw, Search, Settings, Terminal, Upload, X } from 'lucide-react'
 import GlobalToast, { type ToastNotice } from './GlobalToast'
 import FileBrowser from './components/FileBrowser'
 import FileContextMenu from './components/FileContextMenu'
@@ -45,6 +45,12 @@ const entryTypeLabels: Record<RemoteEntry['type'], string> = {
   other: '其他',
 }
 
+interface SessionContextMenuState {
+  sessionId: string
+  x: number
+  y: number
+}
+
 function getEntryTypeExtension(name: string): string {
   const extensionStart = name.lastIndexOf('.')
   return extensionStart > 0 && extensionStart < name.length - 1
@@ -61,6 +67,7 @@ export default function App() {
   const [recentConnections, setRecentConnections] = useState<RecentConnection[]>(readRecentConnections)
   const [pendingHostKeys, setPendingHostKeys] = useState<PendingHostKey[]>([])
   const [browserContextMenu, setBrowserContextMenu] = useState<BrowserContextMenuState | null>(null)
+  const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null)
   const [remoteEntryDeleteDialog, setRemoteEntryDeleteDialog] = useState<{ entry: RemoteEntry; sessionId: string; directory: string } | null>(null)
   const [remoteEntryDeleteError, setRemoteEntryDeleteError] = useState<string | null>(null)
   const [remoteEntryDeleting, setRemoteEntryDeleting] = useState(false)
@@ -71,6 +78,7 @@ export default function App() {
   const connectingSessionsRef = useRef(new Set<string>())
   const directoryLoadIdsRef = useRef(new Map<string, number>())
   const contextMenuRef = useRef<HTMLDivElement>(null)
+  const sessionContextMenuRef = useRef<HTMLDivElement>(null)
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
   const patchSession = useCallback((sessionId: string, patch: Partial<SessionTab>) => {
@@ -258,6 +266,32 @@ export default function App() {
     }
   }, [browserContextMenu])
 
+  useEffect(() => {
+    if (!sessionContextMenu) return
+
+    const dismissOutside = (event: PointerEvent) => {
+      if (!sessionContextMenuRef.current?.contains(event.target as Node)) setSessionContextMenu(null)
+    }
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSessionContextMenu(null)
+    }
+    const dismiss = () => setSessionContextMenu(null)
+
+    document.addEventListener('pointerdown', dismissOutside, true)
+    window.addEventListener('keydown', dismissOnEscape)
+    window.addEventListener('blur', dismiss)
+    window.addEventListener('resize', dismiss)
+    window.addEventListener('scroll', dismiss, true)
+    sessionContextMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    return () => {
+      document.removeEventListener('pointerdown', dismissOutside, true)
+      window.removeEventListener('keydown', dismissOnEscape)
+      window.removeEventListener('blur', dismiss)
+      window.removeEventListener('resize', dismiss)
+      window.removeEventListener('scroll', dismiss, true)
+    }
+  }, [sessionContextMenu])
+
   const loadDirectory = async (sessionId: string, remotePath: string) => {
     if (!sessionsRef.current.some((session) => session.id === sessionId && session.status === 'connected')) return false
     const requestId = (directoryLoadIdsRef.current.get(sessionId) ?? 0) + 1
@@ -365,25 +399,27 @@ export default function App() {
     }
   }
 
-  const openSession = (profile: ServerProfile, kind: SessionKind, startPath = '') => {
+  const openSession = (profile: ServerProfile, kind: SessionKind, startPath = '', source?: SessionTab) => {
     const id = crypto.randomUUID()
+    const currentPath = kind === 'sftp' ? source?.currentPath || '/' : ''
     const session: SessionTab = {
       id,
       profileId: profile.id,
       kind,
       status: 'connecting',
-      currentPath: kind === 'sftp' ? '/' : '',
+      currentPath,
       startPath,
       entries: [],
       loading: kind === 'sftp',
-      viewMode: viewModeDefault,
-      sort: { column: 'name', direction: 'ascending' },
+      viewMode: source?.viewMode ?? viewModeDefault,
+      sort: source?.sort ?? { column: 'name', direction: 'ascending' },
       highlightedPath: null,
-      history: kind === 'sftp' ? ['/'] : [],
+      history: kind === 'sftp' ? [currentPath] : [],
       historyIndex: kind === 'sftp' ? 0 : -1,
       error: null,
     }
     setBrowserContextMenu(null)
+    setSessionContextMenu(null)
     setSearchSessionId(null)
     closePreview()
     setActiveSessionId(id)
@@ -398,6 +434,32 @@ export default function App() {
   const createChosenSession = (profileId: string, kind: SessionKind) => {
     const profile = profiles.find((candidate) => candidate.id === profileId)
     if (profile) openSession(profile, kind)
+  }
+
+  const duplicateSession = (sessionId: string) => {
+    const source = sessionsRef.current.find((session) => session.id === sessionId)
+    const profile = profiles.find((candidate) => candidate.id === source?.profileId)
+    if (!source || !profile) return
+    openSession(profile, source.kind, source.startPath, source)
+  }
+
+  const openSessionContextMenu = (sessionId: string, x: number, y: number) => {
+    const menuWidth = 204
+    const menuHeight = 48
+    const inset = 8
+    setBrowserContextMenu(null)
+    setSessionContextMenu({
+      sessionId,
+      x: Math.max(inset, Math.min(x, window.innerWidth - menuWidth - inset)),
+      y: Math.max(inset, Math.min(y, window.innerHeight - menuHeight - inset)),
+    })
+  }
+
+  const handleSessionTabContextMenuKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, sessionId: string) => {
+    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+    event.preventDefault()
+    const bounds = event.currentTarget.getBoundingClientRect()
+    openSessionContextMenu(sessionId, bounds.left + 12, bounds.bottom)
   }
 
   const reconnectSession = (sessionId: string) => {
@@ -518,6 +580,7 @@ export default function App() {
     const itemCount = menu.kind === 'directory' ? 4 : menu.entry.type === 'file' ? 4 : 3
     const menuWidth = 204
     const menuHeight = itemCount * 34 + 14
+    setSessionContextMenu(null)
     setBrowserContextMenu({
       ...menu,
       x: Math.max(8, Math.min(menu.x, window.innerWidth - menuWidth - 8)),
@@ -804,7 +867,14 @@ export default function App() {
               const label = sameKindSessions.length > 1 ? `${baseLabel} (${duplicateIndex + 1})` : baseLabel
               const title = `${label} · ${kindLabel}${session.kind === 'sftp' ? ' · ' + session.currentPath : ''}`
               return (
-                <div className={'session-tab ' + (isActive ? 'active' : '')} key={session.id}>
+                <div
+                  className={'session-tab ' + (isActive ? 'active' : '')}
+                  key={session.id}
+                  onContextMenu={(event) => {
+                    event.preventDefault()
+                    openSessionContextMenu(session.id, event.clientX, event.clientY)
+                  }}
+                >
                   <button
                     className="session-tab-select"
                     id={'session-tab-' + session.id}
@@ -813,6 +883,7 @@ export default function App() {
                     aria-controls={'session-panel-' + session.id}
                     title={title}
                     onClick={() => activateSession(session.id)}
+                    onKeyDown={(event) => handleSessionTabContextMenuKeyDown(event, session.id)}
                   >
                     {session.kind === 'sftp' ? <FolderOpen size={14} /> : <Terminal size={14} />}
                     <span className="session-tab-label">{label}</span>
@@ -835,6 +906,21 @@ export default function App() {
             <Plus size={16} />
           </button>
         </nav>
+
+        {sessionContextMenu && (
+          <div
+            className="browser-context-menu session-context-menu"
+            ref={sessionContextMenuRef}
+            role="menu"
+            aria-label="会话操作"
+            style={{ left: sessionContextMenu.x, top: sessionContextMenu.y }}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <button className="entry-context-action" role="menuitem" onClick={() => duplicateSession(sessionContextMenu.sessionId)}>
+              <Copy size={16} /> 复制会话
+            </button>
+          </div>
+        )}
 
         {activeSession?.kind === 'sftp' && connectedSessionId ? (
           <div className="sftp-session-panel" id={'session-panel-' + activeSession.id} role="tabpanel" aria-labelledby={'session-tab-' + activeSession.id}>
