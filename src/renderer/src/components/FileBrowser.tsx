@@ -83,6 +83,7 @@ export default function FileBrowser({
 }: FileBrowserProps) {
   const contentRef = useRef<HTMLDivElement>(null)
   const hoverCardRef = useRef<HTMLDivElement>(null)
+  const hoverTimerRef = useRef<number | null>(null)
   const [hoveredEntry, setHoveredEntry] = useState<{
     entry: RemoteEntry
     anchorLeft: number
@@ -93,6 +94,10 @@ export default function FileBrowser({
   } | null>(null)
 
   const showEntryDetails = (entry: RemoteEntry, element: HTMLElement) => {
+    if (hoverTimerRef.current !== null) {
+      window.clearTimeout(hoverTimerRef.current)
+      hoverTimerRef.current = null
+    }
     const bounds = element.getBoundingClientRect()
     setHoveredEntry({
       entry,
@@ -104,9 +109,26 @@ export default function FileBrowser({
     })
   }
 
+  const scheduleEntryDetails = (entry: RemoteEntry, element: HTMLElement) => {
+    if (hoverTimerRef.current !== null) window.clearTimeout(hoverTimerRef.current)
+    setHoveredEntry(null)
+    hoverTimerRef.current = window.setTimeout(() => {
+      hoverTimerRef.current = null
+      showEntryDetails(entry, element)
+    }, 1000)
+  }
+
+  const cancelEntryDetails = () => {
+    if (hoverTimerRef.current !== null) {
+      window.clearTimeout(hoverTimerRef.current)
+      hoverTimerRef.current = null
+    }
+    setHoveredEntry(null)
+  }
+
   const hideEntryDetailsOnBlur = (event: ReactFocusEvent<HTMLElement>) => {
     if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
-    setHoveredEntry(null)
+    cancelEntryDetails()
   }
 
   useEffect(() => {
@@ -118,8 +140,16 @@ export default function FileBrowser({
   }, [highlightedPath, sortedEntries, viewMode])
 
   useEffect(() => {
+    if (hoverTimerRef.current !== null) {
+      window.clearTimeout(hoverTimerRef.current)
+      hoverTimerRef.current = null
+    }
     setHoveredEntry(null)
   }, [currentPath, entries, sortedEntries, viewMode])
+
+  useEffect(() => () => {
+    if (hoverTimerRef.current !== null) window.clearTimeout(hoverTimerRef.current)
+  }, [])
 
   useLayoutEffect(() => {
     if (!hoveredEntry || !hoverCardRef.current) return
@@ -234,10 +264,10 @@ export default function FileBrowser({
                 aria-label={entry.name}
                 aria-describedby={hoveredEntry?.entry.path === entry.path ? 'entry-hover-details' : undefined}
                 tabIndex={entry.type === 'file' || entry.path === highlightedPath ? 0 : -1}
-                onMouseEnter={(event) => showEntryDetails(entry, event.currentTarget)}
+                onMouseEnter={(event) => scheduleEntryDetails(entry, event.currentTarget)}
                 onMouseLeave={(event) => {
                   if (event.relatedTarget instanceof Node && hoverCardRef.current?.contains(event.relatedTarget)) return
-                  setHoveredEntry(null)
+                  cancelEntryDetails()
                 }}
                 onFocus={(event) => showEntryDetails(entry, event.currentTarget)}
                 onBlur={hideEntryDetailsOnBlur}
