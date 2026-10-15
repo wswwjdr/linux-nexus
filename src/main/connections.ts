@@ -19,6 +19,8 @@ import {
 } from './sftp-utils'
 
 const pendingConnections = new Map<string, { profileId: string; client: Client; cancel: () => void }>()
+const SSH_KEEPALIVE_INTERVAL_MS = 15_000
+const SSH_KEEPALIVE_COUNT_MAX = 3
 
 function sendConnectionClosed(sessionId: string, profileId: string, message: string): void {
   const window = getMainWindow()
@@ -161,7 +163,13 @@ export function connectProfile(
     client.on('error', (error: Error & { level?: string }) => {
       const activeSession = sessions.get(sessionId)
       if (activeSession?.client === client) {
-        failActiveSession(activeSession, error.message)
+        failActiveSession(
+          activeSession,
+          error.message === 'Keepalive timeout'
+            ? 'SSH 保活超时，服务器或网络已断开'
+            : error.message || 'SSH 连接异常',
+        )
+        client.destroy()
         return
       }
       if (!isCurrentAttempt() || settled) return
@@ -194,6 +202,8 @@ export function connectProfile(
       username: profile.username,
       password,
       readyTimeout: 15000,
+      keepaliveInterval: SSH_KEEPALIVE_INTERVAL_MS,
+      keepaliveCountMax: SSH_KEEPALIVE_COUNT_MAX,
       hostVerifier: (hash: Buffer, callback: (verified: boolean) => void) => {
         if (!isCurrentAttempt()) {
           callback(false)
