@@ -41,6 +41,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid #73a997; outline-
 button:disabled { cursor: not-allowed; opacity: .45; }
 
 .app-shell { display: flex; height: 100vh; min-height: 560px; background: var(--canvas); }
+.startup-shell { min-width: 0; }
+.startup-loading { min-height: 0; flex: 1; display: grid; place-items: center; color: #84958a; }
 .icon-button { width: 30px; height: 30px; display: inline-grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: var(--radius); color: var(--muted); background: transparent; cursor: pointer; transition: color .15s, background .15s, border-color .15s; }
 .icon-button:hover:not(:disabled) { color: var(--ink); background: #edf2ee; border-color: var(--line); }
 .icon-button.subtle { width: 27px; height: 27px; color: #819087; }
@@ -282,8 +284,13 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .confirmation-dialog .modal-footer { margin-top: 21px; }
 .field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; color: #59685f; font-size: 11px; font-weight: 600; }
 .field input { width: 100%; height: 36px; padding: 0 10px; border: 1px solid #dce4dd; border-radius: var(--radius); color: #25352b; background: #fff; font-size: 12px; font-weight: 400; }
+.field select { width: 100%; height: 36px; padding: 0 10px; border: 1px solid #dce4dd; border-radius: var(--radius); color: #25352b; background: #fff; font-size: 12px; font-weight: 400; }
 .field input::placeholder { color: #abb5ad; }
 .field input:focus { border-color: #7eae96; outline: 2px solid #dbece2; }
+.field select:focus { border-color: #7eae96; outline: 2px solid #dbece2; }
+.field select:disabled { color: #87958b; background: #f7f9f7; }
+.settings-startup-profile { margin-bottom: 14px; }
+.settings-startup-kind { margin-bottom: 16px; }
 .settings-view-field { min-width: 0; margin: 0 0 16px; padding: 0; border: 0; color: #59685f; font-size: 11px; font-weight: 600; }
 .settings-view-field legend { margin-bottom: 7px; padding: 0; }
 .settings-view-options { height: 36px; display: grid; grid-template-columns: 1fr 1fr; overflow: hidden; border: 1px solid var(--line-strong); border-radius: var(--radius); background: #f7f9f7; }

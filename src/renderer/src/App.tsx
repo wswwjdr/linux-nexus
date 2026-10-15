@@ -75,6 +75,7 @@ export default function App() {
   const [creatingDirectory, setCreatingDirectory] = useState(false)
   const [searchSessionId, setSearchSessionId] = useState<string | null>(null)
   const toastSequenceRef = useRef(0)
+  const startupConnectionAttemptedRef = useRef(false)
   const connectingSessionsRef = useRef(new Set<string>())
   const directoryLoadIdsRef = useRef(new Map<string, number>())
   const contextMenuRef = useRef<HTMLDivElement>(null)
@@ -116,6 +117,8 @@ export default function App() {
   const dismissToast = useCallback(() => setToast(null), [])
   const {
     profiles,
+    profileDataLoaded,
+    startupConnection,
     profileDialog,
     profileDeleteDialog,
     profileDeleteError,
@@ -132,6 +135,8 @@ export default function App() {
     confirmProfileDeletion,
     updateSettingsForm,
     updateDefaultView,
+    updateStartupProfile,
+    updateStartupKind,
     submitSettings,
     closeProfileDialog,
     closeSettingsDialog,
@@ -431,6 +436,18 @@ export default function App() {
     setToast(null)
     void connectSession(session, profile)
   }
+
+  useEffect(() => {
+    if (!profileDataLoaded || startupConnectionAttemptedRef.current) return
+    startupConnectionAttemptedRef.current = true
+    if (!startupConnection || sessionsRef.current.length > 0) return
+    const profile = profiles.find((candidate) => candidate.id === startupConnection.profileId)
+    if (!profile) {
+      showToast('error', '启动连接所选服务器不存在，请在设置中重新选择')
+      return
+    }
+    openSession(profile, startupConnection.kind)
+  }, [profileDataLoaded, startupConnection, profiles, showToast])
 
   const createChosenSession = (profileId: string, kind: SessionKind) => {
     const profile = profiles.find((candidate) => candidate.id === profileId)
@@ -792,6 +809,19 @@ export default function App() {
 
   const profileForSession = (session: SessionTab) => profiles.find((profile) => profile.id === session.profileId)
 
+  if (!profileDataLoaded
+    || (startupConnection && !startupConnectionAttemptedRef.current && sessions.length === 0)) {
+    return (
+      <div className="app-shell startup-shell">
+        <main className="main-area">
+          <div className="startup-loading" role="status" aria-label="正在启动">
+            <LoaderCircle className="spin" size={22} />
+          </div>
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="app-shell" onAuxClick={(event) => {
       if (event.button !== 3 && event.button !== 4) return
@@ -1040,6 +1070,7 @@ export default function App() {
         createDirectoryDialog={createDirectoryDialog}
         creatingDirectory={creatingDirectory}
         settingsForm={settingsForm}
+        profiles={profiles}
         settingsSaving={settingsSaving}
         previewDialog={previewDialog}
         logPreviewDialog={logPreviewDialog}
@@ -1062,6 +1093,8 @@ export default function App() {
         onCloseSettings={closeSettingsDialog}
         onUpdateSettings={updateSettingsForm}
         onUpdateDefaultView={updateDefaultView}
+        onUpdateStartupProfile={updateStartupProfile}
+        onUpdateStartupKind={updateStartupKind}
         onSubmitSettings={(event) => void submitSettings(event)}
         onClosePreview={closePreview}
         onLogPreviewScroll={onLogPreviewScroll}

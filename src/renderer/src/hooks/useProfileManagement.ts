@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import type { PreviewLimits, SaveProfileInput, ServerProfile } from '@shared/types'
+import type { AppSettings, PreviewLimits, SaveProfileInput, ServerProfile, SessionKind, StartupConnection } from '@shared/types'
 import type { FileViewMode, PreviewLimitKey, ProfileForm, SettingsForm } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { emptyForm, errorMessage, previewLimitFields, readDefaultView, toPreviewLimitsForm } from '@/app-utils'
@@ -14,6 +14,9 @@ interface UseProfileManagementOptions {
 
 export function useProfileManagement({ showToast, clearToast, onProfileSaved, onProfileDeleted, onDefaultViewChange }: UseProfileManagementOptions) {
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
+  const [profilesLoaded, setProfilesLoaded] = useState(false)
+  const [startupSettingsLoaded, setStartupSettingsLoaded] = useState(false)
+  const [startupConnection, setStartupConnection] = useState<StartupConnection | null>(null)
   const [dialog, setDialog] = useState<{ mode: 'create' | 'edit'; form: ProfileForm } | null>(null)
   const [profileDeleteDialog, setProfileDeleteDialog] = useState<ServerProfile | null>(null)
   const [profileDeleteError, setProfileDeleteError] = useState<string | null>(null)
@@ -27,7 +30,13 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
   }
 
   useEffect(() => {
-    void refreshProfiles().catch((error) => showToast('error', errorMessage(error)))
+    void refreshProfiles()
+      .catch((error) => showToast('error', errorMessage(error)))
+      .finally(() => setProfilesLoaded(true))
+    void window.remoteFiles.getAppSettings()
+      .then((settings) => setStartupConnection(settings.startupConnection))
+      .catch((error) => showToast('error', '读取设置失败：' + errorMessage(error)))
+      .finally(() => setStartupSettingsLoaded(true))
   }, [showToast])
 
   const openProfileDialog = (mode: 'create' | 'edit', profile?: ServerProfile) => {
@@ -51,7 +60,14 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
     if (settingsLoading || settingsSaving) return
     setSettingsLoading(true)
     try {
-      setSettingsForm({ ...toPreviewLimitsForm(await window.remoteFiles.getPreviewLimits()), defaultView: readDefaultView() })
+      const settings = await window.remoteFiles.getAppSettings()
+      const profileId = settings.startupConnection?.profileId
+      setSettingsForm({
+        ...toPreviewLimitsForm(settings),
+        defaultView: readDefaultView(),
+        startupProfileId: profileId && profiles.some((profile) => profile.id === profileId) ? profileId : '',
+        startupKind: settings.startupConnection?.kind ?? 'sftp',
+      })
     } catch (error) {
       showToast('error', '读取设置失败：' + errorMessage(error))
     } finally {
@@ -65,6 +81,14 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
 
   const updateDefaultView = (defaultView: FileViewMode) => {
     setSettingsForm((current) => current ? { ...current, defaultView } : current)
+  }
+
+  const updateStartupProfile = (startupProfileId: string) => {
+    setSettingsForm((current) => current ? { ...current, startupProfileId } : current)
+  }
+
+  const updateStartupKind = (startupKind: SessionKind) => {
+    setSettingsForm((current) => current ? { ...current, startupKind } : current)
   }
 
   const submitSettings = async (event: FormEvent<HTMLFormElement>) => {
@@ -83,7 +107,14 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
 
     setSettingsSaving(true)
     try {
-      await window.remoteFiles.savePreviewLimits(limits)
+      const settings: AppSettings = {
+        ...limits,
+        startupConnection: settingsForm.startupProfileId
+          ? { profileId: settingsForm.startupProfileId, kind: settingsForm.startupKind }
+          : null,
+      }
+      await window.remoteFiles.saveAppSettings(settings)
+      setStartupConnection(settings.startupConnection)
       window.localStorage.setItem('remote-files:default-view', settingsForm.defaultView)
       onDefaultViewChange(settingsForm.defaultView)
       setSettingsForm(null)
@@ -144,6 +175,7 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
     try {
       await window.remoteFiles.deleteProfile(profile.id)
       setProfiles((current) => current.filter((item) => item.id !== profile.id))
+      setStartupConnection((current) => current?.profileId === profile.id ? null : current)
       onProfileDeleted(profile.id)
       setProfileDeleteDialog(null)
       clearToast()
@@ -159,6 +191,8 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
 
   return {
     profiles,
+    profileDataLoaded: profilesLoaded && startupSettingsLoaded,
+    startupConnection,
     profileDialog: dialog,
     profileDeleteDialog,
     profileDeleteError,
@@ -175,6 +209,8 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
     confirmProfileDeletion,
     updateSettingsForm,
     updateDefaultView,
+    updateStartupProfile,
+    updateStartupKind,
     submitSettings,
     closeProfileDialog,
     closeSettingsDialog,

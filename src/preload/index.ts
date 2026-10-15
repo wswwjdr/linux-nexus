@@ -4,7 +4,7 @@ import type {
   DroppedUploadEntry,
   LogPreviewPage,
   PreviewResult,
-  PreviewLimits,
+  AppSettings,
   RemoteFilesApi,
   RemoteSearchEvent,
   RemoteSearchRequest,
@@ -25,9 +25,8 @@ const api: RemoteFilesApi = {
   disconnect: (sessionId: string) => ipcRenderer.invoke('connection:disconnect', sessionId),
   writeTerminal: (sessionId: string, data: string) => ipcRenderer.invoke('terminal:write', sessionId, data),
   resizeTerminal: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
-  getPreviewLimits: (): Promise<PreviewLimits> => ipcRenderer.invoke('settings:preview-limits:get'),
-  savePreviewLimits: (limits: PreviewLimits): Promise<PreviewLimits> =>
-    ipcRenderer.invoke('settings:preview-limits:save', limits),
+  getAppSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
+  saveAppSettings: (settings: AppSettings): Promise<AppSettings> => ipcRenderer.invoke('settings:save', settings),
   listDirectory: (sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('files:list', sessionId, remotePath),
   searchFiles: (request: RemoteSearchRequest) => ipcRenderer.invoke('files:search', request),

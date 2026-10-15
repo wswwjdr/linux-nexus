@@ -1,7 +1,7 @@
 import { safeStorage } from 'electron'
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import type { PreviewLimits, ServerProfile } from '@shared/types'
+import type { AppSettings, PreviewLimits, ServerProfile, SessionKind, StartupConnection } from '@shared/types'
 import { messageFromError } from './runtime'
 
 export interface StoredState {
@@ -15,6 +15,11 @@ export const DEFAULT_PREVIEW_LIMITS: PreviewLimits = {
   imageMiB: 100,
   audioMiB: 100,
   videoMiB: 100,
+}
+
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  ...DEFAULT_PREVIEW_LIMITS,
+  startupConnection: null,
 }
 
 const MAX_PREVIEW_LIMIT_MIB = 1024
@@ -35,10 +40,13 @@ function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
   return Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key))
 }
 
-function validatePreviewLimits(value: unknown): PreviewLimits {
+export function validateAppSettings(value: unknown): AppSettings {
   const keys = Object.keys(DEFAULT_PREVIEW_LIMITS)
-  if (!isRecord(value) || !hasExactKeys(value, keys)) {
-    throw new Error('预览设置结构无效')
+  if (!isRecord(value) || keys.some((key) => !Object.hasOwn(value, key))
+    || Object.keys(value).some((key) => !keys.includes(key) && key !== 'startupConnection')
+    || (Object.hasOwn(value, 'startupConnection') && Object.keys(value).length !== keys.length + 1)
+    || (!Object.hasOwn(value, 'startupConnection') && Object.keys(value).length !== keys.length)) {
+    throw new Error('应用设置结构无效')
   }
   for (const key of keys) {
     const limit = value[key]
@@ -46,7 +54,17 @@ function validatePreviewLimits(value: unknown): PreviewLimits {
       throw new Error('预览设置 ' + key + ' 必须是 1 到 ' + MAX_PREVIEW_LIMIT_MIB + ' 之间的整数')
     }
   }
-  return value as unknown as PreviewLimits
+  let startupConnection: StartupConnection | null = null
+  if (Object.hasOwn(value, 'startupConnection') && value.startupConnection !== null) {
+    const connection = value.startupConnection
+    if (!isRecord(connection) || !hasExactKeys(connection, ['profileId', 'kind'])
+      || typeof connection.profileId !== 'string' || !connection.profileId
+      || (connection.kind !== 'sftp' && connection.kind !== 'terminal')) {
+      throw new Error('启动连接设置无效')
+    }
+    startupConnection = { profileId: connection.profileId, kind: connection.kind as SessionKind }
+  }
+  return { ...value as unknown as PreviewLimits, startupConnection }
 }
 
 function validateStoredState(value: unknown, verifyPasswordCiphertexts = false): StoredState {
@@ -139,22 +157,34 @@ export function writeState(state: StoredState): void {
   atomicWriteJson(stateFile, state)
 }
 
-export function readPreviewLimits(): PreviewLimits {
+export function readAppSettings(): AppSettings {
   if (!existsSync(settingsFile)) {
-    atomicWriteJson(settingsFile, DEFAULT_PREVIEW_LIMITS)
-    return { ...DEFAULT_PREVIEW_LIMITS }
+    atomicWriteJson(settingsFile, DEFAULT_APP_SETTINGS)
+    return { ...DEFAULT_APP_SETTINGS }
   }
   try {
-    return validatePreviewLimits(parseJsonFile(settingsFile))
+    return validateAppSettings(parseJsonFile(settingsFile))
   } catch (error) {
-    throw new Error('预览设置无效（' + settingsFile + '）：' + messageFromError(error))
+    throw new Error('应用设置无效（' + settingsFile + '）：' + messageFromError(error))
   }
 }
 
-export function writePreviewLimits(limits: unknown): PreviewLimits {
-  const validated = validatePreviewLimits(limits)
+export function writeAppSettings(settings: unknown): AppSettings {
+  const validated = validateAppSettings(settings)
   atomicWriteJson(settingsFile, validated)
   return validated
+}
+
+export function readPreviewLimits(): PreviewLimits {
+  const { startupConnection: _startupConnection, ...limits } = readAppSettings()
+  return limits
+}
+
+export function writePreviewLimits(limits: unknown): PreviewLimits {
+  const appSettings = validateAppSettings({ ...(limits as Record<string, unknown>), startupConnection: null })
+  const { startupConnection: _startupConnection, ...validatedLimits } = appSettings
+  atomicWriteJson(settingsFile, { ...readAppSettings(), ...validatedLimits })
+  return validatedLimits
 }
 
 export function endpointKey(profile: ServerProfile): string {

@@ -1,6 +1,6 @@
 import { ipcMain, safeStorage } from 'electron'
 import { randomUUID } from 'node:crypto'
-import type { PreviewLimits, RemoteSearchRequest, SaveProfileInput, ServerProfile, SessionKind, TrustHostKeyInput } from '@shared/types'
+import type { AppSettings, RemoteSearchRequest, SaveProfileInput, ServerProfile, SessionKind, TrustHostKeyInput } from '@shared/types'
 import {
   connectProfile,
   copyRemotePath,
@@ -16,9 +16,10 @@ import { sessions } from './runtime'
 import {
   endpointKey,
   profileFromState,
-  readPreviewLimits,
+  readAppSettings,
   readState,
-  writePreviewLimits,
+  validateAppSettings,
+  writeAppSettings,
   writeState,
 } from './state-store'
 import { cancelTransfer, downloadEntry, uploadDroppedEntries, uploadSelection, withTransferLock } from './transfers'
@@ -72,6 +73,10 @@ export function registerIpc(): void {
   ipcMain.handle('profiles:delete', (_event, profileId: string) => {
     stopSessionsForProfile(profileId)
     const state = readState()
+    const settings = readAppSettings()
+    if (settings.startupConnection?.profileId === profileId) {
+      writeAppSettings({ ...settings, startupConnection: null })
+    }
     state.profiles = state.profiles.filter((profile) => profile.id !== profileId)
     delete state.passwords[profileId]
     writeState(state)
@@ -99,8 +104,15 @@ export function registerIpc(): void {
     }
     resizeTerminal(sessionId, cols, rows)
   })
-  ipcMain.handle('settings:preview-limits:get', () => readPreviewLimits())
-  ipcMain.handle('settings:preview-limits:save', (_event, limits: PreviewLimits) => writePreviewLimits(limits))
+  ipcMain.handle('settings:get', () => readAppSettings())
+  ipcMain.handle('settings:save', (_event, input: AppSettings) => {
+    const settings = validateAppSettings(input)
+    if (settings.startupConnection
+      && !readState().profiles.some((profile) => profile.id === settings.startupConnection?.profileId)) {
+      throw new Error('启动连接所选服务器不存在')
+    }
+    return writeAppSettings(settings)
+  })
   ipcMain.handle('host-key:trust', (_event, input: TrustHostKeyInput) => {
     if (typeof input?.profileId !== 'string' || !input.profileId
       || typeof input.fingerprint !== 'string' || !/^SHA256:[A-Za-z0-9+/]{43}$/.test(input.fingerprint)

@@ -74,4 +74,6 @@ export type PreviewLimitKey = keyof PreviewLimits
 export type PreviewLimitsForm = Record<PreviewLimitKey, string>
 export interface SettingsForm extends PreviewLimitsForm {
   defaultView: FileViewMode
+  startupProfileId: string
+  startupKind: SessionKind
 }

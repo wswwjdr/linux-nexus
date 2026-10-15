@@ -1,5 +1,5 @@
 import { useEffect, type FormEvent, type KeyboardEvent, type RefObject, type SyntheticEvent, type WheelEvent } from 'react'
-import { Check, FileText, KeyRound, LayoutGrid, List, LoaderCircle, Server, ShieldCheck, X } from 'lucide-react'
+import { Check, FileText, FolderOpen, KeyRound, LayoutGrid, List, LoaderCircle, Server, ShieldCheck, Terminal, X } from 'lucide-react'
 import type { ServerProfile } from '@shared/types'
 import ConfirmationDialog from './ConfirmationDialog'
 import type {
@@ -22,6 +22,7 @@ interface DialogLayerProps {
   createDirectoryDialog: { name: string } | null
   creatingDirectory: boolean
   settingsForm: SettingsForm | null
+  profiles: ServerProfile[]
   settingsSaving: boolean
   previewDialog: PreviewDialogState | null
   logPreviewDialog: LogPreviewDialogState | null
@@ -42,6 +43,8 @@ interface DialogLayerProps {
   onCloseSettings: () => void
   onUpdateSettings: (key: PreviewLimitKey, value: string) => void
   onUpdateDefaultView: (mode: FileViewMode) => void
+  onUpdateStartupProfile: (profileId: string) => void
+  onUpdateStartupKind: (kind: SettingsForm['startupKind']) => void
   onSubmitSettings: (event: FormEvent<HTMLFormElement>) => void
   onClosePreview: () => void
   onLogPreviewScroll: () => void
@@ -59,6 +62,7 @@ export default function DialogLayer({
   createDirectoryDialog,
   creatingDirectory,
   settingsForm,
+  profiles,
   settingsSaving,
   previewDialog,
   logPreviewDialog,
@@ -79,6 +83,8 @@ export default function DialogLayer({
   onCloseSettings,
   onUpdateSettings,
   onUpdateDefaultView,
+  onUpdateStartupProfile,
+  onUpdateStartupKind,
   onSubmitSettings,
   onClosePreview,
   onLogPreviewScroll,
@@ -268,6 +274,44 @@ export default function DialogLayer({
                   </button>
                 </div>
               </fieldset>
+              <label className="field settings-startup-profile">
+                <span>启动时连接</span>
+                <select
+                  value={settingsForm.startupProfileId}
+                  disabled={settingsSaving}
+                  onChange={(event) => onUpdateStartupProfile(event.target.value)}
+                >
+                  <option value="">不自动连接（打开首页）</option>
+                  {profiles.map((profile) => (
+                    <option value={profile.id} key={profile.id}>
+                      {profile.name}（{profile.username}@{profile.host}:{profile.port}）
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {settingsForm.startupProfileId && (
+                <fieldset className="settings-view-field settings-startup-kind" disabled={settingsSaving}>
+                  <legend>连接方式</legend>
+                  <div className="settings-view-options" role="group" aria-label="启动连接方式">
+                    <button
+                      type="button"
+                      className="settings-view-option"
+                      aria-pressed={settingsForm.startupKind === 'sftp'}
+                      onClick={() => onUpdateStartupKind('sftp')}
+                    >
+                      <FolderOpen size={15} /> SFTP 文件管理
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-view-option"
+                      aria-pressed={settingsForm.startupKind === 'terminal'}
+                      onClick={() => onUpdateStartupKind('terminal')}
+                    >
+                      <Terminal size={15} /> SSH 终端
+                    </button>
+                  </div>
+                </fieldset>
+              )}
               <fieldset className="settings-preview-field">
                 <legend>预览大小上限</legend>
                 <div className="settings-preview-grid">

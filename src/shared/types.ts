@@ -108,6 +108,15 @@ export interface PreviewLimits {
   videoMiB: number
 }
 
+export interface StartupConnection {
+  profileId: string
+  kind: SessionKind
+}
+
+export interface AppSettings extends PreviewLimits {
+  startupConnection: StartupConnection | null
+}
+
 export interface TransferProgress {
   requestId: string
   sessionId: string
@@ -152,8 +161,8 @@ export interface RemoteFilesApi {
   disconnect(sessionId: string): Promise<void>
   writeTerminal(sessionId: string, data: string): Promise<void>
   resizeTerminal(sessionId: string, cols: number, rows: number): Promise<void>
-  getPreviewLimits(): Promise<PreviewLimits>
-  savePreviewLimits(limits: PreviewLimits): Promise<PreviewLimits>
+  getAppSettings(): Promise<AppSettings>
+  saveAppSettings(settings: AppSettings): Promise<AppSettings>
   listDirectory(sessionId: string, remotePath: string): Promise<RemoteEntry[]>
   searchFiles(request: RemoteSearchRequest): Promise<void>
   cancelSearch(requestId: string): Promise<boolean>
