@@ -18,6 +18,14 @@ function previewSizeError(limitMiB: number): Error {
   return new Error('文件超过预览上限（' + limitMiB + ' MiB），请下载后查看')
 }
 
+function decodeText(buffer: Buffer): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer)
+  } catch {
+    return new TextDecoder('gbk').decode(buffer)
+  }
+}
+
 export async function previewFile(sessionId: string, remotePath: string): Promise<PreviewResult> {
   const session = sessions.get(sessionId)
   if (!session?.sftp) throw new Error('SFTP 会话未连接')
@@ -46,7 +54,7 @@ export async function previewFile(sessionId: string, remotePath: string): Promis
     } finally {
       if (!stream.destroyed) stream.destroy()
     }
-    return { type, name, content: Buffer.concat(chunks).toString('utf8') }
+    return { type, name, content: decodeText(Buffer.concat(chunks)) }
   }
 
   const token = randomUUID()
