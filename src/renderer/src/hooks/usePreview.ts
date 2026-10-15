@@ -62,7 +62,7 @@ export function usePreview({ sessionId, showToast }: UsePreviewOptions) {
     if (token) window.setTimeout(() => void window.remoteFiles.releasePreview(token), 0)
   }
 
-  const previewFile = async (entry: RemoteEntry) => {
+  const previewFile = async (entry: Pick<RemoteEntry, 'name' | 'path'>) => {
     closePreview()
     if (!previewFileType(entry.name)) {
       showToast('info', '暂不支持的文件类型：' + entry.name)

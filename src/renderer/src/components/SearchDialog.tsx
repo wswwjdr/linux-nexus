@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   AlertTriangle,
   Clock3,
+  Eye,
   File,
   Folder,
+  FolderOpen,
   LoaderCircle,
   Search,
   SlidersHorizontal,
@@ -22,14 +24,21 @@ import { errorMessage, formatSize } from '@/app-utils'
 
 type SearchConditions = Omit<RemoteSearchRequest, 'requestId' | 'profileId' | 'sessionId'>
 type SearchStatus = 'idle' | 'running' | 'cancelling' | 'completed' | 'cancelled' | 'failed'
-type PendingConfirmation = { kind: 'close' } | { kind: 'select-result'; result: RemoteSearchResult }
 
 interface SearchDialogProps {
   sessionId: string
   profileId: string
   currentPath: string
+  previewOpen: boolean
   onClose: () => void
   onSelectResult: (result: RemoteSearchResult) => void
+  onPreviewResult: (result: RemoteSearchResult) => void
+}
+
+interface ResultActionMenuState {
+  result: RemoteSearchResult
+  x: number
+  y: number
 }
 
 const DEFAULT_MAX_FILE_SIZE_MIB = 100
@@ -87,20 +96,26 @@ function Counter({ label, value }: { label: string; value: number }) {
   return <span className="search-counter"><strong>{value.toLocaleString()}</strong> {label}</span>
 }
 
-export default function SearchDialog({ sessionId, profileId, currentPath, onClose, onSelectResult }: SearchDialogProps) {
+export default function SearchDialog({ sessionId, profileId, currentPath, previewOpen, onClose, onSelectResult, onPreviewResult }: SearchDialogProps) {
   const [conditions, setConditions] = useState(() => initialConditions(currentPath))
   const [history, setHistory] = useState(() => readHistory(profileId))
   const [results, setResults] = useState<RemoteSearchResult[]>([])
+  const [resultActionMenu, setResultActionMenu] = useState<ResultActionMenuState | null>(null)
   const [resultMode, setResultMode] = useState<SearchConditions['mode']>('name')
   const [progress, setProgress] = useState({ scannedEntries: 0, matchedFiles: 0, matchedLines: 0, skippedEntries: 0, incomplete: false })
   const [status, setStatus] = useState<SearchStatus>('idle')
   const [error, setError] = useState<string | null>(null)
-  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
+  const [confirmClose, setConfirmClose] = useState(false)
   const queryRef = useRef<HTMLInputElement>(null)
   const activeRequestRef = useRef<string | null>(null)
   const requestCloseRef = useRef<() => void>(() => {})
-  const pendingConfirmationRef = useRef(pendingConfirmation)
-  pendingConfirmationRef.current = pendingConfirmation
+  const resultActionMenuRef = useRef(resultActionMenu)
+  const resultActionMenuElementRef = useRef<HTMLDivElement>(null)
+  const confirmCloseRef = useRef(confirmClose)
+  const previewOpenRef = useRef(previewOpen)
+  resultActionMenuRef.current = resultActionMenu
+  confirmCloseRef.current = confirmClose
+  previewOpenRef.current = previewOpen
   const running = status === 'running' || status === 'cancelling'
   const expressionError = useMemo(() => validateExpression(conditions.query, conditions.matcher), [conditions.query, conditions.matcher])
   const invalidFileSize = conditions.mode === 'content'
@@ -126,10 +141,15 @@ export default function SearchDialog({ sessionId, profileId, currentPath, onClos
     })
     const dismissOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (previewOpenRef.current) return
         event.preventDefault()
         event.stopImmediatePropagation()
-        if (pendingConfirmationRef.current) {
-          setPendingConfirmation(null)
+        if (resultActionMenuRef.current) {
+          setResultActionMenu(null)
+          return
+        }
+        if (confirmCloseRef.current) {
+          setConfirmClose(false)
           return
         }
         requestCloseRef.current()
@@ -143,10 +163,26 @@ export default function SearchDialog({ sessionId, profileId, currentPath, onClos
     }
   }, [])
 
+  useEffect(() => {
+    if (!resultActionMenu) return
+    const dismissOnOutsidePointer = (event: PointerEvent) => {
+      if (!resultActionMenuElementRef.current?.contains(event.target as Node)) setResultActionMenu(null)
+    }
+    const dismissOnResize = () => setResultActionMenu(null)
+    window.addEventListener('pointerdown', dismissOnOutsidePointer, true)
+    window.addEventListener('resize', dismissOnResize)
+    resultActionMenuElementRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+    return () => {
+      window.removeEventListener('pointerdown', dismissOnOutsidePointer, true)
+      window.removeEventListener('resize', dismissOnResize)
+    }
+  }, [resultActionMenu])
+
   const update = <K extends keyof SearchConditions>(key: K, value: SearchConditions[K]) => {
     if (conditions[key] === value) return
     setConditions((current) => ({ ...current, [key]: value }))
     setResults([])
+    setResultActionMenu(null)
     setProgress({ scannedEntries: 0, matchedFiles: 0, matchedLines: 0, skippedEntries: 0, incomplete: false })
     setStatus('idle')
     setError(null)
@@ -170,6 +206,7 @@ export default function SearchDialog({ sessionId, profileId, currentPath, onClos
     activeRequestRef.current = request.requestId
     setResultMode(conditions.mode)
     setResults([])
+    setResultActionMenu(null)
     setProgress({ scannedEntries: 0, matchedFiles: 0, matchedLines: 0, skippedEntries: 0, incomplete: false })
     setStatus('running')
     setError(null)
@@ -200,37 +237,25 @@ export default function SearchDialog({ sessionId, profileId, currentPath, onClos
 
   const requestClose = () => {
     if (running) {
-      setPendingConfirmation({ kind: 'close' })
+      setConfirmClose(true)
       return
     }
     onClose()
   }
   requestCloseRef.current = requestClose
 
-  const selectResult = (result: RemoteSearchResult) => {
-    if (running) {
-      setPendingConfirmation({ kind: 'select-result', result })
-      return
-    }
-    onSelectResult(result)
-  }
-
   const confirmPendingAction = () => {
-    if (!pendingConfirmation) return
-    const action = pendingConfirmation
-    setPendingConfirmation(null)
+    if (!confirmClose) return
+    setConfirmClose(false)
     if (running) cancelSearch()
-    if (action.kind === 'close') {
-      onClose()
-    } else {
-      onSelectResult(action.result)
-    }
+    onClose()
   }
 
   const replayHistory = (savedConditions: SearchConditions) => {
     setConditions({ ...savedConditions })
     setResultMode(savedConditions.mode)
     setResults([])
+    setResultActionMenu(null)
     setProgress({ scannedEntries: 0, matchedFiles: 0, matchedLines: 0, skippedEntries: 0, incomplete: false })
     setError(null)
     setStatus('idle')
@@ -244,6 +269,22 @@ export default function SearchDialog({ sessionId, profileId, currentPath, onClos
   const changeScope = (scope: RemoteSearchScope) => {
     update('scope', scope)
     update('rootPath', scope === 'root' ? '/' : currentPath)
+  }
+
+  const openResultActionMenu = (event: ReactMouseEvent<HTMLButtonElement>, result: RemoteSearchResult) => {
+    if (resultActionMenu?.result.path === result.path) {
+      setResultActionMenu(null)
+      return
+    }
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const menuWidth = 210
+    const menuHeight = result.type === 'directory' ? 48 : 84
+    const x = Math.max(8, Math.min(bounds.right - menuWidth, window.innerWidth - menuWidth - 8))
+    const belowY = bounds.bottom + 6
+    const y = belowY + menuHeight <= window.innerHeight - 8
+      ? belowY
+      : Math.max(8, bounds.top - menuHeight - 6)
+    setResultActionMenu({ result, x, y })
   }
 
   const statusText = status === 'running' ? '正在扫描'
@@ -395,9 +436,17 @@ export default function SearchDialog({ sessionId, profileId, currentPath, onClos
             )}
             {error && <div className="search-error-notice" role="alert">{error}</div>}
 
-            <div className="search-results-list" aria-live="polite">
+            <div className="search-results-list" aria-live="polite" onScroll={() => setResultActionMenu(null)}>
               {results.map((result) => (
-                <button className="search-result" key={result.path} onClick={() => selectResult(result)} title={'在文件浏览器中定位 ' + result.path}>
+                <button
+                  className="search-result"
+                  key={result.path}
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={resultActionMenu?.result.path === result.path}
+                  onClick={(event) => openResultActionMenu(event, result)}
+                  title={'操作 ' + result.path}
+                >
                   <span className="search-result-heading">
                     <span className={'search-result-icon ' + (result.type === 'directory' ? 'directory' : '')}>
                       {result.type === 'directory' ? <Folder size={16} /> : <File size={15} />}
@@ -429,22 +478,51 @@ export default function SearchDialog({ sessionId, profileId, currentPath, onClos
           </section>
         </div>
       </section>
-      {pendingConfirmation && (
+      {resultActionMenu && (
+        <div
+          className="search-result-action-menu"
+          ref={resultActionMenuElementRef}
+          role="menu"
+          aria-label={resultActionMenu.result.name + '的操作'}
+          style={{ left: resultActionMenu.x, top: resultActionMenu.y }}
+        >
+          {resultActionMenu.result.type !== 'directory' && (
+            <button
+              type="button"
+              className="search-result-action"
+              role="menuitem"
+              onClick={() => {
+                const { result } = resultActionMenu
+                setResultActionMenu(null)
+                onPreviewResult(result)
+              }}
+            >
+              <Eye size={15} /> 预览
+            </button>
+          )}
+          <button
+            type="button"
+            className="search-result-action"
+            role="menuitem"
+            onClick={() => {
+              const { result } = resultActionMenu
+              setResultActionMenu(null)
+              onSelectResult(result)
+            }}
+          >
+            <FolderOpen size={15} /> {resultActionMenu.result.type === 'directory' ? '打开文件夹' : '打开所在目录'}
+          </button>
+        </div>
+      )}
+      {confirmClose && (
         <ConfirmationDialog
           title={running ? '搜索仍在进行' : '搜索已完成'}
-          description={running
-            ? pendingConfirmation.kind === 'close' ? '取消搜索并关闭窗口吗？' : '取消搜索并打开此搜索结果吗？'
-            : pendingConfirmation.kind === 'close' ? '关闭搜索窗口吗？' : '打开此搜索结果吗？'}
-          details={pendingConfirmation.kind === 'select-result'
-            ? [{ label: '结果路径', value: pendingConfirmation.result.path }]
-            : []}
+          description={running ? '取消搜索并关闭窗口吗？' : '关闭搜索窗口吗？'}
           tone="warning"
-          confirmLabel={running
-            ? pendingConfirmation.kind === 'close' ? '取消搜索并关闭' : '取消搜索并打开'
-            : pendingConfirmation.kind === 'close' ? '关闭搜索' : '打开结果'}
+          confirmLabel={running ? '取消搜索并关闭' : '关闭搜索'}
           cancelLabel={running ? '继续搜索' : '返回搜索'}
           onConfirm={confirmPendingAction}
-          onCancel={() => setPendingConfirmation(null)}
+          onCancel={() => setConfirmClose(false)}
         />
       )}
     </div>

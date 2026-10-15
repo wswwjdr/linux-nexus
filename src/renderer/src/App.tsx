@@ -535,8 +535,9 @@ export default function App() {
     setSearchSessionId(null)
     if (!sessionId) return
     activateSession(sessionId)
-    const loaded = await navigateSession(sessionId, getParentPath(result.path))
-    if (loaded) patchSession(sessionId, { highlightedPath: result.path })
+    const destination = result.type === 'directory' ? result.path : getParentPath(result.path)
+    const loaded = await navigateSession(sessionId, destination)
+    if (loaded) patchSession(sessionId, { highlightedPath: result.type === 'directory' ? null : result.path })
   }
 
   const movePathHistory = (offset: -1 | 1) => {
@@ -1098,8 +1099,10 @@ export default function App() {
           sessionId={searchSessionId}
           profileId={searchSession.profileId}
           currentPath={searchSession.currentPath}
+          previewOpen={Boolean(previewDialog || logPreviewDialog)}
           onClose={() => setSearchSessionId(null)}
           onSelectResult={(result) => void locateSearchResult(result)}
+          onPreviewResult={(result) => void previewFile(result)}
         />
       )}
 

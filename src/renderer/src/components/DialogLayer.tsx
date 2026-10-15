@@ -289,7 +289,7 @@ export default function DialogLayer({
       )}
 
       {previewDialog && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClosePreview()}>
+        <div className="modal-backdrop preview-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClosePreview()}>
           <section className={`modal preview-modal${previewDialog.kind === 'ready' ? ` media-preview-modal${previewDialog.result.type === 'text' ? ' text-preview-modal' : ''}` : ''}`} role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
             <div className="modal-heading">
               <div>
