@@ -320,6 +320,8 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .preview-modal .modal-heading { flex: 0 0 auto; margin-bottom: 14px; }
 .preview-modal .modal-heading h2 { max-width: min(78vw, 480px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .media-preview-modal { width: min(100%, 960px); }
+.text-preview-modal { height: min(680px, calc(100vh - 48px)); }
+.text-preview-modal .preview-text { min-height: 0; max-height: none; flex: 1; }
 .log-preview-modal { width: min(100%, 1040px); height: min(820px, calc(100vh - 48px)); }
 .log-preview-status { min-height: 20px; flex: 0 0 auto; display: flex; align-items: center; gap: 6px; color: #829087; font-size: 10px; }
 .log-preview-status svg { color: var(--blue); }

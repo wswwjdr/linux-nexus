@@ -1,5 +1,5 @@
 import { useEffect, type FormEvent, type KeyboardEvent, type RefObject, type SyntheticEvent, type WheelEvent } from 'react'
-import { Check, Eye, FileText, FolderPlus, KeyRound, LayoutGrid, List, LoaderCircle, Server, ShieldCheck, X } from 'lucide-react'
+import { Check, FileText, FolderPlus, KeyRound, LayoutGrid, List, LoaderCircle, Server, ShieldCheck, X } from 'lucide-react'
 import type { ServerProfile } from '@shared/types'
 import ConfirmationDialog from './ConfirmationDialog'
 import type {
@@ -291,10 +291,9 @@ export default function DialogLayer({
 
       {previewDialog && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClosePreview()}>
-          <section className={'modal preview-modal ' + (previewDialog.kind === 'ready' ? 'media-preview-modal' : '')} role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
+          <section className={`modal preview-modal${previewDialog.kind === 'ready' ? ` media-preview-modal${previewDialog.result.type === 'text' ? ' text-preview-modal' : ''}` : ''}`} role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
             <div className="modal-heading">
               <div>
-                <div className="modal-kicker"><Eye size={14} /> 文件预览</div>
                 <h2 id="preview-modal-title">{previewDialog.kind === 'ready' ? previewDialog.result.name : previewDialog.name}</h2>
               </div>
               <button className="icon-button modal-close" title="关闭预览" aria-label="关闭预览" onClick={onClosePreview}><X size={18} /></button>
