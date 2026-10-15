@@ -1,5 +1,5 @@
 import { useEffect, type FormEvent, type KeyboardEvent, type RefObject, type SyntheticEvent, type WheelEvent } from 'react'
-import { Check, FileText, FolderPlus, KeyRound, LayoutGrid, List, LoaderCircle, Server, ShieldCheck, X } from 'lucide-react'
+import { Check, FileText, KeyRound, LayoutGrid, List, LoaderCircle, Server, ShieldCheck, X } from 'lucide-react'
 import type { ServerProfile } from '@shared/types'
 import ConfirmationDialog from './ConfirmationDialog'
 import type {
@@ -213,7 +213,6 @@ export default function DialogLayer({
           <section className="modal create-directory-modal" role="dialog" aria-modal="true" aria-labelledby="create-directory-title">
             <div className="modal-heading">
               <div>
-                <div className="modal-kicker"><FolderPlus size={14} /> 新建文件夹</div>
                 <h2 id="create-directory-title">新建文件夹</h2>
               </div>
               <button className="icon-button modal-close" title="关闭" aria-label="关闭" disabled={creatingDirectory} onClick={onCloseCreateDirectory}><X size={18} /></button>

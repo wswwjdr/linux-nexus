@@ -260,7 +260,6 @@ export default function SearchDialog({ sessionId, profileId, currentPath, onClos
       <section className="modal search-modal" role="dialog" aria-modal="true" aria-labelledby="search-dialog-title">
         <header className="search-dialog-header">
           <div>
-            <div className="modal-kicker"><Search size={14} /> 远端搜索</div>
             <h2 id="search-dialog-title">搜索文件</h2>
           </div>
           <button className="icon-button modal-close" title="关闭搜索" aria-label="关闭搜索" onClick={requestClose}>
@@ -432,7 +431,6 @@ export default function SearchDialog({ sessionId, profileId, currentPath, onClos
       </section>
       {pendingConfirmation && (
         <ConfirmationDialog
-          eyebrow="远端搜索"
           title={running ? '搜索仍在进行' : '搜索已完成'}
           description={running
             ? pendingConfirmation.kind === 'close' ? '取消搜索并关闭窗口吗？' : '取消搜索并打开此搜索结果吗？'

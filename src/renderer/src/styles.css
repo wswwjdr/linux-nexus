@@ -339,7 +339,6 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .search-backdrop { z-index: 6; }
 .search-modal { width: min(100%, 1040px); height: min(790px, calc(100vh - 48px)); display: flex; flex-direction: column; padding: 20px; }
 .search-dialog-header { flex: 0 0 auto; display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 15px; }
-.search-dialog-header .modal-kicker { margin-bottom: 5px; }
 .search-dialog-header h2 { margin: 0; }
 .search-dialog-body { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(260px, 310px) minmax(0, 1fr); gap: 20px; }
 .search-controls { min-height: 0; overflow: auto; padding-right: 15px; border-right: 1px solid var(--line); }

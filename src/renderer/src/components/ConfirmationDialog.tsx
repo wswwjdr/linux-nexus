@@ -3,7 +3,7 @@ import { AlertTriangle, LoaderCircle, Trash2, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 
 interface ConfirmationDialogProps {
-  eyebrow: string
+  eyebrow?: string
   title: string
   description: string
   details?: { label: string; value: string }[]
@@ -54,7 +54,7 @@ export default function ConfirmationDialog({
         <div className="confirmation-heading">
           <div className={'confirmation-icon ' + tone}><Icon size={19} /></div>
           <div className="confirmation-title-group">
-            <div className={'modal-kicker ' + tone}>{eyebrow}</div>
+            {eyebrow && <div className={'modal-kicker ' + tone}>{eyebrow}</div>}
             <h2 id={id + '-title'}>{title}</h2>
           </div>
           <button className="icon-button modal-close" title="关闭" aria-label="关闭" disabled={busy} onClick={onCancel}><X size={18} /></button>
