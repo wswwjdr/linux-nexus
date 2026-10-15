@@ -120,6 +120,10 @@ export interface TransferProgress {
 
 export type TransferResult = 'completed' | 'not-started' | 'cancelled'
 
+export type DroppedUploadEntry =
+  | { relativePath: string; type: 'directory' }
+  | { relativePath: string; type: 'file'; localPath: string }
+
 export type PreviewResult =
   | { type: 'text'; name: string; content: string }
   | { type: 'image' | 'audio' | 'video'; name: string; url: string; token: string }
@@ -155,6 +159,13 @@ export interface RemoteFilesApi {
   cancelSearch(requestId: string): Promise<boolean>
   uploadFiles(requestId: string, sessionId: string, remoteDirectory: string): Promise<TransferResult>
   uploadFolder(requestId: string, sessionId: string, remoteDirectory: string): Promise<TransferResult>
+  getPathForFile(file: File): string
+  uploadDroppedEntries(
+    requestId: string,
+    sessionId: string,
+    remoteDirectory: string,
+    entries: DroppedUploadEntry[],
+  ): Promise<TransferResult>
   downloadEntry(requestId: string, sessionId: string, remotePath: string): Promise<TransferResult>
   cancelTransfer(requestId: string): Promise<boolean>
   createRemoteDirectory(sessionId: string, remoteDirectory: string, name: string): Promise<void>

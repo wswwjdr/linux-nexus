@@ -111,6 +111,11 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .view-toggle-button[aria-pressed="true"] { border-color: #dce7de; color: var(--green); background: white; box-shadow: 0 1px 2px #273a2e12; }
 .path-count { color: #8c9890; font-size: 11px; white-space: nowrap; }
 .file-content-wrap { min-height: 0; flex: 1; overflow: auto; position: relative; }
+.file-drop-overlay { position: absolute; z-index: 4; inset: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 20px; border: 2px dashed #76a994; border-radius: 5px; color: #345c46; background: #f7fbf8ee; text-align: center; pointer-events: none; }
+.file-drop-overlay > svg { flex: 0 0 auto; color: var(--green); }
+.file-drop-overlay strong { color: #345c46; font-size: 14px; font-weight: 600; }
+.file-drop-overlay span { max-width: min(100%, 560px); color: #75857a; font-size: 12px; overflow-wrap: anywhere; }
+.file-drop-overlay code { color: #526c5b; font-family: 'Cascadia Code', Consolas, monospace; font-size: 11px; }
 .file-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .file-table thead { position: sticky; z-index: 1; top: 0; background: #fbfcfb; }
 .file-table th { height: 39px; padding: 0 12px; border-bottom: 1px solid var(--line); color: #7c8880; font-size: 11px; font-weight: 600; text-align: left; }

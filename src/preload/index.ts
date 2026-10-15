@@ -1,6 +1,7 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   ConnectionClosedEvent,
+  DroppedUploadEntry,
   LogPreviewPage,
   PreviewResult,
   PreviewLimits,
@@ -35,6 +36,13 @@ const api: RemoteFilesApi = {
     ipcRenderer.invoke('files:upload-files', requestId, sessionId, remoteDirectory),
   uploadFolder: (requestId: string, sessionId: string, remoteDirectory: string) =>
     ipcRenderer.invoke('files:upload-folder', requestId, sessionId, remoteDirectory),
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
+  uploadDroppedEntries: (
+    requestId: string,
+    sessionId: string,
+    remoteDirectory: string,
+    entries: DroppedUploadEntry[],
+  ) => ipcRenderer.invoke('files:upload-dropped', requestId, sessionId, remoteDirectory, entries),
   downloadEntry: (requestId: string, sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('files:download', requestId, sessionId, remotePath),
   cancelTransfer: (requestId: string) => ipcRenderer.invoke('files:transfer-cancel', requestId),

@@ -9,9 +9,10 @@ import {
   LayoutGrid,
   List,
   LoaderCircle,
+  Upload,
 } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import type { RemoteEntry } from '@shared/types'
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent as ReactDragEvent, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import type { DroppedUploadEntry, RemoteEntry } from '@shared/types'
 import type { FileViewMode, SortColumn, SortDirection } from '@/app-types'
 import { formatDate, formatSize, getParentPath } from '@/app-utils'
 
@@ -35,6 +36,64 @@ interface FileBrowserProps {
   onEntryContextMenu: (event: ReactMouseEvent<HTMLElement>, entry: RemoteEntry) => void
   onEntryKeyDown: (event: ReactKeyboardEvent<HTMLElement>, entry: RemoteEntry) => void
   onBackgroundContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => void
+  onDropUpload: (entries: DroppedUploadEntry[]) => void
+  onDropError: (error: unknown) => void
+}
+
+function hasDraggedFiles(dataTransfer: DataTransfer): boolean {
+  return Array.from(dataTransfer.types).includes('Files')
+}
+
+function readFileEntry(entry: FileSystemFileEntry): Promise<File> {
+  return new Promise((resolve, reject) => entry.file(resolve, reject))
+}
+
+function readDirectoryBatch(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
+  return new Promise((resolve, reject) => reader.readEntries(resolve, reject))
+}
+
+async function readDirectoryEntries(entry: FileSystemDirectoryEntry): Promise<FileSystemEntry[]> {
+  const reader = entry.createReader()
+  const children: FileSystemEntry[] = []
+  while (true) {
+    const batch = await readDirectoryBatch(reader)
+    if (batch.length === 0) return children
+    children.push(...batch)
+  }
+}
+
+async function droppedFile(file: File, relativePath: string): Promise<DroppedUploadEntry> {
+  const localPath = window.remoteFiles.getPathForFile(file)
+  if (!localPath) throw new Error('无法读取拖入文件的本机路径：' + file.name)
+  return { relativePath, type: 'file', localPath }
+}
+
+async function readDroppedEntry(entry: FileSystemEntry, parentPath: string): Promise<DroppedUploadEntry[]> {
+  const relativePath = parentPath ? parentPath + '/' + entry.name : entry.name
+  if (entry.isFile) return [await droppedFile(await readFileEntry(entry as FileSystemFileEntry), relativePath)]
+  if (!entry.isDirectory) throw new Error('拖入内容包含暂不支持的文件类型')
+
+  const children = await readDirectoryEntries(entry as FileSystemDirectoryEntry)
+  const descendants = await Promise.all(children.map((child) => readDroppedEntry(child, relativePath)))
+  return [{ relativePath, type: 'directory' }, ...descendants.flat()]
+}
+
+async function collectDroppedEntries(dataTransfer: DataTransfer): Promise<DroppedUploadEntry[]> {
+  const roots: FileSystemEntry[] = []
+  const standaloneFiles: File[] = []
+  for (const item of Array.from(dataTransfer.items).filter((candidate) => candidate.kind === 'file')) {
+    const entry = item.webkitGetAsEntry()
+    if (entry) roots.push(entry)
+    else {
+      const file = item.getAsFile()
+      if (file) standaloneFiles.push(file)
+    }
+  }
+
+  if (roots.length === 0 && standaloneFiles.length === 0) standaloneFiles.push(...Array.from(dataTransfer.files))
+  const rootEntries = await Promise.all(roots.map((entry) => readDroppedEntry(entry, '')))
+  const files = await Promise.all(standaloneFiles.map((file) => droppedFile(file, file.name)))
+  return [...rootEntries.flat(), ...files]
 }
 
 function SortHeader({
@@ -80,10 +139,14 @@ export default function FileBrowser({
   onEntryContextMenu,
   onEntryKeyDown,
   onBackgroundContextMenu,
+  onDropUpload,
+  onDropError,
 }: FileBrowserProps) {
   const contentRef = useRef<HTMLDivElement>(null)
   const hoverCardRef = useRef<HTMLDivElement>(null)
   const hoverTimerRef = useRef<number | null>(null)
+  const dragDepthRef = useRef(0)
+  const [dropActive, setDropActive] = useState(false)
   const [hoveredEntry, setHoveredEntry] = useState<{
     entry: RemoteEntry
     anchorLeft: number
@@ -129,6 +192,37 @@ export default function FileBrowser({
   const hideEntryDetailsOnBlur = (event: ReactFocusEvent<HTMLElement>) => {
     if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
     cancelEntryDetails()
+  }
+
+  const handleDragEnter = (event: ReactDragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    if (!hasDraggedFiles(event.dataTransfer)) return
+    dragDepthRef.current += 1
+    setDropActive(true)
+  }
+
+  const handleDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = hasDraggedFiles(event.dataTransfer) ? 'copy' : 'none'
+  }
+
+  const handleDragLeave = (event: ReactDragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    if (dragDepthRef.current === 0) return
+    dragDepthRef.current -= 1
+    if (dragDepthRef.current === 0) setDropActive(false)
+  }
+
+  const handleDrop = async (event: ReactDragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    dragDepthRef.current = 0
+    setDropActive(false)
+    if (!hasDraggedFiles(event.dataTransfer)) return
+    try {
+      onDropUpload(await collectDroppedEntries(event.dataTransfer))
+    } catch (error) {
+      onDropError(error)
+    }
   }
 
   useEffect(() => {
@@ -210,7 +304,16 @@ export default function FileBrowser({
         </div>
       </div>
 
-      <div className="file-content-wrap" ref={contentRef} onContextMenu={onBackgroundContextMenu} onScroll={() => setHoveredEntry(null)}>
+      <div
+        className="file-content-wrap"
+        ref={contentRef}
+        onContextMenu={onBackgroundContextMenu}
+        onScroll={() => setHoveredEntry(null)}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={(event) => void handleDrop(event)}
+      >
         {viewMode === 'details' ? (
           <table className="file-table">
             <thead>
@@ -293,6 +396,13 @@ export default function FileBrowser({
         )}
         {loading && <div className="table-state"><LoaderCircle className="spin" size={19} /> 正在读取目录</div>}
         {!loading && entries.length === 0 && <div className="table-state empty-directory"><Folder size={22} /> 此目录为空</div>}
+        {dropActive && (
+          <div className="file-drop-overlay" role="status">
+            <Upload size={22} />
+            <strong>松开以上传</strong>
+            <span>目标目录：<code>{currentPath}</code></span>
+          </div>
+        )}
       </div>
       {viewMode === 'icons' && hoveredEntry && (
         <div

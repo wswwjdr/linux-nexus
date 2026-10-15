@@ -21,7 +21,7 @@ import {
   writePreviewLimits,
   writeState,
 } from './state-store'
-import { cancelTransfer, downloadEntry, uploadSelection, withTransferLock } from './transfers'
+import { cancelTransfer, downloadEntry, uploadDroppedEntries, uploadSelection, withTransferLock } from './transfers'
 import { previewFile, readLogPreview, releasePreview } from './previews'
 import { cancelRemoteSearch, startRemoteSearch } from './search'
 
@@ -140,6 +140,11 @@ export function registerIpc(): void {
     const { profileId } = transferSession(sessionId)
     return withTransferLock(profileId, sessionId, requestId,
       (signal) => uploadSelection(event, requestId, sessionId, profileId, remoteDirectory, true, signal))
+  })
+  ipcMain.handle('files:upload-dropped', (event, requestId: string, sessionId: string, remoteDirectory: string, entries: unknown) => {
+    const { profileId } = transferSession(sessionId)
+    return withTransferLock(profileId, sessionId, requestId,
+      (signal) => uploadDroppedEntries(event, requestId, sessionId, profileId, remoteDirectory, entries, signal))
   })
   ipcMain.handle('files:download', (event, requestId: string, sessionId: string, remotePath: string) => {
     const { profileId } = transferSession(sessionId)

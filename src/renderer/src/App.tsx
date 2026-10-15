@@ -319,6 +319,7 @@ export default function App() {
     cancelTransfer: cancelTransferJob,
     uploadFiles,
     uploadFolder,
+    uploadDroppedEntries,
     download,
     dismissTransfer,
   } = useTransfers({
@@ -939,6 +940,8 @@ export default function App() {
               onEntryContextMenu={handleEntryContextMenu}
               onEntryKeyDown={handleEntryKeyDown}
               onBackgroundContextMenu={handleBackgroundContextMenu}
+              onDropUpload={uploadDroppedEntries}
+              onDropError={(error) => showToast('error', errorMessage(error))}
             />
           </div>
         ) : !activeSession ? (

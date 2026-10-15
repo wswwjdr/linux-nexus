@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { RemoteEntry, TransferProgress, TransferResult } from '@shared/types'
+import type { DroppedUploadEntry, RemoteEntry, TransferProgress, TransferResult } from '@shared/types'
 import type { TransferJob } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { errorMessage } from '@/app-utils'
@@ -142,6 +142,19 @@ export function useTransfers({
     { refreshPath: remoteDirectory, deferTrayUntilProgress: true })
   }
 
+  const uploadDroppedEntries = (entries: DroppedUploadEntry[]) => {
+    if (!sessionId) return
+    if (entries.length === 0) {
+      showToast('info', '拖入内容中没有可上传的文件或文件夹')
+      return
+    }
+    const activeSessionId = sessionId
+    const remoteDirectory = currentPath
+    void runTransfer('拖放上传', 'upload', (requestId) =>
+      window.remoteFiles.uploadDroppedEntries(requestId, activeSessionId, remoteDirectory, entries),
+    { refreshPath: remoteDirectory, deferTrayUntilProgress: true })
+  }
+
   const download = (entry: RemoteEntry) => {
     if (!sessionId) return
     const activeSessionId = sessionId
@@ -158,5 +171,5 @@ export function useTransfers({
     })
   }
 
-  return { transfers, cancelTransfer, uploadFiles, uploadFolder, download, dismissTransfer }
+  return { transfers, cancelTransfer, uploadFiles, uploadFolder, uploadDroppedEntries, download, dismissTransfer }
 }
