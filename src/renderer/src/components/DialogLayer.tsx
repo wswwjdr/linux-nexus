@@ -1,12 +1,13 @@
 import { useEffect, type FormEvent, type KeyboardEvent, type RefObject, type SyntheticEvent, type WheelEvent } from 'react'
-import { Check, FileText, FolderOpen, KeyRound, LayoutGrid, List, LoaderCircle, Server, ShieldCheck, Terminal, X } from 'lucide-react'
-import type { ServerProfile } from '@shared/types'
+import { Check, FileText, FolderOpen, KeyRound, LayoutGrid, List, LoaderCircle, Plus, RefreshCw, Server, ShieldCheck, Terminal, Trash2, X } from 'lucide-react'
+import type { CommandAlias, CommandAliasSnapshot, ServerProfile } from '@shared/types'
 import ConfirmationDialog from './ConfirmationDialog'
 import type {
   FileViewMode,
   ImagePreviewSize,
   LogPreviewDialog as LogPreviewDialogState,
   PendingHostKey,
+  PendingAliasHostKey,
   PreviewDialog as PreviewDialogState,
   PreviewLimitKey,
   ProfileForm,
@@ -27,6 +28,14 @@ interface DialogLayerProps {
   previewDialog: PreviewDialogState | null
   logPreviewDialog: LogPreviewDialogState | null
   pendingHostKey: PendingHostKey | null
+  pendingAliasHostKey: PendingAliasHostKey | null
+  aliasSnapshot: CommandAliasSnapshot | null
+  aliasProfileId: string
+  aliasOperationBusy: boolean
+  aliasName: string
+  aliasCommand: string
+  aliasOverwriteConfirmation: { name: string; existingCommand: string; command: string } | null
+  aliasDeleteConfirmation: CommandAlias | null
   imageZoom: number
   imagePreviewSize: ImagePreviewSize | null
   imageViewportRef: RefObject<HTMLDivElement | null>
@@ -52,6 +61,18 @@ interface DialogLayerProps {
   onZoomPreviewImage: (event: WheelEvent<HTMLDivElement>) => void
   onTrustHostKey: () => void
   onDismissHostKey: () => void
+  onSelectAliasProfile: (profileId: string) => void
+  onUpdateAliasName: (name: string) => void
+  onUpdateAliasCommand: (command: string) => void
+  onSyncAliases: () => void
+  onAddAlias: () => void
+  onConfirmAliasOverwrite: () => void
+  onCancelAliasOverwrite: () => void
+  onRequestAliasDelete: (alias: CommandAlias) => void
+  onConfirmAliasDelete: () => void
+  onCancelAliasDelete: () => void
+  onTrustAliasHostKey: () => void
+  onDismissAliasHostKey: () => void
 }
 
 export default function DialogLayer({
@@ -67,6 +88,14 @@ export default function DialogLayer({
   previewDialog,
   logPreviewDialog,
   pendingHostKey,
+  pendingAliasHostKey,
+  aliasSnapshot,
+  aliasProfileId,
+  aliasOperationBusy,
+  aliasName,
+  aliasCommand,
+  aliasOverwriteConfirmation,
+  aliasDeleteConfirmation,
   imageZoom,
   imagePreviewSize,
   imageViewportRef,
@@ -92,14 +121,29 @@ export default function DialogLayer({
   onZoomPreviewImage,
   onTrustHostKey,
   onDismissHostKey,
+  onSelectAliasProfile,
+  onUpdateAliasName,
+  onUpdateAliasCommand,
+  onSyncAliases,
+  onAddAlias,
+  onConfirmAliasOverwrite,
+  onCancelAliasOverwrite,
+  onRequestAliasDelete,
+  onConfirmAliasDelete,
+  onCancelAliasDelete,
+  onTrustAliasHostKey,
+  onDismissAliasHostKey,
 }: DialogLayerProps) {
+  const visibleHostKey = pendingHostKey ?? pendingAliasHostKey
+  const aliasHostKeyVisible = !pendingHostKey && Boolean(pendingAliasHostKey)
   useEffect(() => {
     const dismissOnEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape') return
 
-      if (pendingHostKey) {
+      if (pendingHostKey || pendingAliasHostKey) {
         event.preventDefault()
-        onDismissHostKey()
+        if (aliasHostKeyVisible) onDismissAliasHostKey()
+        else onDismissHostKey()
         return
       }
       if (previewDialog) {
@@ -119,7 +163,7 @@ export default function DialogLayer({
       }
       if (settingsForm) {
         event.preventDefault()
-        if (!settingsSaving) onCloseSettings()
+        if (!settingsSaving && !aliasOperationBusy) onCloseSettings()
         return
       }
       if (profileDialog) {
@@ -136,7 +180,10 @@ export default function DialogLayer({
     onCloseCreateDirectory,
     onCloseSettings,
     onDismissHostKey,
+    onDismissAliasHostKey,
+    aliasHostKeyVisible,
     pendingHostKey,
+    pendingAliasHostKey,
     previewDialog,
     logPreviewDialog,
     profileDialog,
@@ -144,6 +191,7 @@ export default function DialogLayer({
     creatingDirectory,
     settingsForm,
     settingsSaving,
+    aliasOperationBusy,
   ])
 
   return (
@@ -250,7 +298,7 @@ export default function DialogLayer({
       )}
 
       {settingsForm && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !settingsSaving && onCloseSettings()}>
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !settingsSaving && !aliasOperationBusy && onCloseSettings()}>
           <section className="modal settings-modal" role="dialog" aria-modal="true" aria-label="应用设置">
             <form onSubmit={onSubmitSettings}>
               <fieldset className="settings-view-field" disabled={settingsSaving}>
@@ -323,9 +371,75 @@ export default function DialogLayer({
                   ))}
                 </div>
               </fieldset>
+              <section className="command-aliases-field" aria-labelledby="command-aliases-title">
+                <div className="command-aliases-heading">
+                  <h3 id="command-aliases-title">命令别名</h3>
+                  <span className={'command-alias-status ' + (aliasSnapshot?.status ?? 'unsynced')}>
+                    {aliasSnapshot?.status === 'synced'
+                      ? `已同步 · ${aliasSnapshot.syncedAt ? new Date(aliasSnapshot.syncedAt).toLocaleString() : ''}`
+                      : aliasSnapshot?.status === 'stale'
+                        ? `待重新同步${aliasSnapshot.syncedAt ? ` · ${new Date(aliasSnapshot.syncedAt).toLocaleString()}` : ''}`
+                        : '未同步'}
+                  </span>
+                </div>
+                <label className="field command-alias-profile-field">
+                  <span>服务器</span>
+                  <select
+                    value={aliasProfileId}
+                    disabled={settingsSaving || aliasOperationBusy || !profiles.length}
+                    onChange={(event) => onSelectAliasProfile(event.target.value)}
+                  >
+                    {profiles.map((profile) => (
+                      <option value={profile.id} key={profile.id}>{profile.name}（{profile.username}@{profile.host}:{profile.port}）</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="command-alias-toolbar">
+                  <span>{aliasSnapshot?.aliases.length ?? 0} 个别名</span>
+                  <button type="button" className="secondary-button command-alias-sync" disabled={settingsSaving || aliasOperationBusy || !aliasProfileId} onClick={onSyncAliases}>
+                    {aliasOperationBusy ? <LoaderCircle className="spin" size={14} /> : <RefreshCw size={14} />}
+                    {aliasOperationBusy ? '处理中' : aliasSnapshot?.status === 'synced' ? '重新同步' : '同步'}
+                  </button>
+                </div>
+                <div className="command-alias-list">
+                  {!aliasProfileId ? (
+                    <div className="command-alias-empty">请先添加服务器连接</div>
+                  ) : aliasSnapshot?.aliases.length ? aliasSnapshot.aliases.map((alias) => (
+                    <div className="command-alias-row" key={alias.name}>
+                      <div className="command-alias-copy">
+                        <code>{alias.name}</code>
+                        <span>{alias.command}</span>
+                        {!alias.removable && <small>{alias.removalReason}</small>}
+                      </div>
+                      <button
+                        type="button"
+                        className="icon-button command-alias-delete"
+                        title={alias.removable ? `删除 ${alias.name}` : alias.removalReason ?? '此别名无法安全删除'}
+                        aria-label={alias.removable ? `删除 ${alias.name}` : `${alias.name}：${alias.removalReason ?? '无法安全删除'}`}
+                        disabled={settingsSaving || aliasOperationBusy || !alias.removable}
+                        onClick={() => onRequestAliasDelete(alias)}
+                      ><Trash2 size={14} /></button>
+                    </div>
+                  )) : (
+                    <div className="command-alias-empty">{aliasSnapshot?.status === 'synced' ? '服务器当前没有 alias' : '尚未同步服务器别名'}</div>
+                  )}
+                </div>
+                <div className="command-alias-add-row">
+                  <label className="field">
+                    <span>别名名称</span>
+                    <input autoCapitalize="none" autoComplete="off" disabled={settingsSaving || aliasOperationBusy || !aliasProfileId} value={aliasName} onChange={(event) => onUpdateAliasName(event.target.value)} placeholder="例如 ll" />
+                  </label>
+                  <label className="field">
+                    <span>实际命令</span>
+                    <input autoCapitalize="none" autoComplete="off" disabled={settingsSaving || aliasOperationBusy || !aliasProfileId} value={aliasCommand} onChange={(event) => onUpdateAliasCommand(event.target.value)} placeholder="例如 ls -alF" />
+                  </label>
+                  <button type="button" className="primary-button command-alias-add" disabled={settingsSaving || aliasOperationBusy || !aliasProfileId} onClick={onAddAlias} title="新增 alias 命令" aria-label="新增 alias 命令"><Plus size={15} />新增</button>
+                </div>
+                <p className="command-alias-note">仅支持 Bash。新增和删除会修改服务器的 ~/.bashrc，并在新开的终端中生效。</p>
+              </section>
               <div className="modal-footer">
-                <button type="button" className="secondary-button" disabled={settingsSaving} onClick={onCloseSettings}>取消</button>
-                <button type="submit" className="primary-button" disabled={settingsSaving}><Check size={15} /> 保存设置</button>
+                <button type="button" className="secondary-button" disabled={settingsSaving || aliasOperationBusy} onClick={onCloseSettings}>取消</button>
+                <button type="submit" className="primary-button" disabled={settingsSaving || aliasOperationBusy}><Check size={15} /> 保存设置</button>
               </div>
             </form>
           </section>
@@ -421,30 +535,61 @@ export default function DialogLayer({
         </div>
       )}
 
-      {pendingHostKey && (
+      {visibleHostKey && (
         <div className="modal-backdrop">
           <section className="modal fingerprint-modal" role="dialog" aria-modal="true" aria-labelledby="fingerprint-title">
             <div className="fingerprint-icon"><ShieldCheck size={24} /></div>
             <div className="modal-kicker centered">服务器身份校验</div>
-            <h2 id="fingerprint-title">{pendingHostKey.previousFingerprint ? '服务器指纹已变化' : '确认服务器指纹'}</h2>
-            <p className="fingerprint-host">{pendingHostKey.profile.username}@{pendingHostKey.profile.host}:{pendingHostKey.profile.port}</p>
-            {pendingHostKey.previousFingerprint && (
+            <h2 id="fingerprint-title">{visibleHostKey.previousFingerprint ? '服务器指纹已变化' : '确认服务器指纹'}</h2>
+            <p className="fingerprint-host">{visibleHostKey.profile.username}@{visibleHostKey.profile.host}:{visibleHostKey.profile.port}</p>
+            {visibleHostKey.previousFingerprint && (
               <div className="fingerprint-compare">
-                <span>已保存</span><code>{pendingHostKey.previousFingerprint}</code>
+                <span>已保存</span><code>{visibleHostKey.previousFingerprint}</code>
               </div>
             )}
             <div className="fingerprint-compare new-fingerprint">
-              <span>当前指纹</span><code>{pendingHostKey.fingerprint}</code>
+              <span>当前指纹</span><code>{visibleHostKey.fingerprint}</code>
             </div>
             <p className="fingerprint-note">请与服务器管理员提供的指纹核对后再继续。</p>
             <div className="modal-footer">
-              <button className="secondary-button" onClick={onDismissHostKey}>取消</button>
-              <button className="primary-button" onClick={onTrustHostKey}>
-                <ShieldCheck size={15} /> {pendingHostKey.previousFingerprint ? '更新并重连' : '信任并重连'}
+              <button className="secondary-button" onClick={aliasHostKeyVisible ? onDismissAliasHostKey : onDismissHostKey}>取消</button>
+              <button className="primary-button" onClick={aliasHostKeyVisible ? onTrustAliasHostKey : onTrustHostKey}>
+                <ShieldCheck size={15} /> {visibleHostKey.previousFingerprint ? '更新并重试' : '信任并重试'}
               </button>
             </div>
           </section>
         </div>
+      )}
+      {aliasOverwriteConfirmation && (
+        <ConfirmationDialog
+          eyebrow="命令别名冲突"
+          title={`覆盖 ${aliasOverwriteConfirmation.name}？`}
+          details={[
+            { label: '当前命令', value: aliasOverwriteConfirmation.existingCommand },
+            { label: '新命令', value: aliasOverwriteConfirmation.command },
+          ]}
+          description="确认后会替换 ~/.bashrc 中唯一且完全匹配的定义；若无法安全定位，服务器文件不会修改。"
+          tone="warning"
+          confirmLabel="覆盖别名"
+          busyLabel="正在写入"
+          busy={aliasOperationBusy}
+          onConfirm={onConfirmAliasOverwrite}
+          onCancel={onCancelAliasOverwrite}
+        />
+      )}
+      {aliasDeleteConfirmation && (
+        <ConfirmationDialog
+          eyebrow="删除命令别名"
+          title={`删除 ${aliasDeleteConfirmation.name}？`}
+          details={[{ label: '实际命令', value: aliasDeleteConfirmation.command }]}
+          description="将从 ~/.bashrc 删除唯一且完全匹配的定义。此更改会在新开的终端中生效。"
+          tone="danger"
+          confirmLabel="删除别名"
+          busyLabel="正在删除"
+          busy={aliasOperationBusy}
+          onConfirm={onConfirmAliasDelete}
+          onCancel={onCancelAliasDelete}
+        />
       )}
     </>
   )

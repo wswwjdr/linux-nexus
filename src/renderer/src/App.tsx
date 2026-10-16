@@ -13,6 +13,7 @@ import TerminalPanel from './components/TerminalPanel'
 import { usePreview } from './hooks/usePreview'
 import { useTransfers } from './hooks/useTransfers'
 import { useProfileManagement } from './hooks/useProfileManagement'
+import { useCommandAliases } from './hooks/useCommandAliases'
 import type {
   RemoteEntry,
   RemoteSearchResult,
@@ -193,6 +194,15 @@ export default function App() {
     () => profiles.find((profile) => profile.id === activeSession?.profileId) ?? null,
     [profiles, activeSession?.profileId],
   )
+  const commandAliases = useCommandAliases({
+    profiles,
+    showToast,
+    clearToast: dismissToast,
+  })
+  const openSettings = () => {
+    commandAliases.prepareForSettings(connectedProfileId)
+    void openSettingsDialog()
+  }
   const searchSession = useMemo(
     () => sessions.find((session) => session.id === searchSessionId) ?? null,
     [sessions, searchSessionId],
@@ -845,7 +855,7 @@ export default function App() {
               title="设置"
               aria-label="设置"
               disabled={settingsLoading}
-              onClick={() => void openSettingsDialog()}
+              onClick={openSettings}
             >
               <Settings size={16} />
             </button>
@@ -1075,6 +1085,14 @@ export default function App() {
         previewDialog={previewDialog}
         logPreviewDialog={logPreviewDialog}
         pendingHostKey={pendingHostKey}
+        pendingAliasHostKey={commandAliases.pendingHostKey}
+        aliasSnapshot={commandAliases.snapshot}
+        aliasProfileId={commandAliases.selectedProfileId}
+        aliasOperationBusy={commandAliases.operation !== null}
+        aliasName={commandAliases.name}
+        aliasCommand={commandAliases.command}
+        aliasOverwriteConfirmation={commandAliases.overwriteConfirmation}
+        aliasDeleteConfirmation={commandAliases.deleteConfirmation}
         imageZoom={imageZoom}
         imagePreviewSize={imagePreviewSize}
         imageViewportRef={imageViewportRef}
@@ -1102,6 +1120,18 @@ export default function App() {
         onZoomPreviewImage={zoomImage}
         onTrustHostKey={() => void trustAndReconnect()}
         onDismissHostKey={dismissHostKey}
+        onSelectAliasProfile={commandAliases.selectProfile}
+        onUpdateAliasName={commandAliases.setName}
+        onUpdateAliasCommand={commandAliases.setCommand}
+        onSyncAliases={commandAliases.sync}
+        onAddAlias={commandAliases.add}
+        onConfirmAliasOverwrite={commandAliases.confirmOverwrite}
+        onCancelAliasOverwrite={commandAliases.cancelOverwrite}
+        onRequestAliasDelete={commandAliases.requestDelete}
+        onConfirmAliasDelete={commandAliases.confirmDelete}
+        onCancelAliasDelete={commandAliases.cancelDelete}
+        onTrustAliasHostKey={() => void commandAliases.trustHostKey()}
+        onDismissAliasHostKey={commandAliases.dismissHostKey}
       />
 
       {remoteEntryDeleteDialog && (

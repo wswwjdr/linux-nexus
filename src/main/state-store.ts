@@ -1,13 +1,15 @@
 import { safeStorage } from 'electron'
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import type { AppSettings, PreviewLimits, ServerProfile, SessionKind, StartupConnection } from '@shared/types'
+import type { AppSettings, CommandAliasSnapshot, PreviewLimits, ServerProfile, SessionKind, StartupConnection } from '@shared/types'
+import { normalizeStoredCommandAliases } from '@shared/command-aliases'
 import { messageFromError } from './runtime'
 
 export interface StoredState {
   profiles: ServerProfile[]
   passwords: Record<string, string>
   hostKeys: Record<string, string>
+  commandAliases: Record<string, CommandAliasSnapshot>
 }
 
 export const DEFAULT_PREVIEW_LIMITS: PreviewLimits = {
@@ -68,8 +70,9 @@ export function validateAppSettings(value: unknown): AppSettings {
 }
 
 function validateStoredState(value: unknown, verifyPasswordCiphertexts = false): StoredState {
-  const keys = ['profiles', 'passwords', 'hostKeys']
-  if (!isRecord(value) || !hasExactKeys(value, keys) || !Array.isArray(value.profiles)
+  const legacyKeys = ['profiles', 'passwords', 'hostKeys']
+  const keys = [...legacyKeys, 'commandAliases']
+  if (!isRecord(value) || !(hasExactKeys(value, keys) || hasExactKeys(value, legacyKeys)) || !Array.isArray(value.profiles)
     || !isRecord(value.passwords) || !isRecord(value.hostKeys)) {
     throw new Error('服务器配置结构无效')
   }
@@ -108,7 +111,9 @@ function validateStoredState(value: unknown, verifyPasswordCiphertexts = false):
     }
   }
 
-  return value as unknown as StoredState
+  const commandAliases = normalizeStoredCommandAliases(value.commandAliases, profileIds)
+
+  return { ...value, commandAliases } as unknown as StoredState
 }
 
 function parseJsonFile(filePath: string): unknown {
@@ -145,7 +150,7 @@ function atomicWriteJson(filePath: string, value: unknown): void {
 }
 
 export function readState(verifyPasswordCiphertexts = false): StoredState {
-  if (!existsSync(stateFile)) return { profiles: [], passwords: {}, hostKeys: {} }
+  if (!existsSync(stateFile)) return { profiles: [], passwords: {}, hostKeys: {}, commandAliases: {} }
   try {
     return validateStoredState(parseJsonFile(stateFile), verifyPasswordCiphertexts)
   } catch (error) {

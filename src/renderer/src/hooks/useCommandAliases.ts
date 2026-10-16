@@ -1,0 +1,214 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type {
+  CommandAlias,
+  CommandAliasOperationResult,
+  CommandAliasSnapshot,
+  ServerProfile,
+  TrustHostKeyInput,
+} from '@shared/types'
+import { validateCommandAlias } from '@shared/command-aliases'
+import type { PendingAliasHostKey } from '@/app-types'
+import type { ToastNotice } from '@/GlobalToast'
+import { errorMessage } from '@/app-utils'
+
+interface UseCommandAliasesOptions {
+  profiles: ServerProfile[]
+  showToast: (kind: ToastNotice['kind'], message: string) => void
+  clearToast: () => void
+}
+
+interface OverwriteConfirmation {
+  name: string
+  existingCommand: string
+  command: string
+}
+
+const emptySnapshot = (profileId: string): CommandAliasSnapshot => ({
+  profileId,
+  aliases: [],
+  syncedAt: null,
+  status: 'unsynced',
+})
+
+export function useCommandAliases({ profiles, showToast, clearToast }: UseCommandAliasesOptions) {
+  const [snapshots, setSnapshots] = useState<Record<string, CommandAliasSnapshot>>({})
+  const [selectedProfileId, setSelectedProfileId] = useState('')
+  const [operation, setOperation] = useState<'working' | null>(null)
+  const [name, setName] = useState('')
+  const [command, setCommand] = useState('')
+  const [overwriteConfirmation, setOverwriteConfirmation] = useState<OverwriteConfirmation | null>(null)
+  const [deleteConfirmation, setDeleteConfirmation] = useState<CommandAlias | null>(null)
+  const [pendingHostKey, setPendingHostKey] = useState<PendingAliasHostKey | null>(null)
+  const retryAfterTrustRef = useRef<(() => Promise<CommandAliasOperationResult>) | null>(null)
+
+  const refreshSnapshots = useCallback(async () => {
+    const nextSnapshots = await window.remoteFiles.listCommandAliasSnapshots()
+    setSnapshots(Object.fromEntries(nextSnapshots.map((snapshot) => [snapshot.profileId, snapshot])))
+  }, [])
+
+  useEffect(() => {
+    void refreshSnapshots().catch((error: unknown) => showToast('error', '读取命令别名失败：' + errorMessage(error)))
+  }, [profiles, refreshSnapshots, showToast])
+
+  const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? null
+  const snapshot = useMemo(
+    () => selectedProfile ? snapshots[selectedProfile.id] ?? emptySnapshot(selectedProfile.id) : null,
+    [selectedProfile, snapshots],
+  )
+
+  const prepareForSettings = useCallback((preferredProfileId: string | null) => {
+    const nextProfileId = profiles.some((profile) => profile.id === preferredProfileId)
+      ? preferredProfileId ?? ''
+      : profiles[0]?.id ?? ''
+    setSelectedProfileId(nextProfileId)
+    setName('')
+    setCommand('')
+    setOverwriteConfirmation(null)
+    setDeleteConfirmation(null)
+    void refreshSnapshots().catch((error: unknown) => showToast('error', '读取命令别名失败：' + errorMessage(error)))
+  }, [profiles, refreshSnapshots, showToast])
+
+  const selectProfile = (profileId: string) => {
+    setSelectedProfileId(profileId)
+    setName('')
+    setCommand('')
+    setOverwriteConfirmation(null)
+    setDeleteConfirmation(null)
+  }
+
+  const applyResult = (profileId: string, result: CommandAliasOperationResult, retry: () => Promise<CommandAliasOperationResult>): boolean => {
+    if (result.status === 'host-key-required') {
+      const profile = profiles.find((candidate) => candidate.id === profileId)
+      if (!profile) {
+        showToast('error', '找不到正在同步别名的服务器')
+        return false
+      }
+      retryAfterTrustRef.current = retry
+      setPendingHostKey(result.previousFingerprint
+        ? { profile, fingerprint: result.fingerprint, previousFingerprint: result.previousFingerprint }
+        : { profile, fingerprint: result.fingerprint })
+      return true
+    }
+    if (result.status === 'conflict') {
+      setOverwriteConfirmation({ name: result.name, existingCommand: result.existingCommand, command })
+      return false
+    }
+    setSnapshots((current) => ({ ...current, [profileId]: result.snapshot }))
+    if (result.status === 'updated-sync-failed') {
+      showToast('error', '服务器已修改，但重新同步失败：' + result.message)
+    } else {
+      setName('')
+      setCommand('')
+      clearToast()
+    }
+    return false
+  }
+
+  const runOperation = async (profileId: string, retry: () => Promise<CommandAliasOperationResult>) => {
+    setOperation('working')
+    let waitingForTrust = false
+    try {
+      waitingForTrust = applyResult(profileId, await retry(), retry)
+    } catch (error) {
+      showToast('error', errorMessage(error))
+    } finally {
+      if (!waitingForTrust) setOperation(null)
+    }
+  }
+
+  const sync = () => {
+    if (!selectedProfileId || operation) return
+    const profileId = selectedProfileId
+    void runOperation(profileId, () => window.remoteFiles.syncCommandAliases(profileId))
+  }
+
+  const add = () => {
+    if (!selectedProfileId || operation) return
+    try {
+      validateCommandAlias(name, command)
+    } catch (error) {
+      showToast('error', errorMessage(error))
+      return
+    }
+    const profileId = selectedProfileId
+    const requestedName = name
+    const requestedCommand = command
+    void runOperation(profileId, () => window.remoteFiles.saveCommandAlias(profileId, requestedName, requestedCommand, false))
+  }
+
+  const confirmOverwrite = () => {
+    if (!selectedProfileId || !overwriteConfirmation || operation) return
+    const profileId = selectedProfileId
+    const pending = overwriteConfirmation
+    setOverwriteConfirmation(null)
+    void runOperation(profileId, () => window.remoteFiles.saveCommandAlias(profileId, pending.name, pending.command, true))
+  }
+
+  const requestDelete = (alias: CommandAlias) => {
+    if (!operation && alias.removable) setDeleteConfirmation(alias)
+  }
+
+  const confirmDelete = () => {
+    if (!selectedProfileId || !deleteConfirmation || operation) return
+    const profileId = selectedProfileId
+    const pending = deleteConfirmation
+    setDeleteConfirmation(null)
+    void runOperation(profileId, () => window.remoteFiles.deleteCommandAlias(profileId, pending.name))
+  }
+
+  const trustHostKey = async () => {
+    if (!pendingHostKey || !retryAfterTrustRef.current) return
+    const pending = pendingHostKey
+    const retry = retryAfterTrustRef.current
+    setOperation('working')
+    let waitingForTrust = false
+    try {
+      const trust: TrustHostKeyInput = {
+        profileId: pending.profile.id,
+        fingerprint: pending.fingerprint,
+        previousFingerprint: pending.previousFingerprint,
+      }
+      await window.remoteFiles.trustHostKey(trust)
+      setPendingHostKey(null)
+      retryAfterTrustRef.current = null
+      waitingForTrust = applyResult(pending.profile.id, await retry(), retry)
+    } catch (error) {
+      setPendingHostKey(null)
+      retryAfterTrustRef.current = null
+      showToast('error', errorMessage(error))
+    } finally {
+      if (!waitingForTrust) setOperation(null)
+    }
+  }
+
+  const dismissHostKey = () => {
+    setPendingHostKey(null)
+    retryAfterTrustRef.current = null
+    setOperation(null)
+  }
+
+  return {
+    snapshot,
+    selectedProfile,
+    selectedProfileId,
+    operation,
+    name,
+    command,
+    overwriteConfirmation,
+    deleteConfirmation,
+    pendingHostKey,
+    prepareForSettings,
+    selectProfile,
+    setName,
+    setCommand,
+    sync,
+    add,
+    confirmOverwrite,
+    cancelOverwrite: () => setOverwriteConfirmation(null),
+    requestDelete,
+    confirmDelete,
+    cancelDelete: () => setDeleteConfirmation(null),
+    trustHostKey,
+    dismissHostKey,
+  }
+}

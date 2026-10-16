@@ -302,6 +302,31 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .settings-preview-field legend { margin-bottom: 9px; padding: 0; }
 .settings-preview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
 .settings-preview-grid .field { min-width: 0; margin: 0; }
+.settings-modal { width: min(100%, 650px); max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
+.settings-modal > form { min-height: 0; overflow: auto; }
+.command-aliases-field { min-width: 0; margin-top: 16px; padding-top: 15px; border-top: 1px solid var(--line); }
+.command-aliases-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.command-aliases-heading h3 { margin: 0; color: #405047; font-size: 12px; font-weight: 650; }
+.command-alias-status { min-width: 0; color: #859188; font-size: 10px; text-align: right; overflow-wrap: anywhere; }
+.command-alias-status.synced { color: #4c8062; }
+.command-alias-status.stale { color: #a07934; }
+.command-alias-profile-field { margin-bottom: 10px; }
+.command-alias-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #859188; font-size: 10px; }
+.command-alias-sync { min-height: 29px; padding: 0 8px; font-size: 10px; }
+.command-alias-sync svg { flex: 0 0 auto; }
+.command-alias-list { max-height: 190px; margin-top: 7px; overflow: auto; border-top: 1px solid var(--line); }
+.command-alias-row { min-width: 0; display: flex; align-items: center; gap: 10px; padding: 8px 3px 8px 0; border-bottom: 1px solid var(--line); }
+.command-alias-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.command-alias-copy code { color: #3c5c47; font-family: 'Cascadia Code', Consolas, monospace; font-size: 11px; font-weight: 600; }
+.command-alias-copy span { color: #6f7d73; font-family: 'Cascadia Code', Consolas, monospace; font-size: 10px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.command-alias-copy small { color: #9a7540; font-size: 9px; line-height: 1.4; }
+.command-alias-delete { width: 28px; height: 28px; flex: 0 0 auto; color: #9a7770; }
+.command-alias-delete:hover:not(:disabled) { color: var(--red); background: var(--red-soft); }
+.command-alias-empty { padding: 15px 8px; color: #8d9991; font-size: 10px; text-align: center; }
+.command-alias-add-row { display: grid; grid-template-columns: minmax(95px, 0.7fr) minmax(0, 1.8fr) auto; align-items: end; gap: 8px; margin-top: 10px; }
+.command-alias-add-row .field { min-width: 0; margin: 0; }
+.command-alias-add { min-height: 36px; padding: 0 11px; }
+.command-alias-note { margin: 8px 0 0; color: #8a978e; font-size: 10px; line-height: 1.45; }
 .field-row { display: flex; gap: 11px; }
 .host-field { min-width: 0; flex: 1; }
 .port-field { width: 88px; flex: 0 0 auto; }
@@ -456,6 +481,9 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 @media (max-width: 780px) {
   .log-preview-backdrop { padding: 8px; }
   .log-preview-modal { width: 100%; height: calc(100vh - 16px); padding: 15px; }
+  .settings-modal { width: 100%; max-height: calc(100vh - 16px); padding: 16px; }
+  .command-alias-add-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .command-alias-add { grid-column: 1 / -1; justify-self: end; }
   .search-backdrop { padding: 8px; }
   .search-modal { width: 100%; height: calc(100vh - 16px); padding: 15px; }
   .search-dialog-header { margin-bottom: 10px; }

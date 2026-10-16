@@ -1,6 +1,8 @@
 import { ipcMain, safeStorage } from 'electron'
 import { randomUUID } from 'node:crypto'
 import type { AppSettings, RemoteSearchRequest, SaveProfileInput, ServerProfile, SessionKind, TrustHostKeyInput } from '@shared/types'
+import { connectionIdentityChanged } from '@shared/command-aliases'
+import { deleteCommandAlias, listCommandAliasSnapshots, saveCommandAlias, synchronizeCommandAliases } from './command-aliases'
 import {
   connectProfile,
   copyRemotePath,
@@ -61,9 +63,15 @@ export function registerIpc(): void {
       username: profile.username.trim(),
     }
     const existingIndex = state.profiles.findIndex((candidate) => candidate.id === id)
+    const previousProfile = state.profiles[existingIndex]
     if (!password && !state.passwords[id]) throw new Error('请填写 SSH 密码')
     if (existingIndex === -1) state.profiles.push(savedProfile)
-    else state.profiles[existingIndex] = savedProfile
+    else {
+      state.profiles[existingIndex] = savedProfile
+      if (connectionIdentityChanged(previousProfile, savedProfile)) {
+        delete state.commandAliases[id]
+      }
+    }
     if (password) state.passwords[id] = safeStorage.encryptString(password).toString('base64')
     writeState(state)
     stopSessionsForProfile(id)
@@ -79,6 +87,7 @@ export function registerIpc(): void {
     }
     state.profiles = state.profiles.filter((profile) => profile.id !== profileId)
     delete state.passwords[profileId]
+    delete state.commandAliases[profileId]
     writeState(state)
   })
 
@@ -113,6 +122,11 @@ export function registerIpc(): void {
     }
     return writeAppSettings(settings)
   })
+  ipcMain.handle('aliases:list', () => listCommandAliasSnapshots())
+  ipcMain.handle('aliases:sync', (_event, profileId: string) => synchronizeCommandAliases(profileId))
+  ipcMain.handle('aliases:save', (_event, profileId: string, name: string, command: string, overwrite: boolean) =>
+    saveCommandAlias(profileId, name, command, overwrite))
+  ipcMain.handle('aliases:delete', (_event, profileId: string, name: string) => deleteCommandAlias(profileId, name))
   ipcMain.handle('host-key:trust', (_event, input: TrustHostKeyInput) => {
     if (typeof input?.profileId !== 'string' || !input.profileId
       || typeof input.fingerprint !== 'string' || !/^SHA256:[A-Za-z0-9+/]{43}$/.test(input.fingerprint)

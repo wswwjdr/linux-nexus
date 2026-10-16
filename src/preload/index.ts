@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   ConnectionClosedEvent,
+  CommandAliasOperationResult,
+  CommandAliasSnapshot,
   DroppedUploadEntry,
   LogPreviewPage,
   PreviewResult,
@@ -27,6 +29,12 @@ const api: RemoteFilesApi = {
   resizeTerminal: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
   getAppSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
   saveAppSettings: (settings: AppSettings): Promise<AppSettings> => ipcRenderer.invoke('settings:save', settings),
+  listCommandAliasSnapshots: (): Promise<CommandAliasSnapshot[]> => ipcRenderer.invoke('aliases:list'),
+  syncCommandAliases: (profileId: string): Promise<CommandAliasOperationResult> => ipcRenderer.invoke('aliases:sync', profileId),
+  saveCommandAlias: (profileId: string, name: string, command: string, overwrite: boolean): Promise<CommandAliasOperationResult> =>
+    ipcRenderer.invoke('aliases:save', profileId, name, command, overwrite),
+  deleteCommandAlias: (profileId: string, name: string): Promise<CommandAliasOperationResult> =>
+    ipcRenderer.invoke('aliases:delete', profileId, name),
   listDirectory: (sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('files:list', sessionId, remotePath),
   searchFiles: (request: RemoteSearchRequest) => ipcRenderer.invoke('files:search', request),

@@ -6,6 +6,26 @@ export interface ServerProfile {
   username: string
 }
 
+export interface CommandAlias {
+  name: string
+  command: string
+  removable: boolean
+  removalReason: string | null
+}
+
+export interface CommandAliasSnapshot {
+  profileId: string
+  aliases: CommandAlias[]
+  syncedAt: string | null
+  status: 'unsynced' | 'synced' | 'stale'
+}
+
+export type CommandAliasOperationResult =
+  | { status: 'completed'; snapshot: CommandAliasSnapshot }
+  | { status: 'host-key-required'; fingerprint: string; previousFingerprint?: string }
+  | { status: 'conflict'; name: string; existingCommand: string }
+  | { status: 'updated-sync-failed'; message: string; snapshot: CommandAliasSnapshot }
+
 export interface SaveProfileInput {
   profile: ServerProfile
   password?: string
@@ -163,6 +183,10 @@ export interface RemoteFilesApi {
   resizeTerminal(sessionId: string, cols: number, rows: number): Promise<void>
   getAppSettings(): Promise<AppSettings>
   saveAppSettings(settings: AppSettings): Promise<AppSettings>
+  listCommandAliasSnapshots(): Promise<CommandAliasSnapshot[]>
+  syncCommandAliases(profileId: string): Promise<CommandAliasOperationResult>
+  saveCommandAlias(profileId: string, name: string, command: string, overwrite: boolean): Promise<CommandAliasOperationResult>
+  deleteCommandAlias(profileId: string, name: string): Promise<CommandAliasOperationResult>
   listDirectory(sessionId: string, remotePath: string): Promise<RemoteEntry[]>
   searchFiles(request: RemoteSearchRequest): Promise<void>
   cancelSearch(requestId: string): Promise<boolean>

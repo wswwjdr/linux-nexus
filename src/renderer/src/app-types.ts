@@ -1,4 +1,4 @@
-import type { LogPreviewPage, PreviewLimits, PreviewResult, RemoteEntry, ServerProfile, SessionKind } from '@shared/types'
+import type { CommandAlias, LogPreviewPage, PreviewLimits, PreviewResult, RemoteEntry, ServerProfile, SessionKind } from '@shared/types'
 
 export interface ProfileForm {
   id: string
@@ -16,6 +16,17 @@ export interface PendingHostKey {
   startPath: string
   fingerprint: string
   previousFingerprint?: string
+}
+
+export interface PendingAliasHostKey {
+  profile: ServerProfile
+  fingerprint: string
+  previousFingerprint?: string
+}
+
+export interface CommandAliasConfirmation {
+  alias: CommandAlias
+  profileName: string
 }
 
 export interface TransferJob {
