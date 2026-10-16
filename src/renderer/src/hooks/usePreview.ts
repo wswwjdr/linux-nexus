@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type SyntheticEvent, type WheelEvent } from 'react'
-import type { RemoteEntry } from '@shared/types'
+import type { RemoteEntry, TextFileRevision } from '@shared/types'
 import { previewFileType } from '@shared/preview-file-type'
 import type { ImagePreviewSize, LogPreviewDialog, PreviewDialog } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
@@ -10,13 +10,28 @@ interface UsePreviewOptions {
   showToast: (kind: ToastNotice['kind'], message: string) => void
 }
 
+interface TextPreviewContext {
+  sessionId: string
+  path: string
+  name: string
+  originalContent: string
+  revision: TextFileRevision
+}
+
 export function usePreview({ sessionId, showToast }: UsePreviewOptions) {
   const [previewDialog, setPreviewDialog] = useState<PreviewDialog | null>(null)
   const [logPreviewDialog, setLogPreviewDialog] = useState<LogPreviewDialog | null>(null)
   const [imageZoom, setImageZoom] = useState(1)
   const [imagePreviewSize, setImagePreviewSize] = useState<ImagePreviewSize | null>(null)
+  const [textDraft, setTextDraft] = useState('')
+  const [textDirty, setTextDirty] = useState(false)
+  const [textSaving, setTextSaving] = useState(false)
+  const [textSaveConfirmation, setTextSaveConfirmation] = useState<{ name: string; path: string } | null>(null)
+  const [textSaveError, setTextSaveError] = useState<string | null>(null)
   const previewTokenRef = useRef<string | null>(null)
   const previewRequestRef = useRef(0)
+  const textPreviewRef = useRef<TextPreviewContext | null>(null)
+  const textDraftRef = useRef('')
   const imageViewportRef = useRef<HTMLDivElement>(null)
   const previewImageRef = useRef<HTMLImageElement>(null)
   const logPreviewRef = useRef<LogPreviewDialog | null>(null)
@@ -59,6 +74,13 @@ export function usePreview({ sessionId, showToast }: UsePreviewOptions) {
     logStartAtBottomRef.current = false
     setImageZoom(1)
     setImagePreviewSize(null)
+    textPreviewRef.current = null
+    textDraftRef.current = ''
+    setTextDraft('')
+    setTextDirty(false)
+    setTextSaving(false)
+    setTextSaveConfirmation(null)
+    setTextSaveError(null)
     if (token) window.setTimeout(() => void window.remoteFiles.releasePreview(token), 0)
   }
 
@@ -78,7 +100,19 @@ export function usePreview({ sessionId, showToast }: UsePreviewOptions) {
         if (result.type !== 'text') void window.remoteFiles.releasePreview(result.token)
         return
       }
-      if (result.type !== 'text') previewTokenRef.current = result.token
+      if (result.type === 'text') {
+        textPreviewRef.current = {
+          sessionId,
+          path: entry.path,
+          name: result.name,
+          originalContent: result.content,
+          revision: result.revision,
+        }
+        textDraftRef.current = result.content
+        setTextDraft(result.content)
+      } else {
+        previewTokenRef.current = result.token
+      }
       setPreviewDialog({ kind: 'ready', result })
     } catch (error) {
       if (requestId === previewRequestRef.current) {
@@ -155,6 +189,56 @@ export function usePreview({ sessionId, showToast }: UsePreviewOptions) {
     if (viewport && viewport.scrollTop <= 48) void loadEarlierLogPreview()
   }
 
+  const updateTextDraft = (content: string) => {
+    const context = textPreviewRef.current
+    if (!context || textSaving) return
+    textDraftRef.current = content
+    setTextDraft(content)
+    setTextDirty(content !== context.originalContent)
+  }
+
+  const requestTextSave = () => {
+    const context = textPreviewRef.current
+    if (!context || textSaving || textDraftRef.current === context.originalContent) return
+    setTextSaveError(null)
+    setTextSaveConfirmation({ name: context.name, path: context.path })
+  }
+
+  const cancelTextSave = () => {
+    if (textSaving) return
+    setTextSaveConfirmation(null)
+    setTextSaveError(null)
+  }
+
+  const confirmTextSave = async () => {
+    const context = textPreviewRef.current
+    if (!context || textSaving || !textSaveConfirmation) return
+    const content = textDraftRef.current
+    if (content === context.originalContent) {
+      setTextSaveConfirmation(null)
+      return
+    }
+
+    setTextSaving(true)
+    setTextSaveError(null)
+    try {
+      const result = await window.remoteFiles.saveTextFile(context.sessionId, context.path, content, context.revision)
+      if (textPreviewRef.current !== context) return
+      context.originalContent = content
+      context.revision = result.revision
+      setTextDirty(textDraftRef.current !== content)
+      setTextSaveConfirmation(null)
+      showToast(
+        result.backupPath ? 'error' : 'info',
+        result.backupPath ? '文件已保存，但旧文件备份未清理：' + result.backupPath : '文件已保存',
+      )
+    } catch (error) {
+      if (textPreviewRef.current === context) setTextSaveError(errorMessage(error))
+    } finally {
+      if (textPreviewRef.current === context) setTextSaving(false)
+    }
+  }
+
   const onImageLoad = (event: SyntheticEvent<HTMLImageElement>) => {
     const viewport = imageViewportRef.current
     if (!viewport) return
@@ -197,6 +281,11 @@ export function usePreview({ sessionId, showToast }: UsePreviewOptions) {
     logPreviewDialog,
     imageZoom,
     imagePreviewSize,
+    textDraft,
+    textDirty,
+    textSaving,
+    textSaveConfirmation,
+    textSaveError,
     imageViewportRef,
     previewImageRef,
     logViewportRef,
@@ -204,6 +293,10 @@ export function usePreview({ sessionId, showToast }: UsePreviewOptions) {
     previewFile,
     previewLogFile,
     onLogPreviewScroll,
+    updateTextDraft,
+    requestTextSave,
+    confirmTextSave,
+    cancelTextSave,
     onImageLoad,
     zoomImage,
   }

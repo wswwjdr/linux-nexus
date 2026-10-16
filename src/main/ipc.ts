@@ -25,7 +25,7 @@ import {
   writeState,
 } from './state-store'
 import { cancelTransfer, downloadEntry, uploadDroppedEntries, uploadSelection, withTransferLock } from './transfers'
-import { previewFile, readLogPreview, releasePreview } from './previews'
+import { previewFile, readLogPreview, releasePreview, saveTextFile } from './previews'
 import { cancelRemoteSearch, startRemoteSearch } from './search'
 
 export function registerIpc(): void {
@@ -183,6 +183,8 @@ export function registerIpc(): void {
   ipcMain.handle('files:path-copy', (_event, sessionId: string, remotePath: string) => copyRemotePath(sessionId, remotePath))
   ipcMain.handle('files:delete', (_event, sessionId: string, remotePath: string) => deleteRemoteEntry(sessionId, remotePath))
   ipcMain.handle('files:preview', (_event, sessionId: string, remotePath: string) => previewFile(sessionId, remotePath))
+  ipcMain.handle('files:text-save', (_event, sessionId: string, remotePath: string, content: string, expectedRevision: unknown) =>
+    saveTextFile(sessionId, remotePath, content, expectedRevision))
   ipcMain.handle('files:preview-log', (_event, sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number) =>
     readLogPreview(sessionId, remotePath, beforeOffset, snapshotSize))
   ipcMain.handle('files:preview-release', (_event, token: string) => releasePreview(token))

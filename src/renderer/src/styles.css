@@ -35,9 +35,9 @@ body {
   font-size: 13px;
 }
 
-button, input { font: inherit; }
+button, input, textarea { font: inherit; }
 button { color: inherit; }
-button:focus-visible, input:focus-visible { outline: 2px solid #73a997; outline-offset: 2px; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid #73a997; outline-offset: 2px; }
 button:disabled { cursor: not-allowed; opacity: .45; }
 
 .app-shell { display: flex; height: 100vh; min-height: 560px; background: var(--canvas); }
@@ -381,6 +381,13 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .media-preview-modal { width: min(100%, 960px); }
 .text-preview-modal { height: min(680px, calc(100vh - 48px)); }
 .text-preview-modal .preview-text { min-height: 0; max-height: none; flex: 1; }
+.text-preview-editor { width: 100%; resize: none; white-space: pre; overflow-wrap: normal; tab-size: 2; outline: 0; }
+.text-preview-editor:focus { border-color: #7eae96; box-shadow: 0 0 0 2px #dbece2; }
+.text-preview-editor:disabled { color: #66746b; background: #f4f7f4; }
+.text-preview-footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 11px; }
+.text-preview-status { min-width: 0; color: #829087; font-size: 11px; }
+.text-preview-status.modified { color: #a87327; }
+.text-preview-save { min-width: 90px; }
 .log-preview-modal { width: min(100%, 1040px); height: min(820px, calc(100vh - 48px)); }
 .log-preview-status { min-height: 20px; flex: 0 0 auto; display: flex; align-items: center; gap: 6px; color: #829087; font-size: 10px; }
 .log-preview-status svg { color: var(--blue); }

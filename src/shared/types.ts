@@ -153,9 +153,23 @@ export type DroppedUploadEntry =
   | { relativePath: string; type: 'directory' }
   | { relativePath: string; type: 'file'; localPath: string }
 
+export type TextLineEnding = '\n' | '\r\n' | '\r' | null
+
+export interface TextFileRevision {
+  contentHash: string
+  lineEnding: TextLineEnding
+}
+
+export interface TextFileSaveResult {
+  revision: TextFileRevision
+  backupPath?: string
+}
+
 export type PreviewResult =
-  | { type: 'text'; name: string; content: string }
-  | { type: 'image' | 'audio' | 'video'; name: string; url: string; token: string }
+  | { type: 'text'; name: string; content: string; revision: TextFileRevision }
+  | { type: 'image'; name: string; url: string; token: string }
+  | { type: 'audio'; name: string; url: string; token: string }
+  | { type: 'video'; name: string; url: string; token: string }
 
 export interface LogPreviewPage {
   name: string
@@ -205,6 +219,12 @@ export interface RemoteFilesApi {
   copyRemotePath(sessionId: string, remotePath: string): Promise<void>
   deleteRemoteEntry(sessionId: string, remotePath: string): Promise<void>
   previewFile(sessionId: string, remotePath: string): Promise<PreviewResult>
+  saveTextFile(
+    sessionId: string,
+    remotePath: string,
+    content: string,
+    expectedRevision: TextFileRevision,
+  ): Promise<TextFileSaveResult>
   readLogPreview(
     sessionId: string,
     remotePath: string,

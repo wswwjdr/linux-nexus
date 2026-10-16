@@ -101,6 +101,11 @@ export default function App() {
     logPreviewDialog,
     imageZoom,
     imagePreviewSize,
+    textDraft,
+    textDirty,
+    textSaving,
+    textSaveConfirmation,
+    textSaveError,
     imageViewportRef,
     previewImageRef,
     logViewportRef,
@@ -108,6 +113,10 @@ export default function App() {
     previewFile,
     previewLogFile,
     onLogPreviewScroll,
+    updateTextDraft,
+    requestTextSave,
+    confirmTextSave,
+    cancelTextSave,
     onImageLoad,
     zoomImage,
   } = usePreview({
@@ -1107,6 +1116,11 @@ export default function App() {
         settingsSaving={settingsSaving}
         previewDialog={previewDialog}
         logPreviewDialog={logPreviewDialog}
+        textDraft={textDraft}
+        textDirty={textDirty}
+        textSaving={textSaving}
+        textSaveConfirmation={textSaveConfirmation}
+        textSaveError={textSaveError}
         pendingHostKey={pendingHostKey}
         pendingAliasHostKey={commandAliases.pendingHostKey}
         aliasSnapshot={commandAliases.snapshot}
@@ -1139,6 +1153,10 @@ export default function App() {
         onSubmitSettings={(event) => void submitSettings(event)}
         onClosePreview={closePreview}
         onLogPreviewScroll={onLogPreviewScroll}
+        onUpdateTextDraft={updateTextDraft}
+        onRequestTextSave={requestTextSave}
+        onConfirmTextSave={() => void confirmTextSave()}
+        onCancelTextSave={cancelTextSave}
         onPreviewImageLoad={onImageLoad}
         onZoomPreviewImage={zoomImage}
         onTrustHostKey={() => void trustAndReconnect()}

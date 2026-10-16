@@ -3,12 +3,13 @@ import { createReadStream as localCreateReadStream } from 'node:fs'
 import { stat as localStat } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { Readable } from 'node:stream'
-import { previewAssets, sessions } from './runtime'
+import { sessions } from './runtime'
+import { getPreviewAsset } from './previews/preview-assets'
 
 export function registerPreviewProtocol(): void {
   session.defaultSession.protocol.handle('remote-preview', async (request) => {
     const token = new URL(request.url).hostname
-    const asset = previewAssets.get(token)
+    const asset = getPreviewAsset(token)
     if (!asset) return new Response(null, { status: 404 })
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD' } })

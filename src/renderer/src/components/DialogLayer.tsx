@@ -1,21 +1,20 @@
-import { useEffect, type FormEvent, type KeyboardEvent, type RefObject, type SyntheticEvent, type WheelEvent } from 'react'
-import { Check, FileText, FolderOpen, KeyRound, LayoutGrid, List, LoaderCircle, Plus, RefreshCw, Server, ShieldCheck, Terminal, Trash2, X } from 'lucide-react'
+import { useEffect, type FormEvent } from 'react'
+import { Check, FolderOpen, KeyRound, LayoutGrid, List, LoaderCircle, Plus, RefreshCw, Server, ShieldCheck, Terminal, Trash2, X } from 'lucide-react'
 import type { CommandAlias, CommandAliasSnapshot, ServerProfile } from '@shared/types'
 import ConfirmationDialog from './ConfirmationDialog'
+import LogPreviewDialog, { type LogPreviewDialogProps } from './previews/LogPreviewDialog'
+import PreviewDialog, { type PreviewDialogProps } from './previews/PreviewDialog'
 import type {
   FileViewMode,
-  ImagePreviewSize,
-  LogPreviewDialog as LogPreviewDialogState,
   PendingHostKey,
   PendingAliasHostKey,
-  PreviewDialog as PreviewDialogState,
   PreviewLimitKey,
   ProfileForm,
   SettingsForm,
 } from '@/app-types'
 import { previewLimitFields } from '@/app-utils'
 
-interface DialogLayerProps {
+interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
   profileDialog: { mode: 'create' | 'edit'; form: ProfileForm } | null
   profileDeleteDialog: ServerProfile | null
   profileDeleteError: string | null
@@ -25,8 +24,7 @@ interface DialogLayerProps {
   settingsForm: SettingsForm | null
   profiles: ServerProfile[]
   settingsSaving: boolean
-  previewDialog: PreviewDialogState | null
-  logPreviewDialog: LogPreviewDialogState | null
+  textSaveError: string | null
   pendingHostKey: PendingHostKey | null
   pendingAliasHostKey: PendingAliasHostKey | null
   aliasSnapshot: CommandAliasSnapshot | null
@@ -36,11 +34,6 @@ interface DialogLayerProps {
   aliasCommand: string
   aliasOverwriteConfirmation: { name: string; existingCommand: string; command: string } | null
   aliasDeleteConfirmation: CommandAlias | null
-  imageZoom: number
-  imagePreviewSize: ImagePreviewSize | null
-  imageViewportRef: RefObject<HTMLDivElement | null>
-  previewImageRef: RefObject<HTMLImageElement | null>
-  logViewportRef: RefObject<HTMLPreElement | null>
   onCloseProfile: () => void
   onCloseProfileDelete: () => void
   onConfirmProfileDelete: () => void
@@ -56,9 +49,8 @@ interface DialogLayerProps {
   onUpdateStartupKind: (kind: SettingsForm['startupKind']) => void
   onSubmitSettings: (event: FormEvent<HTMLFormElement>) => void
   onClosePreview: () => void
-  onLogPreviewScroll: () => void
-  onPreviewImageLoad: (event: SyntheticEvent<HTMLImageElement>) => void
-  onZoomPreviewImage: (event: WheelEvent<HTMLDivElement>) => void
+  onConfirmTextSave: () => void
+  onCancelTextSave: () => void
   onTrustHostKey: () => void
   onDismissHostKey: () => void
   onSelectAliasProfile: (profileId: string) => void
@@ -87,6 +79,11 @@ export default function DialogLayer({
   settingsSaving,
   previewDialog,
   logPreviewDialog,
+  textDraft,
+  textDirty,
+  textSaving,
+  textSaveConfirmation,
+  textSaveError,
   pendingHostKey,
   pendingAliasHostKey,
   aliasSnapshot,
@@ -117,6 +114,10 @@ export default function DialogLayer({
   onSubmitSettings,
   onClosePreview,
   onLogPreviewScroll,
+  onUpdateTextDraft,
+  onRequestTextSave,
+  onConfirmTextSave,
+  onCancelTextSave,
   onPreviewImageLoad,
   onZoomPreviewImage,
   onTrustHostKey,
@@ -146,6 +147,7 @@ export default function DialogLayer({
         else onDismissHostKey()
         return
       }
+      if (textSaveConfirmation) return
       if (previewDialog) {
         event.preventDefault()
         onClosePreview()
@@ -186,6 +188,7 @@ export default function DialogLayer({
     pendingAliasHostKey,
     previewDialog,
     logPreviewDialog,
+    textSaveConfirmation,
     profileDialog,
     createDirectoryDialog,
     creatingDirectory,
@@ -448,93 +451,47 @@ export default function DialogLayer({
         </div>
       )}
 
-      {previewDialog && (
-        <div className="modal-backdrop preview-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClosePreview()}>
-          <section className={`modal preview-modal${previewDialog.kind === 'ready' ? ` media-preview-modal${previewDialog.result.type === 'text' ? ' text-preview-modal' : ''}` : ''}`} role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
-            <div className="modal-heading">
-              <div>
-                <h2 id="preview-modal-title">{previewDialog.kind === 'ready' ? previewDialog.result.name : previewDialog.name}</h2>
-              </div>
-              <button className="icon-button modal-close" title="关闭预览" aria-label="关闭预览" onClick={onClosePreview}><X size={18} /></button>
-            </div>
-            {previewDialog.kind === 'loading' && <div className="preview-loading"><LoaderCircle className="spin" size={20} /> 正在读取文件</div>}
-            {previewDialog.kind === 'ready' && previewDialog.result.type === 'text' && (
-              <pre className="preview-text">{previewDialog.result.content}</pre>
-            )}
-            {previewDialog.kind === 'ready' && previewDialog.result.type === 'image' && (
-              <div className="preview-media image-preview-viewport" ref={imageViewportRef} onWheel={onZoomPreviewImage}>
-                <div
-                  className="preview-image-canvas"
-                  style={{
-                    width: Math.max(imageViewportRef.current?.clientWidth ?? 0, (imagePreviewSize?.width ?? 0) * imageZoom) + 'px',
-                    height: Math.max(imageViewportRef.current?.clientHeight ?? 0, (imagePreviewSize?.height ?? 0) * imageZoom) + 'px',
-                  }}
-                >
-                  <img
-                    ref={previewImageRef}
-                    className="preview-image"
-                    src={previewDialog.result.url}
-                    alt={previewDialog.result.name}
-                    draggable={false}
-                    style={imagePreviewSize
-                      ? { width: imagePreviewSize.width * imageZoom + 'px', height: imagePreviewSize.height * imageZoom + 'px' }
-                      : { maxWidth: '100%', maxHeight: '100%' }}
-                    onLoad={onPreviewImageLoad}
-                  />
-                </div>
-              </div>
-            )}
-            {previewDialog.kind === 'ready' && previewDialog.result.type === 'audio' && (
-              <div className="preview-audio-wrap"><audio controls src={previewDialog.result.url}>浏览器不支持音频播放。</audio></div>
-            )}
-            {previewDialog.kind === 'ready' && previewDialog.result.type === 'video' && (
-              <div className="preview-media">
-                <video
-                  className="preview-video"
-                  controls
-                  tabIndex={0}
-                  src={previewDialog.result.url}
-                  onKeyDown={(event: KeyboardEvent<HTMLVideoElement>) => {
-                    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-                    event.preventDefault()
-                    const video = event.currentTarget
-                    const nextTime = Math.max(0, video.currentTime + (event.key === 'ArrowRight' ? 5 : -5))
-                    video.currentTime = Number.isFinite(video.duration) ? Math.min(video.duration, nextTime) : nextTime
-                  }}
-                >浏览器不支持视频播放。</video>
-              </div>
-            )}
-          </section>
-        </div>
-      )}
+      <PreviewDialog
+        previewDialog={previewDialog}
+        textDraft={textDraft}
+        textDirty={textDirty}
+        textSaving={textSaving}
+        textSaveConfirmation={textSaveConfirmation}
+        imageZoom={imageZoom}
+        imagePreviewSize={imagePreviewSize}
+        imageViewportRef={imageViewportRef}
+        previewImageRef={previewImageRef}
+        onClosePreview={onClosePreview}
+        onUpdateTextDraft={onUpdateTextDraft}
+        onRequestTextSave={onRequestTextSave}
+        onPreviewImageLoad={onPreviewImageLoad}
+        onZoomPreviewImage={onZoomPreviewImage}
+      />
 
-      {logPreviewDialog && (
-        <div className="modal-backdrop log-preview-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClosePreview()}>
-          <section className="modal preview-modal log-preview-modal" role="dialog" aria-modal="true" aria-labelledby="log-preview-title">
-            <div className="modal-heading">
-              <div>
-                <div className="modal-kicker"><FileText size={14} /> 倒序预览</div>
-                <h2 id="log-preview-title">{logPreviewDialog.name}</h2>
-              </div>
-              <button className="icon-button modal-close" title="关闭预览" aria-label="关闭预览" onClick={onClosePreview}><X size={18} /></button>
-            </div>
-            {logPreviewDialog.kind === 'loading' && (
-              <div className="preview-loading"><LoaderCircle className="spin" size={20} /> 正在读取日志</div>
-            )}
-            {logPreviewDialog.kind === 'ready' && (
-              <>
-                <div className="log-preview-status" aria-live="polite">
-                  {logPreviewDialog.loadingEarlier
-                    ? <><LoaderCircle className="spin" size={14} /> 正在读取更早内容</>
-                    : !logPreviewDialog.hasEarlier
-                      ? logPreviewDialog.startOffset === 0 ? '已到文件开头' : '已达到文本预览上限'
-                      : ''}
-                </div>
-                <pre ref={logViewportRef} className="preview-text log-preview-text" tabIndex={0} onScroll={onLogPreviewScroll}>{logPreviewDialog.content}</pre>
-              </>
-            )}
-          </section>
-        </div>
+      <LogPreviewDialog
+        logPreviewDialog={logPreviewDialog}
+        logViewportRef={logViewportRef}
+        onClosePreview={onClosePreview}
+        onLogPreviewScroll={onLogPreviewScroll}
+      />
+
+      {textSaveConfirmation && (
+        <ConfirmationDialog
+          eyebrow="保存远程文件"
+          title={`覆盖 ${textSaveConfirmation.name}？`}
+          details={[
+            { label: '远程路径', value: textSaveConfirmation.path },
+          ]}
+          description="确认后将以当前编辑内容覆盖服务器上的源文件。保存前会检查该文件是否已被其他人修改。"
+          tone="warning"
+          confirmLabel="覆盖并保存"
+          busyLabel="正在保存"
+          error={textSaveError}
+          errorLabel="保存失败"
+          busy={textSaving}
+          onConfirm={onConfirmTextSave}
+          onCancel={onCancelTextSave}
+        />
       )}
 
       {visibleHostKey && (

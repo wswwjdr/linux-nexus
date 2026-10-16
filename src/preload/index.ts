@@ -61,6 +61,8 @@ const api: RemoteFilesApi = {
     ipcRenderer.invoke('files:delete', sessionId, remotePath),
   previewFile: (sessionId: string, remotePath: string): Promise<PreviewResult> =>
     ipcRenderer.invoke('files:preview', sessionId, remotePath),
+  saveTextFile: (sessionId: string, remotePath: string, content: string, expectedRevision) =>
+    ipcRenderer.invoke('files:text-save', sessionId, remotePath, content, expectedRevision),
   readLogPreview: (sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number): Promise<LogPreviewPage> =>
     ipcRenderer.invoke('files:preview-log', sessionId, remotePath, beforeOffset, snapshotSize),
   releasePreview: (token: string) => ipcRenderer.invoke('files:preview-release', token),
