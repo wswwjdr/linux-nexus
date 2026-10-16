@@ -856,14 +856,6 @@ export default function App() {
           <div className="topbar-left">
             <button
               className="icon-button toolbar-button"
-              title="快捷键说明"
-              aria-label="快捷键说明"
-              onClick={() => setShortcutGuideOpen(true)}
-            >
-              <Keyboard size={16} />
-            </button>
-            <button
-              className="icon-button toolbar-button"
               title="首页"
               aria-label="首页"
               disabled={!activeSession}
@@ -879,6 +871,14 @@ export default function App() {
               onClick={openSettings}
             >
               <Settings size={16} />
+            </button>
+            <button
+              className="icon-button toolbar-button"
+              title="快捷键说明"
+              aria-label="快捷键说明"
+              onClick={() => setShortcutGuideOpen(true)}
+            >
+              <Keyboard size={16} />
             </button>
             {connectedProfile && <span className="topbar-separator" />}
             {connectedProfile && <span className="connected-host"><Cloud size={14} /> {connectedProfile.username}@{connectedProfile.host}</span>}
