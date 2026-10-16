@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent as ReactFormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { Cloud, Copy, FolderOpen, FolderUp, House, LoaderCircle, Plus, RefreshCw, Search, Settings, Terminal, Upload, X } from 'lucide-react'
+import { Cloud, Copy, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, Plus, RefreshCw, Search, Settings, Terminal, Upload, X } from 'lucide-react'
 import GlobalToast, { type ToastNotice } from './GlobalToast'
 import FileBrowser from './components/FileBrowser'
 import FileContextMenu from './components/FileContextMenu'
@@ -10,6 +10,7 @@ import DialogLayer from './components/DialogLayer'
 import ConfirmationDialog from './components/ConfirmationDialog'
 import SessionChooser from './components/SessionChooser'
 import TerminalPanel from './components/TerminalPanel'
+import ShortcutGuideDialog from './components/ShortcutGuideDialog'
 import { usePreview } from './hooks/usePreview'
 import { useTransfers } from './hooks/useTransfers'
 import { useProfileManagement } from './hooks/useProfileManagement'
@@ -63,6 +64,7 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionTab[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [sessionChooserOpen, setSessionChooserOpen] = useState(false)
+  const [shortcutGuideOpen, setShortcutGuideOpen] = useState(false)
   const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>(readDefaultView)
   const [toast, setToast] = useState<ToastNotice | null>(null)
   const [recentConnections, setRecentConnections] = useState<RecentConnection[]>(readRecentConnections)
@@ -203,6 +205,7 @@ export default function App() {
     commandAliases.prepareForSettings(connectedProfileId)
     void openSettingsDialog()
   }
+  const closeShortcutGuide = useCallback(() => setShortcutGuideOpen(false), [])
   const searchSession = useMemo(
     () => sessions.find((session) => session.id === searchSessionId) ?? null,
     [sessions, searchSessionId],
@@ -212,6 +215,12 @@ export default function App() {
     [profiles, searchSession?.profileId],
   )
   const pendingHostKey = pendingHostKeys[0] ?? null
+  const modalOpen = Boolean(
+    profileDialog || profileDeleteDialog || createDirectoryDialog || settingsForm || previewDialog || logPreviewDialog
+      || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
+      || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || searchSessionId
+      || sessionChooserOpen || shortcutGuideOpen,
+  )
   const offlineProfiles = useMemo(
     () => {
       const connectionTimes = new Map(
@@ -236,14 +245,18 @@ export default function App() {
 
   useEffect(() => {
     const openSearchShortcut = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f'
-        || activeSession?.kind !== 'sftp' || activeSession.status !== 'connected') return
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f') return
+      if (shortcutGuideOpen) {
+        event.preventDefault()
+        return
+      }
+      if (activeSession?.kind !== 'sftp' || activeSession.status !== 'connected') return
       event.preventDefault()
       if (!searchSessionId) setSearchSessionId(activeSession.id)
     }
     window.addEventListener('keydown', openSearchShortcut)
     return () => window.removeEventListener('keydown', openSearchShortcut)
-  }, [activeSession, searchSessionId])
+  }, [activeSession, searchSessionId, shortcutGuideOpen])
 
   useEffect(() => {
     const removeClosedListener = window.remoteFiles.onConnectionClosed((event) => {
@@ -833,7 +846,7 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell" onAuxClick={(event) => {
+    <div className={'app-shell' + (modalOpen ? ' modal-open' : '')} onAuxClick={(event) => {
       if (event.button !== 3 && event.button !== 4) return
       event.preventDefault()
       movePathHistory(event.button === 3 ? -1 : 1)
@@ -841,6 +854,14 @@ export default function App() {
       <main className="main-area">
         <header className="topbar">
           <div className="topbar-left">
+            <button
+              className="icon-button toolbar-button"
+              title="快捷键说明"
+              aria-label="快捷键说明"
+              onClick={() => setShortcutGuideOpen(true)}
+            >
+              <Keyboard size={16} />
+            </button>
             <button
               className="icon-button toolbar-button"
               title="首页"
@@ -1071,6 +1092,8 @@ export default function App() {
       </main>
 
       <GlobalToast notice={toast} onDismiss={dismissToast} />
+
+      {shortcutGuideOpen && <ShortcutGuideDialog onClose={closeShortcutGuide} />}
 
       <DialogLayer
         profileDialog={profileDialog}

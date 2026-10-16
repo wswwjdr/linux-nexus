@@ -66,16 +66,12 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
     })
     terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== 'keydown' || !event.ctrlKey || !event.shiftKey) return true
-      if (event.key.toLowerCase() === 'c' && terminal.hasSelection()) {
-        void navigator.clipboard.writeText(terminal.getSelection()).catch((error: unknown) => {
-          onError(error instanceof Error ? error.message : String(error))
-        })
-        return false
-      }
-      if (event.key.toLowerCase() === 'v') {
-        void navigator.clipboard.readText().then((text) => terminal.paste(text)).catch((error: unknown) => {
-          onError(error instanceof Error ? error.message : String(error))
-        })
+      if (event.key.toLowerCase() === 'c') {
+        if (terminal.hasSelection()) {
+          void navigator.clipboard.writeText(terminal.getSelection()).catch((error: unknown) => {
+            onError(error instanceof Error ? error.message : String(error))
+          })
+        }
         return false
       }
       return true

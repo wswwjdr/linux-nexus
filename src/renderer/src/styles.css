@@ -41,6 +41,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid #73a997; outline-
 button:disabled { cursor: not-allowed; opacity: .45; }
 
 .app-shell { display: flex; height: 100vh; min-height: 560px; background: var(--canvas); }
+.app-shell.modal-open > .main-area { pointer-events: none; }
 .startup-shell { min-width: 0; }
 .startup-loading { min-height: 0; flex: 1; display: grid; place-items: center; color: #84958a; }
 .icon-button { width: 30px; height: 30px; display: inline-grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: var(--radius); color: var(--muted); background: transparent; cursor: pointer; transition: color .15s, background .15s, border-color .15s; }
@@ -290,7 +291,6 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .field select:focus { border-color: #7eae96; outline: 2px solid #dbece2; }
 .field select:disabled { color: #87958b; background: #f7f9f7; }
 .settings-startup-profile { margin-bottom: 14px; }
-.settings-startup-kind { margin-bottom: 16px; }
 .settings-view-field { min-width: 0; margin: 0 0 16px; padding: 0; border: 0; color: #59685f; font-size: 11px; font-weight: 600; }
 .settings-view-field legend { margin-bottom: 7px; padding: 0; }
 .settings-view-options { height: 36px; display: grid; grid-template-columns: 1fr 1fr; overflow: hidden; border: 1px solid var(--line-strong); border-radius: var(--radius); background: #f7f9f7; }
@@ -298,13 +298,19 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .settings-view-option + .settings-view-option { border-left: 1px solid var(--line-strong); }
 .settings-view-option[aria-pressed="true"] { color: var(--green-deep); background: var(--green-soft); }
 .settings-view-option:hover:not(:disabled) { color: var(--green-deep); background: #edf4ef; }
-.settings-preview-field { min-width: 0; margin: 0; padding: 15px 0 0; border: 0; border-top: 1px solid var(--line); color: #59685f; font-size: 11px; font-weight: 600; }
-.settings-preview-field legend { margin-bottom: 9px; padding: 0; }
+.settings-section { min-width: 0; margin: 0; padding: 15px 16px 16px; border: 0; color: #59685f; font-size: 11px; font-weight: 600; }
+.settings-section legend { margin-bottom: 9px; padding: 0; color: #4d5e53; font-size: 12px; font-weight: 650; }
+.settings-section-view { background: #f1f8f3; }
+.settings-section-startup { background: #f2f6fb; }
+.settings-section-preview { background: #fffaf0; }
+.settings-section-aliases { background: #fff5f2; }
+.settings-section .settings-startup-kind { margin: 0; }
+.settings-field-label { display: block; margin-bottom: 7px; }
 .settings-preview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
 .settings-preview-grid .field { min-width: 0; margin: 0; }
 .settings-modal { width: min(100%, 650px); max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
-.settings-modal > form { min-height: 0; overflow: auto; }
-.command-aliases-field { min-width: 0; margin-top: 16px; padding-top: 15px; border-top: 1px solid var(--line); }
+.settings-modal > form { min-height: 0; display: grid; gap: 12px; overflow: auto; }
+.command-aliases-field { min-width: 0; }
 .command-aliases-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .command-aliases-heading h3 { margin: 0; color: #405047; font-size: 12px; font-weight: 650; }
 .command-alias-status { min-width: 0; color: #859188; font-size: 10px; text-align: right; overflow-wrap: anywhere; }
@@ -347,6 +353,23 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .new-fingerprint { border-color: #ead9b4; background: #fffbf3; }
 .fingerprint-note { margin: 14px 0 0; color: #8b7657; font-size: 11px; line-height: 1.6; }
 .fingerprint-modal .modal-footer { margin-top: 20px; }
+
+.shortcut-guide-modal { width: min(100%, 760px); max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
+.shortcut-guide-heading { flex: 0 0 auto; margin-bottom: 13px; }
+.shortcut-guide-groups { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.shortcut-guide-group + .shortcut-guide-group { margin-top: 15px; }
+.shortcut-guide-group h3 { display: flex; align-items: center; gap: 7px; margin: 0; padding: 0 2px 7px; color: #405b4a; font-size: 12px; font-weight: 650; }
+.shortcut-guide-group h3 svg { color: var(--green); }
+.shortcut-guide-table { border-top: 1px solid var(--line); }
+.shortcut-guide-row { min-width: 0; display: grid; grid-template-columns: minmax(174px, 220px) minmax(0, 1fr); align-items: center; gap: 14px; padding: 10px 2px; border-bottom: 1px solid var(--line); color: #58675d; font-size: 11px; line-height: 1.45; }
+.shortcut-guide-table-header { position: sticky; top: 0; z-index: 1; padding: 8px 2px; color: #89968d; background: white; font-size: 10px; font-weight: 650; }
+.shortcut-guide-binding { min-width: 0; }
+.shortcut-guide-action { min-width: 0; overflow-wrap: anywhere; }
+.shortcut-keys { display: flex; flex-wrap: wrap; gap: 4px 7px; }
+.shortcut-key-combination, .shortcut-key-part { display: inline-flex; align-items: center; gap: 3px; }
+.shortcut-key-separator { margin-right: 1px; color: #9aa59e; }
+.shortcut-key-plus { color: #9aa59e; }
+.shortcut-keys kbd { min-width: 24px; min-height: 23px; display: inline-flex; align-items: center; justify-content: center; padding: 2px 5px; border: 1px solid #d9e1da; border-radius: 4px; color: #405147; background: #fbfcfb; box-shadow: 0 1px 0 #d9e1da; font-family: 'Cascadia Code', Consolas, monospace; font-size: 10px; font-weight: 600; line-height: 1; }
 
 .preview-modal { width: min(100%, 560px); max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
 .preview-modal .modal-heading { flex: 0 0 auto; margin-bottom: 14px; }
@@ -482,6 +505,8 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .log-preview-backdrop { padding: 8px; }
   .log-preview-modal { width: 100%; height: calc(100vh - 16px); padding: 15px; }
   .settings-modal { width: 100%; max-height: calc(100vh - 16px); padding: 16px; }
+  .shortcut-guide-modal { width: 100%; max-height: calc(100vh - 16px); padding: 16px; }
+  .shortcut-guide-row { grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 9px 0; }
   .command-alias-add-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .command-alias-add { grid-column: 1 / -1; justify-self: end; }
   .search-backdrop { padding: 8px; }

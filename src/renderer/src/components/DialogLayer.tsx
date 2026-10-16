@@ -301,7 +301,7 @@ export default function DialogLayer({
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !settingsSaving && !aliasOperationBusy && onCloseSettings()}>
           <section className="modal settings-modal" role="dialog" aria-modal="true" aria-label="应用设置">
             <form onSubmit={onSubmitSettings}>
-              <fieldset className="settings-view-field" disabled={settingsSaving}>
+              <fieldset className="settings-section settings-section-view" disabled={settingsSaving}>
                 <legend>默认文件视图</legend>
                 <div className="settings-view-options" role="group" aria-label="默认文件视图">
                   <button
@@ -322,45 +322,47 @@ export default function DialogLayer({
                   </button>
                 </div>
               </fieldset>
-              <label className="field settings-startup-profile">
-                <span>启动时连接</span>
-                <select
-                  value={settingsForm.startupProfileId}
-                  disabled={settingsSaving}
-                  onChange={(event) => onUpdateStartupProfile(event.target.value)}
-                >
-                  <option value="">不自动连接（打开首页）</option>
-                  {profiles.map((profile) => (
-                    <option value={profile.id} key={profile.id}>
-                      {profile.name}（{profile.username}@{profile.host}:{profile.port}）
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {settingsForm.startupProfileId && (
-                <fieldset className="settings-view-field settings-startup-kind" disabled={settingsSaving}>
-                  <legend>连接方式</legend>
-                  <div className="settings-view-options" role="group" aria-label="启动连接方式">
-                    <button
-                      type="button"
-                      className="settings-view-option"
-                      aria-pressed={settingsForm.startupKind === 'sftp'}
-                      onClick={() => onUpdateStartupKind('sftp')}
-                    >
-                      <FolderOpen size={15} /> SFTP 文件管理
-                    </button>
-                    <button
-                      type="button"
-                      className="settings-view-option"
-                      aria-pressed={settingsForm.startupKind === 'terminal'}
-                      onClick={() => onUpdateStartupKind('terminal')}
-                    >
-                      <Terminal size={15} /> SSH 终端
-                    </button>
+              <fieldset className="settings-section settings-section-startup" disabled={settingsSaving}>
+                <legend>启动连接</legend>
+                <label className="field settings-startup-profile">
+                  <span>启动时连接</span>
+                  <select
+                    value={settingsForm.startupProfileId}
+                    onChange={(event) => onUpdateStartupProfile(event.target.value)}
+                  >
+                    <option value="">不自动连接（打开首页）</option>
+                    {profiles.map((profile) => (
+                      <option value={profile.id} key={profile.id}>
+                        {profile.name}（{profile.username}@{profile.host}:{profile.port}）
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {settingsForm.startupProfileId && (
+                  <div className="settings-startup-kind">
+                    <span className="settings-field-label">连接方式</span>
+                    <div className="settings-view-options" role="group" aria-label="启动连接方式">
+                      <button
+                        type="button"
+                        className="settings-view-option"
+                        aria-pressed={settingsForm.startupKind === 'sftp'}
+                        onClick={() => onUpdateStartupKind('sftp')}
+                      >
+                        <FolderOpen size={15} /> SFTP 文件管理
+                      </button>
+                      <button
+                        type="button"
+                        className="settings-view-option"
+                        aria-pressed={settingsForm.startupKind === 'terminal'}
+                        onClick={() => onUpdateStartupKind('terminal')}
+                      >
+                        <Terminal size={15} /> SSH 终端
+                      </button>
+                    </div>
                   </div>
-                </fieldset>
-              )}
-              <fieldset className="settings-preview-field">
+                )}
+              </fieldset>
+              <fieldset className="settings-section settings-section-preview" disabled={settingsSaving}>
                 <legend>预览大小上限</legend>
                 <div className="settings-preview-grid">
                   {previewLimitFields.map(({ key, label }) => (
@@ -371,7 +373,7 @@ export default function DialogLayer({
                   ))}
                 </div>
               </fieldset>
-              <section className="command-aliases-field" aria-labelledby="command-aliases-title">
+              <section className="settings-section settings-section-aliases command-aliases-field" aria-labelledby="command-aliases-title">
                 <div className="command-aliases-heading">
                   <h3 id="command-aliases-title">命令别名</h3>
                   <span className={'command-alias-status ' + (aliasSnapshot?.status ?? 'unsynced')}>
