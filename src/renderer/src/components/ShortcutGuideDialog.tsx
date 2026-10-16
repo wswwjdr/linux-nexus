@@ -20,10 +20,7 @@ const shortcutGroups: ShortcutGroup[] = [
     icon: FolderOpen,
     items: [
       { bindings: [['Ctrl', 'F']], action: '打开文件搜索' },
-      { bindings: [['Shift', 'F10'], ['Menu']], action: '在已聚焦的文件或文件夹上打开操作菜单' },
-      { bindings: [['Up'], ['Down']], action: '在已打开的文件操作菜单中移动焦点' },
-      { bindings: [['Left'], ['Right']], action: '在文件操作菜单的排序子菜单间切换' },
-      { bindings: [['Left'], ['Right']], action: '视频播放器获得焦点时后退或前进 5 秒' },
+      { bindings: [['Up'], ['Down'], ['Left'], ['Right']], action: '上/下键移动菜单焦点；左/右键切换排序子菜单' },
     ],
   },
   {
@@ -40,7 +37,6 @@ const shortcutGroups: ShortcutGroup[] = [
     scope: '通用',
     icon: Keyboard,
     items: [
-      { bindings: [['Shift', 'F10'], ['Menu']], action: '在已聚焦的会话标签上打开会话操作菜单' },
       { bindings: [['Esc']], action: '关闭当前菜单或弹窗' },
     ],
   },
@@ -94,7 +90,7 @@ export default function ShortcutGuideDialog({ onClose }: ShortcutGuideDialogProp
         </div>
         <div className="shortcut-guide-groups">
           {shortcutGroups.map(({ id, scope, icon: Icon, items }) => (
-            <section className="shortcut-guide-group" key={id} aria-labelledby={`shortcut-guide-${id}`}>
+            <section className={`shortcut-guide-group shortcut-guide-group-${id}`} key={id} aria-labelledby={`shortcut-guide-${id}`}>
               <h3 id={`shortcut-guide-${id}`}><Icon size={14} /> {scope}</h3>
               <div className="shortcut-guide-table" role="table" aria-label={`${scope}快捷键`}>
                 <div className="shortcut-guide-row shortcut-guide-table-header" role="row">
