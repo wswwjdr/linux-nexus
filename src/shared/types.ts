@@ -147,6 +147,10 @@ export interface TransferProgress {
   total: number
 }
 
+export interface TransferQueuedEvent {
+  requestId: string
+}
+
 export type TransferResult = 'completed' | 'not-started' | 'cancelled'
 
 export type DroppedUploadEntry =
@@ -233,6 +237,7 @@ export interface RemoteFilesApi {
   ): Promise<LogPreviewPage>
   releasePreview(token: string): Promise<void>
   onTransferProgress(callback: (progress: TransferProgress) => void): () => void
+  onTransferQueued(callback: (event: TransferQueuedEvent) => void): () => void
   onSearchEvent(callback: (event: RemoteSearchEvent) => void): () => void
   onConnectionClosed(callback: (event: ConnectionClosedEvent) => void): () => void
   onTerminalOutput(callback: (event: TerminalOutputEvent) => void): () => void

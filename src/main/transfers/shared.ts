@@ -18,6 +18,8 @@ import {
 } from '../sftp-utils'
 import type { SFTPWrapper } from 'ssh2'
 
+const transferQueues = new Map<string, Promise<void>>()
+
 function isAbortError(error: unknown): boolean {
   if (error instanceof Error) return error.name === 'AbortError' || (error as NodeJS.ErrnoException).code === 'ABORT_ERR'
   if (typeof error !== 'object' || error === null) return false
@@ -125,16 +127,33 @@ export async function withTransferLock(
   sessionId: string,
   requestId: string,
   operation: (signal: AbortSignal) => Promise<TransferResult>,
+  onQueued?: () => void,
 ): Promise<TransferResult> {
-  if ([...activeTransfers.values()].some((transfer) => transfer.profileId === profileId)) {
-    throw new Error('此服务器已有文件传输正在进行')
-  }
   if (activeTransfers.has(requestId)) throw new Error('传输请求标识重复')
   const transfer = { profileId, sessionId, controller: new AbortController(), settled: Promise.resolve() }
+  const previous = transferQueues.get(profileId) ?? Promise.resolve()
+  const wasQueued = transferQueues.has(profileId)
+  let releaseTurn!: () => void
+  const turn = new Promise<void>((resolve) => { releaseTurn = resolve })
+  const queueTail = previous.then(() => turn)
+  transferQueues.set(profileId, queueTail)
   activeTransfers.set(requestId, transfer)
+
+  if (wasQueued) onQueued?.()
+
+  const operationPromise = (async () => {
+    try {
+      await previous
+      transfer.controller.signal.throwIfAborted()
+      return await operation(transfer.controller.signal)
+    } finally {
+      releaseTurn()
+      if (transferQueues.get(profileId) === queueTail) transferQueues.delete(profileId)
+    }
+  })()
+  transfer.settled = operationPromise.then(() => undefined, () => undefined)
+
   try {
-    const operationPromise = operation(transfer.controller.signal)
-    transfer.settled = operationPromise.then(() => undefined, () => undefined)
     return await operationPromise
   } catch (error) {
     if (transfer.controller.signal.aborted && isAbortError(error)) return 'cancelled'

@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, Menu, protocol } from 'electron'
 import { mkdir, rm } from 'node:fs/promises'
 import { mkdirSync, rmSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { stopAllSessions } from './connections'
 import { registerIpc } from './ipc'
 import { registerPreviewProtocol } from './preview-protocol'
@@ -30,17 +30,18 @@ if (!hasSingleInstanceLock) {
 }
 
 function configureApplicationData(): void {
-  const applicationDirectory = app.isPackaged ? dirname(app.getPath('exe')) : app.getAppPath()
-  const dataDirectory = join(applicationDirectory, 'data')
+  const dataDirectory = app.isPackaged
+    ? join(app.getPath('appData'), 'Linux Nexus')
+    : join(app.getAppPath(), 'data')
   const sessionDirectory = join(dataDirectory, 'session')
   const temporaryDirectory = join(dataDirectory, 'temp')
   const logsDirectory = join(dataDirectory, 'logs')
   const crashDumpsDirectory = join(dataDirectory, 'crash-dumps')
-
-  for (const directory of [dataDirectory, sessionDirectory, temporaryDirectory, logsDirectory, crashDumpsDirectory]) {
+  for (const directory of [dataDirectory, temporaryDirectory, logsDirectory, crashDumpsDirectory]) {
     mkdirSync(directory, { recursive: true })
   }
 
+  mkdirSync(sessionDirectory, { recursive: true })
   app.setPath('userData', dataDirectory)
   app.setPath('sessionData', sessionDirectory)
   app.setPath('temp', temporaryDirectory)

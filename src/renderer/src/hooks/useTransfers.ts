@@ -27,22 +27,33 @@ export function useTransfers({
 }: UseTransfersOptions) {
   const [transfers, setTransfers] = useState<Record<string, TransferJob>>({})
 
-  useEffect(() => window.remoteFiles.onTransferProgress((progress: TransferProgress) => {
-    setTransfers((current) => ({
-      ...current,
-      [progress.requestId]: {
-        sessionId: progress.sessionId,
-        profileName: current[progress.requestId]?.profileName ?? '',
-        name: current[progress.requestId]?.name ?? progress.remotePath.split('/').pop() ?? '文件',
-        direction: progress.direction,
-        transferred: progress.transferred,
-        total: progress.total,
-        state: current[progress.requestId]?.state === 'starting'
-          ? 'running'
-          : current[progress.requestId]?.state ?? 'running',
-      },
-    }))
-  }), [])
+  useEffect(() => {
+    const unlistenQueued = window.remoteFiles.onTransferQueued(({ requestId }) => {
+      setTransfers((current) => current[requestId]
+        ? { ...current, [requestId]: { ...current[requestId], state: 'queued' } }
+        : current)
+    })
+    const unlistenProgress = window.remoteFiles.onTransferProgress((progress: TransferProgress) => {
+      setTransfers((current) => ({
+        ...current,
+        [progress.requestId]: {
+          sessionId: progress.sessionId,
+          profileName: current[progress.requestId]?.profileName ?? '',
+          name: current[progress.requestId]?.name ?? progress.remotePath.split('/').pop() ?? '文件',
+          direction: progress.direction,
+          transferred: progress.transferred,
+          total: progress.total,
+          state: current[progress.requestId]?.state === 'starting' || current[progress.requestId]?.state === 'queued'
+            ? 'running'
+            : current[progress.requestId]?.state ?? 'running',
+        },
+      }))
+    })
+    return () => {
+      unlistenQueued()
+      unlistenProgress()
+    }
+  }, [])
 
   const runTransfer = async (
     name: string,
@@ -108,7 +119,8 @@ export function useTransfers({
 
   const cancelTransfer = (requestId: string) => {
     const job = transfers[requestId]
-    if (!job || job.state !== 'running') return
+    if (!job || (job.state !== 'running' && job.state !== 'queued')) return
+    const previousState = job.state
     setTransfers((current) => ({
       ...current,
       [requestId]: { ...current[requestId], state: 'cancelling' },
@@ -117,7 +129,7 @@ export function useTransfers({
       setTransfers((current) => {
         const active = current[requestId]
         return active?.state === 'cancelling'
-          ? { ...current, [requestId]: { ...active, state: 'running' } }
+          ? { ...current, [requestId]: { ...active, state: previousState } }
           : current
       })
       showToast('error', '取消传输失败：' + errorMessage(error))

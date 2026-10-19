@@ -15,15 +15,17 @@ export default function TransferTray({ transfers, onCancel, onDismiss }: Transfe
     <div className="transfer-tray">
       {jobs.map(([id, job]) => {
         const complete = job.state === 'complete'
-        const active = job.state === 'running' || job.state === 'cancelling'
         const percent = complete ? 100 : job.total > 0 ? Math.min(100, Math.round(job.transferred * 100 / job.total)) : 0
         const status = job.state === 'complete'
           ? '已完成'
           : job.state === 'cancelled'
             ? '已取消'
+            : job.state === 'queued'
+              ? '排队中'
             : job.state === 'cancelling'
               ? '正在取消'
               : percent + '%'
+        const canCancel = job.state === 'running' || job.state === 'queued' || job.state === 'cancelling'
         return (
           <div className="transfer-item" key={id}>
             <div className={'transfer-state-icon ' + (complete ? 'complete' : '') + ' ' + (job.state === 'cancelled' ? 'cancelled' : '')}>
@@ -36,7 +38,7 @@ export default function TransferTray({ transfers, onCancel, onDismiss }: Transfe
                 <div className={'progress-fill ' + (complete ? 'complete' : '') + ' ' + (job.state === 'cancelled' ? 'cancelled' : '')} style={{ width: percent + '%' }} />
               </div>
             </div>
-            {active ? (
+            {canCancel ? (
               <button
                 className="icon-button subtle"
                 title={job.state === 'cancelling' ? '正在取消传输' : '取消传输'}

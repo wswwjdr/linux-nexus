@@ -12,6 +12,7 @@ import type {
   RemoteSearchRequest,
   SaveProfileInput,
   TransferProgress,
+  TransferQueuedEvent,
   TerminalOutputEvent,
   TrustHostKeyInput,
   SessionKind,
@@ -70,6 +71,11 @@ const api: RemoteFilesApi = {
     const listener = (_event: Electron.IpcRendererEvent, progress: TransferProgress) => callback(progress)
     ipcRenderer.on('files:transfer-progress', listener)
     return () => ipcRenderer.removeListener('files:transfer-progress', listener)
+  },
+  onTransferQueued: (callback: (event: TransferQueuedEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, queuedEvent: TransferQueuedEvent) => callback(queuedEvent)
+    ipcRenderer.on('files:transfer-queued', listener)
+    return () => ipcRenderer.removeListener('files:transfer-queued', listener)
   },
   onSearchEvent: (callback: (event: RemoteSearchEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, searchEvent: RemoteSearchEvent) => callback(searchEvent)

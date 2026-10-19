@@ -36,7 +36,7 @@ export interface TransferJob {
   direction: 'upload' | 'download'
   transferred: number
   total: number
-  state: 'starting' | 'running' | 'cancelling' | 'complete' | 'cancelled'
+  state: 'starting' | 'queued' | 'running' | 'cancelling' | 'complete' | 'cancelled'
 }
 
 export interface SessionTab {

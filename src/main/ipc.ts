@@ -160,22 +160,26 @@ export function registerIpc(): void {
   ipcMain.handle('files:upload-files', (event, requestId: string, sessionId: string, remoteDirectory: string) => {
     const { profileId } = transferSession(sessionId)
     return withTransferLock(profileId, sessionId, requestId,
-      (signal) => uploadSelection(event, requestId, sessionId, profileId, remoteDirectory, false, signal))
+      (signal) => uploadSelection(event, requestId, sessionId, profileId, remoteDirectory, false, signal),
+      () => { if (!event.sender.isDestroyed()) event.sender.send('files:transfer-queued', { requestId }) })
   })
   ipcMain.handle('files:upload-folder', (event, requestId: string, sessionId: string, remoteDirectory: string) => {
     const { profileId } = transferSession(sessionId)
     return withTransferLock(profileId, sessionId, requestId,
-      (signal) => uploadSelection(event, requestId, sessionId, profileId, remoteDirectory, true, signal))
+      (signal) => uploadSelection(event, requestId, sessionId, profileId, remoteDirectory, true, signal),
+      () => { if (!event.sender.isDestroyed()) event.sender.send('files:transfer-queued', { requestId }) })
   })
   ipcMain.handle('files:upload-dropped', (event, requestId: string, sessionId: string, remoteDirectory: string, entries: unknown) => {
     const { profileId } = transferSession(sessionId)
     return withTransferLock(profileId, sessionId, requestId,
-      (signal) => uploadDroppedEntries(event, requestId, sessionId, profileId, remoteDirectory, entries, signal))
+      (signal) => uploadDroppedEntries(event, requestId, sessionId, profileId, remoteDirectory, entries, signal),
+      () => { if (!event.sender.isDestroyed()) event.sender.send('files:transfer-queued', { requestId }) })
   })
   ipcMain.handle('files:download', (event, requestId: string, sessionId: string, remotePath: string) => {
     const { profileId } = transferSession(sessionId)
     return withTransferLock(profileId, sessionId, requestId,
-      (signal) => downloadEntry(event, requestId, sessionId, profileId, remotePath, signal))
+      (signal) => downloadEntry(event, requestId, sessionId, profileId, remotePath, signal),
+      () => { if (!event.sender.isDestroyed()) event.sender.send('files:transfer-queued', { requestId }) })
   })
   ipcMain.handle('files:transfer-cancel', (_event, requestId: string) => cancelTransfer(requestId))
   ipcMain.handle('files:create-directory', (_event, sessionId: string, remoteDirectory: string, name: string) =>
