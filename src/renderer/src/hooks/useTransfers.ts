@@ -43,6 +43,13 @@ export function useTransfers({
           direction: progress.direction,
           transferred: progress.transferred,
           total: progress.total,
+          ...(progress.fileIndex === undefined ? {} : {
+            currentFileName: progress.remotePath.split('/').pop() ?? '文件',
+            fileIndex: progress.fileIndex,
+            fileCount: progress.fileCount,
+            fileTransferred: progress.fileTransferred,
+            fileTotal: progress.fileTotal,
+          }),
           state: current[progress.requestId]?.state === 'starting' || current[progress.requestId]?.state === 'queued'
             ? 'running'
             : current[progress.requestId]?.state ?? 'running',

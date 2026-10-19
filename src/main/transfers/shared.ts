@@ -185,9 +185,19 @@ export function sendTransferProgress(
   direction: TransferProgress['direction'],
   transferred: number,
   total: number,
+  fileProgress?: Pick<TransferProgress, 'fileIndex' | 'fileCount' | 'fileTransferred' | 'fileTotal'>,
 ): void {
   if (sender.isDestroyed()) return
-  sender.send('files:transfer-progress', { requestId, sessionId, profileId, remotePath, direction, transferred, total } satisfies TransferProgress)
+  sender.send('files:transfer-progress', {
+    requestId,
+    sessionId,
+    profileId,
+    remotePath,
+    direction,
+    transferred,
+    total,
+    ...fileProgress,
+  } satisfies TransferProgress)
 }
 
 export async function prepareLocalDestination(items: TransferItem[], destinationRoot: string): Promise<string[]> {

@@ -145,6 +145,10 @@ export interface TransferProgress {
   direction: 'upload' | 'download'
   transferred: number
   total: number
+  fileIndex?: number
+  fileCount?: number
+  fileTransferred?: number
+  fileTotal?: number
 }
 
 export interface TransferQueuedEvent {

@@ -106,7 +106,9 @@ async function uploadItems(
 
   const collisionSet = new Set(collisions)
   const total = items.reduce((sum, item) => sum + (item.type === 'file' ? item.size : 0), 0)
+  const fileCount = items.filter((item) => item.type === 'file').length
   let completed = 0
+  let fileIndex = 0
 
   for (const item of items) {
     signal.throwIfAborted()
@@ -117,11 +119,17 @@ async function uploadItems(
       continue
     }
 
+    fileIndex += 1
     const temporaryPath = posix.join(posix.dirname(destination), '.' + posix.basename(destination) + '.' + randomUUID() + '.upload')
     let committed = false
     try {
       await transferFile('put', session.sftp, item.localPath!, temporaryPath, signal, (transferred) => {
-        sendTransferProgress(event.sender, requestId, sessionId, profileId, destination, 'upload', completed + transferred, total)
+        sendTransferProgress(event.sender, requestId, sessionId, profileId, destination, 'upload', completed + transferred, total, {
+          fileIndex,
+          fileCount,
+          fileTransferred: transferred,
+          fileTotal: item.size,
+        })
       })
       signal.throwIfAborted()
       const backupPath = collisionSet.has(destination)
@@ -161,7 +169,12 @@ async function uploadItems(
       }
     }
     completed += item.size
-    sendTransferProgress(event.sender, requestId, sessionId, profileId, destination, 'upload', completed, total)
+    sendTransferProgress(event.sender, requestId, sessionId, profileId, destination, 'upload', completed, total, {
+      fileIndex,
+      fileCount,
+      fileTransferred: item.size,
+      fileTotal: item.size,
+    })
   }
   signal.throwIfAborted()
   return 'completed'

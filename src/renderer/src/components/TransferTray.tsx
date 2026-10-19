@@ -15,7 +15,16 @@ export default function TransferTray({ transfers, onCancel, onDismiss }: Transfe
     <div className="transfer-tray">
       {jobs.map(([id, job]) => {
         const complete = job.state === 'complete'
-        const percent = complete ? 100 : job.total > 0 ? Math.min(100, Math.round(job.transferred * 100 / job.total)) : 0
+        const isFileUpload = job.direction === 'upload' && job.fileIndex !== undefined && job.fileCount !== undefined
+        const percent = complete
+          ? 100
+          : isFileUpload
+            ? job.fileTotal === 0
+              ? 100
+              : Math.min(100, Math.round((job.fileTransferred ?? 0) * 100 / (job.fileTotal ?? 0)))
+            : job.total > 0
+              ? Math.min(100, Math.round(job.transferred * 100 / job.total))
+              : 0
         const status = job.state === 'complete'
           ? '已完成'
           : job.state === 'cancelled'
@@ -24,7 +33,10 @@ export default function TransferTray({ transfers, onCancel, onDismiss }: Transfe
               ? '排队中'
             : job.state === 'cancelling'
               ? '正在取消'
-              : percent + '%'
+              : isFileUpload
+                ? `正在上传第 ${job.fileIndex}/${job.fileCount} 个文件 ${percent}%`
+                : percent + '%'
+        const source = [job.currentFileName, job.profileName].filter(Boolean).join(' · ')
         const canCancel = job.state === 'running' || job.state === 'queued' || job.state === 'cancelling'
         return (
           <div className="transfer-item" key={id}>
@@ -33,7 +45,7 @@ export default function TransferTray({ transfers, onCancel, onDismiss }: Transfe
             </div>
             <div className="transfer-copy">
               <div className="transfer-line"><span>{job.name}</span><span>{status}</span></div>
-              {job.profileName && <div className="transfer-source">{job.profileName}</div>}
+              {source && <div className="transfer-source" title={source}>{source}</div>}
               <div className="progress-track">
                 <div className={'progress-fill ' + (complete ? 'complete' : '') + ' ' + (job.state === 'cancelled' ? 'cancelled' : '')} style={{ width: percent + '%' }} />
               </div>

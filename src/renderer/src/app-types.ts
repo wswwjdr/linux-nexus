@@ -36,6 +36,11 @@ export interface TransferJob {
   direction: 'upload' | 'download'
   transferred: number
   total: number
+  currentFileName?: string
+  fileIndex?: number
+  fileCount?: number
+  fileTransferred?: number
+  fileTotal?: number
   state: 'starting' | 'queued' | 'running' | 'cancelling' | 'complete' | 'cancelled'
 }
 
