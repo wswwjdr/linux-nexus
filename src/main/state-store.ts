@@ -177,7 +177,16 @@ export function readAppSettings(): AppSettings {
     return { ...DEFAULT_APP_SETTINGS }
   }
   try {
-    return validateAppSettings(parseJsonFile(settingsFile))
+    const storedSettings = parseJsonFile(settingsFile)
+    if (isRecord(storedSettings) && !Object.hasOwn(storedSettings, 'transferFileConcurrency')) {
+      const migratedSettings = validateAppSettings({
+        ...storedSettings,
+        transferFileConcurrency: DEFAULT_APP_SETTINGS.transferFileConcurrency,
+      })
+      atomicWriteJson(settingsFile, migratedSettings)
+      return migratedSettings
+    }
+    return validateAppSettings(storedSettings)
   } catch (error) {
     throw new Error('应用设置无效（' + settingsFile + '）：' + messageFromError(error))
   }
