@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type { AppSettings, PreviewLimits, SaveProfileInput, ServerProfile, SessionKind, StartupConnection } from '@shared/types'
-import type { FileViewMode, PreviewLimitKey, ProfileForm, SettingsForm } from '@/app-types'
+import type { FileViewMode, ProfileForm, SettingsFieldKey, SettingsForm } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { emptyForm, errorMessage, previewLimitFields, readDefaultView, toPreviewLimitsForm } from '@/app-utils'
 
@@ -64,6 +64,7 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
       const profileId = settings.startupConnection?.profileId
       setSettingsForm({
         ...toPreviewLimitsForm(settings),
+        transferFileConcurrency: String(settings.transferFileConcurrency),
         defaultView: readDefaultView(),
         startupProfileId: profileId && profiles.some((profile) => profile.id === profileId) ? profileId : '',
         startupKind: settings.startupConnection?.kind ?? 'sftp',
@@ -75,7 +76,7 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
     }
   }
 
-  const updateSettingsForm = (key: PreviewLimitKey, value: string) => {
+  const updateSettingsForm = (key: SettingsFieldKey, value: string) => {
     setSettingsForm((current) => current ? { ...current, [key]: value } : current)
   }
 
@@ -104,11 +105,17 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
       showToast('error', '预览上限必须是 1 到 1024 之间的整数')
       return
     }
+    const transferFileConcurrency = Number(settingsForm.transferFileConcurrency)
+    if (!Number.isInteger(transferFileConcurrency) || transferFileConcurrency < 1 || transferFileConcurrency > 16) {
+      showToast('error', '同时传输文件数必须是 1 到 16 之间的整数')
+      return
+    }
 
     setSettingsSaving(true)
     try {
       const settings: AppSettings = {
         ...limits,
+        transferFileConcurrency,
         startupConnection: settingsForm.startupProfileId
           ? { profileId: settingsForm.startupProfileId, kind: settingsForm.startupKind }
           : null,

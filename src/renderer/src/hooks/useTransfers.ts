@@ -43,13 +43,11 @@ export function useTransfers({
           direction: progress.direction,
           transferred: progress.transferred,
           total: progress.total,
-          ...(progress.fileIndex === undefined ? {} : {
-            currentFileName: progress.remotePath.split('/').pop() ?? '文件',
-            fileIndex: progress.fileIndex,
-            fileCount: progress.fileCount,
-            fileTransferred: progress.fileTransferred,
-            fileTotal: progress.fileTotal,
-          }),
+          fileCount: progress.fileCount,
+          completedFiles: progress.completedFiles,
+          failedFiles: progress.failedFiles,
+          activeFiles: progress.activeFiles,
+          failures: current[progress.requestId]?.failures ?? [],
           state: current[progress.requestId]?.state === 'starting' || current[progress.requestId]?.state === 'queued'
             ? 'running'
             : current[progress.requestId]?.state ?? 'running',
@@ -80,12 +78,16 @@ export function useTransfers({
         direction,
         transferred: 0,
         total: initialTotal,
+        completedFiles: 0,
+        failedFiles: 0,
+        activeFiles: [],
+        failures: [],
         state: deferTrayUntilProgress ? 'starting' : 'running',
       },
     }))
     try {
       const result = await operation(requestId)
-      if (result === 'not-started') {
+      if (result.status === 'not-started') {
         setTransfers((current) => {
           const next = { ...current }
           delete next[requestId]
@@ -99,19 +101,33 @@ export function useTransfers({
           ...current[requestId],
           sessionId: activeSessionId,
           profileName,
-          transferred: result === 'completed'
+          transferred: result.status === 'completed'
             ? current[requestId]?.total ?? initialTotal
             : current[requestId]?.transferred ?? 0,
-          state: result === 'completed' ? 'complete' : 'cancelled',
+          completedFiles: result.status === 'completed'
+            ? current[requestId]?.fileCount ?? current[requestId]?.completedFiles ?? 0
+            : current[requestId]?.completedFiles ?? 0,
+          activeFiles: [],
+          failures: result.status === 'completed-with-errors' ? result.failures : [],
+          failedFiles: result.status === 'completed-with-errors'
+            ? result.failures.length
+            : current[requestId]?.failedFiles ?? 0,
+          state: result.status === 'completed'
+            ? 'complete'
+            : result.status === 'completed-with-errors'
+              ? 'completed-with-errors'
+              : 'cancelled',
         },
       }))
-      window.setTimeout(() => {
-        setTransfers((current) => {
-          const next = { ...current }
-          delete next[requestId]
-          return next
-        })
-      }, 2800)
+      if (result.status !== 'completed-with-errors') {
+        window.setTimeout(() => {
+          setTransfers((current) => {
+            const next = { ...current }
+            delete next[requestId]
+            return next
+          })
+        }, 2800)
+      }
       if (refreshPath !== undefined && direction === 'upload') await loadDirectory(activeSessionId, refreshPath)
     } catch (error) {
       setTransfers((current) => {

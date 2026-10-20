@@ -1,58 +1,37 @@
-import { app, dialog } from 'electron'
-import { randomUUID } from 'node:crypto'
-import { constants } from 'node:fs'
-import { copyFile, mkdir, rename, unlink } from 'node:fs/promises'
+import { dialog } from 'electron'
+import { lstat as localLstat, mkdir } from 'node:fs/promises'
 import { basename, dirname, join, posix } from 'node:path'
-import type { TransferResult } from '@shared/types'
+import type { TransferFailure, TransferResult } from '@shared/types'
 import { getMainWindow, messageFromError, sessions, type TransferItem } from '../runtime'
+import { readAppSettings } from '../state-store'
 import { fileType, sftpLstat } from '../sftp-utils'
+import { transferFileBlocks } from './block-transfer'
 import {
   assertWindowsPath,
   collectRemoteTree,
-  confirmOverwrite,
+  findPathCollisions,
   localDestination,
-  prepareLocalDestination,
-  sendTransferProgress,
-  transferFile,
+  runTransferTasks,
 } from './shared'
+import { createTransferProgressReporter } from './progress'
 
-async function removeTemporaryFile(filePath: string): Promise<void> {
-  try {
-    await unlink(filePath)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw new Error('未完成的下载文件无法清理 ' + filePath + '：' + messageFromError(error))
-    }
-  }
+function isLocalNotFound(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException).code === 'ENOENT'
 }
 
-async function publishDownloadedFile(
-  temporaryPath: string,
-  destination: string,
-  onCommitted: () => void,
-): Promise<void> {
-  try {
-    await rename(temporaryPath, destination)
-    onCommitted()
-    return
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error
+function failedParent(relativePath: string, blocked: Map<string, string>): string | undefined {
+  let current = relativePath
+  while (current && current !== '.') {
+    const failure = blocked.get(current)
+    if (failure) return failure
+    current = posix.dirname(current)
   }
+  return blocked.get('')
+}
 
-  const destinationTemporaryPath = join(
-    dirname(destination),
-    '.' + basename(destination) + '.' + randomUUID() + '.download',
-  )
-  let committed = false
-  try {
-    await copyFile(temporaryPath, destinationTemporaryPath, constants.COPYFILE_EXCL)
-    await rename(destinationTemporaryPath, destination)
-    committed = true
-    onCommitted()
-  } finally {
-    if (!committed) await removeTemporaryFile(destinationTemporaryPath)
-  }
-  await removeTemporaryFile(temporaryPath)
+function hasChildFile(items: TransferItem[], relativePath: string): boolean {
+  return items.some((item) => item.type === 'file'
+    && (!relativePath || item.relativePath.startsWith(relativePath + '/')))
 }
 
 async function downloadRemoteItems(
@@ -60,40 +39,105 @@ async function downloadRemoteItems(
   requestId: string,
   sessionId: string,
   profileId: string,
+  remoteRootPath: string,
   items: TransferItem[],
+  sourceFailures: TransferFailure[],
   destinationRoot: string,
   signal: AbortSignal,
-): Promise<void> {
+): Promise<TransferResult> {
   const session = sessions.get(sessionId)
   if (!session?.sftp) throw new Error('SFTP 会话未连接')
-  const total = items.reduce((sum, item) => sum + (item.type === 'file' ? item.size : 0), 0)
-  const temporaryDirectory = join(app.getPath('temp'), 'linux-nexus-downloads')
-  await mkdir(temporaryDirectory, { recursive: true })
-  let completed = 0
+  const blockedDirectories = new Map<string, string>()
+  const collisionFailures: TransferFailure[] = []
+  const collidingItems = new Set<TransferItem>()
+  for (const group of findPathCollisions(items, (item) => item.relativePath.toLowerCase())) {
+    const message = '服务器中存在 Windows 无法区分的同名路径'
+    for (const item of group) {
+      collidingItems.add(item)
+      collisionFailures.push({ path: item.remotePath ?? item.relativePath, message })
+      if (item.type === 'directory') blockedDirectories.set(item.relativePath, message)
+    }
+  }
+  const transferItems = items.filter((item) => !collidingItems.has(item))
+  const files = transferItems.filter((item) => item.type === 'file')
+  const total = files.reduce((sum, item) => sum + item.size, 0)
+  const fileConcurrency = readAppSettings().transferFileConcurrency
+  const progress = createTransferProgressReporter({
+    sender: event.sender,
+    requestId,
+    sessionId,
+    profileId,
+    remotePath: remoteRootPath,
+    direction: 'download',
+    total,
+    fileCount: files.length,
+  })
+  const directoryFailures: TransferFailure[] = []
+  const directories = transferItems.filter((item) => item.type === 'directory')
+    .sort((left, right) => left.relativePath.split('/').length - right.relativePath.split('/').length)
 
-  for (const item of items) {
+  try {
+    for (const item of directories) {
+      signal.throwIfAborted()
+      const destination = localDestination(destinationRoot, item.relativePath)
+      const parentFailure = failedParent(item.relativePath ? posix.dirname(item.relativePath) : '', blockedDirectories)
+      if (parentFailure) {
+        blockedDirectories.set(item.relativePath, parentFailure)
+        continue
+      }
+      try {
+        assertWindowsPath(item.relativePath)
+        let attrs: Awaited<ReturnType<typeof localLstat>> | undefined
+        try {
+          attrs = await localLstat(destination)
+        } catch (error) {
+          if (!isLocalNotFound(error)) throw error
+        }
+        signal.throwIfAborted()
+        if (attrs?.isSymbolicLink()) throw new Error('目标位置包含符号链接')
+        if (attrs && !attrs.isDirectory()) throw new Error('目标位置已存在同名文件')
+        if (!attrs) await mkdir(destination, { recursive: true })
+      } catch (error) {
+        if (signal.aborted) throw error
+        const message = messageFromError(error)
+        blockedDirectories.set(item.relativePath, message)
+        if (!hasChildFile(transferItems, item.relativePath)) directoryFailures.push({ path: destination, message })
+      }
+    }
+
+    const tasks = files.map((item) => ({
+      path: item.remotePath!,
+      size: item.size,
+      transfer: async (requestConcurrency: number, onProgress: (bytes: number) => void) => {
+        signal.throwIfAborted()
+        const parentFailure = failedParent(posix.dirname(item.relativePath), blockedDirectories)
+        if (parentFailure) throw new Error('目标目录不可用：' + parentFailure)
+        assertWindowsPath(item.relativePath)
+        const destination = localDestination(destinationRoot, item.relativePath)
+        let attrs: Awaited<ReturnType<typeof localLstat>> | undefined
+        try {
+          attrs = await localLstat(destination)
+        } catch (error) {
+          if (!isLocalNotFound(error)) throw error
+        }
+        if (attrs?.isSymbolicLink()) throw new Error('目标位置包含符号链接')
+        if (attrs && !attrs.isFile()) throw new Error('目标文件夹与待下载文件重名')
+        signal.throwIfAborted()
+        await mkdir(dirname(destination), { recursive: true })
+        await transferFileBlocks('download', session.sftp!, item.remotePath!, destination, item.size, requestConcurrency, signal, onProgress)
+      },
+    }))
+
+    const failures = [
+      ...sourceFailures,
+      ...collisionFailures,
+      ...directoryFailures,
+      ...await runTransferTasks(tasks, fileConcurrency, signal, progress),
+    ]
     signal.throwIfAborted()
-    const destination = localDestination(destinationRoot, item.relativePath)
-    if (item.type === 'directory') {
-      await mkdir(destination, { recursive: true })
-      signal.throwIfAborted()
-      continue
-    }
-
-    await mkdir(dirname(destination), { recursive: true })
-    const temporaryPath = join(temporaryDirectory, randomUUID() + '.download')
-    let committed = false
-    try {
-      await transferFile('get', session.sftp, item.remotePath!, temporaryPath, signal, (transferred) => {
-        sendTransferProgress(event.sender, requestId, sessionId, profileId, item.remotePath!, 'download', completed + transferred, total)
-      })
-      signal.throwIfAborted()
-      await publishDownloadedFile(temporaryPath, destination, () => { committed = true })
-    } finally {
-      if (!committed) await removeTemporaryFile(temporaryPath)
-    }
-    completed += item.size
-    sendTransferProgress(event.sender, requestId, sessionId, profileId, item.remotePath!, 'download', completed, total)
+    return failures.length ? { status: 'completed-with-errors', failures } : { status: 'completed' }
+  } finally {
+    progress.flush()
   }
 }
 
@@ -124,18 +168,12 @@ export async function downloadEntry(
       ? await dialog.showOpenDialog(window, options)
       : await dialog.showOpenDialog(options)
     signal.throwIfAborted()
-    if (destination.canceled || !destination.filePaths[0]) return 'not-started'
+    if (destination.canceled || !destination.filePaths[0]) return { status: 'not-started' }
     const fileName = posix.basename(normalizedPath)
     assertWindowsPath(fileName)
     const localPath = join(destination.filePaths[0], fileName)
     const item: TransferItem = { relativePath: '', type: 'file', size: attributes.size ?? 0, remotePath: normalizedPath }
-    const collisions = await prepareLocalDestination([item], localPath)
-    signal.throwIfAborted()
-    if (!await confirmOverwrite(collisions, '下载')) return 'not-started'
-    signal.throwIfAborted()
-    await downloadRemoteItems(event, requestId, sessionId, profileId, [item], localPath, signal)
-    signal.throwIfAborted()
-    return 'completed'
+    return downloadRemoteItems(event, requestId, sessionId, profileId, normalizedPath, [item], [], localPath, signal)
   }
 
   if (type !== 'directory') throw new Error('只能下载普通文件或文件夹')
@@ -149,17 +187,11 @@ export async function downloadEntry(
     ? await dialog.showOpenDialog(window, options)
     : await dialog.showOpenDialog(options)
   signal.throwIfAborted()
-  if (destination.canceled || !destination.filePaths[0]) return 'not-started'
+  if (destination.canceled || !destination.filePaths[0]) return { status: 'not-started' }
 
   const folderName = posix.basename(normalizedPath)
   assertWindowsPath(folderName)
   const localRoot = join(destination.filePaths[0], folderName)
-  const items = await collectRemoteTree(session.sftp, normalizedPath, signal)
-  const collisions = await prepareLocalDestination(items, localRoot)
-  signal.throwIfAborted()
-  if (!await confirmOverwrite(collisions, '下载')) return 'not-started'
-  signal.throwIfAborted()
-  await downloadRemoteItems(event, requestId, sessionId, profileId, items, localRoot, signal)
-  signal.throwIfAborted()
-  return 'completed'
+  const collected = await collectRemoteTree(session.sftp, normalizedPath, signal)
+  return downloadRemoteItems(event, requestId, sessionId, profileId, normalizedPath, collected.items, collected.failures, localRoot, signal)
 }

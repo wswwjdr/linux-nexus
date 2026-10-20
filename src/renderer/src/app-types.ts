@@ -1,4 +1,4 @@
-import type { CommandAlias, LogPreviewPage, PreviewLimits, PreviewResult, RemoteEntry, ServerProfile, SessionKind } from '@shared/types'
+import type { CommandAlias, LogPreviewPage, PreviewLimits, PreviewResult, RemoteEntry, ServerProfile, SessionKind, TransferFailure, TransferFileProgress } from '@shared/types'
 
 export interface ProfileForm {
   id: string
@@ -36,12 +36,12 @@ export interface TransferJob {
   direction: 'upload' | 'download'
   transferred: number
   total: number
-  currentFileName?: string
-  fileIndex?: number
   fileCount?: number
-  fileTransferred?: number
-  fileTotal?: number
-  state: 'starting' | 'queued' | 'running' | 'cancelling' | 'complete' | 'cancelled'
+  completedFiles: number
+  failedFiles: number
+  activeFiles: TransferFileProgress[]
+  failures: TransferFailure[]
+  state: 'starting' | 'queued' | 'running' | 'cancelling' | 'complete' | 'completed-with-errors' | 'cancelled'
 }
 
 export interface SessionTab {
@@ -88,7 +88,9 @@ export type SortColumn = 'name' | 'size' | 'modifiedAt' | 'permissions' | 'type'
 export type SortDirection = 'ascending' | 'descending'
 export type PreviewLimitKey = keyof PreviewLimits
 export type PreviewLimitsForm = Record<PreviewLimitKey, string>
+export type SettingsFieldKey = PreviewLimitKey | 'transferFileConcurrency'
 export interface SettingsForm extends PreviewLimitsForm {
+  transferFileConcurrency: string
   defaultView: FileViewMode
   startupProfileId: string
   startupKind: SessionKind

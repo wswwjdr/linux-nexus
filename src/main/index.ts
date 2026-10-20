@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, Menu, protocol } from 'electron'
 import { mkdir, rm } from 'node:fs/promises'
-import { mkdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, rmdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { stopAllSessions } from './connections'
 import { registerIpc } from './ipc'
@@ -14,13 +14,17 @@ protocol.registerSchemesAsPrivileged([{
 }])
 
 let focusWindowWhenCreated = false
+const applicationDataDirectory = app.isPackaged
+  ? app.getPath('userData')
+  : join(app.getAppPath(), 'data')
+app.setPath('userData', applicationDataDirectory)
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 let applicationDataConfigured = false
 if (!hasSingleInstanceLock) {
   app.quit()
 } else {
   try {
-    configureApplicationData()
+    configureApplicationData(applicationDataDirectory)
     applicationDataConfigured = true
   } catch (error) {
     dialog.showErrorBox('启动失败', messageFromError(error))
@@ -29,10 +33,23 @@ if (!hasSingleInstanceLock) {
   app.on('second-instance', focusMainWindow)
 }
 
-function configureApplicationData(): void {
-  const dataDirectory = app.isPackaged
-    ? join(app.getPath('appData'), 'Linux Nexus')
-    : join(app.getAppPath(), 'data')
+function migratePreviousApplicationData(dataDirectory: string): void {
+  if (!app.isPackaged) return
+  const previousDataDirectory = join(app.getPath('appData'), 'Linux Nexus')
+  if (!existsSync(previousDataDirectory)) return
+
+  for (const name of ['servers.json', 'settings.json', 'session', 'temp', 'logs', 'crash-dumps']) {
+    const source = join(previousDataDirectory, name)
+    const destination = join(dataDirectory, name)
+    if (existsSync(source) && !existsSync(destination)) renameSync(source, destination)
+  }
+
+  if (readdirSync(previousDataDirectory).length === 0) rmdirSync(previousDataDirectory)
+}
+
+function configureApplicationData(dataDirectory: string): void {
+  mkdirSync(dataDirectory, { recursive: true })
+  migratePreviousApplicationData(dataDirectory)
   const sessionDirectory = join(dataDirectory, 'session')
   const temporaryDirectory = join(dataDirectory, 'temp')
   const logsDirectory = join(dataDirectory, 'logs')
@@ -42,7 +59,6 @@ function configureApplicationData(): void {
   }
 
   mkdirSync(sessionDirectory, { recursive: true })
-  app.setPath('userData', dataDirectory)
   app.setPath('sessionData', sessionDirectory)
   app.setPath('temp', temporaryDirectory)
   app.setPath('crashDumps', crashDumpsDirectory)

@@ -227,10 +227,11 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .global-toast.info > svg { color: var(--blue); }
 .global-toast-message { min-width: 0; overflow-wrap: anywhere; line-height: 1.45; }
 .global-toast .icon-button { flex: 0 0 auto; }
-.transfer-tray { position: absolute; right: 20px; bottom: 76px; z-index: 2; width: 320px; max-width: calc(100% - 40px); display: flex; flex-direction: column; gap: 7px; }
-.transfer-item { min-width: 0; display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius); background: white; box-shadow: 0 4px 16px #37483d0d; }
+.transfer-tray { position: absolute; right: 20px; bottom: 76px; z-index: 2; width: 360px; max-width: calc(100% - 40px); max-height: min(65vh, 600px); overflow-y: auto; display: flex; flex-direction: column; gap: 7px; }
+.transfer-item { min-width: 0; display: flex; align-items: flex-start; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius); background: white; box-shadow: 0 4px 16px #37483d0d; }
 .transfer-state-icon { width: 27px; height: 27px; display: grid; flex: 0 0 auto; place-items: center; color: var(--blue); background: var(--blue-soft); border-radius: 5px; }
 .transfer-state-icon.complete { color: var(--green); background: var(--green-soft); }
+.transfer-state-icon.failed { color: var(--red); background: #fff0ec; }
 .transfer-state-icon.cancelled { color: #7e8981; background: #edf0ed; }
 .transfer-copy { min-width: 0; flex: 1; }
 .transfer-line { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; color: #526158; font-size: 11px; }
@@ -240,7 +241,19 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .progress-track { height: 3px; overflow: hidden; background: #e8eeea; border-radius: 2px; }
 .progress-fill { height: 100%; background: var(--blue); transition: width .15s; }
 .progress-fill.complete { background: var(--green); }
+.progress-fill.failed { background: var(--red); }
 .progress-fill.cancelled { background: #9ba59d; }
+.transfer-active-files { display: grid; gap: 8px; max-height: 170px; margin-top: 9px; overflow-y: auto; }
+.transfer-active-file { min-width: 0; }
+.transfer-active-line { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; color: #59675e; font-size: 10px; }
+.transfer-active-line span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transfer-active-line span:last-child { flex: 0 0 auto; color: #819087; }
+.transfer-active-file .progress-track { height: 2px; }
+.transfer-failures { margin-top: 8px; color: #9c5141; font-size: 11px; }
+.transfer-failures summary { width: fit-content; cursor: pointer; }
+.transfer-failure-list { display: grid; gap: 7px; max-height: 180px; margin-top: 7px; overflow-y: auto; }
+.transfer-failure { display: grid; gap: 2px; min-width: 0; padding-top: 6px; border-top: 1px solid #f0e4df; overflow-wrap: anywhere; }
+.transfer-failure small { color: #84685f; font-size: 10px; }
 .session-launcher-backdrop { position: fixed; z-index: 7; inset: 0; display: grid; place-items: center; padding: 20px; background: #18241d55; backdrop-filter: blur(2px); }
 .session-launcher { width: min(100%, 440px); padding: 20px; border: 1px solid #dce5de; border-radius: 6px; background: white; box-shadow: 0 18px 55px #15241d2c; }
 .session-launcher-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
@@ -303,11 +316,13 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .settings-section-view { background: #f1f8f3; }
 .settings-section-startup { background: #f2f6fb; }
 .settings-section-preview { background: #fffaf0; }
+.settings-section-transfer { background: #f1f8f3; }
 .settings-section-aliases { background: #fff5f2; }
 .settings-section .settings-startup-kind { margin: 0; }
 .settings-field-label { display: block; margin-bottom: 7px; }
 .settings-preview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
 .settings-preview-grid .field { min-width: 0; margin: 0; }
+.settings-transfer-concurrency { width: min(100%, 220px); margin: 0; }
 .settings-modal { width: min(100%, 650px); max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
 .settings-modal > form { min-height: 0; display: grid; gap: 12px; overflow: auto; }
 .command-aliases-field { min-width: 0; }

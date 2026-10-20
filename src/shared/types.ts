@@ -135,6 +135,18 @@ export interface StartupConnection {
 
 export interface AppSettings extends PreviewLimits {
   startupConnection: StartupConnection | null
+  transferFileConcurrency: number
+}
+
+export interface TransferFileProgress {
+  remotePath: string
+  transferred: number
+  total: number
+}
+
+export interface TransferFailure {
+  path: string
+  message: string
 }
 
 export interface TransferProgress {
@@ -145,17 +157,21 @@ export interface TransferProgress {
   direction: 'upload' | 'download'
   transferred: number
   total: number
-  fileIndex?: number
-  fileCount?: number
-  fileTransferred?: number
-  fileTotal?: number
+  fileCount: number
+  completedFiles: number
+  failedFiles: number
+  activeFiles: TransferFileProgress[]
 }
 
 export interface TransferQueuedEvent {
   requestId: string
 }
 
-export type TransferResult = 'completed' | 'not-started' | 'cancelled'
+export type TransferResult =
+  | { status: 'completed' }
+  | { status: 'completed-with-errors'; failures: TransferFailure[] }
+  | { status: 'not-started' }
+  | { status: 'cancelled' }
 
 export type DroppedUploadEntry =
   | { relativePath: string; type: 'directory' }

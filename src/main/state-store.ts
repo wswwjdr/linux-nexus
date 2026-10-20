@@ -22,9 +22,12 @@ export const DEFAULT_PREVIEW_LIMITS: PreviewLimits = {
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   ...DEFAULT_PREVIEW_LIMITS,
   startupConnection: null,
+  transferFileConcurrency: 4,
 }
 
 const MAX_PREVIEW_LIMIT_MIB = 1024
+const MIN_TRANSFER_FILE_CONCURRENCY = 1
+const MAX_TRANSFER_FILE_CONCURRENCY = 16
 
 let stateFile = ''
 let settingsFile = ''
@@ -45,9 +48,10 @@ function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
 export function validateAppSettings(value: unknown): AppSettings {
   const keys = Object.keys(DEFAULT_PREVIEW_LIMITS)
   if (!isRecord(value) || keys.some((key) => !Object.hasOwn(value, key))
-    || Object.keys(value).some((key) => !keys.includes(key) && key !== 'startupConnection')
-    || (Object.hasOwn(value, 'startupConnection') && Object.keys(value).length !== keys.length + 1)
-    || (!Object.hasOwn(value, 'startupConnection') && Object.keys(value).length !== keys.length)) {
+    || !Object.hasOwn(value, 'transferFileConcurrency')
+    || Object.keys(value).some((key) => !keys.includes(key) && key !== 'startupConnection' && key !== 'transferFileConcurrency')
+    || (Object.hasOwn(value, 'startupConnection') && Object.keys(value).length !== keys.length + 2)
+    || (!Object.hasOwn(value, 'startupConnection') && Object.keys(value).length !== keys.length + 1)) {
     throw new Error('应用设置结构无效')
   }
   for (const key of keys) {
@@ -55,6 +59,11 @@ export function validateAppSettings(value: unknown): AppSettings {
     if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > MAX_PREVIEW_LIMIT_MIB) {
       throw new Error('预览设置 ' + key + ' 必须是 1 到 ' + MAX_PREVIEW_LIMIT_MIB + ' 之间的整数')
     }
+  }
+  const transferFileConcurrency = value.transferFileConcurrency
+  if (typeof transferFileConcurrency !== 'number' || !Number.isInteger(transferFileConcurrency)
+    || transferFileConcurrency < MIN_TRANSFER_FILE_CONCURRENCY || transferFileConcurrency > MAX_TRANSFER_FILE_CONCURRENCY) {
+    throw new Error('同时传输文件数必须是 1 到 16 之间的整数')
   }
   let startupConnection: StartupConnection | null = null
   if (Object.hasOwn(value, 'startupConnection') && value.startupConnection !== null) {
@@ -66,7 +75,7 @@ export function validateAppSettings(value: unknown): AppSettings {
     }
     startupConnection = { profileId: connection.profileId, kind: connection.kind as SessionKind }
   }
-  return { ...value as unknown as PreviewLimits, startupConnection }
+  return { ...value as unknown as PreviewLimits, startupConnection, transferFileConcurrency }
 }
 
 function validateStoredState(value: unknown, verifyPasswordCiphertexts = false): StoredState {
@@ -181,14 +190,14 @@ export function writeAppSettings(settings: unknown): AppSettings {
 }
 
 export function readPreviewLimits(): PreviewLimits {
-  const { startupConnection: _startupConnection, ...limits } = readAppSettings()
+  const { startupConnection: _startupConnection, transferFileConcurrency: _transferFileConcurrency, ...limits } = readAppSettings()
   return limits
 }
 
 export function writePreviewLimits(limits: unknown): PreviewLimits {
-  const appSettings = validateAppSettings({ ...(limits as Record<string, unknown>), startupConnection: null })
-  const { startupConnection: _startupConnection, ...validatedLimits } = appSettings
-  atomicWriteJson(settingsFile, { ...readAppSettings(), ...validatedLimits })
+  const appSettings = validateAppSettings({ ...readAppSettings(), ...(limits as Record<string, unknown>) })
+  const { startupConnection: _startupConnection, transferFileConcurrency: _transferFileConcurrency, ...validatedLimits } = appSettings
+  atomicWriteJson(settingsFile, appSettings)
   return validatedLimits
 }
 

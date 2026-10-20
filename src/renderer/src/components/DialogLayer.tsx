@@ -8,8 +8,8 @@ import type {
   FileViewMode,
   PendingHostKey,
   PendingAliasHostKey,
-  PreviewLimitKey,
   ProfileForm,
+  SettingsFieldKey,
   SettingsForm,
 } from '@/app-types'
 import { previewLimitFields } from '@/app-utils'
@@ -43,7 +43,7 @@ interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
   onUpdateProfile: (patch: Partial<ProfileForm>) => void
   onSubmitProfile: (event: FormEvent<HTMLFormElement>) => void
   onCloseSettings: () => void
-  onUpdateSettings: (key: PreviewLimitKey, value: string) => void
+  onUpdateSettings: (key: SettingsFieldKey, value: string) => void
   onUpdateDefaultView: (mode: FileViewMode) => void
   onUpdateStartupProfile: (profileId: string) => void
   onUpdateStartupKind: (kind: SettingsForm['startupKind']) => void
@@ -375,6 +375,21 @@ export default function DialogLayer({
                     </label>
                   ))}
                 </div>
+              </fieldset>
+              <fieldset className="settings-section settings-section-transfer" disabled={settingsSaving}>
+                <legend>文件传输</legend>
+                <label className="field settings-transfer-concurrency">
+                  <span>同时传输文件数</span>
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    max="16"
+                    step="1"
+                    value={settingsForm.transferFileConcurrency}
+                    onChange={(event) => onUpdateSettings('transferFileConcurrency', event.target.value)}
+                  />
+                </label>
               </fieldset>
               <section className="settings-section settings-section-aliases command-aliases-field" aria-labelledby="command-aliases-title">
                 <div className="command-aliases-heading">
