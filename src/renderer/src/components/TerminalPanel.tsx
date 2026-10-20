@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
+import { Clipboard, Copy } from 'lucide-react'
 import type { TerminalOutputEvent } from '@shared/types'
 import '@xterm/xterm/css/xterm.css'
 
@@ -13,10 +14,77 @@ interface TerminalPanelProps {
 
 export default function TerminalPanel({ sessionId, active, connected, onError }: TerminalPanelProps) {
   const hostRef = useRef<HTMLDivElement>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const connectedRef = useRef(connected)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   connectedRef.current = connected
+
+  useEffect(() => {
+    if (!contextMenu) return
+
+    const dismissOutside = (event: PointerEvent) => {
+      if (!contextMenuRef.current?.contains(event.target as Node)) setContextMenu(null)
+    }
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setContextMenu(null)
+      terminalRef.current?.focus()
+    }
+    const dismiss = () => setContextMenu(null)
+
+    document.addEventListener('pointerdown', dismissOutside, true)
+    window.addEventListener('keydown', dismissOnEscape)
+    window.addEventListener('blur', dismiss)
+    window.addEventListener('resize', dismiss)
+    window.addEventListener('scroll', dismiss, true)
+    contextMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus()
+    return () => {
+      document.removeEventListener('pointerdown', dismissOutside, true)
+      window.removeEventListener('keydown', dismissOnEscape)
+      window.removeEventListener('blur', dismiss)
+      window.removeEventListener('resize', dismiss)
+      window.removeEventListener('scroll', dismiss, true)
+    }
+  }, [contextMenu])
+
+  const openContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const menuWidth = 204
+    const menuHeight = 82
+    const inset = 8
+    setContextMenu({
+      x: Math.max(inset, Math.min(event.clientX, window.innerWidth - menuWidth - inset)),
+      y: Math.max(inset, Math.min(event.clientY, window.innerHeight - menuHeight - inset)),
+    })
+  }
+
+  const copySelection = () => {
+    const terminal = terminalRef.current
+    const selection = terminal?.getSelection()
+    if (!terminal || !selection) return
+    void navigator.clipboard.writeText(selection).catch((error: unknown) => {
+      onError(error instanceof Error ? error.message : String(error))
+    })
+    setContextMenu(null)
+    terminal.focus()
+  }
+
+  const pasteClipboard = async () => {
+    const terminal = terminalRef.current
+    if (!terminal || !connectedRef.current) return
+    try {
+      const text = await navigator.clipboard.readText()
+      terminal.paste(text)
+      setContextMenu(null)
+      terminal.focus()
+    } catch (error) {
+      setContextMenu(null)
+      terminal.focus()
+      onError(error instanceof Error ? error.message : String(error))
+    }
+  }
 
   useEffect(() => {
     const host = hostRef.current
@@ -106,5 +174,28 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
     return () => observer.disconnect()
   }, [active, connected, sessionId, onError])
 
-  return <div className="terminal-host" ref={hostRef} />
+  return (
+    <div className="terminal-host" ref={hostRef} onContextMenu={openContextMenu}>
+      {contextMenu && (
+        <div
+          className="browser-context-menu terminal-context-menu"
+          ref={contextMenuRef}
+          role="menu"
+          aria-label="终端操作"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onContextMenu={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+        >
+          <button className="entry-context-action" role="menuitem" disabled={!terminalRef.current?.hasSelection()} onClick={copySelection}>
+            <Copy size={16} /> 复制
+          </button>
+          <button className="entry-context-action" role="menuitem" disabled={!connected} onClick={() => void pasteClipboard()}>
+            <Clipboard size={16} /> 粘贴
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }

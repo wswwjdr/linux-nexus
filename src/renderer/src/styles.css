@@ -172,6 +172,9 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .entry-context-action.danger-action svg { color: #c44f4f; }
 .entry-context-action.danger-action:hover, .entry-context-action.danger-action:focus-visible { background: #fff1f0; }
 .entry-context-action.download-action svg { color: var(--green); }
+.terminal-context-menu .entry-context-action:disabled { color: #a5afa8; cursor: not-allowed; }
+.terminal-context-menu .entry-context-action:disabled svg { color: #b8c0ba; }
+.terminal-context-menu .entry-context-action:disabled:hover { background: transparent; }
 .context-submenu { position: relative; }
 .submenu-trigger { width: 100%; justify-content: space-between; }
 .submenu-trigger-label { display: inline-flex; align-items: center; gap: 9px; }

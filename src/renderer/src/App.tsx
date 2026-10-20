@@ -537,6 +537,7 @@ export default function App() {
     }
     if (searchSessionId === sessionId) setSearchSessionId(null)
     setBrowserContextMenu(null)
+    setSessionContextMenu(null)
     void window.remoteFiles.disconnect(sessionId).catch((error) => showToast('error', errorMessage(error)))
   }
 
@@ -942,6 +943,11 @@ export default function App() {
                 <div
                   className={'session-tab ' + (isActive ? 'active' : '')}
                   key={session.id}
+                  onMouseDown={(event) => {
+                    if (event.button !== 1) return
+                    event.preventDefault()
+                    closeSession(session.id)
+                  }}
                   onContextMenu={(event) => {
                     event.preventDefault()
                     openSessionContextMenu(session.id, event.clientX, event.clientY)

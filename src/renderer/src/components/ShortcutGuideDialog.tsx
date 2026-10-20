@@ -28,6 +28,7 @@ const shortcutGroups: ShortcutGroup[] = [
     scope: 'SSH 终端',
     icon: Terminal,
     items: [
+      { bindings: [['鼠标右键']], action: '打开复制、粘贴菜单' },
       { bindings: [['Ctrl', 'Shift', 'C']], action: '复制选中的终端文本' },
       { bindings: [['Ctrl', 'Shift', 'V']], action: '粘贴系统剪贴板内容' },
     ],
@@ -37,6 +38,7 @@ const shortcutGroups: ShortcutGroup[] = [
     scope: '通用',
     icon: Keyboard,
     items: [
+      { bindings: [['鼠标中键']], action: '关闭当前会话标签' },
       { bindings: [['Esc']], action: '关闭当前菜单或弹窗' },
     ],
   },
