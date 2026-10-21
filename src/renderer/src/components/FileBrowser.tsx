@@ -206,6 +206,7 @@ export default function FileBrowser({
   const hoverTimerRef = useRef<number | null>(null)
   const dragDepthRef = useRef(0)
   const selectionDragRef = useRef<SelectionDrag | null>(null)
+  const selectionAnchorRef = useRef<string | null>(null)
   const selectedPathsRef = useRef(selectedPaths)
   const previousPathRef = useRef(currentPath)
   const suppressClickRef = useRef(false)
@@ -226,6 +227,7 @@ export default function FileBrowser({
   useLayoutEffect(() => {
     if (previousPathRef.current === currentPath) return
     previousPathRef.current = currentPath
+    selectionAnchorRef.current = null
     contentRef.current?.focus({ preventScroll: true })
   }, [currentPath])
 
@@ -388,13 +390,32 @@ export default function FileBrowser({
       suppressClickRef.current = false
       return
     }
-    if (event.ctrlKey || event.metaKey) {
-      const next = new Set(selectedPathsRef.current)
-        if (next.has(path)) next.delete(path)
-        else next.add(path)
+    if (event.shiftKey) {
+      const entryIndexes = new Map(sortedEntries.map((entry, index): [string, number] => [entry.path, index]))
+      const clickedIndex = entryIndexes.get(path)
+      const selectedAnchor = [...selectedPathsRef.current].reverse().find((selectedPath) => entryIndexes.has(selectedPath))
+      const currentAnchor = selectionAnchorRef.current
+      const anchorPath = currentAnchor && entryIndexes.has(currentAnchor) ? currentAnchor : selectedAnchor ?? path
+      const anchorIndex = entryIndexes.get(anchorPath)
+      if (clickedIndex === undefined || anchorIndex === undefined) return
+
+      const start = Math.min(anchorIndex, clickedIndex)
+      const end = Math.max(anchorIndex, clickedIndex)
+      const next = new Set(event.ctrlKey || event.metaKey ? selectedPathsRef.current : [])
+      for (const entry of sortedEntries.slice(start, end + 1)) next.add(entry.path)
+      selectionAnchorRef.current = anchorPath
       changeSelectedPaths(next)
       return
     }
+    if (event.ctrlKey || event.metaKey) {
+      const next = new Set(selectedPathsRef.current)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      selectionAnchorRef.current = path
+      changeSelectedPaths(next)
+      return
+    }
+    selectionAnchorRef.current = path
     changeSelectedPaths([path])
   }
 
