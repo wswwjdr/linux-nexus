@@ -200,6 +200,7 @@ export default function App() {
     removePreviewExtension,
     resetPreviewExtensions,
     updateDefaultView,
+    updateTheme,
     updateStartupProfile,
     updateStartupKind,
     submitSettings,
@@ -1498,6 +1499,7 @@ export default function App() {
         onRemovePreviewExtension={removePreviewExtension}
         onResetPreviewExtensions={resetPreviewExtensions}
         onUpdateDefaultView={updateDefaultView}
+        onUpdateTheme={updateTheme}
         onUpdateStartupProfile={updateStartupProfile}
         onUpdateStartupKind={updateStartupKind}
         onSubmitSettings={(event) => void submitSettings(event)}

@@ -6,7 +6,8 @@ import { stopAllSessions } from './connections'
 import { registerIpc } from './ipc'
 import { registerPreviewProtocol } from './preview-protocol'
 import { clearPreviewAssets, getMainWindow, messageFromError, setMainWindow } from './runtime'
-import { configureStateFiles, readPreviewLimits, readState } from './state-store'
+import { configureStateFiles, readAppSettings, readState } from './state-store'
+import { applyTheme, themeBackgroundColor } from './theme'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'remote-preview',
@@ -85,7 +86,7 @@ function createWindow(): void {
     height: 760,
     minWidth: 820,
     minHeight: 560,
-    backgroundColor: '#f3f6f3',
+    backgroundColor: themeBackgroundColor(),
     title: 'Linux Nexus',
     icon: iconPath,
     webPreferences: {
@@ -127,7 +128,8 @@ app.whenReady().then(async () => {
   configureStateFiles(join(userDataDirectory, 'servers.json'), join(userDataDirectory, 'settings.json'))
   try {
     readState(true)
-    readPreviewLimits()
+    const settings = readAppSettings()
+    applyTheme(settings.theme)
   } catch (error) {
     dialog.showErrorBox(
       '配置文件无效',

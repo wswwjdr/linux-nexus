@@ -16,6 +16,7 @@ export function defaultPreviewExtensions(): PreviewExtensions {
 export function defaultAppSettings(): AppSettings {
   return {
     ...DEFAULT_PREVIEW_LIMITS,
+    theme: 'light',
     previewExtensions: defaultPreviewExtensions(),
     startupConnection: null,
     transferFileConcurrency: 4,
@@ -38,8 +39,11 @@ function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
 
 export function validateAppSettings(value: unknown): AppSettings {
   const limitKeys = Object.keys(DEFAULT_PREVIEW_LIMITS)
-  const settingsKeys = [...limitKeys, 'previewExtensions', 'startupConnection', 'transferFileConcurrency']
+  const settingsKeys = [...limitKeys, 'theme', 'previewExtensions', 'startupConnection', 'transferFileConcurrency']
   if (!isRecord(value) || !hasExactKeys(value, settingsKeys)) throw new Error('应用设置结构无效')
+  if (value.theme !== 'light' && value.theme !== 'dark' && value.theme !== 'system') {
+    throw new Error('外观主题设置无效')
+  }
   for (const key of limitKeys) {
     const limit = value[key]
     if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > MAX_PREVIEW_LIMIT_MIB) {
@@ -72,7 +76,7 @@ export function validateAppSettings(value: unknown): AppSettings {
     }
     startupConnection = { profileId: connection.profileId, kind: connection.kind as SessionKind }
   }
-  return { ...value as unknown as PreviewLimits, previewExtensions, startupConnection, transferFileConcurrency }
+  return { ...value as unknown as PreviewLimits, theme: value.theme, previewExtensions, startupConnection, transferFileConcurrency }
 }
 
 export function migrateAppSettings(value: unknown): { settings: AppSettings; migrated: boolean } {

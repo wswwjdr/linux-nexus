@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import type { AppSettings, PreviewExtensions, PreviewLimits, PreviewType, SaveProfileInput, ServerProfile, SessionKind, StartupConnection } from '@shared/types'
+import type { AppSettings, PreviewExtensions, PreviewLimits, PreviewType, SaveProfileInput, ServerProfile, SessionKind, StartupConnection, ThemeMode } from '@shared/types'
 import type { FileViewMode, ProfileForm, SettingsFieldKey, SettingsForm } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { emptyForm, errorMessage, previewLimitFields, readDefaultView, toPreviewLimitsForm } from '@/app-utils'
@@ -67,6 +67,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
       const profileId = settings.startupConnection?.profileId
       setSettingsForm({
         ...toPreviewLimitsForm(settings),
+        theme: settings.theme,
         previewExtensions: Object.fromEntries(Object.entries(settings.previewExtensions).map(([type, extensions]) => [type, [...extensions]])) as PreviewExtensions,
         transferFileConcurrency: String(settings.transferFileConcurrency),
         defaultView: readDefaultView(),
@@ -121,6 +122,10 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
     setSettingsForm((current) => current ? { ...current, defaultView } : current)
   }
 
+  const updateTheme = (theme: ThemeMode) => {
+    setSettingsForm((current) => current ? { ...current, theme } : current)
+  }
+
   const updateStartupProfile = (startupProfileId: string) => {
     setSettingsForm((current) => current ? { ...current, startupProfileId } : current)
   }
@@ -153,6 +158,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
     try {
       const settings: AppSettings = {
         ...limits,
+        theme: settingsForm.theme,
         previewExtensions: settingsForm.previewExtensions,
         transferFileConcurrency,
         startupConnection: settingsForm.startupProfileId
@@ -256,6 +262,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
     removePreviewExtension,
     resetPreviewExtensions,
     updateDefaultView,
+    updateTheme,
     updateStartupProfile,
     updateStartupKind,
     submitSettings,

@@ -41,6 +41,7 @@ import { previewFile, readLogPreview, releasePreview, saveTextFile } from './pre
 import { cancelRemoteSearch, startRemoteSearch } from './search'
 import { cancelRemoteMove, startRemoteMove } from './remote-moves'
 import { executeRemoteCopy } from './remote-copies'
+import { applyTheme } from './theme'
 
 const pendingMoveDecisions = new Map<string, {
   conflictId: string
@@ -173,7 +174,9 @@ export function registerIpc(): void {
       && !readState().profiles.some((profile) => profile.id === settings.startupConnection?.profileId)) {
       throw new Error('启动连接所选服务器不存在')
     }
-    return writeAppSettings(settings)
+    const savedSettings = writeAppSettings(settings)
+    applyTheme(savedSettings.theme)
+    return savedSettings
   })
   ipcMain.handle('shell:open-external', (_event, url: unknown) => shell.openExternal(validateExternalUrl(url)))
   ipcMain.handle('aliases:list', () => listCommandAliasSnapshots())

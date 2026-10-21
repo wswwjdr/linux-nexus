@@ -1,4 +1,4 @@
-import type { CommandAlias, LogPreviewPage, PreviewExtensions, PreviewLimits, PreviewResult, RemoteEntry, ServerProfile, SessionKind, TransferFailure, TransferFileProgress } from '@shared/types'
+import type { CommandAlias, LogPreviewPage, PreviewExtensions, PreviewLimits, PreviewResult, RemoteEntry, ServerProfile, SessionKind, ThemeMode, TransferFailure, TransferFileProgress } from '@shared/types'
 
 export interface ProfileForm {
   id: string
@@ -97,6 +97,7 @@ export type PreviewLimitKey = keyof PreviewLimits
 export type PreviewLimitsForm = Record<PreviewLimitKey, string>
 export type SettingsFieldKey = PreviewLimitKey | 'transferFileConcurrency'
 export interface SettingsForm extends PreviewLimitsForm {
+  theme: ThemeMode
   previewExtensions: PreviewExtensions
   transferFileConcurrency: string
   defaultView: FileViewMode

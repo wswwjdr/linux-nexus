@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Check, ChevronRight, FolderOpen, KeyRound, LayoutGrid, List, LoaderCircle, Plus, RefreshCw, Server, ShieldCheck, Terminal, Trash2, X } from 'lucide-react'
-import type { CommandAlias, CommandAliasSnapshot, PreviewType, ServerProfile } from '@shared/types'
+import { Check, ChevronRight, FolderOpen, KeyRound, LayoutGrid, List, LoaderCircle, Monitor, Moon, Plus, RefreshCw, Server, ShieldCheck, Sun, Terminal, Trash2, X } from 'lucide-react'
+import type { CommandAlias, CommandAliasSnapshot, PreviewType, ServerProfile, ThemeMode } from '@shared/types'
 import { normalizePreviewExtension, previewTypeLabels, previewTypes } from '@shared/preview-file-type'
 import ConfirmationDialog from './ConfirmationDialog'
 import LogPreviewDialog, { type LogPreviewDialogProps } from './previews/LogPreviewDialog'
@@ -49,6 +49,7 @@ interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
   onRemovePreviewExtension: (type: PreviewType, extension: string) => void
   onResetPreviewExtensions: () => void
   onUpdateDefaultView: (mode: FileViewMode) => void
+  onUpdateTheme: (theme: ThemeMode) => void
   onUpdateStartupProfile: (profileId: string) => void
   onUpdateStartupKind: (kind: SettingsForm['startupKind']) => void
   onSubmitSettings: (event: FormEvent<HTMLFormElement>) => void
@@ -184,6 +185,7 @@ export default function DialogLayer({
   onRemovePreviewExtension,
   onResetPreviewExtensions,
   onUpdateDefaultView,
+  onUpdateTheme,
   onUpdateStartupProfile,
   onUpdateStartupKind,
   onSubmitSettings,
@@ -381,6 +383,20 @@ export default function DialogLayer({
           <section className="modal settings-modal" role="dialog" aria-modal="true" aria-label="应用设置">
             <form onSubmit={onSubmitSettings}>
               <div className="settings-form-content">
+              <fieldset className="settings-section settings-section-appearance" disabled={settingsSaving}>
+                <legend>外观</legend>
+                <div className="settings-view-options settings-theme-options" role="group" aria-label="外观主题">
+                  <button type="button" className="settings-view-option" aria-pressed={settingsForm.theme === 'light'} onClick={() => onUpdateTheme('light')}>
+                    <Sun size={15} /> 亮色
+                  </button>
+                  <button type="button" className="settings-view-option" aria-pressed={settingsForm.theme === 'dark'} onClick={() => onUpdateTheme('dark')}>
+                    <Moon size={15} /> 暗色
+                  </button>
+                  <button type="button" className="settings-view-option" aria-pressed={settingsForm.theme === 'system'} onClick={() => onUpdateTheme('system')}>
+                    <Monitor size={15} /> 跟随系统
+                  </button>
+                </div>
+              </fieldset>
               <fieldset className="settings-section settings-section-view" disabled={settingsSaving}>
                 <legend>默认文件视图</legend>
                 <div className="settings-view-options" role="group" aria-label="默认文件视图">

@@ -138,7 +138,10 @@ export interface StartupConnection {
   kind: SessionKind
 }
 
+export type ThemeMode = 'light' | 'dark' | 'system'
+
 export interface AppSettings extends PreviewLimits {
+  theme: ThemeMode
   previewExtensions: PreviewExtensions
   startupConnection: StartupConnection | null
   transferFileConcurrency: number

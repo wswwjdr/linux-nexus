@@ -37,6 +37,14 @@ test('validates preview extension sets, deduplicates within a category, and keep
   }))
 })
 
+test('defaults to light theme and validates all supported theme modes', () => {
+  assert.equal(DEFAULT_APP_SETTINGS.theme, 'light')
+  for (const theme of ['light', 'dark', 'system'] as const) {
+    assert.equal(validateAppSettings({ ...DEFAULT_APP_SETTINGS, theme }).theme, theme)
+  }
+  assert.throws(() => validateAppSettings({ ...DEFAULT_APP_SETTINGS, theme: 'auto' }))
+})
+
 test('migrates old settings with defaults while preserving user values', () => {
   const { settings, migrated } = migrateAppSettings({
     textMiB: 23,
@@ -53,6 +61,7 @@ test('migrates old settings with defaults while preserving user values', () => {
   assert.equal(settings.audioMiB, 42)
   assert.equal(settings.videoMiB, 512)
   assert.equal(settings.transferFileConcurrency, 6)
+  assert.equal(settings.theme, 'light')
   assert.deepEqual(settings.startupConnection, { profileId: 'server-1', kind: 'sftp' })
   assert.equal(settings.pdfMiB, 100)
   assert.ok(settings.previewExtensions.pdf.includes('.pdf'))
