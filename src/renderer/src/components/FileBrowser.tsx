@@ -9,10 +9,12 @@ import {
   LayoutGrid,
   List,
   LoaderCircle,
+  MoveRight,
   Upload,
+  X,
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent as ReactDragEvent, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import type { DroppedUploadEntry, RemoteEntry } from '@shared/types'
+import type { DroppedUploadEntry, RemoteEntry, RemoteMoveProgress } from '@shared/types'
 import type { FileViewMode, SortColumn, SortDirection } from '@/app-types'
 import { formatDate, formatSize, getParentPath } from '@/app-utils'
 
@@ -30,6 +32,7 @@ interface FileBrowserProps {
   sort: { column: SortColumn; direction: SortDirection }
   sortedEntries: RemoteEntry[]
   selectedPaths: string[]
+  moveProgress: RemoteMoveProgress | null
   highlightedPath: string | null
   onViewModeChange: (mode: FileViewMode) => void
   onNavigate: (path: string) => void
@@ -39,11 +42,28 @@ interface FileBrowserProps {
   onOpenDirectoryContextMenu: (x: number, y: number) => void
   onDeleteEntries: (entries: RemoteEntry[]) => void
   onDropUpload: (entries: DroppedUploadEntry[]) => void
+  onDropMove: (sourcePaths: string[], targetDirectory: string) => void
+  onCancelMove: () => void
   onDropError: (error: unknown) => void
 }
 
 function hasDraggedFiles(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes('Files')
+}
+
+const remoteMoveMime = 'application/x-linux-nexus-remote-files'
+
+function hasRemoteMove(dataTransfer: DataTransfer): boolean {
+  return Array.from(dataTransfer.types).includes(remoteMoveMime)
+}
+
+function readRemoteMovePaths(dataTransfer: DataTransfer): string[] {
+  try {
+    const paths: unknown = JSON.parse(dataTransfer.getData(remoteMoveMime))
+    return Array.isArray(paths) && paths.every((path) => typeof path === 'string') ? paths : []
+  } catch {
+    return []
+  }
 }
 
 function isSelectionBackground(target: EventTarget | null): boolean {
@@ -157,6 +177,7 @@ export default function FileBrowser({
   sort,
   sortedEntries,
   selectedPaths,
+  moveProgress,
   highlightedPath,
   onViewModeChange,
   onNavigate,
@@ -166,6 +187,8 @@ export default function FileBrowser({
   onOpenDirectoryContextMenu,
   onDeleteEntries,
   onDropUpload,
+  onDropMove,
+  onCancelMove,
   onDropError,
 }: FileBrowserProps) {
   const contentRef = useRef<HTMLDivElement>(null)
@@ -177,6 +200,7 @@ export default function FileBrowser({
   const suppressClickRef = useRef(false)
   const suppressClickTimerRef = useRef<number | null>(null)
   const [dropActive, setDropActive] = useState(false)
+  const [dropTargetPath, setDropTargetPath] = useState<string | null>(null)
   const [selectionRectangle, setSelectionRectangle] = useState<SelectionRectangle | null>(null)
   const [hoveredEntry, setHoveredEntry] = useState<{
     entry: RemoteEntry
@@ -242,6 +266,15 @@ export default function FileBrowser({
 
   const handleDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
     event.preventDefault()
+    if (hasRemoteMove(event.dataTransfer)) {
+      const targetElement = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-entry-path]') : null
+      const target = targetElement?.dataset.entryPath
+        ? sortedEntries.find((entry) => entry.path === targetElement.dataset.entryPath)
+        : undefined
+      const sourcePaths = readRemoteMovePaths(event.dataTransfer)
+      event.dataTransfer.dropEffect = !moveProgress && target?.type === 'directory' && !sourcePaths.includes(target.path) ? 'move' : 'none'
+      return
+    }
     event.dataTransfer.dropEffect = hasDraggedFiles(event.dataTransfer) ? 'copy' : 'none'
   }
 
@@ -256,12 +289,60 @@ export default function FileBrowser({
     event.preventDefault()
     dragDepthRef.current = 0
     setDropActive(false)
+    if (hasRemoteMove(event.dataTransfer)) return
     if (!hasDraggedFiles(event.dataTransfer)) return
     try {
       onDropUpload(await collectDroppedEntries(event.dataTransfer))
     } catch (error) {
       onDropError(error)
     }
+  }
+
+  const handleEntryDragStart = (entry: RemoteEntry, event: ReactDragEvent<HTMLElement>) => {
+    if (moveProgress || (entry.type !== 'file' && entry.type !== 'directory')) {
+      event.preventDefault()
+      return
+    }
+    const selected = new Set(selectedPathsRef.current)
+    const sources = selected.has(entry.path) ? selectedEntries() : [entry]
+    const paths = sources
+      .filter((candidate) => candidate.type === 'file' || candidate.type === 'directory')
+      .map((candidate) => candidate.path)
+    if (paths.length === 0) {
+      event.preventDefault()
+      return
+    }
+    cancelEntryDetails()
+    event.dataTransfer.setData(remoteMoveMime, JSON.stringify(paths))
+    event.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleEntryDragOver = (entry: RemoteEntry, event: ReactDragEvent<HTMLElement>) => {
+    if (!hasRemoteMove(event.dataTransfer)) return
+    event.preventDefault()
+    const paths = readRemoteMovePaths(event.dataTransfer)
+    const validTarget = !moveProgress && entry.type === 'directory' && paths.length > 0 && !paths.includes(entry.path)
+    event.dataTransfer.dropEffect = validTarget ? 'move' : 'none'
+    setDropTargetPath(validTarget ? entry.path : null)
+  }
+
+  const handleEntryDragLeave = (entry: RemoteEntry, event: ReactDragEvent<HTMLElement>) => {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+    setDropTargetPath((current) => current === entry.path ? null : current)
+  }
+
+  const handleEntryDrop = (entry: RemoteEntry, event: ReactDragEvent<HTMLElement>) => {
+    if (!hasRemoteMove(event.dataTransfer)) return
+    event.preventDefault()
+    event.stopPropagation()
+    setDropTargetPath(null)
+    const paths = readRemoteMovePaths(event.dataTransfer)
+    if (moveProgress || entry.type !== 'directory' || paths.length === 0) return
+    if (paths.includes(entry.path)) {
+      onDropError(new Error('不能将文件夹移动到自身'))
+      return
+    }
+    onDropMove(paths, entry.path)
   }
 
   const handleSelectionPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -529,6 +610,16 @@ export default function FileBrowser({
         onDragLeave={handleDragLeave}
         onDrop={(event) => void handleDrop(event)}
       >
+        {moveProgress && (
+          <div className="remote-move-status" role="status">
+            <MoveRight size={15} />
+            <span>
+              正在移动 {moveProgress.completedCount}/{moveProgress.totalCount}
+              {moveProgress.currentPath ? `：${moveProgress.currentPath.split('/').at(-1)}` : ''}
+            </span>
+            <button type="button" className="icon-button" title="取消移动" aria-label="取消移动" onClick={onCancelMove}><X size={14} /></button>
+          </div>
+        )}
         {viewMode === 'details' ? (
           <table className="file-table">
             <thead>
@@ -550,13 +641,18 @@ export default function FileBrowser({
             <tbody>
               {sortedEntries.map((entry) => (
                 <tr
-                  className={'file-row ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selectedPaths.includes(entry.path) ? 'selected' : '')}
+                  className={'file-row ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selectedPaths.includes(entry.path) ? 'selected ' : '') + (dropTargetPath === entry.path ? 'drop-target' : '')}
                   key={entry.path}
                   data-entry-path={entry.path}
+                  draggable={!moveProgress && (entry.type === 'file' || entry.type === 'directory')}
                   aria-selected={selectedPaths.includes(entry.path)}
                   tabIndex={entry.path === highlightedPath ? 0 : -1}
                   onClick={(event) => handleEntryClick(entry.path, event)}
                   onContextMenu={(event) => handleEntryContextMenu(event, entry)}
+                  onDragStart={(event) => handleEntryDragStart(entry, event)}
+                  onDragOver={(event) => handleEntryDragOver(entry, event)}
+                  onDragLeave={(event) => handleEntryDragLeave(entry, event)}
+                  onDrop={(event) => handleEntryDrop(entry, event)}
                 >
                   <td className="name-col" title={entry.name}>
                     <button
@@ -582,9 +678,10 @@ export default function FileBrowser({
           <div className="file-icon-grid">
             {sortedEntries.map((entry) => (
               <article
-                className={'file-tile ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selectedPaths.includes(entry.path) ? 'selected' : '')}
+                className={'file-tile ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selectedPaths.includes(entry.path) ? 'selected ' : '') + (dropTargetPath === entry.path ? 'drop-target' : '')}
                 key={entry.path}
                 data-entry-path={entry.path}
+                draggable={!moveProgress && (entry.type === 'file' || entry.type === 'directory')}
                 aria-label={entry.name}
                 aria-describedby={hoveredEntry?.entry.path === entry.path ? 'entry-hover-details' : undefined}
                 tabIndex={entry.path === highlightedPath ? 0 : -1}
@@ -599,6 +696,10 @@ export default function FileBrowser({
                 }}
                 onBlur={hideEntryDetailsOnBlur}
                 onContextMenu={(event) => handleEntryContextMenu(event, entry)}
+                onDragStart={(event) => handleEntryDragStart(entry, event)}
+                onDragOver={(event) => handleEntryDragOver(entry, event)}
+                onDragLeave={(event) => handleEntryDragLeave(entry, event)}
+                onDrop={(event) => handleEntryDrop(entry, event)}
               >
                 <button
                   className={'file-tile-main ' + (entry.type === 'directory' ? 'directory-entry' : '')}

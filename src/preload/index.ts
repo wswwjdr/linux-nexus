@@ -5,6 +5,10 @@ import type {
   CommandAliasSnapshot,
   DroppedUploadEntry,
   LogPreviewPage,
+  RemoteMoveDecision,
+  RemoteMoveEvent,
+  RemoteMoveRequest,
+  RemoteMoveResult,
   PreviewResult,
   PreviewType,
   AppSettings,
@@ -55,6 +59,10 @@ const api: RemoteFilesApi = {
   downloadEntries: (requestId: string, sessionId: string, remotePaths: string[]) =>
     ipcRenderer.invoke('files:download', requestId, sessionId, remotePaths),
   cancelTransfer: (requestId: string) => ipcRenderer.invoke('files:transfer-cancel', requestId),
+  moveRemoteEntries: (request: RemoteMoveRequest): Promise<RemoteMoveResult> => ipcRenderer.invoke('files:move-start', request),
+  decideRemoteMove: (requestId: string, conflictId: string, decision: RemoteMoveDecision): Promise<boolean> =>
+    ipcRenderer.invoke('files:move-decision', requestId, conflictId, decision),
+  cancelRemoteMove: (requestId: string): Promise<boolean> => ipcRenderer.invoke('files:move-cancel', requestId),
   createRemoteDirectory: (sessionId: string, remoteDirectory: string, name: string) =>
     ipcRenderer.invoke('files:create-directory', sessionId, remoteDirectory, name),
   copyRemotePath: (sessionId: string, remotePath: string) =>
@@ -78,6 +86,11 @@ const api: RemoteFilesApi = {
     const listener = (_event: Electron.IpcRendererEvent, queuedEvent: TransferQueuedEvent) => callback(queuedEvent)
     ipcRenderer.on('files:transfer-queued', listener)
     return () => ipcRenderer.removeListener('files:transfer-queued', listener)
+  },
+  onRemoteMoveEvent: (callback: (event: RemoteMoveEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, moveEvent: RemoteMoveEvent) => callback(moveEvent)
+    ipcRenderer.on('files:move-event', listener)
+    return () => ipcRenderer.removeListener('files:move-event', listener)
   },
   onSearchEvent: (callback: (event: RemoteSearchEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, searchEvent: RemoteSearchEvent) => callback(searchEvent)

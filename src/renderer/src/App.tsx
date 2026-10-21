@@ -10,6 +10,7 @@ import TransferTray from './components/TransferTray'
 import SearchDialog from './components/SearchDialog'
 import DialogLayer from './components/DialogLayer'
 import ConfirmationDialog from './components/ConfirmationDialog'
+import { RemoteMoveConflictDialog, RemoteMoveSummaryDialog } from './components/RemoteMoveDialogs'
 import SessionChooser from './components/SessionChooser'
 import TerminalPanel from './components/TerminalPanel'
 import ShortcutGuideDialog from './components/ShortcutGuideDialog'
@@ -19,6 +20,10 @@ import { useProfileManagement } from './hooks/useProfileManagement'
 import { useCommandAliases } from './hooks/useCommandAliases'
 import type {
   PreviewExtensions,
+  RemoteMoveConflict,
+  RemoteMoveDecision,
+  RemoteMoveProgress,
+  RemoteMoveResult,
   RemoteEntry,
   RemoteSearchResult,
   ServerProfile,
@@ -57,6 +62,15 @@ interface SessionContextMenuState {
   y: number
 }
 
+interface ActiveRemoteMove {
+  requestId: string
+  sessionId: string
+  currentDirectory: string
+  progress: RemoteMoveProgress
+  conflict: RemoteMoveConflict | null
+  decisionPending: boolean
+}
+
 function getEntryTypeExtension(name: string): string {
   const extensionStart = name.lastIndexOf('.')
   return extensionStart > 0 && extensionStart < name.length - 1
@@ -80,6 +94,8 @@ export default function App() {
   const [remoteEntryDeleteDialog, setRemoteEntryDeleteDialog] = useState<{ entries: RemoteEntry[]; sessionId: string; directory: string } | null>(null)
   const [remoteEntryDeleteError, setRemoteEntryDeleteError] = useState<string | null>(null)
   const [remoteEntryDeleting, setRemoteEntryDeleting] = useState(false)
+  const [activeRemoteMove, setActiveRemoteMove] = useState<ActiveRemoteMove | null>(null)
+  const [remoteMoveSummary, setRemoteMoveSummary] = useState<RemoteMoveResult | null>(null)
   const [createDirectoryDialog, setCreateDirectoryDialog] = useState<{ name: string } | null>(null)
   const [creatingDirectory, setCreatingDirectory] = useState(false)
   const [searchSessionId, setSearchSessionId] = useState<string | null>(null)
@@ -238,7 +254,7 @@ export default function App() {
   const modalOpen = Boolean(
     profileDialog || profileDeleteDialog || createDirectoryDialog || settingsForm || previewDialog || logPreviewDialog
       || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
-      || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || searchSessionId
+      || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || activeRemoteMove?.conflict || remoteMoveSummary || searchSessionId
       || sessionChooserOpen || shortcutGuideOpen,
   )
   const offlineProfiles = useMemo(
@@ -287,6 +303,18 @@ export default function App() {
     })
     return removeClosedListener
   }, [activeSessionId, patchSession, showToast])
+
+  useEffect(() => window.remoteFiles.onRemoteMoveEvent((event) => {
+    if (event.type === 'conflict') {
+      setActiveRemoteMove((current) => current?.requestId === event.conflict.requestId
+        ? { ...current, conflict: event.conflict, decisionPending: false }
+        : current)
+      return
+    }
+    setActiveRemoteMove((current) => current?.requestId === event.progress.requestId
+      ? { ...current, progress: event.progress }
+      : current)
+  }), [])
 
   useEffect(() => {
     if (!browserContextMenu) return
@@ -759,6 +787,68 @@ export default function App() {
     if (deleted.length > 0) showToast('info', `已删除 ${deleted.length} 项`)
   }
 
+  const beginRemoteMove = (sourcePaths: string[], targetDirectory: string) => {
+    const session = activeSession
+    if (!session || session.kind !== 'sftp' || session.status !== 'connected' || activeRemoteMove) return
+    const requestId = window.crypto.randomUUID()
+    const currentDirectory = session.currentPath
+    setRemoteMoveSummary(null)
+    setActiveRemoteMove({
+      requestId,
+      sessionId: session.id,
+      currentDirectory,
+      progress: { requestId, sessionId: session.id, completedCount: 0, totalCount: sourcePaths.length, currentPath: null },
+      conflict: null,
+      decisionPending: false,
+    })
+    void (async () => {
+      try {
+        const result = await window.remoteFiles.moveRemoteEntries({
+          requestId,
+          sessionId: session.id,
+          currentDirectory,
+          sourcePaths,
+          targetDirectory,
+        })
+        setRemoteMoveSummary(result)
+      } catch (error) {
+        showToast('error', `移动失败：${errorMessage(error)}`)
+      } finally {
+        setActiveRemoteMove((current) => current?.requestId === requestId ? null : current)
+        await loadDirectory(session.id, currentDirectory)
+      }
+    })()
+  }
+
+  const decideRemoteMoveConflict = async (decision: RemoteMoveDecision) => {
+    const move = activeRemoteMove
+    const conflict = move?.conflict
+    if (!move || !conflict || move.decisionPending) return
+    setActiveRemoteMove((current) => current?.requestId === move.requestId
+      ? { ...current, decisionPending: true }
+      : current)
+    try {
+      const accepted = await window.remoteFiles.decideRemoteMove(move.requestId, conflict.conflictId, decision)
+      if (!accepted) throw new Error('移动冲突已失效，请重试')
+      setActiveRemoteMove((current) => current?.requestId === move.requestId && current.conflict?.conflictId === conflict.conflictId
+        ? { ...current, conflict: null, decisionPending: false }
+        : current)
+    } catch (error) {
+      showToast('error', `提交移动决策失败：${errorMessage(error)}`)
+      setActiveRemoteMove((current) => current?.requestId === move.requestId
+        ? { ...current, decisionPending: false }
+        : current)
+    }
+  }
+
+  const cancelActiveRemoteMove = () => {
+    const move = activeRemoteMove
+    if (!move) return
+    void window.remoteFiles.cancelRemoteMove(move.requestId).then((cancelled) => {
+      if (!cancelled && activeRemoteMove?.requestId === move.requestId) showToast('info', '移动任务已结束')
+    }).catch((error) => showToast('error', `取消移动失败：${errorMessage(error)}`))
+  }
+
   const handleContextMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const activeItem = document.activeElement as HTMLElement
     if (event.key === 'ArrowRight' && activeItem.getAttribute('aria-haspopup') === 'menu') {
@@ -1024,6 +1114,7 @@ export default function App() {
               sort={sort}
               sortedEntries={sortedEntries}
               selectedPaths={activeSession.selectedPaths}
+              moveProgress={activeRemoteMove?.sessionId === activeSession.id ? activeRemoteMove.progress : null}
               highlightedPath={highlightedPath}
               onViewModeChange={(mode) => patchSession(activeSession.id, { viewMode: mode })}
               onNavigate={navigate}
@@ -1033,6 +1124,8 @@ export default function App() {
               onOpenDirectoryContextMenu={openDirectoryContextMenu}
               onDeleteEntries={requestRemoteEntriesDeletion}
               onDropUpload={uploadDroppedEntries}
+              onDropMove={beginRemoteMove}
+              onCancelMove={cancelActiveRemoteMove}
               onDropError={(error) => showToast('error', errorMessage(error))}
             />
           </div>
@@ -1265,6 +1358,17 @@ export default function App() {
           onConfirm={() => void confirmRemoteEntryDeletion()}
           onCancel={cancelRemoteEntryDeletion}
         />
+      )}
+
+      {activeRemoteMove?.conflict && (
+        <RemoteMoveConflictDialog
+          conflict={activeRemoteMove.conflict}
+          busy={activeRemoteMove.decisionPending}
+          onDecision={(decision) => void decideRemoteMoveConflict(decision)}
+        />
+      )}
+      {remoteMoveSummary && (
+        <RemoteMoveSummaryDialog result={remoteMoveSummary} onClose={() => setRemoteMoveSummary(null)} />
       )}
 
       {searchProfile && searchSession && searchSessionId && (

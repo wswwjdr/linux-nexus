@@ -173,6 +173,57 @@ export interface TransferQueuedEvent {
   requestId: string
 }
 
+export interface RemoteMoveRequest {
+  requestId: string
+  sessionId: string
+  currentDirectory: string
+  sourcePaths: string[]
+  targetDirectory: string
+}
+
+export type RemoteMoveDecision = 'replace' | 'skip' | 'replace-all' | 'skip-all' | 'cancel'
+
+export interface RemoteMoveConflict {
+  requestId: string
+  conflictId: string
+  sessionId: string
+  sourcePath: string
+  targetPath: string
+  sourceName: string
+  targetName: string
+  sourceType: 'file' | 'directory'
+  targetType: 'file' | 'directory'
+  conflictType: 'file' | 'type-mismatch'
+}
+
+export interface RemoteMoveProgress {
+  requestId: string
+  sessionId: string
+  completedCount: number
+  totalCount: number
+  currentPath: string | null
+}
+
+export type RemoteMoveEvent =
+  | { type: 'conflict'; conflict: RemoteMoveConflict }
+  | { type: 'progress'; progress: RemoteMoveProgress }
+
+export interface RemoteMoveItemResult {
+  sourcePath: string
+  sourceName: string
+  status: 'moved' | 'skipped' | 'failed' | 'cancelled'
+  message?: string
+}
+
+export interface RemoteMoveResult {
+  status: 'completed' | 'cancelled'
+  results: RemoteMoveItemResult[]
+  movedCount: number
+  skippedCount: number
+  failedCount: number
+  cancelledCount: number
+}
+
 export type TransferResult =
   | { status: 'completed' }
   | { status: 'completed-with-errors'; failures: TransferFailure[] }
@@ -247,6 +298,9 @@ export interface RemoteFilesApi {
   ): Promise<TransferResult>
   downloadEntries(requestId: string, sessionId: string, remotePaths: string[]): Promise<TransferResult>
   cancelTransfer(requestId: string): Promise<boolean>
+  moveRemoteEntries(request: RemoteMoveRequest): Promise<RemoteMoveResult>
+  decideRemoteMove(requestId: string, conflictId: string, decision: RemoteMoveDecision): Promise<boolean>
+  cancelRemoteMove(requestId: string): Promise<boolean>
   createRemoteDirectory(sessionId: string, remoteDirectory: string, name: string): Promise<void>
   copyRemotePath(sessionId: string, remotePath: string): Promise<void>
   deleteRemoteEntry(sessionId: string, remotePath: string): Promise<void>
@@ -267,6 +321,7 @@ export interface RemoteFilesApi {
   releasePreview(token: string): Promise<void>
   onTransferProgress(callback: (progress: TransferProgress) => void): () => void
   onTransferQueued(callback: (event: TransferQueuedEvent) => void): () => void
+  onRemoteMoveEvent(callback: (event: RemoteMoveEvent) => void): () => void
   onSearchEvent(callback: (event: RemoteSearchEvent) => void): () => void
   onConnectionClosed(callback: (event: ConnectionClosedEvent) => void): () => void
   onTerminalOutput(callback: (event: TerminalOutputEvent) => void): () => void

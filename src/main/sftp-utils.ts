@@ -65,6 +65,12 @@ export function sftpUnlink(sftp: SFTPWrapper, remotePath: string): Promise<void>
   })
 }
 
+export function sftpRmdir(sftp: SFTPWrapper, remotePath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    sftp.rmdir(remotePath, (error) => error ? reject(error) : resolve())
+  })
+}
+
 export function normalizedRemotePath(remotePath: string): string {
   if (typeof remotePath !== 'string' || !remotePath || remotePath.includes('\0')) {
     throw new Error('远程路径无效')

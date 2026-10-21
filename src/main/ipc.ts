@@ -1,6 +1,15 @@
 import { ipcMain, safeStorage, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
-import type { AppSettings, RemoteSearchRequest, SaveProfileInput, ServerProfile, SessionKind, TrustHostKeyInput } from '@shared/types'
+import type {
+  AppSettings,
+  RemoteMoveDecision,
+  RemoteMoveRequest,
+  RemoteSearchRequest,
+  SaveProfileInput,
+  ServerProfile,
+  SessionKind,
+  TrustHostKeyInput,
+} from '@shared/types'
 import { connectionIdentityChanged } from '@shared/command-aliases'
 import { validateExternalUrl } from '@shared/external-url'
 import { deleteCommandAlias, listCommandAliasSnapshots, saveCommandAlias, synchronizeCommandAliases } from './command-aliases'
@@ -28,6 +37,28 @@ import {
 import { cancelTransfer, downloadEntries, uploadDroppedEntries, uploadSelection, validateDownloadPaths, withTransferLock } from './transfers'
 import { previewFile, readLogPreview, releasePreview, saveTextFile } from './previews'
 import { cancelRemoteSearch, startRemoteSearch } from './search'
+import { cancelRemoteMove, startRemoteMove } from './remote-moves'
+
+const pendingMoveDecisions = new Map<string, {
+  conflictId: string
+  senderId: number
+  resolve: (decision: RemoteMoveDecision) => void
+}>()
+const activeMoveOwners = new Map<string, number>()
+
+function parseRemoteMoveRequest(value: unknown): RemoteMoveRequest {
+  if (!value || typeof value !== 'object') throw new Error('移动请求无效')
+  const request = value as Partial<RemoteMoveRequest>
+  if (typeof request.requestId !== 'string' || !request.requestId || request.requestId.length > 128
+    || typeof request.sessionId !== 'string' || !request.sessionId
+    || typeof request.currentDirectory !== 'string'
+    || typeof request.targetDirectory !== 'string'
+    || !Array.isArray(request.sourcePaths) || request.sourcePaths.length === 0
+    || request.sourcePaths.some((path) => typeof path !== 'string')) {
+    throw new Error('移动请求参数无效')
+  }
+  return request as RemoteMoveRequest
+}
 
 export function registerIpc(): void {
   ipcMain.handle('profiles:list', () => readState().profiles)
@@ -185,6 +216,68 @@ export function registerIpc(): void {
       () => { if (!event.sender.isDestroyed()) event.sender.send('files:transfer-queued', { requestId }) })
   })
   ipcMain.handle('files:transfer-cancel', (_event, requestId: string) => cancelTransfer(requestId))
+  ipcMain.handle('files:move-start', (event, value: unknown) => {
+    const request = parseRemoteMoveRequest(value)
+    const session = sessions.get(request.sessionId)
+    if (!session?.sftp) throw new Error('SFTP 会话未连接')
+    const sender = event.sender
+    if (activeMoveOwners.has(request.requestId)) throw new Error('移动请求编号已在使用')
+    activeMoveOwners.set(request.requestId, sender.id)
+    const onSenderDestroyed = () => cancelRemoteMove(request.requestId)
+    let run: ReturnType<typeof startRemoteMove>
+    try {
+      run = startRemoteMove(session.sftp, request, {
+        onEvent: (moveEvent) => {
+          if (!sender.isDestroyed()) sender.send('files:move-event', moveEvent)
+        },
+        askConflict: (conflict, signal) => new Promise((resolve) => {
+          if (signal.aborted || sender.isDestroyed()) {
+            resolve('cancel')
+            return
+          }
+          const previous = pendingMoveDecisions.get(request.requestId)
+          if (previous) throw new Error('移动任务同时出现多个冲突')
+          const finish = (decision: RemoteMoveDecision) => {
+            signal.removeEventListener('abort', onAbort)
+            if (pendingMoveDecisions.get(request.requestId)?.conflictId === conflict.conflictId) {
+              pendingMoveDecisions.delete(request.requestId)
+            }
+            resolve(decision)
+          }
+          const onAbort = () => finish('cancel')
+          pendingMoveDecisions.set(request.requestId, {
+            conflictId: conflict.conflictId,
+            senderId: sender.id,
+            resolve: finish,
+          })
+          signal.addEventListener('abort', onAbort, { once: true })
+          sender.send('files:move-event', { type: 'conflict', conflict })
+        }),
+      })
+    } catch (error) {
+      activeMoveOwners.delete(request.requestId)
+      throw error
+    }
+    sender.once('destroyed', onSenderDestroyed)
+    return run.finally(() => {
+      sender.removeListener('destroyed', onSenderDestroyed)
+      activeMoveOwners.delete(request.requestId)
+      const pending = pendingMoveDecisions.get(request.requestId)
+      if (pending) pending.resolve('cancel')
+    })
+  })
+  ipcMain.handle('files:move-decision', (event, requestId: unknown, conflictId: unknown, decision: unknown) => {
+    if (typeof requestId !== 'string' || typeof conflictId !== 'string'
+      || !['replace', 'skip', 'replace-all', 'skip-all', 'cancel'].includes(String(decision))) return false
+    const pending = pendingMoveDecisions.get(requestId)
+    if (!pending || pending.senderId !== event.sender.id || pending.conflictId !== conflictId) return false
+    pending.resolve(decision as RemoteMoveDecision)
+    return true
+  })
+  ipcMain.handle('files:move-cancel', (event, requestId: unknown) => {
+    if (typeof requestId !== 'string' || activeMoveOwners.get(requestId) !== event.sender.id) return false
+    return cancelRemoteMove(requestId)
+  })
   ipcMain.handle('files:create-directory', (_event, sessionId: string, remoteDirectory: string, name: string) =>
     createRemoteDirectory(sessionId, remoteDirectory, name))
   ipcMain.handle('files:path-copy', (_event, sessionId: string, remotePath: string) => copyRemotePath(sessionId, remotePath))
