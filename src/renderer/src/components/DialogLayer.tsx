@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Check, FolderOpen, KeyRound, LayoutGrid, List, LoaderCircle, Plus, RefreshCw, Server, ShieldCheck, Terminal, Trash2, X } from 'lucide-react'
+import { Check, ChevronRight, FolderOpen, KeyRound, LayoutGrid, List, LoaderCircle, Plus, RefreshCw, Server, ShieldCheck, Terminal, Trash2, X } from 'lucide-react'
 import type { CommandAlias, CommandAliasSnapshot, PreviewType, ServerProfile } from '@shared/types'
 import { normalizePreviewExtension, previewTypeLabels, previewTypes } from '@shared/preview-file-type'
 import ConfirmationDialog from './ConfirmationDialog'
@@ -380,6 +380,7 @@ export default function DialogLayer({
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !settingsSaving && !aliasOperationBusy && onCloseSettings()}>
           <section className="modal settings-modal" role="dialog" aria-modal="true" aria-label="应用设置">
             <form onSubmit={onSubmitSettings}>
+              <div className="settings-form-content">
               <fieldset className="settings-section settings-section-view" disabled={settingsSaving}>
                 <legend>默认文件视图</legend>
                 <div className="settings-view-options" role="group" aria-label="默认文件视图">
@@ -452,22 +453,27 @@ export default function DialogLayer({
                   ))}
                 </div>
               </fieldset>
-              <section className="settings-section settings-section-formats" aria-labelledby="preview-formats-title">
-                <div className="preview-formats-heading">
+              <details className="settings-section settings-section-formats" aria-labelledby="preview-formats-title">
+                <summary className="settings-disclosure-summary">
                   <h3 id="preview-formats-title">预览格式</h3>
+                  <ChevronRight className="settings-disclosure-chevron" size={15} />
+                </summary>
+                <div className="preview-formats-content">
+                  <div className="preview-formats-heading">
                   <button type="button" className="text-button" disabled={settingsSaving} onClick={onResetPreviewExtensions}>恢复默认</button>
+                  </div>
+                  {previewTypes.map((type) => (
+                    <PreviewExtensionEditor
+                      key={type}
+                      type={type}
+                      extensions={settingsForm.previewExtensions[type]}
+                      disabled={settingsSaving}
+                      onAdd={onAddPreviewExtension}
+                      onRemove={onRemovePreviewExtension}
+                    />
+                  ))}
                 </div>
-                {previewTypes.map((type) => (
-                  <PreviewExtensionEditor
-                    key={type}
-                    type={type}
-                    extensions={settingsForm.previewExtensions[type]}
-                    disabled={settingsSaving}
-                    onAdd={onAddPreviewExtension}
-                    onRemove={onRemovePreviewExtension}
-                  />
-                ))}
-              </section>
+              </details>
               <fieldset className="settings-section settings-section-transfer" disabled={settingsSaving}>
                 <legend>文件传输</legend>
                 <label className="field settings-transfer-concurrency">
@@ -483,8 +489,8 @@ export default function DialogLayer({
                   />
                 </label>
               </fieldset>
-              <section className="settings-section settings-section-aliases command-aliases-field" aria-labelledby="command-aliases-title">
-                <div className="command-aliases-heading">
+              <details className="settings-section settings-section-aliases command-aliases-field" aria-labelledby="command-aliases-title">
+                <summary className="settings-disclosure-summary command-aliases-heading">
                   <h3 id="command-aliases-title">命令别名</h3>
                   <span className={'command-alias-status ' + (aliasSnapshot?.status ?? 'unsynced')}>
                     {aliasSnapshot?.status === 'synced'
@@ -493,7 +499,8 @@ export default function DialogLayer({
                         ? `待重新同步${aliasSnapshot.syncedAt ? ` · ${new Date(aliasSnapshot.syncedAt).toLocaleString()}` : ''}`
                         : '未同步'}
                   </span>
-                </div>
+                  <ChevronRight className="settings-disclosure-chevron" size={15} />
+                </summary>
                 <label className="field command-alias-profile-field">
                   <span>服务器</span>
                   <select
@@ -548,7 +555,8 @@ export default function DialogLayer({
                   <button type="button" className="primary-button command-alias-add" disabled={settingsSaving || aliasOperationBusy || !aliasProfileId} onClick={onAddAlias} title="新增 alias 命令" aria-label="新增 alias 命令"><Plus size={15} />新增</button>
                 </div>
                 <p className="command-alias-note">仅支持 Bash。新增和删除会修改服务器的 ~/.bashrc，并在新开的终端中生效。</p>
-              </section>
+              </details>
+              </div>
               <div className="modal-footer">
                 <button type="button" className="secondary-button" disabled={settingsSaving || aliasOperationBusy} onClick={onCloseSettings}>取消</button>
                 <button type="submit" className="primary-button" disabled={settingsSaving || aliasOperationBusy}><Check size={15} /> 保存设置</button>
