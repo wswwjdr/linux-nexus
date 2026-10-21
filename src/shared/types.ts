@@ -123,10 +123,15 @@ export interface TerminalOutputEvent {
 
 export interface PreviewLimits {
   textMiB: number
+  pdfMiB: number
   imageMiB: number
   audioMiB: number
   videoMiB: number
 }
+
+export type PreviewType = 'text' | 'markdown' | 'pdf' | 'image' | 'audio' | 'video'
+
+export type PreviewExtensions = Record<PreviewType, string[]>
 
 export interface StartupConnection {
   profileId: string
@@ -134,6 +139,7 @@ export interface StartupConnection {
 }
 
 export interface AppSettings extends PreviewLimits {
+  previewExtensions: PreviewExtensions
   startupConnection: StartupConnection | null
   transferFileConcurrency: number
 }
@@ -191,6 +197,8 @@ export interface TextFileSaveResult {
 
 export type PreviewResult =
   | { type: 'text'; name: string; content: string; revision: TextFileRevision }
+  | { type: 'markdown'; name: string; content: string }
+  | { type: 'pdf'; name: string; url: string; token: string }
   | { type: 'image'; name: string; url: string; token: string }
   | { type: 'audio'; name: string; url: string; token: string }
   | { type: 'video'; name: string; url: string; token: string }
@@ -242,7 +250,8 @@ export interface RemoteFilesApi {
   createRemoteDirectory(sessionId: string, remoteDirectory: string, name: string): Promise<void>
   copyRemotePath(sessionId: string, remotePath: string): Promise<void>
   deleteRemoteEntry(sessionId: string, remotePath: string): Promise<void>
-  previewFile(sessionId: string, remotePath: string): Promise<PreviewResult>
+  previewFile(sessionId: string, remotePath: string, type: PreviewType): Promise<PreviewResult>
+  openExternalUrl(url: string): Promise<void>
   saveTextFile(
     sessionId: string,
     remotePath: string,

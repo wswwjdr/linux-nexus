@@ -1,6 +1,7 @@
-import { useEffect, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Check, FolderOpen, KeyRound, LayoutGrid, List, LoaderCircle, Plus, RefreshCw, Server, ShieldCheck, Terminal, Trash2, X } from 'lucide-react'
-import type { CommandAlias, CommandAliasSnapshot, ServerProfile } from '@shared/types'
+import type { CommandAlias, CommandAliasSnapshot, PreviewType, ServerProfile } from '@shared/types'
+import { normalizePreviewExtension, previewTypeLabels, previewTypes } from '@shared/preview-file-type'
 import ConfirmationDialog from './ConfirmationDialog'
 import LogPreviewDialog, { type LogPreviewDialogProps } from './previews/LogPreviewDialog'
 import PreviewDialog, { type PreviewDialogProps } from './previews/PreviewDialog'
@@ -44,6 +45,9 @@ interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
   onSubmitProfile: (event: FormEvent<HTMLFormElement>) => void
   onCloseSettings: () => void
   onUpdateSettings: (key: SettingsFieldKey, value: string) => void
+  onAddPreviewExtension: (type: PreviewType, extension: string) => void
+  onRemovePreviewExtension: (type: PreviewType, extension: string) => void
+  onResetPreviewExtensions: () => void
   onUpdateDefaultView: (mode: FileViewMode) => void
   onUpdateStartupProfile: (profileId: string) => void
   onUpdateStartupKind: (kind: SettingsForm['startupKind']) => void
@@ -65,6 +69,74 @@ interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
   onCancelAliasDelete: () => void
   onTrustAliasHostKey: () => void
   onDismissAliasHostKey: () => void
+}
+
+function PreviewExtensionEditor({
+  type,
+  extensions,
+  disabled,
+  onAdd,
+  onRemove,
+}: {
+  type: PreviewType
+  extensions: string[]
+  disabled: boolean
+  onAdd: (type: PreviewType, extension: string) => void
+  onRemove: (type: PreviewType, extension: string) => void
+}) {
+  const [draft, setDraft] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const add = () => {
+    try {
+      const extension = normalizePreviewExtension(draft)
+      if (extensions.includes(extension)) {
+        setError('此后缀已添加')
+        return
+      }
+      onAdd(type, extension)
+      setDraft('')
+      setError(null)
+    } catch {
+      setError('请输入有效后缀，例如 .txt 或 .tar.gz')
+    }
+  }
+
+  return (
+    <div className="preview-extension-row">
+      <div className="preview-extension-heading">
+        <strong>{previewTypeLabels[type].replace('预览', '')}</strong>
+        <div className="preview-extension-tags">
+          {extensions.map((extension) => (
+            <span className="preview-extension-tag" key={extension}>
+              <code>{extension}</code>
+              <button type="button" title={'移除 ' + extension} aria-label={'移除 ' + extension} disabled={disabled} onClick={() => onRemove(type, extension)}><X size={12} /></button>
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="preview-extension-add">
+        <input
+          value={draft}
+          disabled={disabled}
+          aria-label={'添加' + previewTypeLabels[type].replace('预览', '') + '后缀'}
+          placeholder="添加后缀，如 .txt"
+          onChange={(event) => {
+            setDraft(event.target.value)
+            setError(null)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              add()
+            }
+          }}
+        />
+        <button type="button" className="icon-button" title="添加后缀" aria-label="添加后缀" disabled={disabled || !draft.trim()} onClick={add}><Plus size={15} /></button>
+      </div>
+      {error && <span className="preview-extension-error" role="alert">{error}</span>}
+    </div>
+  )
 }
 
 export default function DialogLayer({
@@ -108,11 +180,15 @@ export default function DialogLayer({
   onSubmitProfile,
   onCloseSettings,
   onUpdateSettings,
+  onAddPreviewExtension,
+  onRemovePreviewExtension,
+  onResetPreviewExtensions,
   onUpdateDefaultView,
   onUpdateStartupProfile,
   onUpdateStartupKind,
   onSubmitSettings,
   onClosePreview,
+  onOpenExternalLink,
   onLogPreviewScroll,
   onUpdateTextDraft,
   onRequestTextSave,
@@ -376,6 +452,22 @@ export default function DialogLayer({
                   ))}
                 </div>
               </fieldset>
+              <section className="settings-section settings-section-formats" aria-labelledby="preview-formats-title">
+                <div className="preview-formats-heading">
+                  <h3 id="preview-formats-title">预览格式</h3>
+                  <button type="button" className="text-button" disabled={settingsSaving} onClick={onResetPreviewExtensions}>恢复默认</button>
+                </div>
+                {previewTypes.map((type) => (
+                  <PreviewExtensionEditor
+                    key={type}
+                    type={type}
+                    extensions={settingsForm.previewExtensions[type]}
+                    disabled={settingsSaving}
+                    onAdd={onAddPreviewExtension}
+                    onRemove={onRemovePreviewExtension}
+                  />
+                ))}
+              </section>
               <fieldset className="settings-section settings-section-transfer" disabled={settingsSaving}>
                 <legend>文件传输</legend>
                 <label className="field settings-transfer-concurrency">
@@ -477,6 +569,7 @@ export default function DialogLayer({
         imageViewportRef={imageViewportRef}
         previewImageRef={previewImageRef}
         onClosePreview={onClosePreview}
+        onOpenExternalLink={onOpenExternalLink}
         onUpdateTextDraft={onUpdateTextDraft}
         onRequestTextSave={onRequestTextSave}
         onPreviewImageLoad={onPreviewImageLoad}

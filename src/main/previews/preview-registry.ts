@@ -1,16 +1,19 @@
 import { posix } from 'node:path'
 import type { PreviewLimits, PreviewResult } from '@shared/types'
-import { previewFileType } from '@shared/preview-file-type'
+import { previewFileTypes, previewTypes } from '@shared/preview-file-type'
 import { sessions } from '../runtime'
-import { readPreviewLimits } from '../state-store'
+import { readAppSettings } from '../state-store'
 import { fileType, normalizedRemotePath, sftpLstat } from '../sftp-utils'
 import { imagePreviewStrategy } from './strategies/image-preview'
 import { mediaPreviewStrategy } from './strategies/media-preview'
+import { pdfPreviewStrategy } from './strategies/pdf-preview'
 import { textPreviewStrategy } from './strategies/text-preview'
 import { previewSizeError, type PreviewStrategy, type PreviewType } from './preview-strategy'
 
 const previewLimitKeyByType: Record<PreviewType, keyof PreviewLimits> = {
   text: 'textMiB',
+  markdown: 'textMiB',
+  pdf: 'pdfMiB',
   image: 'imageMiB',
   audio: 'audioMiB',
   video: 'videoMiB',
@@ -18,6 +21,7 @@ const previewLimitKeyByType: Record<PreviewType, keyof PreviewLimits> = {
 
 const previewStrategies: readonly PreviewStrategy[] = [
   textPreviewStrategy,
+  pdfPreviewStrategy,
   imagePreviewStrategy,
   mediaPreviewStrategy,
 ]
@@ -36,16 +40,19 @@ function previewStrategyFor(type: PreviewType): PreviewStrategy {
   return strategy
 }
 
-export async function previewFile(sessionId: string, remotePath: string): Promise<PreviewResult> {
+export async function previewFile(sessionId: string, remotePath: string, type: PreviewType): Promise<PreviewResult> {
   const session = sessions.get(sessionId)
   if (!session?.sftp) throw new Error('SFTP 会话未连接')
+  if (!previewTypes.includes(type)) throw new Error('预览类型无效')
   const normalizedPath = normalizedRemotePath(remotePath)
-  const type = previewFileType(normalizedPath)
-  if (!type) throw new Error('暂不支持的文件类型')
+  const settings = readAppSettings()
+  if (!previewFileTypes(normalizedPath, settings.previewExtensions).includes(type)) {
+    throw new Error('此文件未配置该预览类型')
+  }
   const attrs = await sftpLstat(session.sftp, normalizedPath)
   if (fileType(attrs.mode) !== 'file') throw new Error('只能预览普通文件')
 
-  const limits = readPreviewLimits()
+  const limits: PreviewLimits = settings
   const limitMiB = limits[previewLimitKeyByType[type]]
   const limitBytes = limitMiB * 1024 * 1024
   const size = attrs.size ?? 0

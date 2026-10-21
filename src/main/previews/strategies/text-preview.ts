@@ -11,7 +11,7 @@ import { previewSizeError, type PreviewStrategy } from '../preview-strategy'
 
 const CONTENT_HASH_PATTERN = /^[a-f0-9]{64}$/
 
-type TextPreviewResult = Extract<PreviewResult, { type: 'text' }>
+type TextPreviewResult = Extract<PreviewResult, { type: 'text' | 'markdown' }>
 
 function saveSizeError(limitMiB: number): Error {
   return new Error('保存后的文本超过 ' + limitMiB + ' MiB 上限')
@@ -141,10 +141,11 @@ async function replaceTextFile(
 }
 
 export const textPreviewStrategy: PreviewStrategy<TextPreviewResult> = {
-  types: ['text'],
-  async preview({ sftp, remotePath, name, limitBytes, limitMiB }) {
+  types: ['text', 'markdown'],
+  async preview({ type, sftp, remotePath, name, limitBytes, limitMiB }) {
     const content = await readTextFile(sftp, remotePath, limitBytes, limitMiB)
     const decodedContent = decodeText(content)
+    if (type === 'markdown') return { type, name, content: decodedContent }
     return { type: 'text', name, content: decodedContent, revision: textRevision(content, decodedContent) }
   },
 }

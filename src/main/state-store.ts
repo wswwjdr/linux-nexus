@@ -1,9 +1,12 @@
 import { safeStorage } from 'electron'
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import type { AppSettings, CommandAliasSnapshot, PreviewLimits, ServerProfile, SessionKind, StartupConnection } from '@shared/types'
+import type { AppSettings, CommandAliasSnapshot, PreviewLimits, ServerProfile } from '@shared/types'
+import { DEFAULT_APP_SETTINGS, DEFAULT_PREVIEW_LIMITS, defaultAppSettings, migrateAppSettings, validateAppSettings } from '@shared/app-settings'
 import { normalizeStoredCommandAliases } from '@shared/command-aliases'
 import { messageFromError } from './runtime'
+
+export { DEFAULT_APP_SETTINGS, DEFAULT_PREVIEW_LIMITS, validateAppSettings }
 
 export interface StoredState {
   profiles: ServerProfile[]
@@ -11,23 +14,6 @@ export interface StoredState {
   hostKeys: Record<string, string>
   commandAliases: Record<string, CommandAliasSnapshot>
 }
-
-export const DEFAULT_PREVIEW_LIMITS: PreviewLimits = {
-  textMiB: 5,
-  imageMiB: 100,
-  audioMiB: 100,
-  videoMiB: 100,
-}
-
-export const DEFAULT_APP_SETTINGS: AppSettings = {
-  ...DEFAULT_PREVIEW_LIMITS,
-  startupConnection: null,
-  transferFileConcurrency: 4,
-}
-
-const MAX_PREVIEW_LIMIT_MIB = 1024
-const MIN_TRANSFER_FILE_CONCURRENCY = 1
-const MAX_TRANSFER_FILE_CONCURRENCY = 16
 
 let stateFile = ''
 let settingsFile = ''
@@ -43,39 +29,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
   return Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key))
-}
-
-export function validateAppSettings(value: unknown): AppSettings {
-  const keys = Object.keys(DEFAULT_PREVIEW_LIMITS)
-  if (!isRecord(value) || keys.some((key) => !Object.hasOwn(value, key))
-    || !Object.hasOwn(value, 'transferFileConcurrency')
-    || Object.keys(value).some((key) => !keys.includes(key) && key !== 'startupConnection' && key !== 'transferFileConcurrency')
-    || (Object.hasOwn(value, 'startupConnection') && Object.keys(value).length !== keys.length + 2)
-    || (!Object.hasOwn(value, 'startupConnection') && Object.keys(value).length !== keys.length + 1)) {
-    throw new Error('应用设置结构无效')
-  }
-  for (const key of keys) {
-    const limit = value[key]
-    if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > MAX_PREVIEW_LIMIT_MIB) {
-      throw new Error('预览设置 ' + key + ' 必须是 1 到 ' + MAX_PREVIEW_LIMIT_MIB + ' 之间的整数')
-    }
-  }
-  const transferFileConcurrency = value.transferFileConcurrency
-  if (typeof transferFileConcurrency !== 'number' || !Number.isInteger(transferFileConcurrency)
-    || transferFileConcurrency < MIN_TRANSFER_FILE_CONCURRENCY || transferFileConcurrency > MAX_TRANSFER_FILE_CONCURRENCY) {
-    throw new Error('同时传输文件数必须是 1 到 16 之间的整数')
-  }
-  let startupConnection: StartupConnection | null = null
-  if (Object.hasOwn(value, 'startupConnection') && value.startupConnection !== null) {
-    const connection = value.startupConnection
-    if (!isRecord(connection) || !hasExactKeys(connection, ['profileId', 'kind'])
-      || typeof connection.profileId !== 'string' || !connection.profileId
-      || (connection.kind !== 'sftp' && connection.kind !== 'terminal')) {
-      throw new Error('启动连接设置无效')
-    }
-    startupConnection = { profileId: connection.profileId, kind: connection.kind as SessionKind }
-  }
-  return { ...value as unknown as PreviewLimits, startupConnection, transferFileConcurrency }
 }
 
 function validateStoredState(value: unknown, verifyPasswordCiphertexts = false): StoredState {
@@ -173,20 +126,15 @@ export function writeState(state: StoredState): void {
 
 export function readAppSettings(): AppSettings {
   if (!existsSync(settingsFile)) {
-    atomicWriteJson(settingsFile, DEFAULT_APP_SETTINGS)
-    return { ...DEFAULT_APP_SETTINGS }
+    const defaults = defaultAppSettings()
+    atomicWriteJson(settingsFile, defaults)
+    return defaults
   }
   try {
     const storedSettings = parseJsonFile(settingsFile)
-    if (isRecord(storedSettings) && !Object.hasOwn(storedSettings, 'transferFileConcurrency')) {
-      const migratedSettings = validateAppSettings({
-        ...storedSettings,
-        transferFileConcurrency: DEFAULT_APP_SETTINGS.transferFileConcurrency,
-      })
-      atomicWriteJson(settingsFile, migratedSettings)
-      return migratedSettings
-    }
-    return validateAppSettings(storedSettings)
+    const { settings, migrated } = migrateAppSettings(storedSettings)
+    if (migrated) atomicWriteJson(settingsFile, settings)
+    return settings
   } catch (error) {
     throw new Error('应用设置无效（' + settingsFile + '）：' + messageFromError(error))
   }
@@ -199,13 +147,13 @@ export function writeAppSettings(settings: unknown): AppSettings {
 }
 
 export function readPreviewLimits(): PreviewLimits {
-  const { startupConnection: _startupConnection, transferFileConcurrency: _transferFileConcurrency, ...limits } = readAppSettings()
+  const { startupConnection: _startupConnection, transferFileConcurrency: _transferFileConcurrency, previewExtensions: _previewExtensions, ...limits } = readAppSettings()
   return limits
 }
 
 export function writePreviewLimits(limits: unknown): PreviewLimits {
   const appSettings = validateAppSettings({ ...readAppSettings(), ...(limits as Record<string, unknown>) })
-  const { startupConnection: _startupConnection, transferFileConcurrency: _transferFileConcurrency, ...validatedLimits } = appSettings
+  const { startupConnection: _startupConnection, transferFileConcurrency: _transferFileConcurrency, previewExtensions: _previewExtensions, ...validatedLimits } = appSettings
   atomicWriteJson(settingsFile, appSettings)
   return validatedLimits
 }

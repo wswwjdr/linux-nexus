@@ -6,6 +6,7 @@ import { extname, join } from 'node:path'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { PreviewResult } from '@shared/types'
+import { previewMimeType } from '@shared/preview-mime-type'
 import { registerLocalPreviewAsset } from '../preview-assets'
 import { previewSizeError, previewUrl, type PreviewStrategy } from '../preview-strategy'
 
@@ -37,7 +38,7 @@ export const imagePreviewStrategy: PreviewStrategy<ImagePreviewResult> = {
       await unlink(filePath).catch(() => undefined)
       throw error
     }
-    registerLocalPreviewAsset(token, filePath)
+    registerLocalPreviewAsset(token, filePath, previewMimeType('image', remotePath))
     return { type: 'image', name, url: previewUrl(token, name), token }
   },
 }

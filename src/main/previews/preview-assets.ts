@@ -3,7 +3,7 @@ import type { Readable } from 'node:stream'
 import { unlink } from 'node:fs/promises'
 
 export type PreviewAsset =
-  | { kind: 'local'; filePath: string }
+  | { kind: 'local'; filePath: string; contentType: string }
   | {
       kind: 'remote'
       sessionId: string
@@ -11,13 +11,14 @@ export type PreviewAsset =
       sftp: SFTPWrapper
       remotePath: string
       size: number
+      contentType: string
       activeStreams: Set<Readable>
     }
 
 const previewAssets = new Map<string, PreviewAsset>()
 
-export function registerLocalPreviewAsset(token: string, filePath: string): void {
-  previewAssets.set(token, { kind: 'local', filePath })
+export function registerLocalPreviewAsset(token: string, filePath: string, contentType: string): void {
+  previewAssets.set(token, { kind: 'local', filePath, contentType })
 }
 
 export function registerRemotePreviewAsset(
@@ -27,6 +28,7 @@ export function registerRemotePreviewAsset(
   sftp: SFTPWrapper,
   remotePath: string,
   size: number,
+  contentType: string,
 ): void {
   previewAssets.set(token, {
     kind: 'remote',
@@ -35,6 +37,7 @@ export function registerRemotePreviewAsset(
     sftp,
     remotePath,
     size,
+    contentType,
     activeStreams: new Set(),
   })
 }

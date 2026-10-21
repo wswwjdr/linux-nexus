@@ -6,6 +6,7 @@ import type {
   DroppedUploadEntry,
   LogPreviewPage,
   PreviewResult,
+  PreviewType,
   AppSettings,
   RemoteFilesApi,
   RemoteSearchEvent,
@@ -60,8 +61,9 @@ const api: RemoteFilesApi = {
     ipcRenderer.invoke('files:path-copy', sessionId, remotePath),
   deleteRemoteEntry: (sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('files:delete', sessionId, remotePath),
-  previewFile: (sessionId: string, remotePath: string): Promise<PreviewResult> =>
-    ipcRenderer.invoke('files:preview', sessionId, remotePath),
+  previewFile: (sessionId: string, remotePath: string, type: PreviewType): Promise<PreviewResult> =>
+    ipcRenderer.invoke('files:preview', sessionId, remotePath, type),
+  openExternalUrl: (url: string): Promise<void> => ipcRenderer.invoke('shell:open-external', url),
   saveTextFile: (sessionId: string, remotePath: string, content: string, expectedRevision) =>
     ipcRenderer.invoke('files:text-save', sessionId, remotePath, content, expectedRevision),
   readLogPreview: (sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number): Promise<LogPreviewPage> =>

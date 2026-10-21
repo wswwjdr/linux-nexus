@@ -16,12 +16,14 @@ import { useTransfers } from './hooks/useTransfers'
 import { useProfileManagement } from './hooks/useProfileManagement'
 import { useCommandAliases } from './hooks/useCommandAliases'
 import type {
+  PreviewExtensions,
   RemoteEntry,
   RemoteSearchResult,
   ServerProfile,
   SessionKind,
   TrustHostKeyInput,
 } from '@shared/types'
+import { DEFAULT_PREVIEW_EXTENSIONS } from '@shared/preview-file-type'
 import type {
   BrowserContextMenu as BrowserContextMenuState,
   FileViewMode,
@@ -66,6 +68,8 @@ export default function App() {
   const [sessionChooserOpen, setSessionChooserOpen] = useState(false)
   const [shortcutGuideOpen, setShortcutGuideOpen] = useState(false)
   const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>(readDefaultView)
+  const [previewExtensions, setPreviewExtensions] = useState<PreviewExtensions>(() =>
+    Object.fromEntries(Object.entries(DEFAULT_PREVIEW_EXTENSIONS).map(([type, extensions]) => [type, [...extensions]])) as PreviewExtensions)
   const [toast, setToast] = useState<ToastNotice | null>(null)
   const [recentConnections, setRecentConnections] = useState<RecentConnection[]>(readRecentConnections)
   const [pendingHostKeys, setPendingHostKeys] = useState<PendingHostKey[]>([])
@@ -124,6 +128,7 @@ export default function App() {
       && sessions.find((session) => session.id === activeSessionId)?.status === 'connected'
       ? activeSessionId
       : null,
+    previewExtensions,
     showToast,
   })
   const dismissToast = useCallback(() => setToast(null), [])
@@ -146,6 +151,9 @@ export default function App() {
     closeProfileDeleteDialog,
     confirmProfileDeletion,
     updateSettingsForm,
+    addPreviewExtension,
+    removePreviewExtension,
+    resetPreviewExtensions,
     updateDefaultView,
     updateStartupProfile,
     updateStartupKind,
@@ -187,6 +195,7 @@ export default function App() {
       setViewModeDefault(mode)
       setSessions((current) => current.map((session) => session.kind === 'sftp' ? { ...session, viewMode: mode } : session))
     },
+    onPreviewExtensionsChange: setPreviewExtensions,
   })
 
   const activeSession = useMemo(
@@ -740,6 +749,11 @@ export default function App() {
   }
 
   const handleEntryKeyDown = (event: ReactKeyboardEvent<HTMLElement>, entry: RemoteEntry) => {
+    if (event.key === 'Delete') {
+      event.preventDefault()
+      requestRemoteEntryDeletion(entry)
+      return
+    }
     if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
     event.preventDefault()
     const bounds = event.currentTarget.getBoundingClientRect()
@@ -1069,13 +1083,14 @@ export default function App() {
           <FileContextMenu
             menu={browserContextMenu}
             sort={sort}
+            previewExtensions={previewExtensions}
             elementRef={contextMenuRef}
             onKeyDown={handleContextMenuKeyDown}
             onSelectSortColumn={(column) => patchSession(activeSession.id, { sort: { ...sort, column } })}
             onSelectSortDirection={(direction) => patchSession(activeSession.id, { sort: { ...sort, direction } })}
-            onPreview={(entry) => {
+            onPreview={(entry, type) => {
               setBrowserContextMenu(null)
-              void previewFile(entry)
+              void previewFile(entry, type)
             }}
             onPreviewLog={(entry) => {
               setBrowserContextMenu(null)
@@ -1153,11 +1168,17 @@ export default function App() {
         onSubmitProfile={(event) => void submitProfile(event)}
         onCloseSettings={closeSettingsDialog}
         onUpdateSettings={updateSettingsForm}
+        onAddPreviewExtension={addPreviewExtension}
+        onRemovePreviewExtension={removePreviewExtension}
+        onResetPreviewExtensions={resetPreviewExtensions}
         onUpdateDefaultView={updateDefaultView}
         onUpdateStartupProfile={updateStartupProfile}
         onUpdateStartupKind={updateStartupKind}
         onSubmitSettings={(event) => void submitSettings(event)}
         onClosePreview={closePreview}
+        onOpenExternalLink={(url) => {
+          void window.remoteFiles.openExternalUrl(url).catch((error) => showToast('error', '无法打开链接：' + errorMessage(error)))
+        }}
         onLogPreviewScroll={onLogPreviewScroll}
         onUpdateTextDraft={updateTextDraft}
         onRequestTextSave={requestTextSave}
@@ -1209,10 +1230,11 @@ export default function App() {
           sessionId={searchSessionId}
           profileId={searchSession.profileId}
           currentPath={searchSession.currentPath}
+          previewExtensions={previewExtensions}
           previewOpen={Boolean(previewDialog || logPreviewDialog)}
           onClose={() => setSearchSessionId(null)}
           onSelectResult={(result) => void locateSearchResult(result)}
-          onPreviewResult={(result) => void previewFile(result)}
+          onPreviewResult={(result, type) => void previewFile(result, type)}
         />
       )}
 

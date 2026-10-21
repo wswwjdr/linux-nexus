@@ -1,7 +1,8 @@
-import { ipcMain, safeStorage } from 'electron'
+import { ipcMain, safeStorage, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import type { AppSettings, RemoteSearchRequest, SaveProfileInput, ServerProfile, SessionKind, TrustHostKeyInput } from '@shared/types'
 import { connectionIdentityChanged } from '@shared/command-aliases'
+import { validateExternalUrl } from '@shared/external-url'
 import { deleteCommandAlias, listCommandAliasSnapshots, saveCommandAlias, synchronizeCommandAliases } from './command-aliases'
 import {
   connectProfile,
@@ -122,6 +123,7 @@ export function registerIpc(): void {
     }
     return writeAppSettings(settings)
   })
+  ipcMain.handle('shell:open-external', (_event, url: unknown) => shell.openExternal(validateExternalUrl(url)))
   ipcMain.handle('aliases:list', () => listCommandAliasSnapshots())
   ipcMain.handle('aliases:sync', (_event, profileId: string) => synchronizeCommandAliases(profileId))
   ipcMain.handle('aliases:save', (_event, profileId: string, name: string, command: string, overwrite: boolean) =>
@@ -186,7 +188,8 @@ export function registerIpc(): void {
     createRemoteDirectory(sessionId, remoteDirectory, name))
   ipcMain.handle('files:path-copy', (_event, sessionId: string, remotePath: string) => copyRemotePath(sessionId, remotePath))
   ipcMain.handle('files:delete', (_event, sessionId: string, remotePath: string) => deleteRemoteEntry(sessionId, remotePath))
-  ipcMain.handle('files:preview', (_event, sessionId: string, remotePath: string) => previewFile(sessionId, remotePath))
+  ipcMain.handle('files:preview', (_event, sessionId: string, remotePath: string, type: Parameters<typeof previewFile>[2]) =>
+    previewFile(sessionId, remotePath, type))
   ipcMain.handle('files:text-save', (_event, sessionId: string, remotePath: string, content: string, expectedRevision: unknown) =>
     saveTextFile(sessionId, remotePath, content, expectedRevision))
   ipcMain.handle('files:preview-log', (_event, sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number) =>

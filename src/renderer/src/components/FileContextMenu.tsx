@@ -1,7 +1,7 @@
 import { ArrowDownToLine, ArrowUpDown, Check, ChevronRight, Copy, Eye, FileText, FolderPlus, Trash2, Upload } from 'lucide-react'
 import { useState, type KeyboardEvent, type RefObject } from 'react'
-import type { RemoteEntry } from '@shared/types'
-import { previewFileType } from '@shared/preview-file-type'
+import type { PreviewExtensions, PreviewType, RemoteEntry } from '@shared/types'
+import { previewFileTypes, previewTypeLabels } from '@shared/preview-file-type'
 import type { SortColumn, SortDirection } from '@/app-types'
 import type { BrowserContextMenu as BrowserContextMenuState } from '@/app-types'
 
@@ -16,11 +16,12 @@ const sortOptions: { column: SortColumn; label: string }[] = [
 interface FileContextMenuProps {
   menu: BrowserContextMenuState
   sort: { column: SortColumn; direction: SortDirection }
+  previewExtensions: PreviewExtensions
   elementRef: RefObject<HTMLDivElement | null>
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
   onSelectSortColumn: (column: SortColumn) => void
   onSelectSortDirection: (direction: SortDirection) => void
-  onPreview: (entry: RemoteEntry) => void
+  onPreview: (entry: RemoteEntry, type: PreviewType) => void
   onPreviewLog: (entry: RemoteEntry) => void
   onDownload: (entry: RemoteEntry) => void
   onCopyPath: (entry: RemoteEntry) => void
@@ -33,6 +34,7 @@ interface FileContextMenuProps {
 export default function FileContextMenu({
   menu,
   sort,
+  previewExtensions,
   elementRef,
   onKeyDown,
   onSelectSortColumn,
@@ -47,11 +49,17 @@ export default function FileContextMenu({
   onUpload,
 }: FileContextMenuProps) {
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
+  const [previewMenuOpen, setPreviewMenuOpen] = useState(false)
   const menuWidth = 204
   const submenuWidth = 184
   const submenuHeight = sortOptions.length * 34 + 2 + 9 + 2 * 34 + 16
   const opensLeft = menu.x + menuWidth + submenuWidth > window.innerWidth - 8
   const opensUp = menu.y + submenuHeight > window.innerHeight - 8
+  const previewOptions = menu.kind === 'entry' && menu.entry.type === 'file'
+    ? previewFileTypes(menu.entry.name, previewExtensions)
+    : []
+  const previewMenuHeight = previewOptions.length * 34 + 10
+  const previewOpensUp = menu.y + previewMenuHeight > window.innerHeight - 8
 
   return (
     <div
@@ -67,10 +75,33 @@ export default function FileContextMenu({
         <>
           {menu.entry.type === 'file' && (
             <>
-              <button className="entry-context-action preview-action" role="menuitem" onClick={() => onPreview(menu.entry)}>
-                <Eye size={16} /> 预览
-              </button>
-              {previewFileType(menu.entry.name) === 'text' && (
+              {previewOptions.length === 1 && (
+                <button className="entry-context-action preview-action" role="menuitem" onClick={() => onPreview(menu.entry, previewOptions[0])}>
+                  <Eye size={16} /> 预览
+                </button>
+              )}
+              {previewOptions.length > 1 && (
+                <div className="context-submenu" onMouseEnter={() => setPreviewMenuOpen(true)} onMouseLeave={() => {
+                  if (!(document.activeElement as HTMLElement).closest('.sort-submenu-panel')) setPreviewMenuOpen(false)
+                }} onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPreviewMenuOpen(false)
+                }}>
+                  <button className="entry-context-action preview-action submenu-trigger" role="menuitem" aria-haspopup="menu" aria-expanded={previewMenuOpen} onFocus={() => setPreviewMenuOpen(true)} onClick={() => setPreviewMenuOpen(true)}>
+                    <span className="submenu-trigger-label"><Eye size={16} /> 预览</span>
+                    <ChevronRight size={14} />
+                  </button>
+                  {previewMenuOpen && (
+                    <div className={'sort-submenu-panel' + (opensLeft ? ' opens-left' : '') + (previewOpensUp ? ' opens-up' : '')} role="menu" aria-label="预览方式">
+                      {previewOptions.map((type) => (
+                        <button key={type} className="sort-menu-item" role="menuitem" onClick={() => onPreview(menu.entry, type)}>
+                          <span className="sort-menu-mark" />{previewTypeLabels[type]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {previewOptions.includes('text') && (
                 <button className="entry-context-action log-preview-action" role="menuitem" onClick={() => onPreviewLog(menu.entry)}>
                   <FileText size={16} /> 倒序预览
                 </button>

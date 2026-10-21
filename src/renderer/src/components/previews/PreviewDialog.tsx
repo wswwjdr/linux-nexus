@@ -2,7 +2,9 @@ import type { RefObject, SyntheticEvent, WheelEvent } from 'react'
 import { LoaderCircle, X } from 'lucide-react'
 import type { ImagePreviewSize, PreviewDialog as PreviewDialogState } from '@/app-types'
 import ImagePreviewPanel from './ImagePreviewPanel'
+import MarkdownPreviewPanel from './MarkdownPreviewPanel'
 import MediaPreviewPanel from './MediaPreviewPanel'
+import PdfPreviewPanel from './PdfPreviewPanel'
 import TextPreviewPanel from './TextPreviewPanel'
 
 export interface PreviewDialogProps {
@@ -18,6 +20,7 @@ export interface PreviewDialogProps {
   onClosePreview: () => void
   onUpdateTextDraft: (content: string) => void
   onRequestTextSave: () => void
+  onOpenExternalLink: (url: string) => void
   onPreviewImageLoad: (event: SyntheticEvent<HTMLImageElement>) => void
   onZoomPreviewImage: (event: WheelEvent<HTMLDivElement>) => void
 }
@@ -35,6 +38,7 @@ export default function PreviewDialog({
   onClosePreview,
   onUpdateTextDraft,
   onRequestTextSave,
+  onOpenExternalLink,
   onPreviewImageLoad,
   onZoomPreviewImage,
 }: PreviewDialogProps) {
@@ -42,10 +46,11 @@ export default function PreviewDialog({
   const result = previewDialog.kind === 'ready' ? previewDialog.result : null
   const previewName = previewDialog.kind === 'ready' ? previewDialog.result.name : previewDialog.name
   const textPreview = result?.type === 'text'
+  const markdownPreview = result?.type === 'markdown'
 
   return (
     <div className="modal-backdrop preview-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !textSaving && !textSaveConfirmation && onClosePreview()}>
-      <section className={`modal preview-modal${result ? ` media-preview-modal${textPreview ? ' text-preview-modal' : ''}` : ''}`} role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
+      <section className={`modal preview-modal${result ? ` media-preview-modal${textPreview ? ' text-preview-modal' : ''}${markdownPreview ? ' markdown-preview-modal' : ''}` : ''}`} role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
         <div className="modal-heading">
           <div>
             <h2 id="preview-modal-title">{previewName}</h2>
@@ -63,6 +68,10 @@ export default function PreviewDialog({
             onRequestSave={onRequestTextSave}
           />
         )}
+        {result?.type === 'markdown' && (
+          <MarkdownPreviewPanel content={result.content} onOpenExternalLink={onOpenExternalLink} />
+        )}
+        {result?.type === 'pdf' && <PdfPreviewPanel name={result.name} url={result.url} />}
         {result?.type === 'image' && (
           <ImagePreviewPanel
             result={result}

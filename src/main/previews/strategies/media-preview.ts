@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { PreviewResult } from '@shared/types'
+import { previewMimeType } from '@shared/preview-mime-type'
 import { registerRemotePreviewAsset } from '../preview-assets'
 import { previewUrl, type PreviewStrategy } from '../preview-strategy'
 
@@ -12,7 +13,7 @@ export const mediaPreviewStrategy: PreviewStrategy<MediaPreviewResult> = {
       throw new Error('媒体预览策略无法处理该文件类型')
     }
     const token = randomUUID()
-    registerRemotePreviewAsset(token, sessionId, profileId, sftp, remotePath, size)
+    registerRemotePreviewAsset(token, sessionId, profileId, sftp, remotePath, size, previewMimeType(type, remotePath))
     return { type, name, url: previewUrl(token, name), token }
   },
 }

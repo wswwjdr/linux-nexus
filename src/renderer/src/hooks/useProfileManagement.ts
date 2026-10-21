@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import type { AppSettings, PreviewLimits, SaveProfileInput, ServerProfile, SessionKind, StartupConnection } from '@shared/types'
+import type { AppSettings, PreviewExtensions, PreviewLimits, PreviewType, SaveProfileInput, ServerProfile, SessionKind, StartupConnection } from '@shared/types'
 import type { FileViewMode, ProfileForm, SettingsFieldKey, SettingsForm } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { emptyForm, errorMessage, previewLimitFields, readDefaultView, toPreviewLimitsForm } from '@/app-utils'
+import { DEFAULT_PREVIEW_EXTENSIONS } from '@shared/preview-file-type'
 
 interface UseProfileManagementOptions {
   showToast: (kind: ToastNotice['kind'], message: string) => void
@@ -10,9 +11,10 @@ interface UseProfileManagementOptions {
   onProfileSaved: (profile: ServerProfile) => void
   onProfileDeleted: (profileId: string) => void
   onDefaultViewChange: (mode: FileViewMode) => void
+  onPreviewExtensionsChange: (extensions: PreviewExtensions) => void
 }
 
-export function useProfileManagement({ showToast, clearToast, onProfileSaved, onProfileDeleted, onDefaultViewChange }: UseProfileManagementOptions) {
+export function useProfileManagement({ showToast, clearToast, onProfileSaved, onProfileDeleted, onDefaultViewChange, onPreviewExtensionsChange }: UseProfileManagementOptions) {
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
   const [profilesLoaded, setProfilesLoaded] = useState(false)
   const [startupSettingsLoaded, setStartupSettingsLoaded] = useState(false)
@@ -34,10 +36,13 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
       .catch((error) => showToast('error', errorMessage(error)))
       .finally(() => setProfilesLoaded(true))
     void window.remoteFiles.getAppSettings()
-      .then((settings) => setStartupConnection(settings.startupConnection))
+      .then((settings) => {
+        setStartupConnection(settings.startupConnection)
+        onPreviewExtensionsChange(settings.previewExtensions)
+      })
       .catch((error) => showToast('error', '读取设置失败：' + errorMessage(error)))
       .finally(() => setStartupSettingsLoaded(true))
-  }, [showToast])
+  }, [showToast, onPreviewExtensionsChange])
 
   const openProfileDialog = (mode: 'create' | 'edit', profile?: ServerProfile) => {
     clearToast()
@@ -64,6 +69,7 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
       const profileId = settings.startupConnection?.profileId
       setSettingsForm({
         ...toPreviewLimitsForm(settings),
+        previewExtensions: Object.fromEntries(Object.entries(settings.previewExtensions).map(([type, extensions]) => [type, [...extensions]])) as PreviewExtensions,
         transferFileConcurrency: String(settings.transferFileConcurrency),
         defaultView: readDefaultView(),
         startupProfileId: profileId && profiles.some((profile) => profile.id === profileId) ? profileId : '',
@@ -78,6 +84,39 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
 
   const updateSettingsForm = (key: SettingsFieldKey, value: string) => {
     setSettingsForm((current) => current ? { ...current, [key]: value } : current)
+  }
+
+  const addPreviewExtension = (type: PreviewType, extension: string) => {
+    setSettingsForm((current) => current
+      ? {
+          ...current,
+          previewExtensions: {
+            ...current.previewExtensions,
+            [type]: [...new Set([...current.previewExtensions[type], extension])],
+          },
+        }
+      : current)
+  }
+
+  const removePreviewExtension = (type: PreviewType, extension: string) => {
+    setSettingsForm((current) => current
+      ? {
+          ...current,
+          previewExtensions: {
+            ...current.previewExtensions,
+            [type]: current.previewExtensions[type].filter((candidate) => candidate !== extension),
+          },
+        }
+      : current)
+  }
+
+  const resetPreviewExtensions = () => {
+    setSettingsForm((current) => current
+      ? {
+          ...current,
+          previewExtensions: Object.fromEntries(Object.entries(DEFAULT_PREVIEW_EXTENSIONS).map(([type, extensions]) => [type, [...extensions]])) as PreviewExtensions,
+        }
+      : current)
   }
 
   const updateDefaultView = (defaultView: FileViewMode) => {
@@ -97,6 +136,7 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
     if (!settingsForm) return
     const limits: PreviewLimits = {
       textMiB: Number(settingsForm.textMiB),
+      pdfMiB: Number(settingsForm.pdfMiB),
       imageMiB: Number(settingsForm.imageMiB),
       audioMiB: Number(settingsForm.audioMiB),
       videoMiB: Number(settingsForm.videoMiB),
@@ -115,13 +155,15 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
     try {
       const settings: AppSettings = {
         ...limits,
+        previewExtensions: settingsForm.previewExtensions,
         transferFileConcurrency,
         startupConnection: settingsForm.startupProfileId
           ? { profileId: settingsForm.startupProfileId, kind: settingsForm.startupKind }
           : null,
       }
-      await window.remoteFiles.saveAppSettings(settings)
+      const savedSettings = await window.remoteFiles.saveAppSettings(settings)
       setStartupConnection(settings.startupConnection)
+      onPreviewExtensionsChange(savedSettings.previewExtensions)
       window.localStorage.setItem('remote-files:default-view', settingsForm.defaultView)
       onDefaultViewChange(settingsForm.defaultView)
       setSettingsForm(null)
@@ -215,6 +257,9 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
     closeProfileDeleteDialog,
     confirmProfileDeletion,
     updateSettingsForm,
+    addPreviewExtension,
+    removePreviewExtension,
+    resetPreviewExtensions,
     updateDefaultView,
     updateStartupProfile,
     updateStartupKind,

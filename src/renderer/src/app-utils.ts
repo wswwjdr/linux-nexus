@@ -3,6 +3,7 @@ import type { FileViewMode, PreviewLimitKey, PreviewLimitsForm, ProfileForm, Rec
 
 export const previewLimitFields: { key: PreviewLimitKey; label: string }[] = [
   { key: 'textMiB', label: '文本文件上限（MiB）' },
+  { key: 'pdfMiB', label: 'PDF 文件上限（MiB）' },
   { key: 'imageMiB', label: '图片文件上限（MiB）' },
   { key: 'audioMiB', label: '音频文件上限（MiB）' },
   { key: 'videoMiB', label: '视频文件上限（MiB）' },
@@ -74,6 +75,7 @@ export function connectFailureText(result: Exclude<ConnectResult, { ok: true }>)
 export function toPreviewLimitsForm(limits: PreviewLimits): PreviewLimitsForm {
   return {
     textMiB: String(limits.textMiB),
+    pdfMiB: String(limits.pdfMiB),
     imageMiB: String(limits.imageMiB),
     audioMiB: String(limits.audioMiB),
     videoMiB: String(limits.videoMiB),

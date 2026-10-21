@@ -1,7 +1,6 @@
 import { session } from 'electron'
 import { createReadStream as localCreateReadStream } from 'node:fs'
 import { stat as localStat } from 'node:fs/promises'
-import { extname } from 'node:path'
 import { Readable } from 'node:stream'
 import { sessions } from './runtime'
 import { getPreviewAsset } from './previews/preview-assets'
@@ -20,20 +19,9 @@ export function registerPreviewProtocol(): void {
       return new Response(null, { status: 503 })
     }
     const size = asset.kind === 'local' ? (await localStat(asset.filePath)).size : asset.size
-    const extension = extname(asset.kind === 'local' ? asset.filePath : asset.remotePath).toLowerCase()
-    const contentType: Record<string, string> = {
-      '.gif': 'image/gif',
-      '.jpeg': 'image/jpeg',
-      '.jpg': 'image/jpeg',
-      '.mp3': 'audio/mpeg',
-      '.mp4': 'video/mp4',
-      '.png': 'image/png',
-      '.sh': 'text/plain; charset=utf-8',
-      '.txt': 'text/plain; charset=utf-8',
-    }
     const headers = new Headers({
       'Accept-Ranges': 'bytes',
-      'Content-Type': contentType[extension] ?? 'application/octet-stream',
+      'Content-Type': asset.contentType,
     })
     const rangeHeader = request.headers.get('range')
     let range: { start: number; end: number } | null = null

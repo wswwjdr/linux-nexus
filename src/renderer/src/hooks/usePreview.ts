@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState, type SyntheticEvent, type WheelEvent } from 'react'
-import type { RemoteEntry, TextFileRevision } from '@shared/types'
-import { previewFileType } from '@shared/preview-file-type'
+import type { PreviewExtensions, PreviewType, RemoteEntry, TextFileRevision } from '@shared/types'
+import { previewFileTypes } from '@shared/preview-file-type'
 import type { ImagePreviewSize, LogPreviewDialog, PreviewDialog } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { errorMessage } from '@/app-utils'
 
 interface UsePreviewOptions {
   sessionId: string | null
+  previewExtensions: PreviewExtensions
   showToast: (kind: ToastNotice['kind'], message: string) => void
 }
 
@@ -18,7 +19,7 @@ interface TextPreviewContext {
   revision: TextFileRevision
 }
 
-export function usePreview({ sessionId, showToast }: UsePreviewOptions) {
+export function usePreview({ sessionId, previewExtensions, showToast }: UsePreviewOptions) {
   const [previewDialog, setPreviewDialog] = useState<PreviewDialog | null>(null)
   const [logPreviewDialog, setLogPreviewDialog] = useState<LogPreviewDialog | null>(null)
   const [imageZoom, setImageZoom] = useState(1)
@@ -84,9 +85,9 @@ export function usePreview({ sessionId, showToast }: UsePreviewOptions) {
     if (token) window.setTimeout(() => void window.remoteFiles.releasePreview(token), 0)
   }
 
-  const previewFile = async (entry: Pick<RemoteEntry, 'name' | 'path'>) => {
+  const previewFile = async (entry: Pick<RemoteEntry, 'name' | 'path'>, type: PreviewType) => {
     closePreview()
-    if (!previewFileType(entry.name)) {
+    if (!previewFileTypes(entry.name, previewExtensions).includes(type)) {
       showToast('info', '暂不支持的文件类型：' + entry.name)
       return
     }
@@ -95,9 +96,9 @@ export function usePreview({ sessionId, showToast }: UsePreviewOptions) {
     const requestId = previewRequestRef.current
     setPreviewDialog({ kind: 'loading', name: entry.name })
     try {
-      const result = await window.remoteFiles.previewFile(sessionId, entry.path)
+      const result = await window.remoteFiles.previewFile(sessionId, entry.path, type)
       if (requestId !== previewRequestRef.current) {
-        if (result.type !== 'text') void window.remoteFiles.releasePreview(result.token)
+        if ('token' in result) void window.remoteFiles.releasePreview(result.token)
         return
       }
       if (result.type === 'text') {
@@ -110,7 +111,7 @@ export function usePreview({ sessionId, showToast }: UsePreviewOptions) {
         }
         textDraftRef.current = result.content
         setTextDraft(result.content)
-      } else {
+      } else if ('token' in result) {
         previewTokenRef.current = result.token
       }
       setPreviewDialog({ kind: 'ready', result })
