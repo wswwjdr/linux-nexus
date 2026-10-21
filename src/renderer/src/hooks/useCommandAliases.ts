@@ -14,7 +14,6 @@ import { errorMessage } from '@/app-utils'
 interface UseCommandAliasesOptions {
   profiles: ServerProfile[]
   showToast: (kind: ToastNotice['kind'], message: string) => void
-  clearToast: () => void
 }
 
 interface OverwriteConfirmation {
@@ -30,7 +29,7 @@ const emptySnapshot = (profileId: string): CommandAliasSnapshot => ({
   status: 'unsynced',
 })
 
-export function useCommandAliases({ profiles, showToast, clearToast }: UseCommandAliasesOptions) {
+export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOptions) {
   const [snapshots, setSnapshots] = useState<Record<string, CommandAliasSnapshot>>({})
   const [selectedProfileId, setSelectedProfileId] = useState('')
   const [operation, setOperation] = useState<'working' | null>(null)
@@ -99,7 +98,6 @@ export function useCommandAliases({ profiles, showToast, clearToast }: UseComman
     } else {
       setName('')
       setCommand('')
-      clearToast()
     }
     return false
   }

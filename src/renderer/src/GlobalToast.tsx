@@ -13,13 +13,13 @@ export interface ToastNotice {
 
 interface GlobalToastProps {
   notice: ToastNotice | null
-  onDismiss: () => void
+  onDismiss: (noticeId: number) => void
 }
 
 export default function GlobalToast({ notice, onDismiss }: GlobalToastProps) {
   useEffect(() => {
     if (!notice) return
-    const timeout = window.setTimeout(onDismiss, 6000)
+    const timeout = window.setTimeout(() => onDismiss(notice.id), 6000)
     return () => window.clearTimeout(timeout)
   }, [notice?.id, onDismiss])
 
@@ -37,14 +37,14 @@ export default function GlobalToast({ notice, onDismiss }: GlobalToastProps) {
           title={notice.action.label}
           aria-label={notice.action.label}
           onClick={() => {
-            onDismiss()
+            onDismiss(notice.id)
             notice.action?.onClick()
           }}
         >
           <CircleAlert size={15} />
         </button>
       )}
-      <button className="icon-button" title="关闭提示" aria-label="关闭提示" onClick={onDismiss}>
+      <button className="icon-button" title="关闭提示" aria-label="关闭提示" onClick={() => onDismiss(notice.id)}>
         <X size={15} />
       </button>
     </div>

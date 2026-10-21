@@ -174,7 +174,9 @@ export default function App() {
     previewExtensions,
     showToast,
   })
-  const dismissToast = useCallback(() => setToast(null), [])
+  const dismissToast = useCallback((noticeId: number) => {
+    setToast((current) => current?.id === noticeId ? null : current)
+  }, [])
   const {
     profiles,
     profileDataLoaded,
@@ -205,7 +207,6 @@ export default function App() {
     closeSettingsDialog,
   } = useProfileManagement({
     showToast,
-    clearToast: dismissToast,
     onProfileSaved: (profile) => {
       const affectedSessions = sessionsRef.current.filter((session) => session.profileId === profile.id)
       const activeProfileId = sessionsRef.current.find((session) => session.id === activeSessionId)?.profileId
@@ -267,7 +268,6 @@ export default function App() {
   const commandAliases = useCommandAliases({
     profiles,
     showToast,
-    clearToast: dismissToast,
   })
   const openSettings = () => {
     commandAliases.prepareForSettings(connectedProfileId)
@@ -426,7 +426,6 @@ export default function App() {
           ? session.selectedPaths.filter((path) => nextEntries.some((entry) => entry.path === path))
           : [],
       }))
-      if (activeSessionId === sessionId) setToast(null)
       return true
     } catch (error) {
       if (directoryLoadIdsRef.current.get(sessionId) === requestId
@@ -553,7 +552,6 @@ export default function App() {
     sessionsRef.current = nextSessions
     setSessions(nextSessions)
     setSessionChooserOpen(false)
-    setToast(null)
     void connectSession(session, profile)
   }
 

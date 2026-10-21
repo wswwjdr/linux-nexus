@@ -7,14 +7,13 @@ import { DEFAULT_PREVIEW_EXTENSIONS } from '@shared/preview-file-type'
 
 interface UseProfileManagementOptions {
   showToast: (kind: ToastNotice['kind'], message: string) => void
-  clearToast: () => void
   onProfileSaved: (profile: ServerProfile) => void
   onProfileDeleted: (profileId: string) => void
   onDefaultViewChange: (mode: FileViewMode) => void
   onPreviewExtensionsChange: (extensions: PreviewExtensions) => void
 }
 
-export function useProfileManagement({ showToast, clearToast, onProfileSaved, onProfileDeleted, onDefaultViewChange, onPreviewExtensionsChange }: UseProfileManagementOptions) {
+export function useProfileManagement({ showToast, onProfileSaved, onProfileDeleted, onDefaultViewChange, onPreviewExtensionsChange }: UseProfileManagementOptions) {
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
   const [profilesLoaded, setProfilesLoaded] = useState(false)
   const [startupSettingsLoaded, setStartupSettingsLoaded] = useState(false)
@@ -45,7 +44,6 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
   }, [showToast, onPreviewExtensionsChange])
 
   const openProfileDialog = (mode: 'create' | 'edit', profile?: ServerProfile) => {
-    clearToast()
     setDialog({
       mode,
       form: profile
@@ -167,7 +165,6 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
       window.localStorage.setItem('remote-files:default-view', settingsForm.defaultView)
       onDefaultViewChange(settingsForm.defaultView)
       setSettingsForm(null)
-      clearToast()
     } catch (error) {
       showToast('error', '保存设置失败：' + errorMessage(error))
     } finally {
@@ -199,7 +196,6 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
       onProfileSaved(savedProfile)
       await refreshProfiles()
       setDialog(null)
-      clearToast()
     } catch (error) {
       showToast('error', errorMessage(error))
     }
@@ -227,7 +223,6 @@ export function useProfileManagement({ showToast, clearToast, onProfileSaved, on
       setStartupConnection((current) => current?.profileId === profile.id ? null : current)
       onProfileDeleted(profile.id)
       setProfileDeleteDialog(null)
-      clearToast()
     } catch (error) {
       setProfileDeleteError(errorMessage(error))
     } finally {
