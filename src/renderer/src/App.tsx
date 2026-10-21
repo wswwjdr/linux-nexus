@@ -1234,6 +1234,7 @@ export default function App() {
               selectedPaths={activeSession.selectedPaths}
               moveProgress={activeRemoteMove?.sessionId === activeSession.id ? activeRemoteMove.progress : null}
               copying={activeRemoteCopy?.sessionId === activeSession.id}
+              canPaste={canPasteRemote}
               highlightedPath={highlightedPath}
               onViewModeChange={(mode) => patchSession(activeSession.id, { viewMode: mode })}
               onNavigate={navigate}
@@ -1241,6 +1242,8 @@ export default function App() {
               onSelectedPathsChange={(selectedPaths) => patchSession(activeSession.id, { selectedPaths })}
               onOpenEntryContextMenu={openEntryContextMenu}
               onOpenDirectoryContextMenu={openDirectoryContextMenu}
+              onCopyEntries={copyRemoteSelection}
+              onPasteToCurrentDirectory={() => beginRemoteCopy(currentPath)}
               onDeleteEntries={requestRemoteEntriesDeletion}
               onDropUpload={uploadDroppedEntries}
               onDropMove={beginRemoteMove}

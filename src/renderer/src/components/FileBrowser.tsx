@@ -34,6 +34,7 @@ interface FileBrowserProps {
   selectedPaths: string[]
   moveProgress: RemoteMoveProgress | null
   copying: boolean
+  canPaste: boolean
   highlightedPath: string | null
   onViewModeChange: (mode: FileViewMode) => void
   onNavigate: (path: string) => void
@@ -41,6 +42,8 @@ interface FileBrowserProps {
   onSelectedPathsChange: (paths: string[]) => void
   onOpenEntryContextMenu: (entries: RemoteEntry[], x: number, y: number) => void
   onOpenDirectoryContextMenu: (x: number, y: number) => void
+  onCopyEntries: (entries: RemoteEntry[]) => void
+  onPasteToCurrentDirectory: () => void
   onDeleteEntries: (entries: RemoteEntry[]) => void
   onDropUpload: (entries: DroppedUploadEntry[]) => void
   onDropMove: (sourcePaths: string[], targetDirectory: string) => void
@@ -180,6 +183,7 @@ export default function FileBrowser({
   selectedPaths,
   moveProgress,
   copying,
+  canPaste,
   highlightedPath,
   onViewModeChange,
   onNavigate,
@@ -187,6 +191,8 @@ export default function FileBrowser({
   onSelectedPathsChange,
   onOpenEntryContextMenu,
   onOpenDirectoryContextMenu,
+  onCopyEntries,
+  onPasteToCurrentDirectory,
   onDeleteEntries,
   onDropUpload,
   onDropMove,
@@ -199,6 +205,7 @@ export default function FileBrowser({
   const dragDepthRef = useRef(0)
   const selectionDragRef = useRef<SelectionDrag | null>(null)
   const selectedPathsRef = useRef(selectedPaths)
+  const previousPathRef = useRef(currentPath)
   const suppressClickRef = useRef(false)
   const suppressClickTimerRef = useRef<number | null>(null)
   const [dropActive, setDropActive] = useState(false)
@@ -213,6 +220,12 @@ export default function FileBrowser({
     top: number
   } | null>(null)
   selectedPathsRef.current = selectedPaths
+
+  useLayoutEffect(() => {
+    if (previousPathRef.current === currentPath) return
+    previousPathRef.current = currentPath
+    contentRef.current?.focus({ preventScroll: true })
+  }, [currentPath])
 
   const selectedEntries = () => {
     const paths = new Set(selectedPathsRef.current)
@@ -540,6 +553,19 @@ export default function FileBrowser({
       ? sortedEntries.find((entry) => entry.path === entryElement.dataset.entryPath)
       : undefined
     const targets = selectedEntries()
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
+      const key = event.key.toLowerCase()
+      if (key === 'c' && targets.length > 0) {
+        event.preventDefault()
+        onCopyEntries(targets)
+        return
+      }
+      if (key === 'v' && canPaste) {
+        event.preventDefault()
+        onPasteToCurrentDirectory()
+        return
+      }
+    }
     if (event.key === 'Delete') {
       const deletions = targets.length > 0 ? targets : focusedEntry && (focusedEntry.type === 'file' || focusedEntry.type === 'directory') ? [focusedEntry] : []
       if (deletions.length === 0) return
