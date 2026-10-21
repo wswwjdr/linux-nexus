@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { AlertTriangle, Check, File, Folder, LoaderCircle, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import type { RemoteMoveConflict, RemoteMoveDecision, RemoteMoveResult } from '@shared/types'
+import type { RemoteCopyResult, RemoteMoveConflict, RemoteMoveDecision, RemoteMoveResult } from '@shared/types'
 
 const itemTypeLabel = (type: 'file' | 'directory') => type === 'directory' ? '文件夹' : '文件'
 
@@ -9,10 +9,12 @@ export function RemoteMoveConflictDialog({
   conflict,
   busy,
   onDecision,
+  operation = 'move',
 }: {
   conflict: RemoteMoveConflict
   busy: boolean
   onDecision: (decision: RemoteMoveDecision) => void
+  operation?: 'move' | 'copy'
 }) {
   const titleId = useId()
   const mismatch = conflict.conflictType === 'type-mismatch'
@@ -35,10 +37,10 @@ export function RemoteMoveConflictDialog({
         <div className="confirmation-heading">
           <div className="confirmation-icon warning"><AlertTriangle size={19} /></div>
           <div className="confirmation-title-group">
-            <div className="modal-kicker warning">远程移动冲突</div>
+            <div className="modal-kicker warning">{operation === 'copy' ? '远程复制冲突' : '远程移动冲突'}</div>
             <h2 id={titleId}>{mismatch ? '同名项目类型不同' : '目标文件已存在'}</h2>
           </div>
-          <button className="icon-button modal-close" title="取消移动" aria-label="取消移动" disabled={busy} onClick={() => onDecision('cancel')}><X size={18} /></button>
+          <button className="icon-button modal-close" title={operation === 'copy' ? '取消复制' : '取消移动'} aria-label={operation === 'copy' ? '取消复制' : '取消移动'} disabled={busy} onClick={() => onDecision('cancel')}><X size={18} /></button>
         </div>
         <dl className="confirmation-details">
           <div className="confirmation-detail">
@@ -53,16 +55,16 @@ export function RemoteMoveConflictDialog({
         <p className="confirmation-description">
           {mismatch
             ? `来源是${itemTypeLabel(conflict.sourceType)}，目标是${itemTypeLabel(conflict.targetType)}。替换会先删除整个目标${itemTypeLabel(conflict.targetType)}及其内容，此操作无法撤销。`
-            : '覆盖会永久删除目标文件的现有内容，此操作无法撤销。'}
+            : operation === 'copy' ? '覆盖会替换目标文件的现有内容，此操作无法撤销。' : '覆盖会永久删除目标文件的现有内容，此操作无法撤销。'}
         </p>
         <div className="remote-move-conflict-actions">
           {mismatch ? (
             <>
               <button type="button" className="danger-button" disabled={busy} onClick={() => onDecision('replace')}>
-                {busy ? <LoaderCircle className="spin" size={15} /> : <AlertTriangle size={15} />}删除目标并替换
+                {busy ? <LoaderCircle className="spin" size={15} /> : <AlertTriangle size={15} />}{operation === 'copy' ? '删除目标并复制' : '删除目标并替换'}
               </button>
               <button type="button" className="secondary-button" disabled={busy} onClick={() => onDecision('skip')}>跳过此项</button>
-              <button type="button" className="secondary-button remote-move-cancel" disabled={busy} onClick={() => onDecision('cancel')}>取消移动</button>
+              <button type="button" className="secondary-button remote-move-cancel" disabled={busy} onClick={() => onDecision('cancel')}>取消{operation === 'copy' ? '复制' : '移动'}</button>
             </>
           ) : (
             <>
@@ -72,7 +74,7 @@ export function RemoteMoveConflictDialog({
               <button type="button" className="secondary-button" disabled={busy} onClick={() => onDecision('skip')}>跳过此文件</button>
               <button type="button" className="warning-button" disabled={busy} onClick={() => onDecision('replace-all')}>后续均覆盖</button>
               <button type="button" className="secondary-button" disabled={busy} onClick={() => onDecision('skip-all')}>后续均跳过</button>
-              <button type="button" className="secondary-button remote-move-cancel" disabled={busy} onClick={() => onDecision('cancel')}>取消移动</button>
+              <button type="button" className="secondary-button remote-move-cancel" disabled={busy} onClick={() => onDecision('cancel')}>取消{operation === 'copy' ? '复制' : '移动'}</button>
             </>
           )}
         </div>
@@ -84,12 +86,16 @@ export function RemoteMoveConflictDialog({
 export function RemoteMoveSummaryDialog({
   result,
   onClose,
+  operation = 'move',
 }: {
-  result: RemoteMoveResult
+  result: RemoteMoveResult | RemoteCopyResult
   onClose: () => void
+  operation?: 'move' | 'copy'
 }) {
   const titleId = useId()
   const failures = result.results.filter((item) => item.status === 'failed' || item.status === 'cancelled')
+  const copied = operation === 'copy' ? (result as RemoteCopyResult).copiedCount : (result as RemoteMoveResult).movedCount
+  const label = operation === 'copy' ? '复制' : '移动'
 
   useEffect(() => {
     const dismissOnEscape = (event: globalThis.KeyboardEvent) => {
@@ -109,13 +115,13 @@ export function RemoteMoveSummaryDialog({
             {result.failedCount > 0 ? <AlertTriangle size={19} /> : <Check size={19} />}
           </div>
           <div className="confirmation-title-group">
-            <div className="modal-kicker">远程移动</div>
-            <h2 id={titleId}>{result.status === 'cancelled' ? '移动已取消' : '移动完成'}</h2>
+            <div className="modal-kicker">远程{label}</div>
+            <h2 id={titleId}>{result.status === 'cancelled' ? `${label}已取消` : `${label}完成`}</h2>
           </div>
           <button className="icon-button modal-close" title="关闭" aria-label="关闭" onClick={onClose}><X size={18} /></button>
         </div>
-        <div className="remote-move-summary-counts" aria-label="移动结果">
-          <span><strong>{result.movedCount}</strong> 已移动</span>
+        <div className="remote-move-summary-counts" aria-label={`${label}结果`}>
+          <span><strong>{copied}</strong> 已{label}</span>
           <span><strong>{result.skippedCount}</strong> 已跳过</span>
           <span><strong>{result.failedCount}</strong> 失败</span>
           {result.cancelledCount > 0 && <span><strong>{result.cancelledCount}</strong> 未完成</span>}
@@ -125,7 +131,7 @@ export function RemoteMoveSummaryDialog({
             {failures.map((item) => (
               <div className="remote-move-result-item" role="listitem" key={item.sourcePath}>
                 <strong>{item.sourceName}</strong>
-                <span>{item.message ?? (item.status === 'cancelled' ? '已取消' : '移动失败')}</span>
+                <span>{item.message ?? (item.status === 'cancelled' ? '已取消' : `${label}失败`)}</span>
               </div>
             ))}
           </div>

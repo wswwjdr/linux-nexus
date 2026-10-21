@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import type { RemoteMoveConflict, RemoteMoveDecision, RemoteMoveEvent, RemoteMoveItemResult, RemoteMoveRequest, RemoteMoveResult } from '@shared/types'
 import type { SFTPWrapper } from 'ssh2'
-import { fileType, normalizedRemotePath, remoteAttributesOrNull, sftpLstat, sftpReaddir, sftpRename, sftpRmdir, sftpUnlink } from './sftp-utils.ts'
+import { fileType, normalizedRemotePath, remoteAttributesOrNull, sftpLstat, sftpReaddir, sftpRemoveTree, sftpRename, sftpRmdir } from './sftp-utils.ts'
 
 interface MoveOutcome {
   movedCount: number
@@ -86,21 +86,6 @@ function conflictFor(
     targetType,
     conflictType: sourceType === 'file' && targetType === 'file' ? 'file' : 'type-mismatch',
   }
-}
-
-async function removeRemoteTree(sftp: SFTPWrapper, remotePath: string): Promise<void> {
-  const attributes = await sftpLstat(sftp, remotePath)
-  if (fileType(attributes.mode) !== 'directory') {
-    await sftpUnlink(sftp, remotePath)
-    return
-  }
-  const entries = await sftpReaddir(sftp, remotePath)
-  for (const entry of entries) {
-    if (entry.filename === '.' || entry.filename === '..') continue
-    if (entry.filename.includes('/') || entry.filename.includes('\0')) throw new Error('服务器返回了无效的文件名')
-    await removeRemoteTree(sftp, posix.join(remotePath, entry.filename))
-  }
-  await sftpRmdir(sftp, remotePath)
 }
 
 async function renameSource(sftp: SFTPWrapper, sourcePath: string, targetPath: string): Promise<void> {
@@ -235,7 +220,7 @@ export async function executeRemoteMove(
     if (decision !== 'replace') throw new Error('移动冲突决策无效')
 
     assertNotAborted(signal)
-    await removeRemoteTree(sftp, targetPath)
+    await sftpRemoveTree(sftp, targetPath)
     await renameSource(sftp, sourcePath, targetPath)
     outcome.movedCount += 1
     return outcome

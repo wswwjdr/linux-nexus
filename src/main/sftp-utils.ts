@@ -71,6 +71,20 @@ export function sftpRmdir(sftp: SFTPWrapper, remotePath: string): Promise<void> 
   })
 }
 
+export async function sftpRemoveTree(sftp: SFTPWrapper, remotePath: string): Promise<void> {
+  const attributes = await sftpLstat(sftp, remotePath)
+  if (fileType(attributes.mode) !== 'directory') {
+    await sftpUnlink(sftp, remotePath)
+    return
+  }
+  for (const entry of await sftpReaddir(sftp, remotePath)) {
+    if (entry.filename === '.' || entry.filename === '..') continue
+    if (entry.filename.includes('/') || entry.filename.includes('\0')) throw new Error('服务器返回了无效的文件名')
+    await sftpRemoveTree(sftp, posix.join(remotePath, entry.filename))
+  }
+  await sftpRmdir(sftp, remotePath)
+}
+
 export function normalizedRemotePath(remotePath: string): string {
   if (typeof remotePath !== 'string' || !remotePath || remotePath.includes('\0')) {
     throw new Error('远程路径无效')

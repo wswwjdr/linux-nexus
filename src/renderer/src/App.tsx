@@ -20,6 +20,10 @@ import { useProfileManagement } from './hooks/useProfileManagement'
 import { useCommandAliases } from './hooks/useCommandAliases'
 import type {
   PreviewExtensions,
+  RemoteCopyConflict,
+  RemoteCopyDecision,
+  RemoteCopyEvent,
+  RemoteCopyResult,
   RemoteMoveConflict,
   RemoteMoveDecision,
   RemoteMoveProgress,
@@ -71,6 +75,24 @@ interface ActiveRemoteMove {
   decisionPending: boolean
 }
 
+interface RemoteClipboard {
+  profile: Pick<ServerProfile, 'id' | 'host' | 'port' | 'username'>
+  sourcePaths: string[]
+}
+
+interface ActiveRemoteCopy {
+  requestId: string
+  sessionId: string
+  targetDirectory: string
+  conflict: RemoteCopyConflict | null
+  decisionPending: boolean
+}
+
+interface RemoteOperationSummary {
+  operation: 'move' | 'copy'
+  result: RemoteMoveResult | RemoteCopyResult
+}
+
 function getEntryTypeExtension(name: string): string {
   const extensionStart = name.lastIndexOf('.')
   return extensionStart > 0 && extensionStart < name.length - 1
@@ -95,7 +117,10 @@ export default function App() {
   const [remoteEntryDeleteError, setRemoteEntryDeleteError] = useState<string | null>(null)
   const [remoteEntryDeleting, setRemoteEntryDeleting] = useState(false)
   const [activeRemoteMove, setActiveRemoteMove] = useState<ActiveRemoteMove | null>(null)
-  const [remoteMoveSummary, setRemoteMoveSummary] = useState<RemoteMoveResult | null>(null)
+  const [remoteClipboard, setRemoteClipboard] = useState<RemoteClipboard | null>(null)
+  const [activeRemoteCopy, setActiveRemoteCopy] = useState<ActiveRemoteCopy | null>(null)
+  const [remoteOperationSummary, setRemoteOperationSummary] = useState<RemoteOperationSummary | null>(null)
+  const [remoteOperationDetailsOpen, setRemoteOperationDetailsOpen] = useState(false)
   const [createDirectoryDialog, setCreateDirectoryDialog] = useState<{ name: string } | null>(null)
   const [creatingDirectory, setCreatingDirectory] = useState(false)
   const [searchSessionId, setSearchSessionId] = useState<string | null>(null)
@@ -115,8 +140,8 @@ export default function App() {
     sessionsRef.current = sessionsRef.current.map((session) => session.id === sessionId ? update(session) : session)
     setSessions((current) => current.map((session) => session.id === sessionId ? update(session) : session))
   }, [])
-  const showToast = useCallback((kind: ToastNotice['kind'], message: string) => {
-    setToast({ id: ++toastSequenceRef.current, kind, message })
+  const showToast = useCallback((kind: ToastNotice['kind'], message: string, action?: ToastNotice['action']) => {
+    setToast({ id: ++toastSequenceRef.current, kind, message, action })
   }, [])
   const {
     previewDialog,
@@ -232,6 +257,13 @@ export default function App() {
     () => profiles.find((profile) => profile.id === activeSession?.profileId) ?? null,
     [profiles, activeSession?.profileId],
   )
+  const clipboardMatchesProfile = Boolean(remoteClipboard && connectedProfile
+    && remoteClipboard.profile.id === connectedProfile.id
+    && remoteClipboard.profile.host === connectedProfile.host
+    && remoteClipboard.profile.port === connectedProfile.port
+    && remoteClipboard.profile.username === connectedProfile.username)
+  const canPasteRemote = Boolean(clipboardMatchesProfile && activeSession?.kind === 'sftp'
+    && activeSession.status === 'connected' && !activeRemoteCopy && !activeRemoteMove)
   const commandAliases = useCommandAliases({
     profiles,
     showToast,
@@ -254,7 +286,8 @@ export default function App() {
   const modalOpen = Boolean(
     profileDialog || profileDeleteDialog || createDirectoryDialog || settingsForm || previewDialog || logPreviewDialog
       || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
-      || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || activeRemoteMove?.conflict || remoteMoveSummary || searchSessionId
+      || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || activeRemoteMove?.conflict
+      || activeRemoteCopy?.conflict || remoteOperationDetailsOpen || searchSessionId
       || sessionChooserOpen || shortcutGuideOpen,
   )
   const offlineProfiles = useMemo(
@@ -313,6 +346,13 @@ export default function App() {
     }
     setActiveRemoteMove((current) => current?.requestId === event.progress.requestId
       ? { ...current, progress: event.progress }
+      : current)
+  }), [])
+
+  useEffect(() => window.remoteFiles.onRemoteCopyEvent((event: RemoteCopyEvent) => {
+    if (event.type !== 'conflict') return
+    setActiveRemoteCopy((current) => current?.requestId === event.conflict.requestId
+      ? { ...current, conflict: event.conflict, decisionPending: false }
       : current)
   }), [])
 
@@ -679,10 +719,10 @@ export default function App() {
   const openBrowserContextMenu = (menu: BrowserContextMenuState) => {
     const menuWidth = 204
     const menuHeight = menu.kind === 'directory-background'
-      ? 150
+      ? 184
       : menu.kind === 'multiple-entries'
-        ? 82
-        : menu.entry.type === 'file' ? 218 : 116
+        ? 152
+        : menu.entry.type === 'file' ? 288 : 184
     setSessionContextMenu(null)
     setBrowserContextMenu({
       ...menu,
@@ -714,6 +754,21 @@ export default function App() {
   }
 
   const copyEntryPath = (entry: RemoteEntry) => copyPath(entry.path)
+
+  const copyRemoteSelection = (selectedEntries: RemoteEntry[]) => {
+    if (!connectedProfile || !connectedSessionId || selectedEntries.length === 0) return
+    setRemoteClipboard({
+      profile: {
+        id: connectedProfile.id,
+        host: connectedProfile.host,
+        port: connectedProfile.port,
+        username: connectedProfile.username,
+      },
+      sourcePaths: selectedEntries.map((entry) => entry.path),
+    })
+    setBrowserContextMenu(null)
+    showToast('info', `已复制 ${selectedEntries.length} 项，可粘贴到目标目录`)
+  }
 
   const submitCreateDirectory = async (event: ReactFormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -787,12 +842,77 @@ export default function App() {
     if (deleted.length > 0) showToast('info', `已删除 ${deleted.length} 项`)
   }
 
+  const showRemoteOperationResult = (operation: 'move' | 'copy', result: RemoteMoveResult | RemoteCopyResult) => {
+    const label = operation === 'copy' ? '复制' : '移动'
+    const completedCount = operation === 'copy'
+      ? (result as RemoteCopyResult).copiedCount
+      : (result as RemoteMoveResult).movedCount
+    const status = result.status === 'cancelled' ? '已取消' : '已完成'
+    const counts = `已${label} ${completedCount} 项，跳过 ${result.skippedCount} 项，失败 ${result.failedCount} 项`
+      + (result.cancelledCount > 0 ? `，未完成 ${result.cancelledCount} 项` : '')
+    setRemoteOperationSummary({ operation, result })
+    setRemoteOperationDetailsOpen(false)
+    showToast('info', `远程${label}${status}：${counts}`, result.failedCount > 0
+      ? { label: `查看${label}详情`, onClick: () => setRemoteOperationDetailsOpen(true) }
+      : undefined)
+  }
+
+  const beginRemoteCopy = (targetDirectory: string) => {
+    const session = activeSession
+    const clipboard = remoteClipboard
+    if (!session || session.kind !== 'sftp' || session.status !== 'connected'
+      || !clipboard || !canPasteRemote || activeRemoteCopy || activeRemoteMove) return
+    const requestId = window.crypto.randomUUID()
+    const sourcePaths = [...clipboard.sourcePaths]
+    setBrowserContextMenu(null)
+    setActiveRemoteCopy({ requestId, sessionId: session.id, targetDirectory, conflict: null, decisionPending: false })
+    void (async () => {
+      try {
+        const result = await window.remoteFiles.copyRemoteEntries({
+          requestId,
+          sessionId: session.id,
+          sourcePaths,
+          targetDirectory,
+        })
+        showRemoteOperationResult('copy', result)
+      } catch (error) {
+        showToast('error', `复制失败：${errorMessage(error)}`)
+      } finally {
+        setActiveRemoteCopy((current) => current?.requestId === requestId ? null : current)
+        if (sessionsRef.current.some((candidate) => candidate.id === session.id
+          && candidate.status === 'connected' && candidate.currentPath === targetDirectory)) {
+          await loadDirectory(session.id, targetDirectory)
+        }
+      }
+    })()
+  }
+
+  const decideRemoteCopyConflict = async (decision: RemoteCopyDecision) => {
+    const copy = activeRemoteCopy
+    const conflict = copy?.conflict
+    if (!copy || !conflict || copy.decisionPending) return
+    setActiveRemoteCopy((current) => current?.requestId === copy.requestId
+      ? { ...current, decisionPending: true }
+      : current)
+    try {
+      const accepted = await window.remoteFiles.decideRemoteCopy(copy.requestId, conflict.conflictId, decision)
+      if (!accepted) throw new Error('复制冲突已失效，请重试')
+      setActiveRemoteCopy((current) => current?.requestId === copy.requestId && current.conflict?.conflictId === conflict.conflictId
+        ? { ...current, conflict: null, decisionPending: false }
+        : current)
+    } catch (error) {
+      showToast('error', `提交复制决策失败：${errorMessage(error)}`)
+      setActiveRemoteCopy((current) => current?.requestId === copy.requestId
+        ? { ...current, decisionPending: false }
+        : current)
+    }
+  }
+
   const beginRemoteMove = (sourcePaths: string[], targetDirectory: string) => {
     const session = activeSession
-    if (!session || session.kind !== 'sftp' || session.status !== 'connected' || activeRemoteMove) return
+    if (!session || session.kind !== 'sftp' || session.status !== 'connected' || activeRemoteMove || activeRemoteCopy) return
     const requestId = window.crypto.randomUUID()
     const currentDirectory = session.currentPath
-    setRemoteMoveSummary(null)
     setActiveRemoteMove({
       requestId,
       sessionId: session.id,
@@ -810,7 +930,7 @@ export default function App() {
           sourcePaths,
           targetDirectory,
         })
-        setRemoteMoveSummary(result)
+        showRemoteOperationResult('move', result)
       } catch (error) {
         showToast('error', `移动失败：${errorMessage(error)}`)
       } finally {
@@ -1115,6 +1235,7 @@ export default function App() {
               sortedEntries={sortedEntries}
               selectedPaths={activeSession.selectedPaths}
               moveProgress={activeRemoteMove?.sessionId === activeSession.id ? activeRemoteMove.progress : null}
+              copying={activeRemoteCopy?.sessionId === activeSession.id}
               highlightedPath={highlightedPath}
               onViewModeChange={(mode) => patchSession(activeSession.id, { viewMode: mode })}
               onNavigate={navigate}
@@ -1192,6 +1313,10 @@ export default function App() {
               setBrowserContextMenu(null)
               download([entry])
             }}
+            canPaste={canPasteRemote}
+            onCopyEntry={(entry) => copyRemoteSelection([entry])}
+            onPasteToDirectory={beginRemoteCopy}
+            onPasteToCurrentDirectory={() => beginRemoteCopy(currentPath)}
             onCopyPath={(entry) => void copyEntryPath(entry)}
             onDelete={(entry) => requestRemoteEntriesDeletion([entry])}
           />
@@ -1206,6 +1331,9 @@ export default function App() {
               setBrowserContextMenu(null)
               download(entries)
             }}
+            onCopy={copyRemoteSelection}
+            canPaste={canPasteRemote}
+            onPasteToCurrentDirectory={() => beginRemoteCopy(currentPath)}
             onDelete={requestRemoteEntriesDeletion}
           />
         )}
@@ -1224,6 +1352,8 @@ export default function App() {
               patchSession(activeSession.id, { sort: { ...sort, direction } })
             }}
             onCopyCurrentPath={() => void copyPath(browserContextMenu.directory)}
+            canPaste={canPasteRemote}
+            onPaste={() => beginRemoteCopy(browserContextMenu.directory)}
             onCreateDirectory={() => {
               setBrowserContextMenu(null)
               setCreateDirectoryDialog({ name: '' })
@@ -1367,8 +1497,20 @@ export default function App() {
           onDecision={(decision) => void decideRemoteMoveConflict(decision)}
         />
       )}
-      {remoteMoveSummary && (
-        <RemoteMoveSummaryDialog result={remoteMoveSummary} onClose={() => setRemoteMoveSummary(null)} />
+      {activeRemoteCopy?.conflict && (
+        <RemoteMoveConflictDialog
+          operation="copy"
+          conflict={activeRemoteCopy.conflict}
+          busy={activeRemoteCopy.decisionPending}
+          onDecision={(decision) => void decideRemoteCopyConflict(decision)}
+        />
+      )}
+      {remoteOperationDetailsOpen && remoteOperationSummary && (
+        <RemoteMoveSummaryDialog
+          operation={remoteOperationSummary.operation}
+          result={remoteOperationSummary.result}
+          onClose={() => setRemoteOperationDetailsOpen(false)}
+        />
       )}
 
       {searchProfile && searchSession && searchSessionId && (

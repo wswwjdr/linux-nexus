@@ -12,6 +12,10 @@ import type {
   PreviewResult,
   PreviewType,
   AppSettings,
+  RemoteCopyDecision,
+  RemoteCopyEvent,
+  RemoteCopyRequest,
+  RemoteCopyResult,
   RemoteFilesApi,
   RemoteSearchEvent,
   RemoteSearchRequest,
@@ -63,6 +67,9 @@ const api: RemoteFilesApi = {
   decideRemoteMove: (requestId: string, conflictId: string, decision: RemoteMoveDecision): Promise<boolean> =>
     ipcRenderer.invoke('files:move-decision', requestId, conflictId, decision),
   cancelRemoteMove: (requestId: string): Promise<boolean> => ipcRenderer.invoke('files:move-cancel', requestId),
+  copyRemoteEntries: (request: RemoteCopyRequest): Promise<RemoteCopyResult> => ipcRenderer.invoke('files:copy-start', request),
+  decideRemoteCopy: (requestId: string, conflictId: string, decision: RemoteCopyDecision): Promise<boolean> =>
+    ipcRenderer.invoke('files:copy-decision', requestId, conflictId, decision),
   createRemoteDirectory: (sessionId: string, remoteDirectory: string, name: string) =>
     ipcRenderer.invoke('files:create-directory', sessionId, remoteDirectory, name),
   copyRemotePath: (sessionId: string, remotePath: string) =>
@@ -91,6 +98,11 @@ const api: RemoteFilesApi = {
     const listener = (_event: Electron.IpcRendererEvent, moveEvent: RemoteMoveEvent) => callback(moveEvent)
     ipcRenderer.on('files:move-event', listener)
     return () => ipcRenderer.removeListener('files:move-event', listener)
+  },
+  onRemoteCopyEvent: (callback: (event: RemoteCopyEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, copyEvent: RemoteCopyEvent) => callback(copyEvent)
+    ipcRenderer.on('files:copy-event', listener)
+    return () => ipcRenderer.removeListener('files:copy-event', listener)
   },
   onSearchEvent: (callback: (event: RemoteSearchEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, searchEvent: RemoteSearchEvent) => callback(searchEvent)

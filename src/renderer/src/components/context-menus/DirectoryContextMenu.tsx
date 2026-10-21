@@ -1,4 +1,4 @@
-import { ArrowUpDown, Check, ChevronRight, Copy, FolderPlus, Upload } from 'lucide-react'
+import { ArrowUpDown, Check, ChevronRight, ClipboardPaste, Copy, FolderPlus, Upload } from 'lucide-react'
 import { useState, type KeyboardEvent, type RefObject } from 'react'
 import type { ContextMenuPosition, SortColumn, SortDirection } from '@/app-types'
 import ContextMenuContainer from './ContextMenuContainer'
@@ -19,6 +19,8 @@ interface DirectoryContextMenuProps {
   onSelectSortColumn: (column: SortColumn) => void
   onSelectSortDirection: (direction: SortDirection) => void
   onCopyCurrentPath: () => void
+  canPaste: boolean
+  onPaste: () => void
   onCreateDirectory: () => void
   onUpload: () => void
 }
@@ -31,6 +33,8 @@ export default function DirectoryContextMenu({
   onSelectSortColumn,
   onSelectSortDirection,
   onCopyCurrentPath,
+  canPaste,
+  onPaste,
   onCreateDirectory,
   onUpload,
 }: DirectoryContextMenuProps) {
@@ -99,6 +103,9 @@ export default function DirectoryContextMenu({
       </div>
       <button className="entry-context-action" role="menuitem" onClick={onCopyCurrentPath}>
         <Copy size={16} /> 复制路径
+      </button>
+      <button className="entry-context-action" role="menuitem" disabled={!canPaste} onClick={onPaste}>
+        <ClipboardPaste size={16} /> 粘贴
       </button>
       <button className="entry-context-action" role="menuitem" onClick={onCreateDirectory}>
         <FolderPlus size={16} /> 新建文件夹

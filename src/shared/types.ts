@@ -224,6 +224,34 @@ export interface RemoteMoveResult {
   cancelledCount: number
 }
 
+export interface RemoteCopyRequest {
+  requestId: string
+  sessionId: string
+  sourcePaths: string[]
+  targetDirectory: string
+}
+
+export type RemoteCopyDecision = RemoteMoveDecision
+export type RemoteCopyConflict = RemoteMoveConflict
+
+export interface RemoteCopyItemResult {
+  sourcePath: string
+  sourceName: string
+  status: 'copied' | 'skipped' | 'failed' | 'cancelled'
+  message?: string
+}
+
+export interface RemoteCopyResult {
+  status: 'completed' | 'cancelled'
+  results: RemoteCopyItemResult[]
+  copiedCount: number
+  skippedCount: number
+  failedCount: number
+  cancelledCount: number
+}
+
+export type RemoteCopyEvent = { type: 'conflict'; conflict: RemoteCopyConflict }
+
 export type TransferResult =
   | { status: 'completed' }
   | { status: 'completed-with-errors'; failures: TransferFailure[] }
@@ -301,6 +329,8 @@ export interface RemoteFilesApi {
   moveRemoteEntries(request: RemoteMoveRequest): Promise<RemoteMoveResult>
   decideRemoteMove(requestId: string, conflictId: string, decision: RemoteMoveDecision): Promise<boolean>
   cancelRemoteMove(requestId: string): Promise<boolean>
+  copyRemoteEntries(request: RemoteCopyRequest): Promise<RemoteCopyResult>
+  decideRemoteCopy(requestId: string, conflictId: string, decision: RemoteCopyDecision): Promise<boolean>
   createRemoteDirectory(sessionId: string, remoteDirectory: string, name: string): Promise<void>
   copyRemotePath(sessionId: string, remotePath: string): Promise<void>
   deleteRemoteEntry(sessionId: string, remotePath: string): Promise<void>
@@ -322,6 +352,7 @@ export interface RemoteFilesApi {
   onTransferProgress(callback: (progress: TransferProgress) => void): () => void
   onTransferQueued(callback: (event: TransferQueuedEvent) => void): () => void
   onRemoteMoveEvent(callback: (event: RemoteMoveEvent) => void): () => void
+  onRemoteCopyEvent(callback: (event: RemoteCopyEvent) => void): () => void
   onSearchEvent(callback: (event: RemoteSearchEvent) => void): () => void
   onConnectionClosed(callback: (event: ConnectionClosedEvent) => void): () => void
   onTerminalOutput(callback: (event: TerminalOutputEvent) => void): () => void

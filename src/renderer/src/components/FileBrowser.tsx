@@ -33,6 +33,7 @@ interface FileBrowserProps {
   sortedEntries: RemoteEntry[]
   selectedPaths: string[]
   moveProgress: RemoteMoveProgress | null
+  copying: boolean
   highlightedPath: string | null
   onViewModeChange: (mode: FileViewMode) => void
   onNavigate: (path: string) => void
@@ -178,6 +179,7 @@ export default function FileBrowser({
   sortedEntries,
   selectedPaths,
   moveProgress,
+  copying,
   highlightedPath,
   onViewModeChange,
   onNavigate,
@@ -272,7 +274,7 @@ export default function FileBrowser({
         ? sortedEntries.find((entry) => entry.path === targetElement.dataset.entryPath)
         : undefined
       const sourcePaths = readRemoteMovePaths(event.dataTransfer)
-      event.dataTransfer.dropEffect = !moveProgress && target?.type === 'directory' && !sourcePaths.includes(target.path) ? 'move' : 'none'
+      event.dataTransfer.dropEffect = !moveProgress && !copying && target?.type === 'directory' && !sourcePaths.includes(target.path) ? 'move' : 'none'
       return
     }
     event.dataTransfer.dropEffect = hasDraggedFiles(event.dataTransfer) ? 'copy' : 'none'
@@ -299,7 +301,7 @@ export default function FileBrowser({
   }
 
   const handleEntryDragStart = (entry: RemoteEntry, event: ReactDragEvent<HTMLElement>) => {
-    if (moveProgress || (entry.type !== 'file' && entry.type !== 'directory')) {
+    if (moveProgress || copying || (entry.type !== 'file' && entry.type !== 'directory')) {
       event.preventDefault()
       return
     }
@@ -321,7 +323,7 @@ export default function FileBrowser({
     if (!hasRemoteMove(event.dataTransfer)) return
     event.preventDefault()
     const paths = readRemoteMovePaths(event.dataTransfer)
-    const validTarget = !moveProgress && entry.type === 'directory' && paths.length > 0 && !paths.includes(entry.path)
+    const validTarget = !moveProgress && !copying && entry.type === 'directory' && paths.length > 0 && !paths.includes(entry.path)
     event.dataTransfer.dropEffect = validTarget ? 'move' : 'none'
     setDropTargetPath(validTarget ? entry.path : null)
   }
@@ -337,7 +339,7 @@ export default function FileBrowser({
     event.stopPropagation()
     setDropTargetPath(null)
     const paths = readRemoteMovePaths(event.dataTransfer)
-    if (moveProgress || entry.type !== 'directory' || paths.length === 0) return
+    if (moveProgress || copying || entry.type !== 'directory' || paths.length === 0) return
     if (paths.includes(entry.path)) {
       onDropError(new Error('不能将文件夹移动到自身'))
       return
@@ -620,6 +622,12 @@ export default function FileBrowser({
             <button type="button" className="icon-button" title="取消移动" aria-label="取消移动" onClick={onCancelMove}><X size={14} /></button>
           </div>
         )}
+        {copying && (
+          <div className="remote-copy-status" role="status">
+            <LoaderCircle className="spin" size={15} />
+            <span>正在复制远端项目…</span>
+          </div>
+        )}
         {viewMode === 'details' ? (
           <table className="file-table">
             <thead>
@@ -644,7 +652,7 @@ export default function FileBrowser({
                   className={'file-row ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selectedPaths.includes(entry.path) ? 'selected ' : '') + (dropTargetPath === entry.path ? 'drop-target' : '')}
                   key={entry.path}
                   data-entry-path={entry.path}
-                  draggable={!moveProgress && (entry.type === 'file' || entry.type === 'directory')}
+                  draggable={!moveProgress && !copying && (entry.type === 'file' || entry.type === 'directory')}
                   aria-selected={selectedPaths.includes(entry.path)}
                   tabIndex={entry.path === highlightedPath ? 0 : -1}
                   onClick={(event) => handleEntryClick(entry.path, event)}
@@ -681,7 +689,7 @@ export default function FileBrowser({
                 className={'file-tile ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selectedPaths.includes(entry.path) ? 'selected ' : '') + (dropTargetPath === entry.path ? 'drop-target' : '')}
                 key={entry.path}
                 data-entry-path={entry.path}
-                draggable={!moveProgress && (entry.type === 'file' || entry.type === 'directory')}
+                draggable={!moveProgress && !copying && (entry.type === 'file' || entry.type === 'directory')}
                 aria-label={entry.name}
                 aria-describedby={hoveredEntry?.entry.path === entry.path ? 'entry-hover-details' : undefined}
                 tabIndex={entry.path === highlightedPath ? 0 : -1}

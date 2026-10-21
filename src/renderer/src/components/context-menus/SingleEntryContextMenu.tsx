@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ChevronRight, Copy, Eye, FileText, Trash2 } from 'lucide-react'
+import { ArrowDownToLine, ChevronRight, ClipboardPaste, Copy, Eye, FileText, Trash2 } from 'lucide-react'
 import { useState, type KeyboardEvent, type RefObject } from 'react'
 import type { PreviewExtensions, PreviewType, RemoteEntry } from '@shared/types'
 import { previewFileTypes, previewTypeLabels } from '@shared/preview-file-type'
@@ -14,6 +14,10 @@ interface SingleEntryContextMenuProps {
   onPreview: (entry: RemoteEntry, type: PreviewType) => void
   onPreviewLog: (entry: RemoteEntry) => void
   onDownload: (entry: RemoteEntry) => void
+  canPaste: boolean
+  onCopyEntry: (entry: RemoteEntry) => void
+  onPasteToDirectory: (directory: string) => void
+  onPasteToCurrentDirectory: () => void
   onCopyPath: (entry: RemoteEntry) => void
   onDelete: (entry: RemoteEntry) => void
 }
@@ -27,6 +31,10 @@ export default function SingleEntryContextMenu({
   onPreview,
   onPreviewLog,
   onDownload,
+  canPaste,
+  onCopyEntry,
+  onPasteToDirectory,
+  onPasteToCurrentDirectory,
   onCopyPath,
   onDelete,
 }: SingleEntryContextMenuProps) {
@@ -83,6 +91,19 @@ export default function SingleEntryContextMenu({
       <button className="entry-context-action download-action" role="menuitem" onClick={() => onDownload(entry)}>
         <ArrowDownToLine size={16} /> {entry.type === 'directory' ? '下载文件夹' : '下载文件'}
       </button>
+      <button className="entry-context-action" role="menuitem" onClick={() => onCopyEntry(entry)}>
+        <Copy size={16} /> 复制
+      </button>
+      {entry.type === 'directory' && (
+        <button className="entry-context-action" role="menuitem" disabled={!canPaste} onClick={() => onPasteToDirectory(entry.path)}>
+          <ClipboardPaste size={16} /> 粘贴到文件夹
+        </button>
+      )}
+      {entry.type !== 'directory' && (
+        <button className="entry-context-action" role="menuitem" disabled={!canPaste} onClick={onPasteToCurrentDirectory}>
+          <ClipboardPaste size={16} /> 粘贴到当前目录
+        </button>
+      )}
       <button className="entry-context-action" role="menuitem" onClick={() => onCopyPath(entry)}>
         <Copy size={16} /> 复制路径
       </button>
