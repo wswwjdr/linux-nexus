@@ -147,6 +147,7 @@ export default function FileBrowser({
   const hoverTimerRef = useRef<number | null>(null)
   const dragDepthRef = useRef(0)
   const [dropActive, setDropActive] = useState(false)
+  const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [hoveredEntry, setHoveredEntry] = useState<{
     entry: RemoteEntry
     anchorLeft: number
@@ -234,6 +235,10 @@ export default function FileBrowser({
   }, [highlightedPath, sortedEntries, viewMode])
 
   useEffect(() => {
+    setSelectedPath(null)
+  }, [currentPath, entries])
+
+  useEffect(() => {
     if (hoverTimerRef.current !== null) {
       window.clearTimeout(hoverTimerRef.current)
       hoverTimerRef.current = null
@@ -308,6 +313,10 @@ export default function FileBrowser({
         className="file-content-wrap"
         ref={contentRef}
         onContextMenu={onBackgroundContextMenu}
+        onClick={(event) => {
+          if ((event.target as Element).closest('[data-entry-path], button, a, input, select, textarea, th')) return
+          setSelectedPath(null)
+        }}
         onScroll={() => setHoveredEntry(null)}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
@@ -335,15 +344,26 @@ export default function FileBrowser({
             <tbody>
               {sortedEntries.map((entry) => (
                 <tr
-                  className={'file-row ' + (entry.path === highlightedPath ? 'search-highlight' : '')}
+                  className={'file-row ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (entry.path === selectedPath ? 'selected' : '')}
                   key={entry.path}
                   data-entry-path={entry.path}
-                  tabIndex={entry.type === 'file' || entry.path === highlightedPath ? 0 : -1}
-                  onContextMenu={(event) => onEntryContextMenu(event, entry)}
+                  aria-selected={entry.path === selectedPath}
+                  tabIndex={entry.path === highlightedPath ? 0 : -1}
+                  onClick={() => setSelectedPath(entry.path)}
+                  onContextMenu={(event) => {
+                    setSelectedPath(entry.path)
+                    onEntryContextMenu(event, entry)
+                  }}
                   onKeyDown={(event) => onEntryKeyDown(event, entry)}
                 >
                   <td className="name-col" title={entry.name}>
-                    <button className={'entry-name ' + (entry.type === 'directory' ? 'directory-entry' : '')} title={entry.name} onDoubleClick={() => entry.type === 'directory' && onNavigate(entry.path)} disabled={entry.type !== 'directory'}>
+                    <button
+                      className={'entry-name ' + (entry.type === 'directory' ? 'directory-entry' : '')}
+                      title={entry.name}
+                      aria-pressed={entry.path === selectedPath}
+                      onFocus={() => setSelectedPath(entry.path)}
+                      onDoubleClick={() => entry.type === 'directory' && onNavigate(entry.path)}
+                    >
                       <span className={'entry-icon ' + (entry.type === 'directory' ? 'folder-icon' : '')}>
                         {entry.type === 'directory' ? <Folder size={17} fill="currentColor" strokeWidth={1.8} /> : <File size={16} />}
                       </span>
@@ -361,27 +381,34 @@ export default function FileBrowser({
           <div className="file-icon-grid">
             {sortedEntries.map((entry) => (
               <article
-                className={'file-tile ' + (entry.path === highlightedPath ? 'search-highlight' : '')}
+                className={'file-tile ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (entry.path === selectedPath ? 'selected' : '')}
                 key={entry.path}
                 data-entry-path={entry.path}
                 aria-label={entry.name}
                 aria-describedby={hoveredEntry?.entry.path === entry.path ? 'entry-hover-details' : undefined}
-                tabIndex={entry.type === 'file' || entry.path === highlightedPath ? 0 : -1}
+                tabIndex={entry.path === highlightedPath ? 0 : -1}
+                onClick={() => setSelectedPath(entry.path)}
                 onMouseEnter={(event) => scheduleEntryDetails(entry, event.currentTarget)}
                 onMouseLeave={(event) => {
                   if (event.relatedTarget instanceof Node && hoverCardRef.current?.contains(event.relatedTarget)) return
                   cancelEntryDetails()
                 }}
-                onFocus={(event) => showEntryDetails(entry, event.currentTarget)}
+                onFocus={(event) => {
+                  setSelectedPath(entry.path)
+                  showEntryDetails(entry, event.currentTarget)
+                }}
                 onBlur={hideEntryDetailsOnBlur}
-                onContextMenu={(event) => onEntryContextMenu(event, entry)}
+                onContextMenu={(event) => {
+                  setSelectedPath(entry.path)
+                  onEntryContextMenu(event, entry)
+                }}
                 onKeyDown={(event) => onEntryKeyDown(event, entry)}
               >
                 <button
                   className={'file-tile-main ' + (entry.type === 'directory' ? 'directory-entry' : '')}
                   aria-label={entry.name}
+                  aria-pressed={entry.path === selectedPath}
                   onDoubleClick={() => entry.type === 'directory' && onNavigate(entry.path)}
-                  disabled={entry.type !== 'directory'}
                 >
                   <span className={'tile-glyph ' + (entry.type === 'directory' ? 'folder-glyph' : '')}>
                     {entry.type === 'directory'
