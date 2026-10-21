@@ -114,6 +114,8 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .view-toggle-button[aria-pressed="true"] { border-color: #dce7de; color: var(--green); background: white; box-shadow: 0 1px 2px #273a2e12; }
 .path-count { color: #8c9890; font-size: 11px; white-space: nowrap; }
 .file-content-wrap { min-height: 0; flex: 1; overflow: auto; position: relative; }
+.file-content-wrap.selecting, .file-content-wrap.selecting * { user-select: none; cursor: crosshair; }
+.selection-marquee { position: fixed; z-index: 5; border: 1px solid #56886a; background: #a8cfb44a; pointer-events: none; }
 .file-drop-overlay { position: absolute; z-index: 4; inset: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 20px; border: 2px dashed #76a994; border-radius: 5px; color: #345c46; background: #f7fbf8ee; text-align: center; pointer-events: none; }
 .file-drop-overlay > svg { flex: 0 0 auto; color: var(--green); }
 .file-drop-overlay strong { color: #345c46; font-size: 14px; font-weight: 600; }
