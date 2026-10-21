@@ -34,7 +34,6 @@ interface FileBrowserProps {
   selectedPaths: string[]
   moveProgress: RemoteMoveProgress | null
   copying: boolean
-  canPaste: boolean
   highlightedPath: string | null
   onViewModeChange: (mode: FileViewMode) => void
   onNavigate: (path: string) => void
@@ -42,9 +41,6 @@ interface FileBrowserProps {
   onSelectedPathsChange: (paths: string[]) => void
   onOpenEntryContextMenu: (entries: RemoteEntry[], x: number, y: number) => void
   onOpenDirectoryContextMenu: (x: number, y: number) => void
-  onCopyEntries: (entries: RemoteEntry[]) => void
-  onCutEntries: (entries: RemoteEntry[]) => void
-  onPasteToCurrentDirectory: () => void
   onDeleteEntries: (entries: RemoteEntry[]) => void
   onDropUpload: (entries: DroppedUploadEntry[]) => void
   onDropMove: (sourcePaths: string[], targetDirectory: string) => void
@@ -184,7 +180,6 @@ export default function FileBrowser({
   selectedPaths,
   moveProgress,
   copying,
-  canPaste,
   highlightedPath,
   onViewModeChange,
   onNavigate,
@@ -192,9 +187,6 @@ export default function FileBrowser({
   onSelectedPathsChange,
   onOpenEntryContextMenu,
   onOpenDirectoryContextMenu,
-  onCopyEntries,
-  onCutEntries,
-  onPasteToCurrentDirectory,
   onDeleteEntries,
   onDropUpload,
   onDropMove,
@@ -576,24 +568,6 @@ export default function FileBrowser({
       ? sortedEntries.find((entry) => entry.path === entryElement.dataset.entryPath)
       : undefined
     const targets = selectedEntries()
-    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
-      const key = event.key.toLowerCase()
-      if (key === 'c' && targets.length > 0) {
-        event.preventDefault()
-        onCopyEntries(targets)
-        return
-      }
-      if (key === 'x' && targets.length > 0) {
-        event.preventDefault()
-        onCutEntries(targets)
-        return
-      }
-      if (key === 'v' && canPaste) {
-        event.preventDefault()
-        onPasteToCurrentDirectory()
-        return
-      }
-    }
     if (event.key === 'Delete') {
       const deletions = targets.length > 0 ? targets : focusedEntry && (focusedEntry.type === 'file' || focusedEntry.type === 'directory') ? [focusedEntry] : []
       if (deletions.length === 0) return

@@ -1061,6 +1061,48 @@ export default function App() {
     return sort.direction === 'ascending' ? comparison : -comparison
   }), [entries, sort])
 
+  useEffect(() => {
+    const handleRemoteFileShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || modalOpen || browserContextMenu || sessionContextMenu) return
+      if (!activeSession || activeSession.kind !== 'sftp' || activeSession.status !== 'connected') return
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
+
+      const target = event.target
+      if (target instanceof HTMLElement
+        && (target.isContentEditable || target.closest('input, textarea, select, [contenteditable="true"]'))) return
+
+      const key = event.key.toLowerCase()
+      if (key === 'c' || key === 'x') {
+        const selectedPaths = new Set(activeSession.selectedPaths)
+        const selectedEntries = sortedEntries.filter((entry) => selectedPaths.has(entry.path)
+          && (entry.type === 'file' || entry.type === 'directory'))
+        if (selectedEntries.length === 0) return
+        event.preventDefault()
+        if (key === 'c') copyRemoteSelection(selectedEntries)
+        else cutRemoteSelection(selectedEntries)
+        return
+      }
+
+      if (key === 'v' && canPasteRemote) {
+        event.preventDefault()
+        pasteRemoteEntries(activeSession.currentPath)
+      }
+    }
+
+    window.addEventListener('keydown', handleRemoteFileShortcut)
+    return () => window.removeEventListener('keydown', handleRemoteFileShortcut)
+  }, [
+    activeSession,
+    browserContextMenu,
+    canPasteRemote,
+    copyRemoteSelection,
+    cutRemoteSelection,
+    modalOpen,
+    pasteRemoteEntries,
+    sessionContextMenu,
+    sortedEntries,
+  ])
+
   const toggleSort = (column: SortColumn) => {
     if (!activeSession || activeSession.kind !== 'sftp') return
     patchSession(activeSession.id, {
@@ -1267,7 +1309,6 @@ export default function App() {
               selectedPaths={activeSession.selectedPaths}
               moveProgress={activeRemoteMove?.sessionId === activeSession.id ? activeRemoteMove.progress : null}
               copying={activeRemoteCopy?.sessionId === activeSession.id}
-              canPaste={canPasteRemote}
               highlightedPath={highlightedPath}
               onViewModeChange={(mode) => patchSession(activeSession.id, { viewMode: mode })}
               onNavigate={navigate}
@@ -1275,9 +1316,6 @@ export default function App() {
               onSelectedPathsChange={(selectedPaths) => patchSession(activeSession.id, { selectedPaths })}
               onOpenEntryContextMenu={openEntryContextMenu}
               onOpenDirectoryContextMenu={openDirectoryContextMenu}
-              onCopyEntries={copyRemoteSelection}
-              onCutEntries={cutRemoteSelection}
-              onPasteToCurrentDirectory={() => pasteRemoteEntries(currentPath)}
               onDeleteEntries={requestRemoteEntriesDeletion}
               onDropUpload={uploadDroppedEntries}
               onDropMove={beginRemoteMove}
