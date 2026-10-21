@@ -343,7 +343,7 @@ export default function FileBrowser({
                   onKeyDown={(event) => onEntryKeyDown(event, entry)}
                 >
                   <td className="name-col" title={entry.name}>
-                    <button className={'entry-name ' + (entry.type === 'directory' ? 'directory-entry' : '')} title={entry.name} onClick={() => entry.type === 'directory' && onNavigate(entry.path)} disabled={entry.type !== 'directory'}>
+                    <button className={'entry-name ' + (entry.type === 'directory' ? 'directory-entry' : '')} title={entry.name} onDoubleClick={() => entry.type === 'directory' && onNavigate(entry.path)} disabled={entry.type !== 'directory'}>
                       <span className={'entry-icon ' + (entry.type === 'directory' ? 'folder-icon' : '')}>
                         {entry.type === 'directory' ? <Folder size={17} fill="currentColor" strokeWidth={1.8} /> : <File size={16} />}
                       </span>
@@ -380,7 +380,7 @@ export default function FileBrowser({
                 <button
                   className={'file-tile-main ' + (entry.type === 'directory' ? 'directory-entry' : '')}
                   aria-label={entry.name}
-                  onClick={() => entry.type === 'directory' && onNavigate(entry.path)}
+                  onDoubleClick={() => entry.type === 'directory' && onNavigate(entry.path)}
                   disabled={entry.type !== 'directory'}
                 >
                   <span className={'tile-glyph ' + (entry.type === 'directory' ? 'folder-glyph' : '')}>
