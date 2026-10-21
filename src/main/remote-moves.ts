@@ -44,23 +44,17 @@ function remoteErrorMessage(error: unknown): string {
 }
 
 function validateRequest(request: RemoteMoveRequest): RemoteMoveRequest {
-  const currentDirectory = normalizedRemotePath(request.currentDirectory)
   const targetDirectory = normalizedRemotePath(request.targetDirectory)
   const sourcePaths = request.sourcePaths.map(normalizedRemotePath)
   if (!request.requestId || !request.sessionId || sourcePaths.length === 0) throw new Error('移动请求无效')
-  if (posix.dirname(targetDirectory) !== currentDirectory || targetDirectory === currentDirectory) {
-    throw new Error('目标文件夹必须位于当前目录中')
-  }
   if (new Set(sourcePaths).size !== sourcePaths.length) throw new Error('移动项目包含重复路径')
   for (const sourcePath of sourcePaths) {
-    if (sourcePath === '/' || posix.dirname(sourcePath) !== currentDirectory) {
-      throw new Error('只能移动当前目录中的项目，且不能移动服务器根目录')
-    }
+    if (sourcePath === '/') throw new Error('不能移动服务器根目录')
     if (targetDirectory === sourcePath || targetDirectory.startsWith(sourcePath + '/')) {
       throw new Error('不能将文件夹移动到自身或其子文件夹中')
     }
   }
-  return { ...request, currentDirectory, targetDirectory, sourcePaths }
+  return { ...request, targetDirectory, sourcePaths }
 }
 
 function assertNotAborted(signal: AbortSignal): void {
@@ -239,6 +233,7 @@ export async function executeRemoteMove(
     })
     const outcome = emptyOutcome()
     if (signal.aborted) outcome.cancelled = true
+    else if (posix.dirname(sourcePath) === request.targetDirectory) outcome.skippedCount = 1
     else {
       try {
         mergeOutcome(outcome, await moveNode(sourcePath, posix.join(request.targetDirectory, posix.basename(sourcePath))))

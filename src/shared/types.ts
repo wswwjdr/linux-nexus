@@ -176,7 +176,6 @@ export interface TransferQueuedEvent {
 export interface RemoteMoveRequest {
   requestId: string
   sessionId: string
-  currentDirectory: string
   sourcePaths: string[]
   targetDirectory: string
 }

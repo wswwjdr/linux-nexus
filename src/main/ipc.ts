@@ -60,7 +60,6 @@ function parseRemoteMoveRequest(value: unknown): RemoteMoveRequest {
   const request = value as Partial<RemoteMoveRequest>
   if (typeof request.requestId !== 'string' || !request.requestId || request.requestId.length > 128
     || typeof request.sessionId !== 'string' || !request.sessionId
-    || typeof request.currentDirectory !== 'string'
     || typeof request.targetDirectory !== 'string'
     || !Array.isArray(request.sourcePaths) || request.sourcePaths.length === 0
     || request.sourcePaths.some((path) => typeof path !== 'string')) {

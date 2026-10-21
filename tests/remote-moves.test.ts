@@ -80,11 +80,10 @@ function makeSftp(initial: Record<string, MockEntry>, options: MockSftpOptions =
   return fake as unknown as SFTPWrapper
 }
 
-function request(sourcePaths: string[], targetDirectory = '/home/target', currentDirectory = '/home'): RemoteMoveRequest {
+function request(sourcePaths: string[], targetDirectory = '/home/target'): RemoteMoveRequest {
   return {
     requestId: 'move-test',
     sessionId: 'session-test',
-    currentDirectory,
     sourcePaths,
     targetDirectory,
   }
@@ -253,7 +252,7 @@ test('continues after one failed item and reports cross-filesystem rename withou
   }, {
     failRename: (sourcePath) => sourcePath === '/srv/fails',
   })
-  const { result } = await runMove(sftp, request(['/srv/fails', '/srv/works'], '/srv/dest', '/srv'))
+  const { result } = await runMove(sftp, request(['/srv/fails', '/srv/works'], '/srv/dest'))
 
   assert.equal(result.status, 'completed')
   assert.equal(result.failedCount, 1)
@@ -265,7 +264,7 @@ test('continues after one failed item and reports cross-filesystem rename withou
   const crossDeviceSftp = makeSftp({
     '/srv': { type: 'directory' }, '/srv/dest': { type: 'directory' }, '/srv/item': { type: 'file' },
   }, { mountRoots: ['/srv/dest'] })
-  const crossDevice = await runMove(crossDeviceSftp, request(['/srv/item'], '/srv/dest', '/srv'))
+  const crossDevice = await runMove(crossDeviceSftp, request(['/srv/item'], '/srv/dest'))
   assert.match(crossDevice.result.results[0].message ?? '', /跨远端文件系统/)
   await new Promise<void>((resolve, reject) => crossDeviceSftp.lstat('/srv/item', (error) => error ? reject(error) : resolve()))
 })
@@ -286,6 +285,6 @@ test('rejects root, duplicate, unsupported, non-directory and self-descendant mo
   await rejects(request(['/home/file', '/home/file']), /重复路径/)
   await rejects(request(['/home/link']), /不支持移动/)
   await rejects(request(['/home/file'], '/home/not-a-folder'), /不是文件夹/)
-  await rejects(request(['/home/folder'], '/home/folder/child'), /目标文件夹必须位于当前目录中/)
-  await rejects(request(['/home/folder'], '/home/folder', '/home'), /不能将文件夹移动到自身/)
+  await rejects(request(['/home/folder'], '/home/folder/child'), /不能将文件夹移动到自身或其子文件夹/)
+  await rejects(request(['/home/folder'], '/home/folder'), /不能将文件夹移动到自身或其子文件夹/)
 })

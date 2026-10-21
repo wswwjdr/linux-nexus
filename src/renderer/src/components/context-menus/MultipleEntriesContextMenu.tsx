@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ClipboardPaste, Copy, Trash2 } from 'lucide-react'
+import { ArrowDownToLine, ClipboardPaste, Copy, Scissors, Trash2 } from 'lucide-react'
 import type { KeyboardEvent, RefObject } from 'react'
 import type { RemoteEntry } from '@shared/types'
 import type { ContextMenuPosition } from '@/app-types'
@@ -11,12 +11,13 @@ interface MultipleEntriesContextMenuProps {
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
   onDownload: (entries: RemoteEntry[]) => void
   onCopy: (entries: RemoteEntry[]) => void
+  onCut: (entries: RemoteEntry[]) => void
   canPaste: boolean
   onPasteToCurrentDirectory: () => void
   onDelete: (entries: RemoteEntry[]) => void
 }
 
-export default function MultipleEntriesContextMenu({ entries, position, elementRef, onKeyDown, onDownload, onCopy, canPaste, onPasteToCurrentDirectory, onDelete }: MultipleEntriesContextMenuProps) {
+export default function MultipleEntriesContextMenu({ entries, position, elementRef, onKeyDown, onDownload, onCopy, onCut, canPaste, onPasteToCurrentDirectory, onDelete }: MultipleEntriesContextMenuProps) {
   return (
     <ContextMenuContainer
       position={position}
@@ -29,6 +30,9 @@ export default function MultipleEntriesContextMenu({ entries, position, elementR
       </button>
       <button className="entry-context-action" role="menuitem" onClick={() => onCopy(entries)}>
         <Copy size={16} /> 复制 {entries.length} 项
+      </button>
+      <button className="entry-context-action" role="menuitem" onClick={() => onCut(entries)}>
+        <Scissors size={16} /> 剪切 {entries.length} 项
       </button>
       <button className="entry-context-action" role="menuitem" disabled={!canPaste} onClick={onPasteToCurrentDirectory}>
         <ClipboardPaste size={16} /> 粘贴到当前目录

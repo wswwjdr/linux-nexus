@@ -43,6 +43,7 @@ interface FileBrowserProps {
   onOpenEntryContextMenu: (entries: RemoteEntry[], x: number, y: number) => void
   onOpenDirectoryContextMenu: (x: number, y: number) => void
   onCopyEntries: (entries: RemoteEntry[]) => void
+  onCutEntries: (entries: RemoteEntry[]) => void
   onPasteToCurrentDirectory: () => void
   onDeleteEntries: (entries: RemoteEntry[]) => void
   onDropUpload: (entries: DroppedUploadEntry[]) => void
@@ -192,6 +193,7 @@ export default function FileBrowser({
   onOpenEntryContextMenu,
   onOpenDirectoryContextMenu,
   onCopyEntries,
+  onCutEntries,
   onPasteToCurrentDirectory,
   onDeleteEntries,
   onDropUpload,
@@ -558,6 +560,11 @@ export default function FileBrowser({
       if (key === 'c' && targets.length > 0) {
         event.preventDefault()
         onCopyEntries(targets)
+        return
+      }
+      if (key === 'x' && targets.length > 0) {
+        event.preventDefault()
+        onCutEntries(targets)
         return
       }
       if (key === 'v' && canPaste) {

@@ -69,13 +69,13 @@ interface SessionContextMenuState {
 interface ActiveRemoteMove {
   requestId: string
   sessionId: string
-  currentDirectory: string
   progress: RemoteMoveProgress
   conflict: RemoteMoveConflict | null
   decisionPending: boolean
 }
 
 interface RemoteClipboard {
+  mode: 'copy' | 'cut'
   profile: Pick<ServerProfile, 'id' | 'host' | 'port' | 'username'>
   sourcePaths: string[]
 }
@@ -753,9 +753,10 @@ export default function App() {
 
   const copyEntryPath = (entry: RemoteEntry) => copyPath(entry.path)
 
-  const copyRemoteSelection = (selectedEntries: RemoteEntry[]) => {
+  const setRemoteSelectionClipboard = (selectedEntries: RemoteEntry[], mode: RemoteClipboard['mode']) => {
     if (!connectedProfile || !connectedSessionId || selectedEntries.length === 0) return
     setRemoteClipboard({
+      mode,
       profile: {
         id: connectedProfile.id,
         host: connectedProfile.host,
@@ -765,8 +766,11 @@ export default function App() {
       sourcePaths: selectedEntries.map((entry) => entry.path),
     })
     setBrowserContextMenu(null)
-    showToast('info', `已复制 ${selectedEntries.length} 项，可粘贴到目标目录`)
+    showToast('info', `已${mode === 'copy' ? '复制' : '剪切'} ${selectedEntries.length} 项，可粘贴到目标目录`)
   }
+
+  const copyRemoteSelection = (selectedEntries: RemoteEntry[]) => setRemoteSelectionClipboard(selectedEntries, 'copy')
+  const cutRemoteSelection = (selectedEntries: RemoteEntry[]) => setRemoteSelectionClipboard(selectedEntries, 'cut')
 
   const submitCreateDirectory = async (event: ReactFormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -906,16 +910,17 @@ export default function App() {
     }
   }
 
-  const beginRemoteMove = (sourcePaths: string[], targetDirectory: string) => {
+  const beginRemoteMove = (sourcePaths: string[], targetDirectory: string, consumeCutClipboard = false) => {
     const session = activeSession
     if (!session || session.kind !== 'sftp' || session.status !== 'connected' || activeRemoteMove || activeRemoteCopy) return
+    const cutClipboard = consumeCutClipboard && remoteClipboard?.mode === 'cut' ? remoteClipboard : null
     const requestId = window.crypto.randomUUID()
-    const currentDirectory = session.currentPath
+    const profileId = session.profileId
+    const pathsToMove = [...sourcePaths]
     setActiveRemoteMove({
       requestId,
       sessionId: session.id,
-      currentDirectory,
-      progress: { requestId, sessionId: session.id, completedCount: 0, totalCount: sourcePaths.length, currentPath: null },
+      progress: { requestId, sessionId: session.id, completedCount: 0, totalCount: pathsToMove.length, currentPath: null },
       conflict: null,
       decisionPending: false,
     })
@@ -924,18 +929,46 @@ export default function App() {
         const result = await window.remoteFiles.moveRemoteEntries({
           requestId,
           sessionId: session.id,
-          currentDirectory,
-          sourcePaths,
+          sourcePaths: pathsToMove,
           targetDirectory,
         })
         showRemoteOperationResult('move', result)
+        if (cutClipboard && cutClipboard.sourcePaths.length === pathsToMove.length
+          && cutClipboard.sourcePaths.every((path, index) => path === pathsToMove[index])) {
+          const completedPaths = new Set(result.results
+            .filter((item) => item.status === 'moved' && !item.message)
+            .map((item) => item.sourcePath))
+          const remainingPaths = pathsToMove.filter((path) => !completedPaths.has(path))
+          setRemoteClipboard((current) => current?.mode === 'cut'
+            && current.profile.id === cutClipboard.profile.id
+            && current.profile.host === cutClipboard.profile.host
+            && current.profile.port === cutClipboard.profile.port
+            && current.profile.username === cutClipboard.profile.username
+            && current.sourcePaths.length === cutClipboard.sourcePaths.length
+            && current.sourcePaths.every((path, index) => path === cutClipboard.sourcePaths[index])
+            ? remainingPaths.length > 0 ? { ...current, sourcePaths: current.sourcePaths.filter((path) => remainingPaths.includes(path)) } : null
+            : current)
+        }
       } catch (error) {
         showToast('error', `移动失败：${errorMessage(error)}`)
       } finally {
         setActiveRemoteMove((current) => current?.requestId === requestId ? null : current)
-        await loadDirectory(session.id, currentDirectory)
+        const affectedDirectories = new Set([
+          ...pathsToMove.map(getParentPath),
+          targetDirectory,
+          getParentPath(targetDirectory),
+        ])
+        const sessionsToRefresh = sessionsRef.current.filter((candidate) => candidate.profileId === profileId
+          && candidate.kind === 'sftp' && candidate.status === 'connected'
+          && affectedDirectories.has(candidate.currentPath))
+        await Promise.all(sessionsToRefresh.map((candidate) => loadDirectory(candidate.id, candidate.currentPath)))
       }
     })()
+  }
+
+  const pasteRemoteEntries = (targetDirectory: string) => {
+    if (remoteClipboard?.mode === 'cut') beginRemoteMove(remoteClipboard.sourcePaths, targetDirectory, true)
+    else beginRemoteCopy(targetDirectory)
   }
 
   const decideRemoteMoveConflict = async (decision: RemoteMoveDecision) => {
@@ -1243,7 +1276,8 @@ export default function App() {
               onOpenEntryContextMenu={openEntryContextMenu}
               onOpenDirectoryContextMenu={openDirectoryContextMenu}
               onCopyEntries={copyRemoteSelection}
-              onPasteToCurrentDirectory={() => beginRemoteCopy(currentPath)}
+              onCutEntries={cutRemoteSelection}
+              onPasteToCurrentDirectory={() => pasteRemoteEntries(currentPath)}
               onDeleteEntries={requestRemoteEntriesDeletion}
               onDropUpload={uploadDroppedEntries}
               onDropMove={beginRemoteMove}
@@ -1316,8 +1350,9 @@ export default function App() {
             }}
             canPaste={canPasteRemote}
             onCopyEntry={(entry) => copyRemoteSelection([entry])}
-            onPasteToDirectory={beginRemoteCopy}
-            onPasteToCurrentDirectory={() => beginRemoteCopy(currentPath)}
+            onCutEntry={(entry) => cutRemoteSelection([entry])}
+            onPasteToDirectory={pasteRemoteEntries}
+            onPasteToCurrentDirectory={() => pasteRemoteEntries(currentPath)}
             onCopyPath={(entry) => void copyEntryPath(entry)}
             onDelete={(entry) => requestRemoteEntriesDeletion([entry])}
           />
@@ -1333,8 +1368,9 @@ export default function App() {
               download(entries)
             }}
             onCopy={copyRemoteSelection}
+            onCut={cutRemoteSelection}
             canPaste={canPasteRemote}
-            onPasteToCurrentDirectory={() => beginRemoteCopy(currentPath)}
+            onPasteToCurrentDirectory={() => pasteRemoteEntries(currentPath)}
             onDelete={requestRemoteEntriesDeletion}
           />
         )}
@@ -1354,7 +1390,7 @@ export default function App() {
             }}
             onCopyCurrentPath={() => void copyPath(browserContextMenu.directory)}
             canPaste={canPasteRemote}
-            onPaste={() => beginRemoteCopy(browserContextMenu.directory)}
+            onPaste={() => pasteRemoteEntries(browserContextMenu.directory)}
             onCreateDirectory={() => {
               setBrowserContextMenu(null)
               setCreateDirectoryDialog({ name: '' })
