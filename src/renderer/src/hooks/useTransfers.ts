@@ -190,12 +190,14 @@ export function useTransfers({
     { refreshPath: remoteDirectory, deferTrayUntilProgress: true })
   }
 
-  const download = (entry: RemoteEntry) => {
+  const download = (entries: RemoteEntry[]) => {
     if (!sessionId) return
+    if (entries.length === 0) return
     const activeSessionId = sessionId
-    void runTransfer(entry.name, 'download', (requestId) =>
-      window.remoteFiles.downloadEntry(requestId, activeSessionId, entry.path),
-    { initialTotal: entry.type === 'file' ? entry.size : 0 })
+    const name = entries.length === 1 ? entries[0].name : `下载 ${entries.length} 项`
+    void runTransfer(name, 'download', (requestId) =>
+      window.remoteFiles.downloadEntries(requestId, activeSessionId, entries.map((entry) => entry.path)),
+    { initialTotal: entries.reduce((total, entry) => total + (entry.type === 'file' ? entry.size : 0), 0) })
   }
 
   const dismissTransfer = (requestId: string) => {

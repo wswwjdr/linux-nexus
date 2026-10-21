@@ -52,6 +52,7 @@ export interface SessionTab {
   currentPath: string
   startPath: string
   entries: RemoteEntry[]
+  selectedPaths: string[]
   loading: boolean
   viewMode: FileViewMode
   sort: { column: SortColumn; direction: SortDirection }
@@ -71,9 +72,15 @@ export interface RecentConnection {
   connectedAt: number
 }
 
+export interface ContextMenuPosition {
+  x: number
+  y: number
+}
+
 export type BrowserContextMenu =
-  | { kind: 'entry'; entry: RemoteEntry; x: number; y: number }
-  | { kind: 'directory'; x: number; y: number }
+  | ({ kind: 'single-entry'; entry: RemoteEntry } & ContextMenuPosition)
+  | ({ kind: 'multiple-entries'; entries: RemoteEntry[] } & ContextMenuPosition)
+  | ({ kind: 'directory-background'; directory: string } & ContextMenuPosition)
 
 export type PreviewDialog =
   | { kind: 'loading'; name: string }

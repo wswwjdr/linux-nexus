@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent as Re
 import { Cloud, Copy, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, Plus, RefreshCw, Search, Settings, Terminal, Upload, X } from 'lucide-react'
 import GlobalToast, { type ToastNotice } from './GlobalToast'
 import FileBrowser from './components/FileBrowser'
-import FileContextMenu from './components/FileContextMenu'
+import SingleEntryContextMenu from './components/context-menus/SingleEntryContextMenu'
+import MultipleEntriesContextMenu from './components/context-menus/MultipleEntriesContextMenu'
+import DirectoryContextMenu from './components/context-menus/DirectoryContextMenu'
 import ServerList from './components/ServerList'
 import TransferTray from './components/TransferTray'
 import SearchDialog from './components/SearchDialog'
@@ -75,7 +77,7 @@ export default function App() {
   const [pendingHostKeys, setPendingHostKeys] = useState<PendingHostKey[]>([])
   const [browserContextMenu, setBrowserContextMenu] = useState<BrowserContextMenuState | null>(null)
   const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null)
-  const [remoteEntryDeleteDialog, setRemoteEntryDeleteDialog] = useState<{ entry: RemoteEntry; sessionId: string; directory: string } | null>(null)
+  const [remoteEntryDeleteDialog, setRemoteEntryDeleteDialog] = useState<{ entries: RemoteEntry[]; sessionId: string; directory: string } | null>(null)
   const [remoteEntryDeleteError, setRemoteEntryDeleteError] = useState<string | null>(null)
   const [remoteEntryDeleting, setRemoteEntryDeleting] = useState(false)
   const [createDirectoryDialog, setCreateDirectoryDialog] = useState<{ name: string } | null>(null)
@@ -347,7 +349,15 @@ export default function App() {
       const nextEntries = await window.remoteFiles.listDirectory(sessionId, remotePath)
       if (directoryLoadIdsRef.current.get(sessionId) !== requestId
         || !sessionsRef.current.some((session) => session.id === sessionId && session.status === 'connected')) return false
-      patchSession(sessionId, { entries: nextEntries, currentPath: remotePath, loading: false })
+      updateSession(sessionId, (session) => ({
+        ...session,
+        entries: nextEntries,
+        currentPath: remotePath,
+        loading: false,
+        selectedPaths: session.currentPath === remotePath
+          ? session.selectedPaths.filter((path) => nextEntries.some((entry) => entry.path === path))
+          : [],
+      }))
       if (activeSessionId === sessionId) setToast(null)
       return true
     } catch (error) {
@@ -457,6 +467,7 @@ export default function App() {
       currentPath,
       startPath,
       entries: [],
+      selectedPaths: [],
       loading: kind === 'sftp',
       viewMode: source?.viewMode ?? viewModeDefault,
       sort: source?.sort ?? { column: 'name', direction: 'ascending' },
@@ -638,9 +649,12 @@ export default function App() {
   }
 
   const openBrowserContextMenu = (menu: BrowserContextMenuState) => {
-    const itemCount = menu.kind === 'directory' ? 4 : menu.entry.type === 'file' ? 4 : 3
     const menuWidth = 204
-    const menuHeight = itemCount * 34 + 14
+    const menuHeight = menu.kind === 'directory-background'
+      ? 150
+      : menu.kind === 'multiple-entries'
+        ? 82
+        : menu.entry.type === 'file' ? 218 : 116
     setSessionContextMenu(null)
     setBrowserContextMenu({
       ...menu,
@@ -649,18 +663,15 @@ export default function App() {
     })
   }
 
-  const openEntryContextMenu = (entry: RemoteEntry, x: number, y: number) => {
-    if (entry.type !== 'file' && entry.type !== 'directory') return
-    openBrowserContextMenu({
-      kind: 'entry',
-      entry,
-      x,
-      y,
-    })
+  const openEntryContextMenu = (entries: RemoteEntry[], x: number, y: number) => {
+    if (entries.length === 0) return
+    openBrowserContextMenu(entries.length === 1
+      ? { kind: 'single-entry', entry: entries[0], x, y }
+      : { kind: 'multiple-entries', entries: [...entries], x, y })
   }
 
   const openDirectoryContextMenu = (x: number, y: number) => {
-    openBrowserContextMenu({ kind: 'directory', x, y })
+    openBrowserContextMenu({ kind: 'directory-background', directory: currentPath, x, y })
   }
 
   const copyPath = async (remotePath: string) => {
@@ -675,7 +686,6 @@ export default function App() {
   }
 
   const copyEntryPath = (entry: RemoteEntry) => copyPath(entry.path)
-  const copyCurrentPath = () => copyPath(currentPath)
 
   const submitCreateDirectory = async (event: ReactFormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -697,11 +707,12 @@ export default function App() {
     }
   }
 
-  const requestRemoteEntryDeletion = (entry: RemoteEntry) => {
+  const requestRemoteEntriesDeletion = (entries: RemoteEntry[]) => {
+    if (entries.length === 0) return
     if (!connectedSessionId) return
     setBrowserContextMenu(null)
     setRemoteEntryDeleteError(null)
-    setRemoteEntryDeleteDialog({ entry, sessionId: connectedSessionId, directory: currentPath })
+    setRemoteEntryDeleteDialog({ entries, sessionId: connectedSessionId, directory: currentPath })
   }
 
   const cancelRemoteEntryDeletion = () => {
@@ -712,52 +723,40 @@ export default function App() {
 
   const confirmRemoteEntryDeletion = async () => {
     if (!remoteEntryDeleteDialog || remoteEntryDeleting) return
-    const { entry, sessionId, directory } = remoteEntryDeleteDialog
-    const isDirectory = entry.type === 'directory'
+    const { entries, sessionId, directory } = remoteEntryDeleteDialog
     setRemoteEntryDeleting(true)
     setRemoteEntryDeleteError(null)
+    const deleted: RemoteEntry[] = []
+    const failed: { entry: RemoteEntry; error: string }[] = []
     try {
-      await window.remoteFiles.deleteRemoteEntry(sessionId, entry.path)
-    } catch (error) {
-      setRemoteEntryDeleteError(errorMessage(error))
-      return
+      for (const entry of entries) {
+        try {
+          await window.remoteFiles.deleteRemoteEntry(sessionId, entry.path)
+          deleted.push(entry)
+        } catch (error) {
+          failed.push({ entry, error: errorMessage(error) })
+        }
+      }
     } finally {
       setRemoteEntryDeleting(false)
     }
 
-    setRemoteEntryDeleteDialog(null)
-    updateSession(sessionId, (session) => ({
-      ...session,
-      entries: session.entries.filter((item) => item.path !== entry.path),
-    }))
-    const refreshed = await loadDirectory(sessionId, directory)
-    if (refreshed) {
-      showToast('info', `${isDirectory ? '文件夹' : '文件'}已删除`)
+    if (deleted.length > 0) {
+      const deletedPaths = new Set(deleted.map((entry) => entry.path))
+      updateSession(sessionId, (session) => ({
+        ...session,
+        entries: session.entries.filter((item) => !deletedPaths.has(item.path)),
+      }))
+      await loadDirectory(sessionId, directory)
     }
-  }
 
-  const handleEntryContextMenu = (event: ReactMouseEvent<HTMLElement>, entry: RemoteEntry) => {
-    if (entry.type !== 'file' && entry.type !== 'directory') return
-    event.preventDefault()
-    openEntryContextMenu(entry, event.clientX, event.clientY)
-  }
-
-  const handleBackgroundContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if ((event.target as Element).closest('[data-entry-path], button, a, input, select, textarea, th')) return
-    event.preventDefault()
-    openDirectoryContextMenu(event.clientX, event.clientY)
-  }
-
-  const handleEntryKeyDown = (event: ReactKeyboardEvent<HTMLElement>, entry: RemoteEntry) => {
-    if (event.key === 'Delete') {
-      event.preventDefault()
-      requestRemoteEntryDeletion(entry)
-      return
-    }
-    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
-    event.preventDefault()
-    const bounds = event.currentTarget.getBoundingClientRect()
-    openEntryContextMenu(entry, bounds.left + 12, bounds.top + 12)
+    setRemoteEntryDeleteDialog(failed.length > 0
+      ? { entries: failed.map(({ entry }) => entry), sessionId, directory }
+      : null)
+    setRemoteEntryDeleteError(failed.length > 0
+      ? failed.map(({ entry, error }) => `${entry.name}: ${error}`).join('；')
+      : null)
+    if (deleted.length > 0) showToast('info', `已删除 ${deleted.length} 项`)
   }
 
   const handleContextMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -1024,13 +1023,15 @@ export default function App() {
               breadcrumbs={breadcrumbs}
               sort={sort}
               sortedEntries={sortedEntries}
+              selectedPaths={activeSession.selectedPaths}
               highlightedPath={highlightedPath}
               onViewModeChange={(mode) => patchSession(activeSession.id, { viewMode: mode })}
               onNavigate={navigate}
               onToggleSort={toggleSort}
-              onEntryContextMenu={handleEntryContextMenu}
-              onEntryKeyDown={handleEntryKeyDown}
-              onBackgroundContextMenu={handleBackgroundContextMenu}
+              onSelectedPathsChange={(selectedPaths) => patchSession(activeSession.id, { selectedPaths })}
+              onOpenEntryContextMenu={openEntryContextMenu}
+              onOpenDirectoryContextMenu={openDirectoryContextMenu}
+              onDeleteEntries={requestRemoteEntriesDeletion}
               onDropUpload={uploadDroppedEntries}
               onDropError={(error) => showToast('error', errorMessage(error))}
             />
@@ -1079,15 +1080,13 @@ export default function App() {
           ))}
         </div>
 
-        {browserContextMenu && activeSession?.kind === 'sftp' && (
-          <FileContextMenu
-            menu={browserContextMenu}
-            sort={sort}
+        {browserContextMenu?.kind === 'single-entry' && activeSession?.kind === 'sftp' && (
+          <SingleEntryContextMenu
+            entry={browserContextMenu.entry}
+            position={browserContextMenu}
             previewExtensions={previewExtensions}
             elementRef={contextMenuRef}
             onKeyDown={handleContextMenuKeyDown}
-            onSelectSortColumn={(column) => patchSession(activeSession.id, { sort: { ...sort, column } })}
-            onSelectSortDirection={(direction) => patchSession(activeSession.id, { sort: { ...sort, direction } })}
             onPreview={(entry, type) => {
               setBrowserContextMenu(null)
               void previewFile(entry, type)
@@ -1098,11 +1097,40 @@ export default function App() {
             }}
             onDownload={(entry) => {
               setBrowserContextMenu(null)
-              download(entry)
+              download([entry])
             }}
             onCopyPath={(entry) => void copyEntryPath(entry)}
-            onDelete={requestRemoteEntryDeletion}
-            onCopyCurrentPath={() => void copyCurrentPath()}
+            onDelete={(entry) => requestRemoteEntriesDeletion([entry])}
+          />
+        )}
+        {browserContextMenu?.kind === 'multiple-entries' && activeSession?.kind === 'sftp' && (
+          <MultipleEntriesContextMenu
+            entries={browserContextMenu.entries}
+            position={browserContextMenu}
+            elementRef={contextMenuRef}
+            onKeyDown={handleContextMenuKeyDown}
+            onDownload={(entries) => {
+              setBrowserContextMenu(null)
+              download(entries)
+            }}
+            onDelete={requestRemoteEntriesDeletion}
+          />
+        )}
+        {browserContextMenu?.kind === 'directory-background' && activeSession?.kind === 'sftp' && (
+          <DirectoryContextMenu
+            position={browserContextMenu}
+            sort={sort}
+            elementRef={contextMenuRef}
+            onKeyDown={handleContextMenuKeyDown}
+            onSelectSortColumn={(column) => {
+              setBrowserContextMenu(null)
+              patchSession(activeSession.id, { sort: { ...sort, column } })
+            }}
+            onSelectSortDirection={(direction) => {
+              setBrowserContextMenu(null)
+              patchSession(activeSession.id, { sort: { ...sort, direction } })
+            }}
+            onCopyCurrentPath={() => void copyPath(browserContextMenu.directory)}
             onCreateDirectory={() => {
               setBrowserContextMenu(null)
               setCreateDirectoryDialog({ name: '' })
@@ -1205,19 +1233,34 @@ export default function App() {
       {remoteEntryDeleteDialog && (
         <ConfirmationDialog
           eyebrow="远程文件操作"
-          title={remoteEntryDeleteDialog.entry.type === 'directory' ? '删除远程文件夹？' : '删除远程文件？'}
-          details={[
-            { label: '名称', value: remoteEntryDeleteDialog.entry.name },
-            { label: '远程路径', value: remoteEntryDeleteDialog.entry.path },
-          ]}
-          description={remoteEntryDeleteDialog.entry.type === 'directory'
-            ? '此操作无法撤销，文件夹中的所有内容也会一并删除。'
-            : '此操作无法撤销，远程文件将被永久删除。'}
+          title={remoteEntryDeleteDialog.entries.length > 1
+            ? `删除 ${remoteEntryDeleteDialog.entries.length} 个远程项目？`
+            : remoteEntryDeleteDialog.entries[0].type === 'directory' ? '删除远程文件夹？' : '删除远程文件？'}
+          details={remoteEntryDeleteDialog.entries.length > 1
+            ? [
+                { label: '选中项目', value: `${remoteEntryDeleteDialog.entries.length} 项` },
+                {
+                  label: '名称',
+                  value: remoteEntryDeleteDialog.entries.slice(0, 4).map((entry) => entry.name).join('、')
+                    + (remoteEntryDeleteDialog.entries.length > 4 ? ' 等' : ''),
+                },
+              ]
+            : [
+                { label: '名称', value: remoteEntryDeleteDialog.entries[0].name },
+                { label: '远程路径', value: remoteEntryDeleteDialog.entries[0].path },
+              ]}
+          description={remoteEntryDeleteDialog.entries.length > 1
+            ? '此操作无法撤销。选中的文件夹及其所有内容也会一并删除。'
+            : remoteEntryDeleteDialog.entries[0].type === 'directory'
+              ? '此操作无法撤销，文件夹中的所有内容也会一并删除。'
+              : '此操作无法撤销，远程文件将被永久删除。'}
           tone="danger"
-          confirmLabel={remoteEntryDeleteDialog.entry.type === 'directory' ? '删除文件夹' : '删除文件'}
+          confirmLabel={remoteEntryDeleteDialog.entries.length > 1
+            ? `删除 ${remoteEntryDeleteDialog.entries.length} 项`
+            : remoteEntryDeleteDialog.entries[0].type === 'directory' ? '删除文件夹' : '删除文件'}
           busyLabel="正在删除"
           error={remoteEntryDeleteError}
-          errorLabel="删除失败"
+          errorLabel={remoteEntryDeleteDialog.entries.length > 1 ? '以下项目删除失败' : '删除失败'}
           busy={remoteEntryDeleting}
           onConfirm={() => void confirmRemoteEntryDeletion()}
           onCancel={cancelRemoteEntryDeletion}

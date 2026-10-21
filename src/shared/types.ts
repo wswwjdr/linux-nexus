@@ -245,7 +245,7 @@ export interface RemoteFilesApi {
     remoteDirectory: string,
     entries: DroppedUploadEntry[],
   ): Promise<TransferResult>
-  downloadEntry(requestId: string, sessionId: string, remotePath: string): Promise<TransferResult>
+  downloadEntries(requestId: string, sessionId: string, remotePaths: string[]): Promise<TransferResult>
   cancelTransfer(requestId: string): Promise<boolean>
   createRemoteDirectory(sessionId: string, remoteDirectory: string, name: string): Promise<void>
   copyRemotePath(sessionId: string, remotePath: string): Promise<void>

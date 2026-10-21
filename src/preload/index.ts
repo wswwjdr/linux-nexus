@@ -52,8 +52,8 @@ const api: RemoteFilesApi = {
     remoteDirectory: string,
     entries: DroppedUploadEntry[],
   ) => ipcRenderer.invoke('files:upload-dropped', requestId, sessionId, remoteDirectory, entries),
-  downloadEntry: (requestId: string, sessionId: string, remotePath: string) =>
-    ipcRenderer.invoke('files:download', requestId, sessionId, remotePath),
+  downloadEntries: (requestId: string, sessionId: string, remotePaths: string[]) =>
+    ipcRenderer.invoke('files:download', requestId, sessionId, remotePaths),
   cancelTransfer: (requestId: string) => ipcRenderer.invoke('files:transfer-cancel', requestId),
   createRemoteDirectory: (sessionId: string, remoteDirectory: string, name: string) =>
     ipcRenderer.invoke('files:create-directory', sessionId, remoteDirectory, name),

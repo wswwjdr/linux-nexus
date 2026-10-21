@@ -25,7 +25,7 @@ import {
   writeAppSettings,
   writeState,
 } from './state-store'
-import { cancelTransfer, downloadEntry, uploadDroppedEntries, uploadSelection, withTransferLock } from './transfers'
+import { cancelTransfer, downloadEntries, uploadDroppedEntries, uploadSelection, validateDownloadPaths, withTransferLock } from './transfers'
 import { previewFile, readLogPreview, releasePreview, saveTextFile } from './previews'
 import { cancelRemoteSearch, startRemoteSearch } from './search'
 
@@ -177,10 +177,11 @@ export function registerIpc(): void {
       (signal) => uploadDroppedEntries(event, requestId, sessionId, profileId, remoteDirectory, entries, signal),
       () => { if (!event.sender.isDestroyed()) event.sender.send('files:transfer-queued', { requestId }) })
   })
-  ipcMain.handle('files:download', (event, requestId: string, sessionId: string, remotePath: string) => {
+  ipcMain.handle('files:download', (event, requestId: string, sessionId: string, remotePaths: unknown) => {
+    const paths = validateDownloadPaths(remotePaths)
     const { profileId } = transferSession(sessionId)
     return withTransferLock(profileId, sessionId, requestId,
-      (signal) => downloadEntry(event, requestId, sessionId, profileId, remotePath, signal),
+      (signal) => downloadEntries(event, requestId, sessionId, profileId, paths, signal),
       () => { if (!event.sender.isDestroyed()) event.sender.send('files:transfer-queued', { requestId }) })
   })
   ipcMain.handle('files:transfer-cancel', (_event, requestId: string) => cancelTransfer(requestId))

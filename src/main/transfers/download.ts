@@ -1,6 +1,6 @@
 import { dialog } from 'electron'
 import { lstat as localLstat, mkdir } from 'node:fs/promises'
-import { basename, dirname, join, posix } from 'node:path'
+import { dirname, posix } from 'node:path'
 import type { TransferFailure, TransferResult } from '@shared/types'
 import { getMainWindow, messageFromError, sessions, type TransferItem } from '../runtime'
 import { readAppSettings } from '../state-store'
@@ -17,6 +17,18 @@ import { createTransferProgressReporter } from './progress'
 
 function isLocalNotFound(error: unknown): boolean {
   return (error as NodeJS.ErrnoException).code === 'ENOENT'
+}
+
+export function validateDownloadPaths(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length === 0) throw new Error('至少选择一个远程文件或文件夹')
+  const paths = value.map((candidate) => {
+    if (typeof candidate !== 'string' || !candidate.startsWith('/')) throw new Error('下载路径必须是绝对路径')
+    const path = posix.resolve('/', candidate)
+    if (path === '/') throw new Error('暂不支持下载服务器根目录')
+    return path
+  })
+  if (new Set(paths).size !== paths.length) throw new Error('下载列表包含重复路径')
+  return paths
 }
 
 function failedParent(relativePath: string, blocked: Map<string, string>): string | undefined {
@@ -141,45 +153,9 @@ async function downloadRemoteItems(
   }
 }
 
-export async function downloadEntry(
-  event: Electron.IpcMainInvokeEvent,
-  requestId: string,
-  sessionId: string,
-  profileId: string,
-  remotePath: string,
-  signal: AbortSignal,
-): Promise<TransferResult> {
-  signal.throwIfAborted()
-  const session = sessions.get(sessionId)
-  if (!session?.sftp) throw new Error('SFTP 会话未连接')
-  const normalizedPath = posix.resolve('/', remotePath)
-  const attributes = await sftpLstat(session.sftp, normalizedPath)
-  signal.throwIfAborted()
-  const type = fileType(attributes.mode)
-  if (type === 'symlink') throw new Error('不能下载符号链接：' + normalizedPath)
-
-  if (type === 'file') {
-    const options: Electron.OpenDialogOptions = {
-      title: '选择文件下载位置',
-      properties: ['openDirectory'],
-    }
-    const window = getMainWindow()
-    const destination = window
-      ? await dialog.showOpenDialog(window, options)
-      : await dialog.showOpenDialog(options)
-    signal.throwIfAborted()
-    if (destination.canceled || !destination.filePaths[0]) return { status: 'not-started' }
-    const fileName = posix.basename(normalizedPath)
-    assertWindowsPath(fileName)
-    const localPath = join(destination.filePaths[0], fileName)
-    const item: TransferItem = { relativePath: '', type: 'file', size: attributes.size ?? 0, remotePath: normalizedPath }
-    return downloadRemoteItems(event, requestId, sessionId, profileId, normalizedPath, [item], [], localPath, signal)
-  }
-
-  if (type !== 'directory') throw new Error('只能下载普通文件或文件夹')
-  if (normalizedPath === '/') throw new Error('暂不支持下载服务器根目录')
+async function chooseDownloadDirectory(signal: AbortSignal): Promise<string | null> {
   const options: Electron.OpenDialogOptions = {
-    title: '选择文件夹下载位置',
+    title: '选择下载位置',
     properties: ['openDirectory'],
   }
   const window = getMainWindow()
@@ -187,11 +163,64 @@ export async function downloadEntry(
     ? await dialog.showOpenDialog(window, options)
     : await dialog.showOpenDialog(options)
   signal.throwIfAborted()
-  if (destination.canceled || !destination.filePaths[0]) return { status: 'not-started' }
+  return destination.canceled || !destination.filePaths[0] ? null : destination.filePaths[0]
+}
 
-  const folderName = posix.basename(normalizedPath)
-  assertWindowsPath(folderName)
-  const localRoot = join(destination.filePaths[0], folderName)
-  const collected = await collectRemoteTree(session.sftp, normalizedPath, signal)
-  return downloadRemoteItems(event, requestId, sessionId, profileId, normalizedPath, collected.items, collected.failures, localRoot, signal)
+export async function downloadEntries(
+  event: Electron.IpcMainInvokeEvent,
+  requestId: string,
+  sessionId: string,
+  profileId: string,
+  remotePaths: string[],
+  signal: AbortSignal,
+): Promise<TransferResult> {
+  signal.throwIfAborted()
+  const session = sessions.get(sessionId)
+  if (!session?.sftp) throw new Error('SFTP 会话未连接')
+  const destination = await chooseDownloadDirectory(signal)
+  if (!destination) return { status: 'not-started' }
+
+  const items: TransferItem[] = []
+  const failures: TransferFailure[] = []
+  for (const remotePath of remotePaths) {
+    signal.throwIfAborted()
+    const name = posix.basename(remotePath)
+    try {
+      const attributes = await sftpLstat(session.sftp, remotePath)
+      signal.throwIfAborted()
+      const type = fileType(attributes.mode)
+      if (type === 'file') {
+        items.push({ relativePath: name, type, size: attributes.size ?? 0, remotePath })
+        continue
+      }
+      if (type === 'directory') {
+        const collected = await collectRemoteTree(session.sftp, remotePath, signal)
+        items.push(...collected.items.map((item) => ({
+          ...item,
+          relativePath: item.relativePath ? posix.join(name, item.relativePath) : name,
+        })))
+        failures.push(...collected.failures)
+        continue
+      }
+      failures.push({
+        path: remotePath,
+        message: type === 'symlink' ? '不能下载符号链接' : '只能下载普通文件或文件夹',
+      })
+    } catch (error) {
+      if (signal.aborted) throw error
+      failures.push({ path: remotePath, message: messageFromError(error) })
+    }
+  }
+
+  return downloadRemoteItems(
+    event,
+    requestId,
+    sessionId,
+    profileId,
+    remotePaths.length === 1 ? remotePaths[0] : `已选 ${remotePaths.length} 项`,
+    items,
+    failures,
+    destination,
+    signal,
+  )
 }

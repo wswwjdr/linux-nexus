@@ -29,13 +29,15 @@ interface FileBrowserProps {
   breadcrumbs: Breadcrumb[]
   sort: { column: SortColumn; direction: SortDirection }
   sortedEntries: RemoteEntry[]
+  selectedPaths: string[]
   highlightedPath: string | null
   onViewModeChange: (mode: FileViewMode) => void
   onNavigate: (path: string) => void
   onToggleSort: (column: SortColumn) => void
-  onEntryContextMenu: (event: ReactMouseEvent<HTMLElement>, entry: RemoteEntry) => void
-  onEntryKeyDown: (event: ReactKeyboardEvent<HTMLElement>, entry: RemoteEntry) => void
-  onBackgroundContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => void
+  onSelectedPathsChange: (paths: string[]) => void
+  onOpenEntryContextMenu: (entries: RemoteEntry[], x: number, y: number) => void
+  onOpenDirectoryContextMenu: (x: number, y: number) => void
+  onDeleteEntries: (entries: RemoteEntry[]) => void
   onDropUpload: (entries: DroppedUploadEntry[]) => void
   onDropError: (error: unknown) => void
 }
@@ -154,13 +156,15 @@ export default function FileBrowser({
   breadcrumbs,
   sort,
   sortedEntries,
+  selectedPaths,
   highlightedPath,
   onViewModeChange,
   onNavigate,
   onToggleSort,
-  onEntryContextMenu,
-  onEntryKeyDown,
-  onBackgroundContextMenu,
+  onSelectedPathsChange,
+  onOpenEntryContextMenu,
+  onOpenDirectoryContextMenu,
+  onDeleteEntries,
   onDropUpload,
   onDropError,
 }: FileBrowserProps) {
@@ -169,11 +173,10 @@ export default function FileBrowser({
   const hoverTimerRef = useRef<number | null>(null)
   const dragDepthRef = useRef(0)
   const selectionDragRef = useRef<SelectionDrag | null>(null)
-  const selectionModifierRef = useRef(false)
+  const selectedPathsRef = useRef(selectedPaths)
   const suppressClickRef = useRef(false)
   const suppressClickTimerRef = useRef<number | null>(null)
   const [dropActive, setDropActive] = useState(false)
-  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(() => new Set())
   const [selectionRectangle, setSelectionRectangle] = useState<SelectionRectangle | null>(null)
   const [hoveredEntry, setHoveredEntry] = useState<{
     entry: RemoteEntry
@@ -183,6 +186,14 @@ export default function FileBrowser({
     left: number
     top: number
   } | null>(null)
+  selectedPathsRef.current = selectedPaths
+
+  const selectedEntries = () => {
+    const paths = new Set(selectedPathsRef.current)
+    return sortedEntries.filter((entry) => paths.has(entry.path) && (entry.type === 'file' || entry.type === 'directory'))
+  }
+
+  const changeSelectedPaths = (paths: Iterable<string>) => onSelectedPathsChange([...new Set(paths)])
 
   const showEntryDetails = (entry: RemoteEntry, element: HTMLElement) => {
     if (hoverTimerRef.current !== null) {
@@ -255,9 +266,6 @@ export default function FileBrowser({
 
   const handleSelectionPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || event.pointerType !== 'mouse') return
-    selectionModifierRef.current = (event.ctrlKey || event.metaKey)
-      && event.target instanceof Element
-      && Boolean(event.target.closest('[data-entry-path]'))
     if (!isSelectionBackground(event.target)) return
     if (suppressClickTimerRef.current !== null) {
       window.clearTimeout(suppressClickTimerRef.current)
@@ -272,27 +280,24 @@ export default function FileBrowser({
       currentX: event.clientX,
       currentY: event.clientY,
       additive: event.ctrlKey || event.metaKey,
-      initialPaths: Array.from(selectedPaths),
+      initialPaths: selectedPathsRef.current,
       moved: false,
     }
   }
 
   const handleEntryClick = (path: string, event: ReactMouseEvent<HTMLElement>) => {
-    selectionModifierRef.current = false
     if (suppressClickRef.current) {
       suppressClickRef.current = false
       return
     }
     if (event.ctrlKey || event.metaKey) {
-      setSelectedPaths((current) => {
-        const next = new Set(current)
+      const next = new Set(selectedPathsRef.current)
         if (next.has(path)) next.delete(path)
         else next.add(path)
-        return next
-      })
+      changeSelectedPaths(next)
       return
     }
-    setSelectedPaths(new Set([path]))
+    changeSelectedPaths([path])
   }
 
   const consumeSuppressedBackgroundClick = () => {
@@ -340,12 +345,11 @@ export default function FileBrowser({
           if (path) next.add(path)
         }
       }
-      setSelectedPaths(next)
+      changeSelectedPaths(next)
     }
 
     const handlePointerMove = (event: PointerEvent) => updateSelection(event)
     const handlePointerUp = (event: PointerEvent) => {
-      selectionModifierRef.current = false
       const drag = selectionDragRef.current
       if (!drag || drag.pointerId !== event.pointerId) return
       updateSelection(event)
@@ -353,6 +357,7 @@ export default function FileBrowser({
       selectionDragRef.current = null
       setSelectionRectangle(null)
       if (moved) {
+        contentRef.current?.focus({ preventScroll: true })
         suppressClickRef.current = true
         suppressClickTimerRef.current = window.setTimeout(() => {
           suppressClickRef.current = false
@@ -369,7 +374,7 @@ export default function FileBrowser({
       window.removeEventListener('pointerup', handlePointerUp)
       window.removeEventListener('pointercancel', handlePointerUp)
     }
-  }, [])
+  }, [onSelectedPathsChange, sortedEntries])
 
   useEffect(() => {
     if (!highlightedPath) return
@@ -380,7 +385,6 @@ export default function FileBrowser({
   }, [highlightedPath, sortedEntries, viewMode])
 
   useEffect(() => {
-    setSelectedPaths(new Set())
     selectionDragRef.current = null
     setSelectionRectangle(null)
   }, [currentPath, entries])
@@ -427,6 +431,56 @@ export default function FileBrowser({
     }
   }, [hoveredEntry])
 
+  const handleEntryContextMenu = (event: ReactMouseEvent<HTMLElement>, entry: RemoteEntry) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const currentSelection = new Set(selectedPathsRef.current)
+    const targets = currentSelection.has(entry.path) ? selectedEntries() : [entry]
+    if (!currentSelection.has(entry.path)) changeSelectedPaths([entry.path])
+    const actionableEntries = targets.filter((candidate) => candidate.type === 'file' || candidate.type === 'directory')
+    if (actionableEntries.length > 0) onOpenEntryContextMenu([...actionableEntries], event.clientX, event.clientY)
+  }
+
+  const handleBackgroundContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!isSelectionBackground(event.target)) {
+      event.preventDefault()
+      return
+    }
+    event.preventDefault()
+    changeSelectedPaths([])
+    onOpenDirectoryContextMenu(event.clientX, event.clientY)
+  }
+
+  const handleBrowserKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const entryElement = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-entry-path]') : null
+    const focusedEntry = entryElement?.dataset.entryPath
+      ? sortedEntries.find((entry) => entry.path === entryElement.dataset.entryPath)
+      : undefined
+    const targets = selectedEntries()
+    if (event.key === 'Delete') {
+      const deletions = targets.length > 0 ? targets : focusedEntry && (focusedEntry.type === 'file' || focusedEntry.type === 'directory') ? [focusedEntry] : []
+      if (deletions.length === 0) return
+      event.preventDefault()
+      onDeleteEntries(deletions)
+      return
+    }
+    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+    event.preventDefault()
+    if (!focusedEntry || !entryElement) {
+      changeSelectedPaths([])
+      const bounds = contentRef.current?.getBoundingClientRect()
+      if (bounds) onOpenDirectoryContextMenu(bounds.left + 12, bounds.top + 12)
+      return
+    }
+    const currentSelection = new Set(selectedPathsRef.current)
+    const menuEntries = currentSelection.has(focusedEntry.path) ? targets : [focusedEntry]
+    if (!currentSelection.has(focusedEntry.path)) changeSelectedPaths([focusedEntry.path])
+    const actionableEntries = menuEntries.filter((entry) => entry.type === 'file' || entry.type === 'directory')
+    if (actionableEntries.length === 0) return
+    const bounds = entryElement.getBoundingClientRect()
+    onOpenEntryContextMenu([...actionableEntries], bounds.left + 12, bounds.top + 12)
+  }
+
   return (
     <>
       <div className="pathbar">
@@ -460,12 +514,14 @@ export default function FileBrowser({
       <div
         className={'file-content-wrap' + (selectionRectangle ? ' selecting' : '')}
         ref={contentRef}
+        tabIndex={0}
         onPointerDown={handleSelectionPointerDown}
-        onContextMenu={onBackgroundContextMenu}
+        onContextMenu={handleBackgroundContextMenu}
+        onKeyDown={handleBrowserKeyDown}
         onClick={(event) => {
           if ((event.target as Element).closest('[data-entry-path], button, a, input, select, textarea, th')) return
           if (consumeSuppressedBackgroundClick()) return
-          if (!event.ctrlKey && !event.metaKey) setSelectedPaths(new Set())
+          if (!event.ctrlKey && !event.metaKey) changeSelectedPaths([])
         }}
         onScroll={() => setHoveredEntry(null)}
         onDragEnter={handleDragEnter}
@@ -494,26 +550,19 @@ export default function FileBrowser({
             <tbody>
               {sortedEntries.map((entry) => (
                 <tr
-                  className={'file-row ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selectedPaths.has(entry.path) ? 'selected' : '')}
+                  className={'file-row ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selectedPaths.includes(entry.path) ? 'selected' : '')}
                   key={entry.path}
                   data-entry-path={entry.path}
-                  aria-selected={selectedPaths.has(entry.path)}
+                  aria-selected={selectedPaths.includes(entry.path)}
                   tabIndex={entry.path === highlightedPath ? 0 : -1}
                   onClick={(event) => handleEntryClick(entry.path, event)}
-                  onContextMenu={(event) => {
-                    setSelectedPaths(new Set([entry.path]))
-                    onEntryContextMenu(event, entry)
-                  }}
-                  onKeyDown={(event) => onEntryKeyDown(event, entry)}
+                  onContextMenu={(event) => handleEntryContextMenu(event, entry)}
                 >
                   <td className="name-col" title={entry.name}>
                     <button
                       className={'entry-name ' + (entry.type === 'directory' ? 'directory-entry' : '')}
                       title={entry.name}
-                      aria-pressed={selectedPaths.has(entry.path)}
-                      onFocus={() => {
-                        if (!selectionModifierRef.current) setSelectedPaths(new Set([entry.path]))
-                      }}
+                      aria-pressed={selectedPaths.includes(entry.path)}
                       onDoubleClick={() => entry.type === 'directory' && onNavigate(entry.path)}
                     >
                       <span className={'entry-icon ' + (entry.type === 'directory' ? 'folder-icon' : '')}>
@@ -533,7 +582,7 @@ export default function FileBrowser({
           <div className="file-icon-grid">
             {sortedEntries.map((entry) => (
               <article
-                className={'file-tile ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selectedPaths.has(entry.path) ? 'selected' : '')}
+                className={'file-tile ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selectedPaths.includes(entry.path) ? 'selected' : '')}
                 key={entry.path}
                 data-entry-path={entry.path}
                 aria-label={entry.name}
@@ -546,20 +595,15 @@ export default function FileBrowser({
                   cancelEntryDetails()
                 }}
                 onFocus={(event) => {
-                  if (!selectionModifierRef.current) setSelectedPaths(new Set([entry.path]))
                   showEntryDetails(entry, event.currentTarget)
                 }}
                 onBlur={hideEntryDetailsOnBlur}
-                onContextMenu={(event) => {
-                  setSelectedPaths(new Set([entry.path]))
-                  onEntryContextMenu(event, entry)
-                }}
-                onKeyDown={(event) => onEntryKeyDown(event, entry)}
+                onContextMenu={(event) => handleEntryContextMenu(event, entry)}
               >
                 <button
                   className={'file-tile-main ' + (entry.type === 'directory' ? 'directory-entry' : '')}
                   aria-label={entry.name}
-                  aria-pressed={selectedPaths.has(entry.path)}
+                  aria-pressed={selectedPaths.includes(entry.path)}
                   onDoubleClick={() => entry.type === 'directory' && onNavigate(entry.path)}
                 >
                   <span className={'tile-glyph ' + (entry.type === 'directory' ? 'folder-glyph' : '')}>
