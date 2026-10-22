@@ -26,3 +26,7 @@ Linux Nexus 是一款用于通过 SSH/SFTP 管理 linux 服务器文件的 客�
 ### 说明
 
 当前主要面向 Ubuntu/Linux OpenSSH。其他 SFTP 服务端的兼容性尚未完整验证。音视频播放能力取决于当前 Chromium 支持的格式。
+
+## Git 提交边界
+
+本次发版从提交 `ee7e5cf5（优化设置弹窗布局）` 之后开始。
