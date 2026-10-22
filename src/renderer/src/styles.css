@@ -446,7 +446,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .settings-view-option[aria-pressed="true"] { color:var(--green-deep); background:var(--green-soft); }
 .settings-view-option:hover:not(:disabled) { color:var(--green-deep); background:var(--surface-hover); }
 .settings-section { min-width: 0; margin: 0; padding: 15px 16px 16px; border:0; color:var(--text-primary); font-size: 11px; font-weight: 600; }
-.settings-section legend { margin-bottom: 9px; padding: 0; color:var(--text-primary); font-size: 12px; font-weight: 650; }
+.settings-section legend { display: block; width: calc(100% + 32px); max-width: none; margin: -15px -16px 9px; padding: 15px 16px 0; color:var(--text-primary); background:inherit; font-size: 12px; font-weight: 650; }
 .settings-section-view { background:var(--surface-success); }
 .settings-section-startup { background:var(--surface-info); }
 .settings-section-preview { background:var(--surface-warning); }
