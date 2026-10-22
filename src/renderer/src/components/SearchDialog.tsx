@@ -14,7 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import type {
-  PreviewExtensions,
+  FileTypeExtensions,
   PreviewType,
   RemoteSearchEvent,
   RemoteSearchRequest,
@@ -23,7 +23,7 @@ import type {
 } from '@shared/types'
 import ConfirmationDialog from './ConfirmationDialog'
 import { remoteRegexError } from '@shared/search-utils'
-import { previewFileTypes, previewTypeLabels } from '@shared/preview-file-type'
+import { previewTypesForFile, previewTypeLabels } from '@shared/preview-file-type'
 import { errorMessage, formatSize } from '@/app-utils'
 
 type SearchConditions = Omit<RemoteSearchRequest, 'requestId' | 'profileId' | 'sessionId'>
@@ -34,7 +34,7 @@ interface SearchDialogProps {
   profileId: string
   currentPath: string
   previewOpen: boolean
-  previewExtensions: PreviewExtensions
+  fileTypeExtensions: FileTypeExtensions
   onClose: () => void
   onSelectResult: (result: RemoteSearchResult) => void
   onPreviewResult: (result: RemoteSearchResult, type: PreviewType) => void
@@ -102,7 +102,7 @@ function Counter({ label, value }: { label: string; value: number }) {
   return <span className="search-counter"><strong>{value.toLocaleString()}</strong> {label}</span>
 }
 
-export default function SearchDialog({ sessionId, profileId, currentPath, previewOpen, previewExtensions, onClose, onSelectResult, onPreviewResult }: SearchDialogProps) {
+export default function SearchDialog({ sessionId, profileId, currentPath, previewOpen, fileTypeExtensions, onClose, onSelectResult, onPreviewResult }: SearchDialogProps) {
   const [conditions, setConditions] = useState(() => initialConditions(currentPath))
   const [history, setHistory] = useState(() => readHistory(profileId))
   const [results, setResults] = useState<RemoteSearchResult[]>([])
@@ -284,7 +284,7 @@ export default function SearchDialog({ sessionId, profileId, currentPath, previe
     }
     const bounds = event.currentTarget.getBoundingClientRect()
     const menuWidth = 210
-    const previewOptions = result.type === 'directory' ? [] : previewFileTypes(result.name, previewExtensions)
+    const previewOptions = result.type === 'directory' ? [] : previewTypesForFile(result.name, fileTypeExtensions)
     const menuHeight = result.type === 'directory' ? 48
       : 84 + (previewOptions.length > 1 ? 38 + previewOptions.length * 31 : 0)
     const x = Math.max(8, Math.min(bounds.right - menuWidth, window.innerWidth - menuWidth - 8))
@@ -495,7 +495,7 @@ export default function SearchDialog({ sessionId, profileId, currentPath, previe
           style={{ left: resultActionMenu.x, top: resultActionMenu.y }}
         >
           {resultActionMenu.result.type !== 'directory' && (() => {
-            const previewOptions = previewFileTypes(resultActionMenu.result.name, previewExtensions)
+            const previewOptions = previewTypesForFile(resultActionMenu.result.name, fileTypeExtensions)
             if (previewOptions.length === 0) return null
             if (previewOptions.length === 1) return (
               <button

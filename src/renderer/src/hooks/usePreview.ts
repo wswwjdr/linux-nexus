@@ -1,13 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState, type SyntheticEvent, type WheelEvent } from 'react'
-import type { PreviewExtensions, PreviewType, RemoteEntry, TextFileRevision } from '@shared/types'
-import { previewFileTypes } from '@shared/preview-file-type'
+import type { FileTypeExtensions, PreviewType, RemoteEntry, TextFileRevision } from '@shared/types'
+import { previewTypesForFile } from '@shared/preview-file-type'
 import type { ImagePreviewSize, LogPreviewDialog, PreviewDialog } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { errorMessage } from '@/app-utils'
 
 interface UsePreviewOptions {
   sessionId: string | null
-  previewExtensions: PreviewExtensions
+  fileTypeExtensions: FileTypeExtensions
   showToast: (kind: ToastNotice['kind'], message: string) => void
 }
 
@@ -19,7 +19,7 @@ interface TextPreviewContext {
   revision: TextFileRevision
 }
 
-export function usePreview({ sessionId, previewExtensions, showToast }: UsePreviewOptions) {
+export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePreviewOptions) {
   const [previewDialog, setPreviewDialog] = useState<PreviewDialog | null>(null)
   const [logPreviewDialog, setLogPreviewDialog] = useState<LogPreviewDialog | null>(null)
   const [imageZoom, setImageZoom] = useState(1)
@@ -87,7 +87,7 @@ export function usePreview({ sessionId, previewExtensions, showToast }: UsePrevi
 
   const previewFile = async (entry: Pick<RemoteEntry, 'name' | 'path'>, type: PreviewType) => {
     closePreview()
-    if (!previewFileTypes(entry.name, previewExtensions).includes(type)) {
+    if (!previewTypesForFile(entry.name, fileTypeExtensions).includes(type)) {
       showToast('info', '暂不支持的文件类型：' + entry.name)
       return
     }

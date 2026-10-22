@@ -1,5 +1,5 @@
-import type { AppSettings, PerformanceThresholds, PreviewExtensions, PreviewLimits, SessionKind, StartupConnection } from './types'
-import { DEFAULT_PREVIEW_EXTENSIONS, normalizePreviewExtension, previewTypes } from './preview-file-type.ts'
+import type { AppSettings, PerformanceThresholds, FileTypeExtensions, PreviewLimits, SessionKind, StartupConnection } from './types'
+import { DEFAULT_FILE_TYPE_EXTENSIONS, fileTypeCategories, normalizeFileTypeExtension } from './file-type-categories.ts'
 
 export const DEFAULT_PREVIEW_LIMITS: PreviewLimits = {
   textMiB: 5,
@@ -16,8 +16,11 @@ export const DEFAULT_PERFORMANCE_THRESHOLDS: PerformanceThresholds = {
   loadPerCore: { warning: 1, critical: 2 },
 }
 
-export function defaultPreviewExtensions(): PreviewExtensions {
-  return Object.fromEntries(previewTypes.map((type) => [type, [...DEFAULT_PREVIEW_EXTENSIONS[type]]])) as PreviewExtensions
+export function defaultFileTypeExtensions(): FileTypeExtensions {
+  return Object.fromEntries(fileTypeCategories.map((category) => [
+    category,
+    DEFAULT_FILE_TYPE_EXTENSIONS[category].map(normalizeFileTypeExtension),
+  ])) as FileTypeExtensions
 }
 
 export function defaultAppSettings(): AppSettings {
@@ -25,7 +28,7 @@ export function defaultAppSettings(): AppSettings {
     ...DEFAULT_PREVIEW_LIMITS,
     theme: 'light',
     defaultView: 'details',
-    previewExtensions: defaultPreviewExtensions(),
+    fileTypeExtensions: defaultFileTypeExtensions(),
     startupConnection: null,
     transferFileConcurrency: 4,
     performanceThresholds: {
@@ -38,8 +41,7 @@ export function defaultAppSettings(): AppSettings {
 }
 
 export const DEFAULT_APP_SETTINGS = defaultAppSettings()
-const legacyAppSettingsKeys = [...Object.keys(DEFAULT_PREVIEW_LIMITS), 'theme', 'defaultView', 'previewExtensions', 'startupConnection', 'transferFileConcurrency']
-const appSettingsKeys = [...legacyAppSettingsKeys, 'performanceThresholds']
+const appSettingsKeys = [...Object.keys(DEFAULT_PREVIEW_LIMITS), 'theme', 'defaultView', 'fileTypeExtensions', 'startupConnection', 'transferFileConcurrency', 'performanceThresholds']
 const performanceThresholdKeys = ['cpu', 'memory', 'disk', 'loadPerCore'] as const
 
 const MAX_PREVIEW_LIMIT_MIB = 1024
@@ -89,17 +91,17 @@ export function validateAppSettings(value: unknown): AppSettings {
     }
     return [key, { warning, critical }]
   })) as unknown as PerformanceThresholds
-  const configuredExtensions = value.previewExtensions
-  if (!isRecord(configuredExtensions) || !hasExactKeys(configuredExtensions, [...previewTypes])) {
-    throw new Error('预览格式设置结构无效')
+  const configuredExtensions = value.fileTypeExtensions
+  if (!isRecord(configuredExtensions) || !hasExactKeys(configuredExtensions, [...fileTypeCategories])) {
+    throw new Error('文件类型分类设置结构无效')
   }
-  const previewExtensions = Object.fromEntries(previewTypes.map((type) => {
-    const extensions = configuredExtensions[type]
+  const fileTypeExtensions = Object.fromEntries(fileTypeCategories.map((category) => {
+    const extensions = configuredExtensions[category]
     if (!Array.isArray(extensions) || extensions.some((extension) => typeof extension !== 'string')) {
-      throw new Error('预览格式设置无效：' + type)
+      throw new Error('文件类型分类设置无效：' + category)
     }
-    return [type, [...new Set(extensions.map((extension) => normalizePreviewExtension(extension as string)))]]
-  })) as PreviewExtensions
+    return [category, [...new Set(extensions.map((extension) => normalizeFileTypeExtension(extension as string)))]]
+  })) as FileTypeExtensions
   let startupConnection: StartupConnection | null = null
   if (value.startupConnection !== null) {
     const connection = value.startupConnection
@@ -114,21 +116,11 @@ export function validateAppSettings(value: unknown): AppSettings {
     ...value as unknown as PreviewLimits,
     theme: value.theme,
     defaultView: value.defaultView,
-    previewExtensions,
+    fileTypeExtensions,
     startupConnection,
     transferFileConcurrency,
     performanceThresholds,
   }
-}
-
-export function upgradeAppSettings(value: unknown): { settings: AppSettings; migrated: boolean } {
-  if (isRecord(value) && hasExactKeys(value, legacyAppSettingsKeys)) {
-    return {
-      settings: validateAppSettings({ ...value, performanceThresholds: DEFAULT_PERFORMANCE_THRESHOLDS }),
-      migrated: true,
-    }
-  }
-  return { settings: validateAppSettings(value), migrated: false }
 }
 
 export function applyAppSettingsPatch(current: AppSettings, patch: unknown): AppSettings {

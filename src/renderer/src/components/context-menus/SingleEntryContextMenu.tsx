@@ -1,14 +1,14 @@
 import { ArrowDownToLine, ChevronRight, ClipboardPaste, Copy, Eye, FileText, Scissors, Trash2 } from 'lucide-react'
 import { useState, type KeyboardEvent, type RefObject } from 'react'
-import type { PreviewExtensions, PreviewType, RemoteEntry } from '@shared/types'
-import { previewFileTypes, previewTypeLabels } from '@shared/preview-file-type'
+import type { FileTypeExtensions, PreviewType, RemoteEntry } from '@shared/types'
+import { previewTypesForFile, previewTypeLabels } from '@shared/preview-file-type'
 import type { ContextMenuPosition } from '@/app-types'
 import ContextMenuContainer from './ContextMenuContainer'
 
 interface SingleEntryContextMenuProps {
   entry: RemoteEntry
   position: ContextMenuPosition
-  previewExtensions: PreviewExtensions
+  fileTypeExtensions: FileTypeExtensions
   elementRef: RefObject<HTMLDivElement | null>
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
   onPreview: (entry: RemoteEntry, type: PreviewType) => void
@@ -26,7 +26,7 @@ interface SingleEntryContextMenuProps {
 export default function SingleEntryContextMenu({
   entry,
   position,
-  previewExtensions,
+  fileTypeExtensions,
   elementRef,
   onKeyDown,
   onPreview,
@@ -41,7 +41,7 @@ export default function SingleEntryContextMenu({
   onDelete,
 }: SingleEntryContextMenuProps) {
   const [previewMenuOpen, setPreviewMenuOpen] = useState(false)
-  const previewOptions = entry.type === 'file' ? previewFileTypes(entry.name, previewExtensions) : []
+  const previewOptions = entry.type === 'file' ? previewTypesForFile(entry.name, fileTypeExtensions) : []
   const menuWidth = 204
   const submenuWidth = 184
   const previewMenuHeight = previewOptions.length * 34 + 10

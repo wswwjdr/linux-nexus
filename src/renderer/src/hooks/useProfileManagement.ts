@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import type { AppSettings, AppSettingsPatch, PerformanceThresholds, PreviewExtensions, PreviewType, SaveProfileInput, ServerProfile, SessionKind, StartupConnection, ThemeMode } from '@shared/types'
+import type { AppSettings, AppSettingsPatch, FileTypeCategory, PerformanceThresholds, FileTypeExtensions, SaveProfileInput, ServerProfile, SessionKind, StartupConnection, ThemeMode } from '@shared/types'
 import { performanceThresholdsToForm, type FileViewMode, type PerformanceThresholdField, type ProfileForm, type SettingsFieldKey, type SettingsForm } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { emptyForm, errorMessage, toPreviewLimitsForm } from '@/app-utils'
-import { DEFAULT_PREVIEW_EXTENSIONS } from '@shared/preview-file-type'
+import { defaultFileTypeExtensions } from '@shared/app-settings'
 
 interface UseProfileManagementOptions {
   showToast: (kind: ToastNotice['kind'], message: string) => void
   onProfileSaved: (profile: ServerProfile) => void
   onProfileDeleted: (profileId: string) => void
   onDefaultViewChange: (mode: FileViewMode) => void
-  onPreviewExtensionsChange: (extensions: PreviewExtensions) => void
+  onFileTypeExtensionsChange: (extensions: FileTypeExtensions) => void
   onPerformanceThresholdsChange: (thresholds: PerformanceThresholds) => void
 }
 
@@ -25,7 +25,7 @@ const thresholdFieldParts: Record<PerformanceThresholdField, keyof PerformanceTh
   loadPerCoreCritical: 'loadPerCore',
 }
 
-export function useProfileManagement({ showToast, onProfileSaved, onProfileDeleted, onDefaultViewChange, onPreviewExtensionsChange, onPerformanceThresholdsChange }: UseProfileManagementOptions) {
+export function useProfileManagement({ showToast, onProfileSaved, onProfileDeleted, onDefaultViewChange, onFileTypeExtensionsChange, onPerformanceThresholdsChange }: UseProfileManagementOptions) {
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
   const [profilesLoaded, setProfilesLoaded] = useState(false)
   const [startupSettingsLoaded, setStartupSettingsLoaded] = useState(false)
@@ -55,10 +55,10 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
   }
 
   const formWithSetting = (current: SettingsForm, key: keyof AppSettings, settings: AppSettings): SettingsForm => {
-    if (key in current && key !== 'previewExtensions' && key !== 'startupConnection' && key !== 'performanceThresholds') {
+    if (key in current && key !== 'fileTypeExtensions' && key !== 'startupConnection' && key !== 'performanceThresholds') {
       return { ...current, [key]: String(settings[key as keyof AppSettings]) }
     }
-    if (key === 'previewExtensions') return { ...current, previewExtensions: settings.previewExtensions }
+    if (key === 'fileTypeExtensions') return { ...current, fileTypeExtensions: settings.fileTypeExtensions }
     if (key === 'performanceThresholds') {
       return { ...current, performanceThresholds: performanceThresholdsToForm(settings.performanceThresholds) }
     }
@@ -72,7 +72,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
 
   const reflectSetting = (key: keyof AppSettings, settings: AppSettings) => {
     if (key === 'defaultView') onDefaultViewChange(settings.defaultView)
-    if (key === 'previewExtensions') onPreviewExtensionsChange(settings.previewExtensions)
+    if (key === 'fileTypeExtensions') onFileTypeExtensionsChange(settings.fileTypeExtensions)
     if (key === 'startupConnection') setStartupConnection(settings.startupConnection)
     if (key === 'performanceThresholds') onPerformanceThresholdsChange(settings.performanceThresholds)
   }
@@ -115,12 +115,12 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
         persistedSettingsRef.current = settings
         setStartupConnection(settings.startupConnection)
         onDefaultViewChange(settings.defaultView)
-        onPreviewExtensionsChange(settings.previewExtensions)
+        onFileTypeExtensionsChange(settings.fileTypeExtensions)
         onPerformanceThresholdsChange(settings.performanceThresholds)
       })
       .catch((error) => showToast('error', '读取设置失败：' + errorMessage(error)))
       .finally(() => setStartupSettingsLoaded(true))
-  }, [showToast, onPreviewExtensionsChange, onPerformanceThresholdsChange])
+  }, [showToast, onFileTypeExtensionsChange, onPerformanceThresholdsChange])
 
   const openProfileDialog = (mode: 'create' | 'edit', profile?: ServerProfile) => {
     setDialog({
@@ -150,7 +150,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
         ...toPreviewLimitsForm(settings),
         theme: settings.theme,
         defaultView: settings.defaultView,
-        previewExtensions: Object.fromEntries(Object.entries(settings.previewExtensions).map(([type, extensions]) => [type, [...extensions]])) as PreviewExtensions,
+        fileTypeExtensions: Object.fromEntries(Object.entries(settings.fileTypeExtensions).map(([type, extensions]) => [type, [...extensions]])) as FileTypeExtensions,
         transferFileConcurrency: String(settings.transferFileConcurrency),
         performanceThresholds: performanceThresholdsToForm(settings.performanceThresholds),
         startupProfileId: profileId && profiles.some((profile) => profile.id === profileId) ? profileId : '',
@@ -196,42 +196,42 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
     }
   }
 
-  const addPreviewExtension = (type: PreviewType, extension: string) => {
+  const addFileTypeExtension = (category: FileTypeCategory, extension: string) => {
     const next = updateSettingsDraft((current) => ({
       ...current,
-      previewExtensions: {
-        ...current.previewExtensions,
-        [type]: [...new Set([...current.previewExtensions[type], extension])],
+      fileTypeExtensions: {
+        ...current.fileTypeExtensions,
+        [category]: [...new Set([...current.fileTypeExtensions[category], extension])],
       },
     }))
     if (next) {
-      onPreviewExtensionsChange(next.previewExtensions)
-      persistSetting('previewExtensions', { previewExtensions: next.previewExtensions })
+      onFileTypeExtensionsChange(next.fileTypeExtensions)
+      persistSetting('fileTypeExtensions', { fileTypeExtensions: next.fileTypeExtensions })
     }
   }
 
-  const removePreviewExtension = (type: PreviewType, extension: string) => {
+  const removeFileTypeExtension = (category: FileTypeCategory, extension: string) => {
     const next = updateSettingsDraft((current) => ({
       ...current,
-      previewExtensions: {
-        ...current.previewExtensions,
-        [type]: current.previewExtensions[type].filter((candidate) => candidate !== extension),
+      fileTypeExtensions: {
+        ...current.fileTypeExtensions,
+        [category]: current.fileTypeExtensions[category].filter((candidate) => candidate !== extension),
       },
     }))
     if (next) {
-      onPreviewExtensionsChange(next.previewExtensions)
-      persistSetting('previewExtensions', { previewExtensions: next.previewExtensions })
+      onFileTypeExtensionsChange(next.fileTypeExtensions)
+      persistSetting('fileTypeExtensions', { fileTypeExtensions: next.fileTypeExtensions })
     }
   }
 
-  const resetPreviewExtensions = () => {
+  const resetFileTypeExtensions = () => {
     const next = updateSettingsDraft((current) => ({
       ...current,
-      previewExtensions: Object.fromEntries(Object.entries(DEFAULT_PREVIEW_EXTENSIONS).map(([type, extensions]) => [type, [...extensions]])) as PreviewExtensions,
+      fileTypeExtensions: defaultFileTypeExtensions(),
     }))
     if (next) {
-      onPreviewExtensionsChange(next.previewExtensions)
-      persistSetting('previewExtensions', { previewExtensions: next.previewExtensions })
+      onFileTypeExtensionsChange(next.fileTypeExtensions)
+      persistSetting('fileTypeExtensions', { fileTypeExtensions: next.fileTypeExtensions })
     }
   }
 
@@ -343,9 +343,9 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
     closeProfileDeleteDialog,
     confirmProfileDeletion,
     updateSettingsForm,
-    addPreviewExtension,
-    removePreviewExtension,
-    resetPreviewExtensions,
+    addFileTypeExtension,
+    removeFileTypeExtension,
+    resetFileTypeExtensions,
     updateDefaultView,
     updateTheme,
     updateStartupProfile,

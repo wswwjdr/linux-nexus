@@ -1,6 +1,6 @@
 import { posix } from 'node:path'
 import type { PreviewLimits, PreviewResult } from '@shared/types'
-import { previewFileTypes, previewTypes } from '@shared/preview-file-type'
+import { previewTypes, previewTypesForFile } from '@shared/preview-file-type'
 import { sessions } from '../runtime'
 import { readAppSettings } from '../state-store'
 import { fileType, normalizedRemotePath, sftpLstat } from '../sftp-utils'
@@ -46,7 +46,7 @@ export async function previewFile(sessionId: string, remotePath: string, type: P
   if (!previewTypes.includes(type)) throw new Error('预览类型无效')
   const normalizedPath = normalizedRemotePath(remotePath)
   const settings = readAppSettings()
-  if (!previewFileTypes(normalizedPath, settings.previewExtensions).includes(type)) {
+  if (!previewTypesForFile(normalizedPath, settings.fileTypeExtensions).includes(type)) {
     throw new Error('此文件未配置该预览类型')
   }
   const attrs = await sftpLstat(session.sftp, normalizedPath)

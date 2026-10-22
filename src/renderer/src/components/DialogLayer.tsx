@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Check, ChevronRight, FolderOpen, KeyRound, LayoutGrid, List, LoaderCircle, Monitor, Moon, Plus, RefreshCw, Server, ShieldCheck, Sun, Terminal, Trash2, X } from 'lucide-react'
-import type { CommandAlias, CommandAliasSnapshot, PreviewType, ServerProfile, ThemeMode } from '@shared/types'
-import { normalizePreviewExtension, previewTypeLabels, previewTypes } from '@shared/preview-file-type'
+import type { CommandAlias, CommandAliasSnapshot, FileTypeCategory, ServerProfile, ThemeMode } from '@shared/types'
+import { fileTypeCategoryLabels, fileTypeCategories, normalizeFileTypeExtension } from '@shared/file-type-categories'
 import ConfirmationDialog from './ConfirmationDialog'
 import LogPreviewDialog, { type LogPreviewDialogProps } from './previews/LogPreviewDialog'
 import PreviewDialog, { type PreviewDialogProps } from './previews/PreviewDialog'
@@ -58,9 +58,9 @@ interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
   onSubmitProfile: (event: FormEvent<HTMLFormElement>) => void
   onCloseSettings: () => void
   onUpdateSettings: (key: SettingsFieldKey, value: string) => void
-  onAddPreviewExtension: (type: PreviewType, extension: string) => void
-  onRemovePreviewExtension: (type: PreviewType, extension: string) => void
-  onResetPreviewExtensions: () => void
+  onAddFileTypeExtension: (category: FileTypeCategory, extension: string) => void
+  onRemoveFileTypeExtension: (category: FileTypeCategory, extension: string) => void
+  onResetFileTypeExtensions: () => void
   onUpdateDefaultView: (mode: FileViewMode) => void
   onUpdateTheme: (theme: ThemeMode) => void
   onUpdateStartupProfile: (profileId: string) => void
@@ -84,28 +84,28 @@ interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
   onDismissAliasHostKey: () => void
 }
 
-function PreviewExtensionEditor({
-  type,
+function FileTypeCategoryEditor({
+  category,
   extensions,
   onAdd,
   onRemove,
 }: {
-  type: PreviewType
+  category: FileTypeCategory
   extensions: string[]
-  onAdd: (type: PreviewType, extension: string) => void
-  onRemove: (type: PreviewType, extension: string) => void
+  onAdd: (category: FileTypeCategory, extension: string) => void
+  onRemove: (category: FileTypeCategory, extension: string) => void
 }) {
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const add = () => {
     try {
-      const extension = normalizePreviewExtension(draft)
+      const extension = normalizeFileTypeExtension(draft)
       if (extensions.includes(extension)) {
         setError('此后缀已添加')
         return
       }
-      onAdd(type, extension)
+      onAdd(category, extension)
       setDraft('')
       setError(null)
     } catch {
@@ -114,22 +114,22 @@ function PreviewExtensionEditor({
   }
 
   return (
-    <div className="preview-extension-row">
-      <div className="preview-extension-heading">
-        <strong>{previewTypeLabels[type].replace('预览', '')}</strong>
-        <div className="preview-extension-tags">
+    <div className="file-type-category-row">
+      <div className="file-type-category-heading">
+        <strong>{fileTypeCategoryLabels[category]}</strong>
+        <div className="file-type-category-tags">
           {extensions.map((extension) => (
-            <span className="preview-extension-tag" key={extension}>
+            <span className="file-type-category-tag" key={extension}>
               <code>{extension}</code>
-              <button type="button" title={'移除 ' + extension} aria-label={'移除 ' + extension} onClick={() => onRemove(type, extension)}><X size={12} /></button>
+              <button type="button" title={'移除 ' + extension} aria-label={'移除 ' + extension} onClick={() => onRemove(category, extension)}><X size={12} /></button>
             </span>
           ))}
         </div>
       </div>
-      <div className="preview-extension-add">
+      <div className="file-type-category-add">
         <input
           value={draft}
-          aria-label={'添加' + previewTypeLabels[type].replace('预览', '') + '后缀'}
+          aria-label={'添加' + fileTypeCategoryLabels[category] + '后缀'}
           placeholder="添加后缀，如 .txt"
           onChange={(event) => {
             setDraft(event.target.value)
@@ -144,7 +144,7 @@ function PreviewExtensionEditor({
         />
         <button type="button" className="icon-button" title="添加后缀" aria-label="添加后缀" disabled={!draft.trim()} onClick={add}><Plus size={15} /></button>
       </div>
-      {error && <span className="preview-extension-error" role="alert">{error}</span>}
+      {error && <span className="file-type-category-error" role="alert">{error}</span>}
     </div>
   )
 }
@@ -189,9 +189,9 @@ export default function DialogLayer({
   onSubmitProfile,
   onCloseSettings,
   onUpdateSettings,
-  onAddPreviewExtension,
-  onRemovePreviewExtension,
-  onResetPreviewExtensions,
+  onAddFileTypeExtension,
+  onRemoveFileTypeExtension,
+  onResetFileTypeExtensions,
   onUpdateDefaultView,
   onUpdateTheme,
   onUpdateStartupProfile,
@@ -506,22 +506,22 @@ export default function DialogLayer({
                 </div>
                 {invalidPerformanceThresholds && <p className="settings-performance-error" role="alert">每项阈值必须在 0 到 100 之间，且注意值小于严重值。</p>}
               </fieldset>
-              <details className="settings-section settings-section-formats" aria-labelledby="preview-formats-title">
+              <details className="settings-section settings-section-file-types" aria-labelledby="file-type-categories-title">
                 <summary className="settings-disclosure-summary">
-                  <h3 id="preview-formats-title">预览格式</h3>
+                  <h3 id="file-type-categories-title">文件类型分类</h3>
                   <ChevronRight className="settings-disclosure-chevron" size={15} />
                 </summary>
-                <div className="preview-formats-content">
-                  <div className="preview-formats-heading">
-                  <button type="button" className="text-button" onClick={onResetPreviewExtensions}>恢复默认</button>
+                <div className="file-type-categories-content">
+                  <div className="file-type-categories-heading">
+                  <button type="button" className="text-button" onClick={onResetFileTypeExtensions}>恢复默认</button>
                   </div>
-                  {previewTypes.map((type) => (
-                    <PreviewExtensionEditor
-                      key={type}
-                      type={type}
-                      extensions={settingsForm.previewExtensions[type]}
-                      onAdd={onAddPreviewExtension}
-                      onRemove={onRemovePreviewExtension}
+                  {fileTypeCategories.map((category) => (
+                    <FileTypeCategoryEditor
+                      key={category}
+                      category={category}
+                      extensions={settingsForm.fileTypeExtensions[category]}
+                      onAdd={onAddFileTypeExtension}
+                      onRemove={onRemoveFileTypeExtension}
                     />
                   ))}
                 </div>

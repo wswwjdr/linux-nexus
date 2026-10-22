@@ -163,9 +163,11 @@ export interface PerformanceUpdate {
   message?: string
 }
 
+export type FileTypeCategory = 'text' | 'markdown' | 'pdf' | 'image' | 'audio' | 'video'
+
 export type PreviewType = 'text' | 'markdown' | 'pdf' | 'image' | 'audio' | 'video'
 
-export type PreviewExtensions = Record<PreviewType, string[]>
+export type FileTypeExtensions = Record<FileTypeCategory, string[]>
 
 export interface StartupConnection {
   profileId: string
@@ -177,7 +179,7 @@ export type ThemeMode = 'light' | 'dark' | 'system'
 export interface AppSettings extends PreviewLimits {
   theme: ThemeMode
   defaultView: 'icons' | 'details'
-  previewExtensions: PreviewExtensions
+  fileTypeExtensions: FileTypeExtensions
   startupConnection: StartupConnection | null
   transferFileConcurrency: number
   performanceThresholds: PerformanceThresholds

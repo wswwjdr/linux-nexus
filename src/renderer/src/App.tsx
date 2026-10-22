@@ -20,7 +20,7 @@ import { useTransfers } from './hooks/useTransfers'
 import { useProfileManagement } from './hooks/useProfileManagement'
 import { useCommandAliases } from './hooks/useCommandAliases'
 import type {
-  PreviewExtensions,
+  FileTypeExtensions,
   PerformanceThresholds,
   PerformanceUpdate,
   RemoteCopyConflict,
@@ -37,8 +37,7 @@ import type {
   SessionKind,
   TrustHostKeyInput,
 } from '@shared/types'
-import { DEFAULT_PREVIEW_EXTENSIONS } from '@shared/preview-file-type'
-import { DEFAULT_PERFORMANCE_THRESHOLDS } from '@shared/app-settings'
+import { DEFAULT_PERFORMANCE_THRESHOLDS, defaultFileTypeExtensions } from '@shared/app-settings'
 import type {
   BrowserContextMenu as BrowserContextMenuState,
   FileViewMode,
@@ -112,8 +111,7 @@ export default function App() {
   const [performanceThresholds, setPerformanceThresholds] = useState<PerformanceThresholds>(DEFAULT_PERFORMANCE_THRESHOLDS)
   const [performanceMonitorState, setPerformanceMonitorState] = useState<PerformanceMonitorState | null>(null)
   const [performancePanelOpen, setPerformancePanelOpen] = useState(false)
-  const [previewExtensions, setPreviewExtensions] = useState<PreviewExtensions>(() =>
-    Object.fromEntries(Object.entries(DEFAULT_PREVIEW_EXTENSIONS).map(([type, extensions]) => [type, [...extensions]])) as PreviewExtensions)
+  const [fileTypeExtensions, setFileTypeExtensions] = useState<FileTypeExtensions>(defaultFileTypeExtensions)
   const [toast, setToast] = useState<ToastNotice | null>(null)
   const [recentConnections, setRecentConnections] = useState<RecentConnection[]>(readRecentConnections)
   const [pendingHostKeys, setPendingHostKeys] = useState<PendingHostKey[]>([])
@@ -180,7 +178,7 @@ export default function App() {
       && sessions.find((session) => session.id === activeSessionId)?.status === 'connected'
       ? activeSessionId
       : null,
-    previewExtensions,
+    fileTypeExtensions,
     showToast,
   })
   const dismissToast = useCallback((noticeId: number) => {
@@ -204,9 +202,9 @@ export default function App() {
     closeProfileDeleteDialog,
     confirmProfileDeletion,
     updateSettingsForm,
-    addPreviewExtension,
-    removePreviewExtension,
-    resetPreviewExtensions,
+    addFileTypeExtension,
+    removeFileTypeExtension,
+    resetFileTypeExtensions,
     updateDefaultView,
     updateTheme,
     updateStartupProfile,
@@ -247,7 +245,7 @@ export default function App() {
       setViewModeDefault(mode)
       setSessions((current) => current.map((session) => session.kind === 'sftp' ? { ...session, viewMode: mode } : session))
     },
-    onPreviewExtensionsChange: setPreviewExtensions,
+    onFileTypeExtensionsChange: setFileTypeExtensions,
     onPerformanceThresholdsChange: setPerformanceThresholds,
   })
 
@@ -1436,7 +1434,7 @@ export default function App() {
           <SingleEntryContextMenu
             entry={browserContextMenu.entry}
             position={browserContextMenu}
-            previewExtensions={previewExtensions}
+            fileTypeExtensions={fileTypeExtensions}
             elementRef={contextMenuRef}
             onKeyDown={handleContextMenuKeyDown}
             onPreview={(entry, type) => {
@@ -1558,9 +1556,9 @@ export default function App() {
         onSubmitProfile={(event) => void submitProfile(event)}
         onCloseSettings={closeSettingsDialog}
         onUpdateSettings={updateSettingsForm}
-        onAddPreviewExtension={addPreviewExtension}
-        onRemovePreviewExtension={removePreviewExtension}
-        onResetPreviewExtensions={resetPreviewExtensions}
+        onAddFileTypeExtension={addFileTypeExtension}
+        onRemoveFileTypeExtension={removeFileTypeExtension}
+        onResetFileTypeExtensions={resetFileTypeExtensions}
         onUpdateDefaultView={updateDefaultView}
         onUpdateTheme={updateTheme}
         onUpdateStartupProfile={updateStartupProfile}
@@ -1658,7 +1656,7 @@ export default function App() {
           sessionId={searchSessionId}
           profileId={searchSession.profileId}
           currentPath={searchSession.currentPath}
-          previewExtensions={previewExtensions}
+          fileTypeExtensions={fileTypeExtensions}
           previewOpen={Boolean(previewDialog || logPreviewDialog)}
           onClose={() => setSearchSessionId(null)}
           onSelectResult={(result) => void locateSearchResult(result)}

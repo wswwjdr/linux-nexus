@@ -1,39 +1,39 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { PreviewExtensions } from '../src/shared/types.ts'
-import { DEFAULT_APP_SETTINGS, DEFAULT_PERFORMANCE_THRESHOLDS, upgradeAppSettings, validateAppSettings } from '../src/shared/app-settings.ts'
+import type { FileTypeExtensions } from '../src/shared/types.ts'
+import { DEFAULT_APP_SETTINGS, DEFAULT_PERFORMANCE_THRESHOLDS, validateAppSettings } from '../src/shared/app-settings.ts'
 import { validateExternalUrl } from '../src/shared/external-url.ts'
 import { previewMimeType } from '../src/shared/preview-mime-type.ts'
-import { DEFAULT_PREVIEW_EXTENSIONS, normalizePreviewExtension, previewFileTypes } from '../src/shared/preview-file-type.ts'
+import { DEFAULT_FILE_TYPE_EXTENSIONS, normalizeFileTypeExtension, classifyFileTypeCategories } from '../src/shared/file-type-categories.ts'
 
-function copyDefaultExtensions(): PreviewExtensions {
-  return Object.fromEntries(Object.entries(DEFAULT_PREVIEW_EXTENSIONS).map(([type, extensions]) => [type, [...extensions]])) as PreviewExtensions
+function copyDefaultExtensions(): FileTypeExtensions {
+  return Object.fromEntries(Object.entries(DEFAULT_FILE_TYPE_EXTENSIONS).map(([type, extensions]) => [type, [...extensions]])) as FileTypeExtensions
 }
 
 test('normalizes extensions and matches overlapping and multi-part suffixes', () => {
-  assert.equal(normalizePreviewExtension('  .TaR.GZ '), '.tar.gz')
-  assert.deepEqual(previewFileTypes('/var/log/REPORT.MD', copyDefaultExtensions()), ['text', 'markdown'])
+  assert.equal(normalizeFileTypeExtension('  .TaR.GZ '), '.tar.gz')
+  assert.deepEqual(classifyFileTypeCategories('/var/log/REPORT.MD', copyDefaultExtensions()), ['text', 'markdown'])
   const extensions = copyDefaultExtensions()
   extensions.pdf.push('tar.gz')
-  assert.deepEqual(previewFileTypes('/archive/backup.TAR.GZ', extensions), ['pdf'])
-  assert.deepEqual(previewFileTypes('/home/user/.profile', extensions), [])
-  assert.throws(() => normalizePreviewExtension('../secret'))
+  assert.deepEqual(classifyFileTypeCategories('/archive/backup.TAR.GZ', extensions), ['pdf'])
+  assert.deepEqual(classifyFileTypeCategories('/home/user/.profile', extensions), [])
+  assert.throws(() => normalizeFileTypeExtension('../secret'))
 })
 
-test('validates preview extension sets, deduplicates within a category, and keeps overlaps', () => {
-  const previewExtensions = copyDefaultExtensions()
-  previewExtensions.text.push('TXT', '.txt')
+test('validates file type extension sets, deduplicates within a category, and keeps overlaps', () => {
+  const fileTypeExtensions = copyDefaultExtensions()
+  fileTypeExtensions.text.push('TXT', '.txt')
   const settings = validateAppSettings({
     ...DEFAULT_APP_SETTINGS,
-    previewExtensions,
+    fileTypeExtensions,
   })
 
-  assert.equal(settings.previewExtensions.text.filter((extension) => extension === '.txt').length, 1)
-  assert.ok(settings.previewExtensions.text.includes('.md'))
-  assert.ok(settings.previewExtensions.markdown.includes('.md'))
+  assert.equal(settings.fileTypeExtensions.text.filter((extension) => extension === '.txt').length, 1)
+  assert.ok(settings.fileTypeExtensions.text.includes('.md'))
+  assert.ok(settings.fileTypeExtensions.markdown.includes('.md'))
   assert.throws(() => validateAppSettings({
     ...DEFAULT_APP_SETTINGS,
-    previewExtensions: { ...copyDefaultExtensions(), pdf: ['../outside'] },
+    fileTypeExtensions: { ...copyDefaultExtensions(), pdf: ['../outside'] },
   }))
 })
 
@@ -45,14 +45,11 @@ test('defaults to light theme and validates all supported theme modes', () => {
   assert.throws(() => validateAppSettings({ ...DEFAULT_APP_SETTINGS, theme: 'auto' }))
 })
 
-test('defaults and migrates performance thresholds for existing settings', () => {
+test('requires a complete settings structure with performance thresholds', () => {
   assert.deepEqual(DEFAULT_APP_SETTINGS.performanceThresholds, DEFAULT_PERFORMANCE_THRESHOLDS)
-  const legacy = { ...DEFAULT_APP_SETTINGS } as Record<string, unknown>
-  delete legacy.performanceThresholds
-  const migrated = upgradeAppSettings(legacy)
-  assert.equal(migrated.migrated, true)
-  assert.deepEqual(migrated.settings.performanceThresholds, DEFAULT_PERFORMANCE_THRESHOLDS)
-  assert.equal(upgradeAppSettings(DEFAULT_APP_SETTINGS).migrated, false)
+  const incomplete = { ...DEFAULT_APP_SETTINGS } as Record<string, unknown>
+  delete incomplete.performanceThresholds
+  assert.throws(() => validateAppSettings(incomplete))
 })
 
 test('rejects invalid performance threshold pairs and values', () => {
