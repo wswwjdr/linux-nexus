@@ -1,6 +1,6 @@
 import type { BrowserWindow } from 'electron'
 import type { Client, ClientChannel, SFTPWrapper } from 'ssh2'
-export { clearPreviewAssets } from './previews/preview-assets'
+export { clearPreviewAssets } from './previews/preview-assets.ts'
 
 export interface ActiveSession {
   sessionId: string

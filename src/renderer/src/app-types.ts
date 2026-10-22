@@ -1,4 +1,4 @@
-import type { CommandAlias, LogPreviewPage, PreviewExtensions, PreviewLimits, PreviewResult, RemoteEntry, ServerProfile, SessionKind, ThemeMode, TransferFailure, TransferFileProgress } from '@shared/types'
+import type { CommandAlias, LogPreviewPage, PerformanceThresholds, PreviewExtensions, PreviewLimits, PreviewResult, RemoteEntry, ServerProfile, SessionKind, ThemeMode, TransferFailure, TransferFileProgress } from '@shared/types'
 
 export interface ProfileForm {
   id: string
@@ -95,12 +95,32 @@ export type SortColumn = 'name' | 'size' | 'modifiedAt' | 'permissions' | 'type'
 export type SortDirection = 'ascending' | 'descending'
 export type PreviewLimitKey = keyof PreviewLimits
 export type PreviewLimitsForm = Record<PreviewLimitKey, string>
-export type SettingsFieldKey = PreviewLimitKey | 'transferFileConcurrency'
 export interface SettingsForm extends PreviewLimitsForm {
   theme: ThemeMode
   previewExtensions: PreviewExtensions
   transferFileConcurrency: string
+  performanceThresholds: Record<PerformanceThresholdField, string>
   defaultView: FileViewMode
   startupProfileId: string
   startupKind: SessionKind
+}
+
+export type PerformanceThresholdField = 'cpuWarning' | 'cpuCritical'
+  | 'memoryWarning' | 'memoryCritical'
+  | 'diskWarning' | 'diskCritical'
+  | 'loadPerCoreWarning' | 'loadPerCoreCritical'
+export type SettingsFieldKey = PreviewLimitKey | 'transferFileConcurrency' | PerformanceThresholdField
+export type PerformanceThresholdFieldValues = Record<PerformanceThresholdField, string>
+
+export function performanceThresholdsToForm(thresholds: PerformanceThresholds): PerformanceThresholdFieldValues {
+  return {
+    cpuWarning: String(thresholds.cpu.warning),
+    cpuCritical: String(thresholds.cpu.critical),
+    memoryWarning: String(thresholds.memory.warning),
+    memoryCritical: String(thresholds.memory.critical),
+    diskWarning: String(thresholds.disk.warning),
+    diskCritical: String(thresholds.disk.critical),
+    loadPerCoreWarning: String(thresholds.loadPerCore.warning),
+    loadPerCoreCritical: String(thresholds.loadPerCore.critical),
+  }
 }

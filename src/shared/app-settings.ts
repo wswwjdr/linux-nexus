@@ -1,4 +1,4 @@
-import type { AppSettings, PreviewExtensions, PreviewLimits, SessionKind, StartupConnection } from './types'
+import type { AppSettings, PerformanceThresholds, PreviewExtensions, PreviewLimits, SessionKind, StartupConnection } from './types'
 import { DEFAULT_PREVIEW_EXTENSIONS, normalizePreviewExtension, previewTypes } from './preview-file-type.ts'
 
 export const DEFAULT_PREVIEW_LIMITS: PreviewLimits = {
@@ -7,6 +7,13 @@ export const DEFAULT_PREVIEW_LIMITS: PreviewLimits = {
   imageMiB: 100,
   audioMiB: 100,
   videoMiB: 100,
+}
+
+export const DEFAULT_PERFORMANCE_THRESHOLDS: PerformanceThresholds = {
+  cpu: { warning: 75, critical: 90 },
+  memory: { warning: 75, critical: 90 },
+  disk: { warning: 80, critical: 90 },
+  loadPerCore: { warning: 1, critical: 2 },
 }
 
 export function defaultPreviewExtensions(): PreviewExtensions {
@@ -21,11 +28,19 @@ export function defaultAppSettings(): AppSettings {
     previewExtensions: defaultPreviewExtensions(),
     startupConnection: null,
     transferFileConcurrency: 4,
+    performanceThresholds: {
+      cpu: { ...DEFAULT_PERFORMANCE_THRESHOLDS.cpu },
+      memory: { ...DEFAULT_PERFORMANCE_THRESHOLDS.memory },
+      disk: { ...DEFAULT_PERFORMANCE_THRESHOLDS.disk },
+      loadPerCore: { ...DEFAULT_PERFORMANCE_THRESHOLDS.loadPerCore },
+    },
   }
 }
 
 export const DEFAULT_APP_SETTINGS = defaultAppSettings()
-const appSettingsKeys = [...Object.keys(DEFAULT_PREVIEW_LIMITS), 'theme', 'defaultView', 'previewExtensions', 'startupConnection', 'transferFileConcurrency']
+const legacyAppSettingsKeys = [...Object.keys(DEFAULT_PREVIEW_LIMITS), 'theme', 'defaultView', 'previewExtensions', 'startupConnection', 'transferFileConcurrency']
+const appSettingsKeys = [...legacyAppSettingsKeys, 'performanceThresholds']
+const performanceThresholdKeys = ['cpu', 'memory', 'disk', 'loadPerCore'] as const
 
 const MAX_PREVIEW_LIMIT_MIB = 1024
 const MIN_TRANSFER_FILE_CONCURRENCY = 1
@@ -57,6 +72,23 @@ export function validateAppSettings(value: unknown): AppSettings {
     || transferFileConcurrency < MIN_TRANSFER_FILE_CONCURRENCY || transferFileConcurrency > MAX_TRANSFER_FILE_CONCURRENCY) {
     throw new Error('同时传输文件数必须是 1 到 16 之间的整数')
   }
+  const configuredThresholds = value.performanceThresholds
+  if (!isRecord(configuredThresholds) || !hasExactKeys(configuredThresholds, [...performanceThresholdKeys])) {
+    throw new Error('性能监控阈值结构无效')
+  }
+  const performanceThresholds = Object.fromEntries(performanceThresholdKeys.map((key) => {
+    const configured = configuredThresholds[key]
+    if (!isRecord(configured) || !hasExactKeys(configured, ['warning', 'critical'])) {
+      throw new Error('性能监控阈值结构无效：' + key)
+    }
+    const { warning, critical } = configured
+    if (typeof warning !== 'number' || !Number.isFinite(warning) || warning < 0 || warning > 100
+      || typeof critical !== 'number' || !Number.isFinite(critical) || critical < 0 || critical > 100
+      || warning >= critical) {
+      throw new Error('性能监控阈值无效：' + key + ' 的注意值必须小于严重值，且均须在 0 到 100 之间')
+    }
+    return [key, { warning, critical }]
+  })) as unknown as PerformanceThresholds
   const configuredExtensions = value.previewExtensions
   if (!isRecord(configuredExtensions) || !hasExactKeys(configuredExtensions, [...previewTypes])) {
     throw new Error('预览格式设置结构无效')
@@ -78,7 +110,25 @@ export function validateAppSettings(value: unknown): AppSettings {
     }
     startupConnection = { profileId: connection.profileId, kind: connection.kind as SessionKind }
   }
-  return { ...value as unknown as PreviewLimits, theme: value.theme, defaultView: value.defaultView, previewExtensions, startupConnection, transferFileConcurrency }
+  return {
+    ...value as unknown as PreviewLimits,
+    theme: value.theme,
+    defaultView: value.defaultView,
+    previewExtensions,
+    startupConnection,
+    transferFileConcurrency,
+    performanceThresholds,
+  }
+}
+
+export function upgradeAppSettings(value: unknown): { settings: AppSettings; migrated: boolean } {
+  if (isRecord(value) && hasExactKeys(value, legacyAppSettingsKeys)) {
+    return {
+      settings: validateAppSettings({ ...value, performanceThresholds: DEFAULT_PERFORMANCE_THRESHOLDS }),
+      migrated: true,
+    }
+  }
+  return { settings: validateAppSettings(value), migrated: false }
 }
 
 export function applyAppSettingsPatch(current: AppSettings, patch: unknown): AppSettings {

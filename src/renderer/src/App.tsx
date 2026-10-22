@@ -14,12 +14,15 @@ import { RemoteMoveConflictDialog, RemoteMoveSummaryDialog } from './components/
 import SessionChooser from './components/SessionChooser'
 import TerminalPanel from './components/TerminalPanel'
 import ShortcutGuideDialog from './components/ShortcutGuideDialog'
+import PerformanceMonitor, { type PerformanceMonitorState } from './components/PerformanceMonitor'
 import { usePreview } from './hooks/usePreview'
 import { useTransfers } from './hooks/useTransfers'
 import { useProfileManagement } from './hooks/useProfileManagement'
 import { useCommandAliases } from './hooks/useCommandAliases'
 import type {
   PreviewExtensions,
+  PerformanceThresholds,
+  PerformanceUpdate,
   RemoteCopyConflict,
   RemoteCopyDecision,
   RemoteCopyEvent,
@@ -35,6 +38,7 @@ import type {
   TrustHostKeyInput,
 } from '@shared/types'
 import { DEFAULT_PREVIEW_EXTENSIONS } from '@shared/preview-file-type'
+import { DEFAULT_PERFORMANCE_THRESHOLDS } from '@shared/app-settings'
 import type {
   BrowserContextMenu as BrowserContextMenuState,
   FileViewMode,
@@ -105,6 +109,9 @@ export default function App() {
   const [sessionChooserOpen, setSessionChooserOpen] = useState(false)
   const [shortcutGuideOpen, setShortcutGuideOpen] = useState(false)
   const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>('details')
+  const [performanceThresholds, setPerformanceThresholds] = useState<PerformanceThresholds>(DEFAULT_PERFORMANCE_THRESHOLDS)
+  const [performanceMonitorState, setPerformanceMonitorState] = useState<PerformanceMonitorState | null>(null)
+  const [performancePanelOpen, setPerformancePanelOpen] = useState(false)
   const [previewExtensions, setPreviewExtensions] = useState<PreviewExtensions>(() =>
     Object.fromEntries(Object.entries(DEFAULT_PREVIEW_EXTENSIONS).map(([type, extensions]) => [type, [...extensions]])) as PreviewExtensions)
   const [toast, setToast] = useState<ToastNotice | null>(null)
@@ -129,6 +136,9 @@ export default function App() {
   const directoryLoadIdsRef = useRef(new Map<string, number>())
   const contextMenuRef = useRef<HTMLDivElement>(null)
   const sessionContextMenuRef = useRef<HTMLDivElement>(null)
+  const activeSessionIdRef = useRef(activeSessionId)
+  const performanceMonitorIdRef = useRef<string | null>(null)
+  activeSessionIdRef.current = activeSessionId
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
   const patchSession = useCallback((sessionId: string, patch: Partial<SessionTab>) => {
@@ -238,6 +248,7 @@ export default function App() {
       setSessions((current) => current.map((session) => session.kind === 'sftp' ? { ...session, viewMode: mode } : session))
     },
     onPreviewExtensionsChange: setPreviewExtensions,
+    onPerformanceThresholdsChange: setPerformanceThresholds,
   })
 
   const activeSession = useMemo(
@@ -246,6 +257,7 @@ export default function App() {
   )
   const connectedProfileId = activeSession?.status === 'connected' ? activeSession.profileId : null
   const connectedSessionId = connectedProfileId ? activeSessionId : null
+  const setPerformancePanel = useCallback((open: boolean) => setPerformancePanelOpen(open), [])
   const currentPath = activeSession?.currentPath ?? '/'
   const entries = activeSession?.entries ?? []
   const loading = activeSession?.loading ?? false
@@ -256,6 +268,52 @@ export default function App() {
     () => profiles.find((profile) => profile.id === activeSession?.profileId) ?? null,
     [profiles, activeSession?.profileId],
   )
+
+  useEffect(() => window.remoteFiles.onPerformanceUpdate((event: PerformanceUpdate) => {
+    if (event.sessionId !== activeSessionIdRef.current || event.monitorId !== performanceMonitorIdRef.current) return
+    setPerformanceMonitorState((current) => {
+      if (!current || current.sessionId !== event.sessionId || current.monitorId !== event.monitorId) return current
+      if (event.status === 'ready' && event.snapshot) {
+        const history = [...current.history, event.snapshot].slice(-180)
+        return { ...current, status: 'ready', snapshot: event.snapshot, message: null, history }
+      }
+      return { ...current, status: event.status, message: event.status === 'error' ? event.message ?? '性能指标采集失败' : null }
+    })
+  }), [])
+
+  useEffect(() => {
+    setPerformancePanelOpen(false)
+    if (!connectedSessionId) {
+      performanceMonitorIdRef.current = null
+      setPerformanceMonitorState(null)
+      return
+    }
+    const sessionId = connectedSessionId
+    const monitorId = window.crypto.randomUUID()
+    performanceMonitorIdRef.current = monitorId
+    setPerformanceMonitorState({ sessionId, monitorId, status: 'sampling', snapshot: null, message: null, history: [] })
+    void window.remoteFiles.startPerformanceMonitor(sessionId, monitorId).catch((error: unknown) => {
+      if (performanceMonitorIdRef.current !== monitorId || activeSessionIdRef.current !== sessionId) return
+      setPerformanceMonitorState((current) => current?.monitorId === monitorId
+        ? { ...current, status: 'error', message: errorMessage(error) }
+        : current)
+    })
+    return () => {
+      if (performanceMonitorIdRef.current === monitorId) performanceMonitorIdRef.current = null
+      void window.remoteFiles.stopPerformanceMonitor(sessionId, monitorId).catch(() => {})
+    }
+  }, [connectedSessionId])
+
+  const refreshPerformance = useCallback((sessionId: string, monitorId: string) => {
+    setPerformanceMonitorState((current) => current?.sessionId === sessionId && current.monitorId === monitorId
+      ? { ...current, status: 'sampling', message: null }
+      : current)
+    void window.remoteFiles.refreshPerformanceMonitor(sessionId, monitorId).catch((error: unknown) => {
+      setPerformanceMonitorState((current) => current?.sessionId === sessionId && current.monitorId === monitorId
+        ? { ...current, status: 'error', message: errorMessage(error) }
+        : current)
+    })
+  }, [])
   const clipboardMatchesProfile = Boolean(remoteClipboard && connectedProfile
     && remoteClipboard.profile.id === connectedProfile.id
     && remoteClipboard.profile.host === connectedProfile.host
@@ -1195,6 +1253,15 @@ export default function App() {
             )}
           </div>
           <div className="topbar-actions">
+            {connectedSessionId && (
+              <PerformanceMonitor
+                state={performanceMonitorState?.sessionId === connectedSessionId ? performanceMonitorState : null}
+                thresholds={performanceThresholds}
+                open={performancePanelOpen}
+                onOpenChange={setPerformancePanel}
+                onRefresh={refreshPerformance}
+              />
+            )}
             {activeSession?.kind === 'sftp' && connectedSessionId ? (
               <>
                 <button className="icon-button toolbar-button" title="搜索文件（Ctrl+F）" aria-label="搜索文件（Ctrl+F）" onClick={openSearch}>

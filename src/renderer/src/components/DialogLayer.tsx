@@ -12,8 +12,22 @@ import type {
   ProfileForm,
   SettingsFieldKey,
   SettingsForm,
+  PerformanceThresholdField,
 } from '@/app-types'
 import { previewLimitFields } from '@/app-utils'
+
+const performanceThresholdFields: Array<{
+  label: string
+  warning: PerformanceThresholdField
+  critical: PerformanceThresholdField
+  unit: string
+  step: string
+}> = [
+  { label: 'CPU 使用率', warning: 'cpuWarning', critical: 'cpuCritical', unit: '%', step: '1' },
+  { label: '内存使用率', warning: 'memoryWarning', critical: 'memoryCritical', unit: '%', step: '1' },
+  { label: '根分区使用率', warning: 'diskWarning', critical: 'diskCritical', unit: '%', step: '1' },
+  { label: '每核 1 分钟负载', warning: 'loadPerCoreWarning', critical: 'loadPerCoreCritical', unit: '', step: '0.1' },
+]
 
 interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
   profileDialog: { mode: 'create' | 'edit'; form: ProfileForm } | null
@@ -208,6 +222,15 @@ export default function DialogLayer({
 }: DialogLayerProps) {
   const visibleHostKey = pendingHostKey ?? pendingAliasHostKey
   const aliasHostKeyVisible = !pendingHostKey && Boolean(pendingAliasHostKey)
+  const invalidPerformanceThresholds = Boolean(settingsForm && performanceThresholdFields.some(({ warning, critical }) => {
+    const warningText = settingsForm.performanceThresholds[warning]
+    const criticalText = settingsForm.performanceThresholds[critical]
+    const warningValue = Number(warningText)
+    const criticalValue = Number(criticalText)
+    return !warningText.trim() || !criticalText.trim()
+      || !Number.isFinite(warningValue) || !Number.isFinite(criticalValue)
+      || warningValue < 0 || criticalValue > 100 || warningValue >= criticalValue
+  }))
   useEffect(() => {
     const dismissOnEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape') return
@@ -463,6 +486,25 @@ export default function DialogLayer({
                     </label>
                   ))}
                 </div>
+              </fieldset>
+              <fieldset className="settings-section settings-section-performance">
+                <legend>性能监控阈值</legend>
+                <div className="settings-performance-grid">
+                  {performanceThresholdFields.map(({ label, warning, critical, unit, step }) => (
+                    <div className="settings-performance-row" key={warning}>
+                      <span>{label}</span>
+                      <label>
+                        <span>注意{unit ? `（${unit}）` : ''}</span>
+                        <input required type="number" min="0" max="100" step={step} value={settingsForm.performanceThresholds[warning]} onChange={(event) => onUpdateSettings(warning, event.target.value)} />
+                      </label>
+                      <label>
+                        <span>严重{unit ? `（${unit}）` : ''}</span>
+                        <input required type="number" min="0" max="100" step={step} value={settingsForm.performanceThresholds[critical]} onChange={(event) => onUpdateSettings(critical, event.target.value)} />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+                {invalidPerformanceThresholds && <p className="settings-performance-error" role="alert">每项阈值必须在 0 到 100 之间，且注意值小于严重值。</p>}
               </fieldset>
               <details className="settings-section settings-section-formats" aria-labelledby="preview-formats-title">
                 <summary className="settings-disclosure-summary">

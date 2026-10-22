@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import type { AppSettings, AppSettingsPatch, PreviewExtensions, PreviewType, SaveProfileInput, ServerProfile, SessionKind, StartupConnection, ThemeMode } from '@shared/types'
-import type { FileViewMode, ProfileForm, SettingsFieldKey, SettingsForm } from '@/app-types'
+import type { AppSettings, AppSettingsPatch, PerformanceThresholds, PreviewExtensions, PreviewType, SaveProfileInput, ServerProfile, SessionKind, StartupConnection, ThemeMode } from '@shared/types'
+import { performanceThresholdsToForm, type FileViewMode, type PerformanceThresholdField, type ProfileForm, type SettingsFieldKey, type SettingsForm } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { emptyForm, errorMessage, toPreviewLimitsForm } from '@/app-utils'
 import { DEFAULT_PREVIEW_EXTENSIONS } from '@shared/preview-file-type'
@@ -11,9 +11,21 @@ interface UseProfileManagementOptions {
   onProfileDeleted: (profileId: string) => void
   onDefaultViewChange: (mode: FileViewMode) => void
   onPreviewExtensionsChange: (extensions: PreviewExtensions) => void
+  onPerformanceThresholdsChange: (thresholds: PerformanceThresholds) => void
 }
 
-export function useProfileManagement({ showToast, onProfileSaved, onProfileDeleted, onDefaultViewChange, onPreviewExtensionsChange }: UseProfileManagementOptions) {
+const thresholdFieldParts: Record<PerformanceThresholdField, keyof PerformanceThresholds> = {
+  cpuWarning: 'cpu',
+  cpuCritical: 'cpu',
+  memoryWarning: 'memory',
+  memoryCritical: 'memory',
+  diskWarning: 'disk',
+  diskCritical: 'disk',
+  loadPerCoreWarning: 'loadPerCore',
+  loadPerCoreCritical: 'loadPerCore',
+}
+
+export function useProfileManagement({ showToast, onProfileSaved, onProfileDeleted, onDefaultViewChange, onPreviewExtensionsChange, onPerformanceThresholdsChange }: UseProfileManagementOptions) {
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
   const [profilesLoaded, setProfilesLoaded] = useState(false)
   const [startupSettingsLoaded, setStartupSettingsLoaded] = useState(false)
@@ -43,10 +55,13 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
   }
 
   const formWithSetting = (current: SettingsForm, key: keyof AppSettings, settings: AppSettings): SettingsForm => {
-    if (key in current && key !== 'previewExtensions' && key !== 'startupConnection') {
+    if (key in current && key !== 'previewExtensions' && key !== 'startupConnection' && key !== 'performanceThresholds') {
       return { ...current, [key]: String(settings[key as keyof AppSettings]) }
     }
     if (key === 'previewExtensions') return { ...current, previewExtensions: settings.previewExtensions }
+    if (key === 'performanceThresholds') {
+      return { ...current, performanceThresholds: performanceThresholdsToForm(settings.performanceThresholds) }
+    }
     if (key === 'startupConnection') return {
       ...current,
       startupProfileId: settings.startupConnection?.profileId ?? '',
@@ -59,6 +74,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
     if (key === 'defaultView') onDefaultViewChange(settings.defaultView)
     if (key === 'previewExtensions') onPreviewExtensionsChange(settings.previewExtensions)
     if (key === 'startupConnection') setStartupConnection(settings.startupConnection)
+    if (key === 'performanceThresholds') onPerformanceThresholdsChange(settings.performanceThresholds)
   }
 
   const persistSetting = (key: keyof AppSettings, patch: AppSettingsPatch) => {
@@ -68,6 +84,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
       try {
         const saved = await window.remoteFiles.updateAppSettings(patch)
         persistedSettingsRef.current = saved
+        if (key === 'performanceThresholds') onPerformanceThresholdsChange(saved.performanceThresholds)
       } catch (error) {
         showToast('error', '保存设置失败：' + errorMessage(error))
         let saved = persistedSettingsRef.current
@@ -99,10 +116,11 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
         setStartupConnection(settings.startupConnection)
         onDefaultViewChange(settings.defaultView)
         onPreviewExtensionsChange(settings.previewExtensions)
+        onPerformanceThresholdsChange(settings.performanceThresholds)
       })
       .catch((error) => showToast('error', '读取设置失败：' + errorMessage(error)))
       .finally(() => setStartupSettingsLoaded(true))
-  }, [showToast, onPreviewExtensionsChange])
+  }, [showToast, onPreviewExtensionsChange, onPerformanceThresholdsChange])
 
   const openProfileDialog = (mode: 'create' | 'edit', profile?: ServerProfile) => {
     setDialog({
@@ -134,6 +152,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
         defaultView: settings.defaultView,
         previewExtensions: Object.fromEntries(Object.entries(settings.previewExtensions).map(([type, extensions]) => [type, [...extensions]])) as PreviewExtensions,
         transferFileConcurrency: String(settings.transferFileConcurrency),
+        performanceThresholds: performanceThresholdsToForm(settings.performanceThresholds),
         startupProfileId: profileId && profiles.some((profile) => profile.id === profileId) ? profileId : '',
         startupKind: settings.startupConnection?.kind ?? 'sftp',
       })
@@ -146,13 +165,34 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
   }
 
   const updateSettingsForm = (key: SettingsFieldKey, value: string) => {
-    updateSettingsDraft((current) => ({ ...current, [key]: value }))
+    const next = updateSettingsDraft((current) => {
+      if (key in thresholdFieldParts) {
+        return { ...current, performanceThresholds: { ...current.performanceThresholds, [key]: value } }
+      }
+      return { ...current, [key]: value }
+    })
+    if (key in thresholdFieldParts) {
+      if (!next) return
+      const thresholds = {
+        cpu: { warning: Number(next.performanceThresholds.cpuWarning), critical: Number(next.performanceThresholds.cpuCritical) },
+        memory: { warning: Number(next.performanceThresholds.memoryWarning), critical: Number(next.performanceThresholds.memoryCritical) },
+        disk: { warning: Number(next.performanceThresholds.diskWarning), critical: Number(next.performanceThresholds.diskCritical) },
+        loadPerCore: { warning: Number(next.performanceThresholds.loadPerCoreWarning), critical: Number(next.performanceThresholds.loadPerCoreCritical) },
+      }
+      const inputsValid = Object.values(next.performanceThresholds).every((text) => text.trim() !== ''
+        && Number.isFinite(Number(text)) && Number(text) >= 0 && Number(text) <= 100)
+      const pairsValid = Object.values(thresholds).every((pair) => pair.warning < pair.critical)
+      if (inputsValid && pairsValid) persistSetting('performanceThresholds', { performanceThresholds: thresholds })
+      else settingsVersionsRef.current.set('performanceThresholds', (settingsVersionsRef.current.get('performanceThresholds') ?? 0) + 1)
+      return
+    }
     const numericValue = Number(value)
     const maximum = key === 'transferFileConcurrency' ? 16 : 1024
+    const settingsKey = key as keyof AppSettings
     if (Number.isInteger(numericValue) && numericValue >= 1 && numericValue <= maximum) {
-      persistSetting(key, { [key]: numericValue })
+      persistSetting(settingsKey, { [settingsKey]: numericValue })
     } else {
-      settingsVersionsRef.current.set(key, (settingsVersionsRef.current.get(key) ?? 0) + 1)
+      settingsVersionsRef.current.set(settingsKey, (settingsVersionsRef.current.get(settingsKey) ?? 0) + 1)
     }
   }
 

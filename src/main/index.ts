@@ -8,6 +8,7 @@ import { registerPreviewProtocol } from './preview-protocol'
 import { clearPreviewAssets, getMainWindow, messageFromError, setMainWindow } from './runtime'
 import { configureStateFiles, readAppSettings, readState } from './state-store'
 import { applyTheme, themeBackgroundColor } from './theme'
+import { stopAllPerformanceMonitors } from './performance-monitor'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'remote-preview',
@@ -106,6 +107,7 @@ function createWindow(): void {
   }
 
   window.on('closed', () => {
+    stopAllPerformanceMonitors()
     setMainWindow(null)
     clearPreviewAssets()
     void rm(join(app.getPath('temp'), 'linux-nexus-preview'), { recursive: true, force: true })

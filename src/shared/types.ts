@@ -129,6 +129,40 @@ export interface PreviewLimits {
   videoMiB: number
 }
 
+export interface PerformanceThreshold {
+  warning: number
+  critical: number
+}
+
+export interface PerformanceThresholds {
+  cpu: PerformanceThreshold
+  memory: PerformanceThreshold
+  disk: PerformanceThreshold
+  loadPerCore: PerformanceThreshold
+}
+
+export interface PerformanceSnapshot {
+  sampledAt: string
+  cpuPercent: number | null
+  memoryPercent: number
+  memoryUsedBytes: number
+  memoryTotalBytes: number
+  diskPercent: number
+  diskUsedBytes: number
+  diskTotalBytes: number
+  loadAverage: [number, number, number]
+  uptimeSeconds: number
+  cpuCores: number
+}
+
+export interface PerformanceUpdate {
+  sessionId: string
+  monitorId: string
+  status: 'sampling' | 'ready' | 'error'
+  snapshot?: PerformanceSnapshot
+  message?: string
+}
+
 export type PreviewType = 'text' | 'markdown' | 'pdf' | 'image' | 'audio' | 'video'
 
 export type PreviewExtensions = Record<PreviewType, string[]>
@@ -146,6 +180,7 @@ export interface AppSettings extends PreviewLimits {
   previewExtensions: PreviewExtensions
   startupConnection: StartupConnection | null
   transferFileConcurrency: number
+  performanceThresholds: PerformanceThresholds
 }
 
 export type AppSettingsPatch = Partial<AppSettings>
@@ -311,6 +346,9 @@ export interface RemoteFilesApi {
   disconnect(sessionId: string): Promise<void>
   writeTerminal(sessionId: string, data: string): Promise<void>
   resizeTerminal(sessionId: string, cols: number, rows: number): Promise<void>
+  startPerformanceMonitor(sessionId: string, monitorId: string): Promise<void>
+  stopPerformanceMonitor(sessionId: string, monitorId: string): Promise<void>
+  refreshPerformanceMonitor(sessionId: string, monitorId: string): Promise<void>
   getAppSettings(): Promise<AppSettings>
   updateAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
   listCommandAliasSnapshots(): Promise<CommandAliasSnapshot[]>
@@ -361,4 +399,5 @@ export interface RemoteFilesApi {
   onSearchEvent(callback: (event: RemoteSearchEvent) => void): () => void
   onConnectionClosed(callback: (event: ConnectionClosedEvent) => void): () => void
   onTerminalOutput(callback: (event: TerminalOutputEvent) => void): () => void
+  onPerformanceUpdate(callback: (event: PerformanceUpdate) => void): () => void
 }

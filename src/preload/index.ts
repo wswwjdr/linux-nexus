@@ -11,6 +11,7 @@ import type {
   RemoteMoveResult,
   PreviewResult,
   PreviewType,
+  PerformanceUpdate,
   AppSettings,
   AppSettingsPatch,
   RemoteCopyDecision,
@@ -38,6 +39,9 @@ const api: RemoteFilesApi = {
   disconnect: (sessionId: string) => ipcRenderer.invoke('connection:disconnect', sessionId),
   writeTerminal: (sessionId: string, data: string) => ipcRenderer.invoke('terminal:write', sessionId, data),
   resizeTerminal: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
+  startPerformanceMonitor: (sessionId: string, monitorId: string) => ipcRenderer.invoke('performance:start', sessionId, monitorId),
+  stopPerformanceMonitor: (sessionId: string, monitorId: string) => ipcRenderer.invoke('performance:stop', sessionId, monitorId),
+  refreshPerformanceMonitor: (sessionId: string, monitorId: string) => ipcRenderer.invoke('performance:refresh', sessionId, monitorId),
   getAppSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
   updateAppSettings: (patch: AppSettingsPatch): Promise<AppSettings> => ipcRenderer.invoke('settings:update', patch),
   listCommandAliasSnapshots: (): Promise<CommandAliasSnapshot[]> => ipcRenderer.invoke('aliases:list'),
@@ -119,6 +123,11 @@ const api: RemoteFilesApi = {
     const listener = (_event: Electron.IpcRendererEvent, output: TerminalOutputEvent) => callback(output)
     ipcRenderer.on('terminal:output', listener)
     return () => ipcRenderer.removeListener('terminal:output', listener)
+  },
+  onPerformanceUpdate: (callback: (event: PerformanceUpdate) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, update: PerformanceUpdate) => callback(update)
+    ipcRenderer.on('performance:update', listener)
+    return () => ipcRenderer.removeListener('performance:update', listener)
   },
 }
 
