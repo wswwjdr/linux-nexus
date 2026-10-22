@@ -1,7 +1,7 @@
 import { ipcMain, safeStorage, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import type {
-  AppSettings,
+  AppSettingsPatch,
   RemoteCopyDecision,
   RemoteCopyRequest,
   RemoteMoveDecision,
@@ -13,6 +13,7 @@ import type {
   TrustHostKeyInput,
 } from '@shared/types'
 import { connectionIdentityChanged } from '@shared/command-aliases'
+import { applyAppSettingsPatch } from '@shared/app-settings'
 import { validateExternalUrl } from '@shared/external-url'
 import { deleteCommandAlias, listCommandAliasSnapshots, saveCommandAlias, synchronizeCommandAliases } from './command-aliases'
 import {
@@ -32,7 +33,6 @@ import {
   profileFromState,
   readAppSettings,
   readState,
-  validateAppSettings,
   writeAppSettings,
   writeState,
 } from './state-store'
@@ -168,8 +168,8 @@ export function registerIpc(): void {
     resizeTerminal(sessionId, cols, rows)
   })
   ipcMain.handle('settings:get', () => readAppSettings())
-  ipcMain.handle('settings:save', (_event, input: AppSettings) => {
-    const settings = validateAppSettings(input)
+  ipcMain.handle('settings:update', (_event, input: AppSettingsPatch) => {
+    const settings = applyAppSettingsPatch(readAppSettings(), input)
     if (settings.startupConnection
       && !readState().profiles.some((profile) => profile.id === settings.startupConnection?.profileId)) {
       throw new Error('启动连接所选服务器不存在')

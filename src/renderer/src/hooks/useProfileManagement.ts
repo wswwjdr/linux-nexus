@@ -1,8 +1,8 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import type { AppSettings, PreviewExtensions, PreviewLimits, PreviewType, SaveProfileInput, ServerProfile, SessionKind, StartupConnection, ThemeMode } from '@shared/types'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import type { AppSettings, AppSettingsPatch, PreviewExtensions, PreviewType, SaveProfileInput, ServerProfile, SessionKind, StartupConnection, ThemeMode } from '@shared/types'
 import type { FileViewMode, ProfileForm, SettingsFieldKey, SettingsForm } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
-import { emptyForm, errorMessage, previewLimitFields, readDefaultView, toPreviewLimitsForm } from '@/app-utils'
+import { emptyForm, errorMessage, toPreviewLimitsForm } from '@/app-utils'
 import { DEFAULT_PREVIEW_EXTENSIONS } from '@shared/preview-file-type'
 
 interface UseProfileManagementOptions {
@@ -24,7 +24,66 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
   const [profileDeleting, setProfileDeleting] = useState(false)
   const [settingsForm, setSettingsForm] = useState<SettingsForm | null>(null)
   const [settingsLoading, setSettingsLoading] = useState(false)
-  const [settingsSaving, setSettingsSaving] = useState(false)
+  const settingsFormRef = useRef<SettingsForm | null>(null)
+  const settingsWritesRef = useRef<Promise<void>>(Promise.resolve())
+  const persistedSettingsRef = useRef<AppSettings | null>(null)
+  const settingsVersionsRef = useRef(new Map<keyof AppSettings, number>())
+
+  const replaceSettingsForm = (next: SettingsForm | null) => {
+    settingsFormRef.current = next
+    setSettingsForm(next)
+  }
+
+  const updateSettingsDraft = (update: (current: SettingsForm) => SettingsForm) => {
+    const current = settingsFormRef.current
+    if (!current) return null
+    const next = update(current)
+    replaceSettingsForm(next)
+    return next
+  }
+
+  const formWithSetting = (current: SettingsForm, key: keyof AppSettings, settings: AppSettings): SettingsForm => {
+    if (key in current && key !== 'previewExtensions' && key !== 'startupConnection') {
+      return { ...current, [key]: String(settings[key as keyof AppSettings]) }
+    }
+    if (key === 'previewExtensions') return { ...current, previewExtensions: settings.previewExtensions }
+    if (key === 'startupConnection') return {
+      ...current,
+      startupProfileId: settings.startupConnection?.profileId ?? '',
+      startupKind: settings.startupConnection?.kind ?? 'sftp',
+    }
+    return current
+  }
+
+  const reflectSetting = (key: keyof AppSettings, settings: AppSettings) => {
+    if (key === 'defaultView') onDefaultViewChange(settings.defaultView)
+    if (key === 'previewExtensions') onPreviewExtensionsChange(settings.previewExtensions)
+    if (key === 'startupConnection') setStartupConnection(settings.startupConnection)
+  }
+
+  const persistSetting = (key: keyof AppSettings, patch: AppSettingsPatch) => {
+    const version = (settingsVersionsRef.current.get(key) ?? 0) + 1
+    settingsVersionsRef.current.set(key, version)
+    settingsWritesRef.current = settingsWritesRef.current.then(async () => {
+      try {
+        const saved = await window.remoteFiles.updateAppSettings(patch)
+        persistedSettingsRef.current = saved
+      } catch (error) {
+        showToast('error', '保存设置失败：' + errorMessage(error))
+        let saved = persistedSettingsRef.current
+        try {
+          saved = await window.remoteFiles.getAppSettings()
+          persistedSettingsRef.current = saved
+        } catch (readError) {
+          showToast('error', '重新读取设置失败：' + errorMessage(readError))
+        }
+        if (saved && settingsVersionsRef.current.get(key) === version) {
+          updateSettingsDraft((current) => formWithSetting(current, key, saved!))
+          reflectSetting(key, saved)
+        }
+      }
+    })
+  }
 
   const refreshProfiles = async () => {
     setProfiles(await window.remoteFiles.listProfiles())
@@ -36,7 +95,9 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
       .finally(() => setProfilesLoaded(true))
     void window.remoteFiles.getAppSettings()
       .then((settings) => {
+        persistedSettingsRef.current = settings
         setStartupConnection(settings.startupConnection)
+        onDefaultViewChange(settings.defaultView)
         onPreviewExtensionsChange(settings.previewExtensions)
       })
       .catch((error) => showToast('error', '读取设置失败：' + errorMessage(error)))
@@ -60,20 +121,23 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
   }
 
   const openSettingsDialog = async () => {
-    if (settingsLoading || settingsSaving) return
+    if (settingsLoading) return
     setSettingsLoading(true)
     try {
+      await settingsWritesRef.current
       const settings = await window.remoteFiles.getAppSettings()
+      persistedSettingsRef.current = settings
       const profileId = settings.startupConnection?.profileId
-      setSettingsForm({
+      replaceSettingsForm({
         ...toPreviewLimitsForm(settings),
         theme: settings.theme,
+        defaultView: settings.defaultView,
         previewExtensions: Object.fromEntries(Object.entries(settings.previewExtensions).map(([type, extensions]) => [type, [...extensions]])) as PreviewExtensions,
         transferFileConcurrency: String(settings.transferFileConcurrency),
-        defaultView: readDefaultView(),
         startupProfileId: profileId && profiles.some((profile) => profile.id === profileId) ? profileId : '',
         startupKind: settings.startupConnection?.kind ?? 'sftp',
       })
+      setStartupConnection(settings.startupConnection)
     } catch (error) {
       showToast('error', '读取设置失败：' + errorMessage(error))
     } finally {
@@ -82,100 +146,82 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
   }
 
   const updateSettingsForm = (key: SettingsFieldKey, value: string) => {
-    setSettingsForm((current) => current ? { ...current, [key]: value } : current)
+    updateSettingsDraft((current) => ({ ...current, [key]: value }))
+    const numericValue = Number(value)
+    const maximum = key === 'transferFileConcurrency' ? 16 : 1024
+    if (Number.isInteger(numericValue) && numericValue >= 1 && numericValue <= maximum) {
+      persistSetting(key, { [key]: numericValue })
+    } else {
+      settingsVersionsRef.current.set(key, (settingsVersionsRef.current.get(key) ?? 0) + 1)
+    }
   }
 
   const addPreviewExtension = (type: PreviewType, extension: string) => {
-    setSettingsForm((current) => current
-      ? {
-          ...current,
-          previewExtensions: {
-            ...current.previewExtensions,
-            [type]: [...new Set([...current.previewExtensions[type], extension])],
-          },
-        }
-      : current)
+    const next = updateSettingsDraft((current) => ({
+      ...current,
+      previewExtensions: {
+        ...current.previewExtensions,
+        [type]: [...new Set([...current.previewExtensions[type], extension])],
+      },
+    }))
+    if (next) {
+      onPreviewExtensionsChange(next.previewExtensions)
+      persistSetting('previewExtensions', { previewExtensions: next.previewExtensions })
+    }
   }
 
   const removePreviewExtension = (type: PreviewType, extension: string) => {
-    setSettingsForm((current) => current
-      ? {
-          ...current,
-          previewExtensions: {
-            ...current.previewExtensions,
-            [type]: current.previewExtensions[type].filter((candidate) => candidate !== extension),
-          },
-        }
-      : current)
+    const next = updateSettingsDraft((current) => ({
+      ...current,
+      previewExtensions: {
+        ...current.previewExtensions,
+        [type]: current.previewExtensions[type].filter((candidate) => candidate !== extension),
+      },
+    }))
+    if (next) {
+      onPreviewExtensionsChange(next.previewExtensions)
+      persistSetting('previewExtensions', { previewExtensions: next.previewExtensions })
+    }
   }
 
   const resetPreviewExtensions = () => {
-    setSettingsForm((current) => current
-      ? {
-          ...current,
-          previewExtensions: Object.fromEntries(Object.entries(DEFAULT_PREVIEW_EXTENSIONS).map(([type, extensions]) => [type, [...extensions]])) as PreviewExtensions,
-        }
-      : current)
+    const next = updateSettingsDraft((current) => ({
+      ...current,
+      previewExtensions: Object.fromEntries(Object.entries(DEFAULT_PREVIEW_EXTENSIONS).map(([type, extensions]) => [type, [...extensions]])) as PreviewExtensions,
+    }))
+    if (next) {
+      onPreviewExtensionsChange(next.previewExtensions)
+      persistSetting('previewExtensions', { previewExtensions: next.previewExtensions })
+    }
   }
 
   const updateDefaultView = (defaultView: FileViewMode) => {
-    setSettingsForm((current) => current ? { ...current, defaultView } : current)
+    updateSettingsDraft((current) => ({ ...current, defaultView }))
+    onDefaultViewChange(defaultView)
+    persistSetting('defaultView', { defaultView })
   }
 
   const updateTheme = (theme: ThemeMode) => {
-    setSettingsForm((current) => current ? { ...current, theme } : current)
+    updateSettingsDraft((current) => ({ ...current, theme }))
+    persistSetting('theme', { theme })
   }
 
   const updateStartupProfile = (startupProfileId: string) => {
-    setSettingsForm((current) => current ? { ...current, startupProfileId } : current)
+    const current = settingsFormRef.current
+    if (!current) return
+    const startupConnection = startupProfileId ? { profileId: startupProfileId, kind: current.startupKind } : null
+    updateSettingsDraft((form) => ({ ...form, startupProfileId }))
+    setStartupConnection(startupConnection)
+    persistSetting('startupConnection', { startupConnection })
   }
 
   const updateStartupKind = (startupKind: SessionKind) => {
-    setSettingsForm((current) => current ? { ...current, startupKind } : current)
-  }
-
-  const submitSettings = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!settingsForm) return
-    const limits: PreviewLimits = {
-      textMiB: Number(settingsForm.textMiB),
-      pdfMiB: Number(settingsForm.pdfMiB),
-      imageMiB: Number(settingsForm.imageMiB),
-      audioMiB: Number(settingsForm.audioMiB),
-      videoMiB: Number(settingsForm.videoMiB),
-    }
-    if (previewLimitFields.some(({ key }) => !Number.isInteger(limits[key]) || limits[key] < 1 || limits[key] > 1024)) {
-      showToast('error', '预览上限必须是 1 到 1024 之间的整数')
-      return
-    }
-    const transferFileConcurrency = Number(settingsForm.transferFileConcurrency)
-    if (!Number.isInteger(transferFileConcurrency) || transferFileConcurrency < 1 || transferFileConcurrency > 16) {
-      showToast('error', '同时传输文件数必须是 1 到 16 之间的整数')
-      return
-    }
-
-    setSettingsSaving(true)
-    try {
-      const settings: AppSettings = {
-        ...limits,
-        theme: settingsForm.theme,
-        previewExtensions: settingsForm.previewExtensions,
-        transferFileConcurrency,
-        startupConnection: settingsForm.startupProfileId
-          ? { profileId: settingsForm.startupProfileId, kind: settingsForm.startupKind }
-          : null,
-      }
-      const savedSettings = await window.remoteFiles.saveAppSettings(settings)
-      setStartupConnection(settings.startupConnection)
-      onPreviewExtensionsChange(savedSettings.previewExtensions)
-      window.localStorage.setItem('remote-files:default-view', settingsForm.defaultView)
-      onDefaultViewChange(settingsForm.defaultView)
-      setSettingsForm(null)
-    } catch (error) {
-      showToast('error', '保存设置失败：' + errorMessage(error))
-    } finally {
-      setSettingsSaving(false)
-    }
+    const current = settingsFormRef.current
+    if (!current) return
+    const startupConnection = current.startupProfileId ? { profileId: current.startupProfileId, kind: startupKind } : null
+    updateSettingsDraft((form) => ({ ...form, startupKind }))
+    setStartupConnection(startupConnection)
+    persistSetting('startupConnection', { startupConnection })
   }
 
   const updateProfileForm = (patch: Partial<ProfileForm>) => {
@@ -237,7 +283,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
   }
 
   const closeProfileDialog = () => setDialog(null)
-  const closeSettingsDialog = () => setSettingsForm(null)
+  const closeSettingsDialog = () => replaceSettingsForm(null)
 
   return {
     profiles,
@@ -249,7 +295,6 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
     profileDeleting,
     settingsForm,
     settingsLoading,
-    settingsSaving,
     openProfileDialog,
     openSettingsDialog,
     updateProfileForm,
@@ -265,7 +310,6 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
     updateTheme,
     updateStartupProfile,
     updateStartupKind,
-    submitSettings,
     closeProfileDialog,
     closeSettingsDialog,
   }

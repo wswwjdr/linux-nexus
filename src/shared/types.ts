@@ -142,10 +142,13 @@ export type ThemeMode = 'light' | 'dark' | 'system'
 
 export interface AppSettings extends PreviewLimits {
   theme: ThemeMode
+  defaultView: 'icons' | 'details'
   previewExtensions: PreviewExtensions
   startupConnection: StartupConnection | null
   transferFileConcurrency: number
 }
+
+export type AppSettingsPatch = Partial<AppSettings>
 
 export interface TransferFileProgress {
   remotePath: string
@@ -309,7 +312,7 @@ export interface RemoteFilesApi {
   writeTerminal(sessionId: string, data: string): Promise<void>
   resizeTerminal(sessionId: string, cols: number, rows: number): Promise<void>
   getAppSettings(): Promise<AppSettings>
-  saveAppSettings(settings: AppSettings): Promise<AppSettings>
+  updateAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
   listCommandAliasSnapshots(): Promise<CommandAliasSnapshot[]>
   syncCommandAliases(profileId: string): Promise<CommandAliasOperationResult>
   saveCommandAlias(profileId: string, name: string, command: string, overwrite: boolean): Promise<CommandAliasOperationResult>

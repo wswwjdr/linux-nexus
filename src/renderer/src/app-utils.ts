@@ -1,5 +1,5 @@
 import type { ConnectResult, PreviewLimits } from '@shared/types'
-import type { FileViewMode, PreviewLimitKey, PreviewLimitsForm, ProfileForm, RecentConnection } from './app-types'
+import type { PreviewLimitKey, PreviewLimitsForm, ProfileForm, RecentConnection } from './app-types'
 
 export const previewLimitFields: { key: PreviewLimitKey; label: string }[] = [
   { key: 'textMiB', label: '文本文件上限（MiB）' },
@@ -41,12 +41,6 @@ export function formatDate(value: string | null): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
-}
-
-export function readDefaultView(): FileViewMode {
-  const savedMode = window.localStorage.getItem('remote-files:default-view')
-    ?? window.localStorage.getItem('remote-files:view-mode')
-  return savedMode === 'icons' || savedMode === 'details' ? savedMode : 'details'
 }
 
 export function readRecentConnections(): RecentConnection[] {

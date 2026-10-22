@@ -24,7 +24,6 @@ interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
   creatingDirectory: boolean
   settingsForm: SettingsForm | null
   profiles: ServerProfile[]
-  settingsSaving: boolean
   textSaveError: string | null
   pendingHostKey: PendingHostKey | null
   pendingAliasHostKey: PendingAliasHostKey | null
@@ -52,7 +51,6 @@ interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
   onUpdateTheme: (theme: ThemeMode) => void
   onUpdateStartupProfile: (profileId: string) => void
   onUpdateStartupKind: (kind: SettingsForm['startupKind']) => void
-  onSubmitSettings: (event: FormEvent<HTMLFormElement>) => void
   onClosePreview: () => void
   onConfirmTextSave: () => void
   onCancelTextSave: () => void
@@ -75,13 +73,11 @@ interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
 function PreviewExtensionEditor({
   type,
   extensions,
-  disabled,
   onAdd,
   onRemove,
 }: {
   type: PreviewType
   extensions: string[]
-  disabled: boolean
   onAdd: (type: PreviewType, extension: string) => void
   onRemove: (type: PreviewType, extension: string) => void
 }) {
@@ -111,7 +107,7 @@ function PreviewExtensionEditor({
           {extensions.map((extension) => (
             <span className="preview-extension-tag" key={extension}>
               <code>{extension}</code>
-              <button type="button" title={'移除 ' + extension} aria-label={'移除 ' + extension} disabled={disabled} onClick={() => onRemove(type, extension)}><X size={12} /></button>
+              <button type="button" title={'移除 ' + extension} aria-label={'移除 ' + extension} onClick={() => onRemove(type, extension)}><X size={12} /></button>
             </span>
           ))}
         </div>
@@ -119,7 +115,6 @@ function PreviewExtensionEditor({
       <div className="preview-extension-add">
         <input
           value={draft}
-          disabled={disabled}
           aria-label={'添加' + previewTypeLabels[type].replace('预览', '') + '后缀'}
           placeholder="添加后缀，如 .txt"
           onChange={(event) => {
@@ -133,7 +128,7 @@ function PreviewExtensionEditor({
             }
           }}
         />
-        <button type="button" className="icon-button" title="添加后缀" aria-label="添加后缀" disabled={disabled || !draft.trim()} onClick={add}><Plus size={15} /></button>
+        <button type="button" className="icon-button" title="添加后缀" aria-label="添加后缀" disabled={!draft.trim()} onClick={add}><Plus size={15} /></button>
       </div>
       {error && <span className="preview-extension-error" role="alert">{error}</span>}
     </div>
@@ -149,7 +144,6 @@ export default function DialogLayer({
   creatingDirectory,
   settingsForm,
   profiles,
-  settingsSaving,
   previewDialog,
   logPreviewDialog,
   textDraft,
@@ -188,7 +182,6 @@ export default function DialogLayer({
   onUpdateTheme,
   onUpdateStartupProfile,
   onUpdateStartupKind,
-  onSubmitSettings,
   onClosePreview,
   onOpenExternalLink,
   onLogPreviewScroll,
@@ -243,7 +236,7 @@ export default function DialogLayer({
       }
       if (settingsForm) {
         event.preventDefault()
-        if (!settingsSaving && !aliasOperationBusy) onCloseSettings()
+        if (!aliasOperationBusy) onCloseSettings()
         return
       }
       if (profileDialog) {
@@ -271,7 +264,6 @@ export default function DialogLayer({
     createDirectoryDialog,
     creatingDirectory,
     settingsForm,
-    settingsSaving,
     aliasOperationBusy,
   ])
 
@@ -379,11 +371,14 @@ export default function DialogLayer({
       )}
 
       {settingsForm && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !settingsSaving && !aliasOperationBusy && onCloseSettings()}>
-          <section className="modal settings-modal" role="dialog" aria-modal="true" aria-label="应用设置">
-            <form onSubmit={onSubmitSettings}>
-              <div className="settings-form-content">
-              <fieldset className="settings-section settings-section-appearance" disabled={settingsSaving}>
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !aliasOperationBusy && onCloseSettings()}>
+          <section className="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+            <div className="modal-heading settings-modal-heading">
+              <h2 id="settings-modal-title">应用设置</h2>
+              <button className="icon-button modal-close" title="关闭" aria-label="关闭设置" disabled={aliasOperationBusy} onClick={onCloseSettings}><X size={18} /></button>
+            </div>
+            <div className="settings-form-content">
+              <fieldset className="settings-section settings-section-appearance">
                 <legend>外观</legend>
                 <div className="settings-view-options settings-theme-options" role="group" aria-label="外观主题">
                   <button type="button" className="settings-view-option" aria-pressed={settingsForm.theme === 'light'} onClick={() => onUpdateTheme('light')}>
@@ -397,7 +392,7 @@ export default function DialogLayer({
                   </button>
                 </div>
               </fieldset>
-              <fieldset className="settings-section settings-section-view" disabled={settingsSaving}>
+              <fieldset className="settings-section settings-section-view">
                 <legend>默认文件视图</legend>
                 <div className="settings-view-options" role="group" aria-label="默认文件视图">
                   <button
@@ -418,7 +413,7 @@ export default function DialogLayer({
                   </button>
                 </div>
               </fieldset>
-              <fieldset className="settings-section settings-section-startup" disabled={settingsSaving}>
+              <fieldset className="settings-section settings-section-startup">
                 <legend>启动连接</legend>
                 <label className="field settings-startup-profile">
                   <span>启动时连接</span>
@@ -458,7 +453,7 @@ export default function DialogLayer({
                   </div>
                 )}
               </fieldset>
-              <fieldset className="settings-section settings-section-preview" disabled={settingsSaving}>
+              <fieldset className="settings-section settings-section-preview">
                 <legend>预览大小上限</legend>
                 <div className="settings-preview-grid">
                   {previewLimitFields.map(({ key, label }) => (
@@ -476,21 +471,20 @@ export default function DialogLayer({
                 </summary>
                 <div className="preview-formats-content">
                   <div className="preview-formats-heading">
-                  <button type="button" className="text-button" disabled={settingsSaving} onClick={onResetPreviewExtensions}>恢复默认</button>
+                  <button type="button" className="text-button" onClick={onResetPreviewExtensions}>恢复默认</button>
                   </div>
                   {previewTypes.map((type) => (
                     <PreviewExtensionEditor
                       key={type}
                       type={type}
                       extensions={settingsForm.previewExtensions[type]}
-                      disabled={settingsSaving}
                       onAdd={onAddPreviewExtension}
                       onRemove={onRemovePreviewExtension}
                     />
                   ))}
                 </div>
               </details>
-              <fieldset className="settings-section settings-section-transfer" disabled={settingsSaving}>
+              <fieldset className="settings-section settings-section-transfer">
                 <legend>文件传输</legend>
                 <label className="field settings-transfer-concurrency">
                   <span>同时传输文件数</span>
@@ -521,7 +515,7 @@ export default function DialogLayer({
                   <span>服务器</span>
                   <select
                     value={aliasProfileId}
-                    disabled={settingsSaving || aliasOperationBusy || !profiles.length}
+                    disabled={aliasOperationBusy || !profiles.length}
                     onChange={(event) => onSelectAliasProfile(event.target.value)}
                   >
                     {profiles.map((profile) => (
@@ -531,7 +525,7 @@ export default function DialogLayer({
                 </label>
                 <div className="command-alias-toolbar">
                   <span>{aliasSnapshot?.aliases.length ?? 0} 个别名</span>
-                  <button type="button" className="secondary-button command-alias-sync" disabled={settingsSaving || aliasOperationBusy || !aliasProfileId} onClick={onSyncAliases}>
+                  <button type="button" className="secondary-button command-alias-sync" disabled={aliasOperationBusy || !aliasProfileId} onClick={onSyncAliases}>
                     {aliasOperationBusy ? <LoaderCircle className="spin" size={14} /> : <RefreshCw size={14} />}
                     {aliasOperationBusy ? '处理中' : aliasSnapshot?.status === 'synced' ? '重新同步' : '同步'}
                   </button>
@@ -551,7 +545,7 @@ export default function DialogLayer({
                         className="icon-button command-alias-delete"
                         title={alias.removable ? `删除 ${alias.name}` : alias.removalReason ?? '此别名无法安全删除'}
                         aria-label={alias.removable ? `删除 ${alias.name}` : `${alias.name}：${alias.removalReason ?? '无法安全删除'}`}
-                        disabled={settingsSaving || aliasOperationBusy || !alias.removable}
+                        disabled={aliasOperationBusy || !alias.removable}
                         onClick={() => onRequestAliasDelete(alias)}
                       ><Trash2 size={14} /></button>
                     </div>
@@ -562,22 +556,17 @@ export default function DialogLayer({
                 <div className="command-alias-add-row">
                   <label className="field">
                     <span>别名名称</span>
-                    <input autoCapitalize="none" autoComplete="off" disabled={settingsSaving || aliasOperationBusy || !aliasProfileId} value={aliasName} onChange={(event) => onUpdateAliasName(event.target.value)} placeholder="例如 ll" />
+                    <input autoCapitalize="none" autoComplete="off" disabled={aliasOperationBusy || !aliasProfileId} value={aliasName} onChange={(event) => onUpdateAliasName(event.target.value)} placeholder="例如 ll" />
                   </label>
                   <label className="field">
                     <span>实际命令</span>
-                    <input autoCapitalize="none" autoComplete="off" disabled={settingsSaving || aliasOperationBusy || !aliasProfileId} value={aliasCommand} onChange={(event) => onUpdateAliasCommand(event.target.value)} placeholder="例如 ls -alF" />
+                    <input autoCapitalize="none" autoComplete="off" disabled={aliasOperationBusy || !aliasProfileId} value={aliasCommand} onChange={(event) => onUpdateAliasCommand(event.target.value)} placeholder="例如 ls -alF" />
                   </label>
-                  <button type="button" className="primary-button command-alias-add" disabled={settingsSaving || aliasOperationBusy || !aliasProfileId} onClick={onAddAlias} title="新增 alias 命令" aria-label="新增 alias 命令"><Plus size={15} />新增</button>
+                  <button type="button" className="primary-button command-alias-add" disabled={aliasOperationBusy || !aliasProfileId} onClick={onAddAlias} title="新增 alias 命令" aria-label="新增 alias 命令"><Plus size={15} />新增</button>
                 </div>
                 <p className="command-alias-note">仅支持 Bash。新增和删除会修改服务器的 ~/.bashrc，并在新开的终端中生效。</p>
               </details>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="secondary-button" disabled={settingsSaving || aliasOperationBusy} onClick={onCloseSettings}>取消</button>
-                <button type="submit" className="primary-button" disabled={settingsSaving || aliasOperationBusy}><Check size={15} /> 保存设置</button>
-              </div>
-            </form>
+            </div>
           </section>
         </div>
       )}

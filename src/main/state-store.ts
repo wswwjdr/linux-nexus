@@ -2,7 +2,7 @@ import { safeStorage } from 'electron'
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import type { AppSettings, CommandAliasSnapshot, PreviewLimits, ServerProfile } from '@shared/types'
-import { DEFAULT_APP_SETTINGS, DEFAULT_PREVIEW_LIMITS, defaultAppSettings, migrateAppSettings, validateAppSettings } from '@shared/app-settings'
+import { DEFAULT_APP_SETTINGS, DEFAULT_PREVIEW_LIMITS, defaultAppSettings, validateAppSettings } from '@shared/app-settings'
 import { normalizeStoredCommandAliases } from '@shared/command-aliases'
 import { messageFromError } from './runtime'
 
@@ -131,10 +131,7 @@ export function readAppSettings(): AppSettings {
     return defaults
   }
   try {
-    const storedSettings = parseJsonFile(settingsFile)
-    const { settings, migrated } = migrateAppSettings(storedSettings)
-    if (migrated) atomicWriteJson(settingsFile, settings)
-    return settings
+    return validateAppSettings(parseJsonFile(settingsFile))
   } catch (error) {
     throw new Error('应用设置无效（' + settingsFile + '）：' + messageFromError(error))
   }

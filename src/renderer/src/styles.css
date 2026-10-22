@@ -422,9 +422,9 @@ details[open] > .settings-disclosure-summary .settings-disclosure-chevron { tran
 .settings-preview-grid .field { min-width: 0; margin: 0; }
 .settings-transfer-concurrency { width: min(100%, 220px); margin: 0; }
 .settings-modal { width: min(100%, 760px); max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
-.settings-modal > form { min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.settings-modal-heading { flex: 0 0 auto; align-items: center; margin-bottom: 12px; }
+.settings-modal-heading h2 { font-size: 15px; }
 .settings-form-content { min-height: 0; flex: 1; display: grid; align-content: start; gap: 12px; overflow-y: auto; }
-.settings-modal .modal-footer { flex: 0 0 auto; margin-top: 0; padding-top: 12px; border-top:1px solid var(--line); }
 .preview-formats-heading { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .settings-section-formats .settings-disclosure-summary { margin-bottom: 0; }
 .settings-section-formats[open] .settings-disclosure-summary { margin-bottom: 8px; }

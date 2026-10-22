@@ -12,6 +12,7 @@ import type {
   PreviewResult,
   PreviewType,
   AppSettings,
+  AppSettingsPatch,
   RemoteCopyDecision,
   RemoteCopyEvent,
   RemoteCopyRequest,
@@ -38,7 +39,7 @@ const api: RemoteFilesApi = {
   writeTerminal: (sessionId: string, data: string) => ipcRenderer.invoke('terminal:write', sessionId, data),
   resizeTerminal: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
   getAppSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
-  saveAppSettings: (settings: AppSettings): Promise<AppSettings> => ipcRenderer.invoke('settings:save', settings),
+  updateAppSettings: (patch: AppSettingsPatch): Promise<AppSettings> => ipcRenderer.invoke('settings:update', patch),
   listCommandAliasSnapshots: (): Promise<CommandAliasSnapshot[]> => ipcRenderer.invoke('aliases:list'),
   syncCommandAliases: (profileId: string): Promise<CommandAliasOperationResult> => ipcRenderer.invoke('aliases:sync', profileId),
   saveCommandAlias: (profileId: string, name: string, command: string, overwrite: boolean): Promise<CommandAliasOperationResult> =>

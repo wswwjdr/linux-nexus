@@ -49,7 +49,6 @@ import {
   entryNameCollator,
   errorMessage,
   readRecentConnections,
-  readDefaultView,
   getParentPath,
 } from './app-utils'
 
@@ -105,7 +104,7 @@ export default function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [sessionChooserOpen, setSessionChooserOpen] = useState(false)
   const [shortcutGuideOpen, setShortcutGuideOpen] = useState(false)
-  const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>(readDefaultView)
+  const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>('details')
   const [previewExtensions, setPreviewExtensions] = useState<PreviewExtensions>(() =>
     Object.fromEntries(Object.entries(DEFAULT_PREVIEW_EXTENSIONS).map(([type, extensions]) => [type, [...extensions]])) as PreviewExtensions)
   const [toast, setToast] = useState<ToastNotice | null>(null)
@@ -187,7 +186,6 @@ export default function App() {
     profileDeleting,
     settingsForm,
     settingsLoading,
-    settingsSaving,
     openProfileDialog,
     openSettingsDialog,
     updateProfileForm,
@@ -203,7 +201,6 @@ export default function App() {
     updateTheme,
     updateStartupProfile,
     updateStartupKind,
-    submitSettings,
     closeProfileDialog,
     closeSettingsDialog,
   } = useProfileManagement({
@@ -1461,7 +1458,6 @@ export default function App() {
         creatingDirectory={creatingDirectory}
         settingsForm={settingsForm}
         profiles={profiles}
-        settingsSaving={settingsSaving}
         previewDialog={previewDialog}
         logPreviewDialog={logPreviewDialog}
         textDraft={textDraft}
@@ -1502,7 +1498,6 @@ export default function App() {
         onUpdateTheme={updateTheme}
         onUpdateStartupProfile={updateStartupProfile}
         onUpdateStartupKind={updateStartupKind}
-        onSubmitSettings={(event) => void submitSettings(event)}
         onClosePreview={closePreview}
         onOpenExternalLink={(url) => {
           void window.remoteFiles.openExternalUrl(url).catch((error) => showToast('error', '无法打开链接：' + errorMessage(error)))

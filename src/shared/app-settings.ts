@@ -17,6 +17,7 @@ export function defaultAppSettings(): AppSettings {
   return {
     ...DEFAULT_PREVIEW_LIMITS,
     theme: 'light',
+    defaultView: 'details',
     previewExtensions: defaultPreviewExtensions(),
     startupConnection: null,
     transferFileConcurrency: 4,
@@ -24,6 +25,7 @@ export function defaultAppSettings(): AppSettings {
 }
 
 export const DEFAULT_APP_SETTINGS = defaultAppSettings()
+const appSettingsKeys = [...Object.keys(DEFAULT_PREVIEW_LIMITS), 'theme', 'defaultView', 'previewExtensions', 'startupConnection', 'transferFileConcurrency']
 
 const MAX_PREVIEW_LIMIT_MIB = 1024
 const MIN_TRANSFER_FILE_CONCURRENCY = 1
@@ -39,11 +41,11 @@ function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
 
 export function validateAppSettings(value: unknown): AppSettings {
   const limitKeys = Object.keys(DEFAULT_PREVIEW_LIMITS)
-  const settingsKeys = [...limitKeys, 'theme', 'previewExtensions', 'startupConnection', 'transferFileConcurrency']
-  if (!isRecord(value) || !hasExactKeys(value, settingsKeys)) throw new Error('应用设置结构无效')
+  if (!isRecord(value) || !hasExactKeys(value, appSettingsKeys)) throw new Error('应用设置结构无效')
   if (value.theme !== 'light' && value.theme !== 'dark' && value.theme !== 'system') {
     throw new Error('外观主题设置无效')
   }
+  if (value.defaultView !== 'icons' && value.defaultView !== 'details') throw new Error('默认文件视图设置无效')
   for (const key of limitKeys) {
     const limit = value[key]
     if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > MAX_PREVIEW_LIMIT_MIB) {
@@ -76,13 +78,12 @@ export function validateAppSettings(value: unknown): AppSettings {
     }
     startupConnection = { profileId: connection.profileId, kind: connection.kind as SessionKind }
   }
-  return { ...value as unknown as PreviewLimits, theme: value.theme, previewExtensions, startupConnection, transferFileConcurrency }
+  return { ...value as unknown as PreviewLimits, theme: value.theme, defaultView: value.defaultView, previewExtensions, startupConnection, transferFileConcurrency }
 }
 
-export function migrateAppSettings(value: unknown): { settings: AppSettings; migrated: boolean } {
-  if (!isRecord(value)) return { settings: validateAppSettings(value), migrated: false }
-  const defaults = defaultAppSettings()
-  const migrated = Object.keys(defaults).some((key) => !Object.hasOwn(value, key))
-  const settings = validateAppSettings(migrated ? { ...defaults, ...value } : value)
-  return { settings, migrated }
+export function applyAppSettingsPatch(current: AppSettings, patch: unknown): AppSettings {
+  if (!isRecord(patch) || Object.keys(patch).length === 0 || Object.keys(patch).some((key) => !appSettingsKeys.includes(key))) {
+    throw new Error('应用设置更新无效')
+  }
+  return validateAppSettings({ ...current, ...patch })
 }
