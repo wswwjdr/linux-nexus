@@ -33,11 +33,16 @@ import type {
   RemoteMoveResult,
   RemoteEntry,
   RemoteSearchResult,
+  ScriptExecutionEvent,
+  ScriptExecutionRequest,
   ServerProfile,
   SessionKind,
   TrustHostKeyInput,
 } from '@shared/types'
 import { DEFAULT_PERFORMANCE_THRESHOLDS, defaultFileTypeExtensions } from '@shared/app-settings'
+import { classifyFileTypeCategories } from '@shared/file-type-categories'
+import { previewTypesForFile } from '@shared/preview-file-type'
+import { scriptExecutionCommand } from '@shared/shell'
 import type {
   BrowserContextMenu as BrowserContextMenuState,
   FileViewMode,
@@ -46,6 +51,7 @@ import type {
   SessionTab,
   SortColumn,
   SortDirection,
+  ScriptExecutionDialogState,
 } from './app-types'
 import {
   connectFailureText,
@@ -127,6 +133,8 @@ export default function App() {
   const [remoteOperationDetailsOpen, setRemoteOperationDetailsOpen] = useState(false)
   const [createDirectoryDialog, setCreateDirectoryDialog] = useState<{ name: string } | null>(null)
   const [creatingDirectory, setCreatingDirectory] = useState(false)
+  const [scriptCommandDialog, setScriptCommandDialog] = useState<{ entry: RemoteEntry; sessionId: string; command: string } | null>(null)
+  const [scriptExecutionDialog, setScriptExecutionDialog] = useState<ScriptExecutionDialogState | null>(null)
   const [searchSessionId, setSearchSessionId] = useState<string | null>(null)
   const toastSequenceRef = useRef(0)
   const startupConnectionAttemptedRef = useRef(false)
@@ -338,7 +346,7 @@ export default function App() {
   )
   const pendingHostKey = pendingHostKeys[0] ?? null
   const modalOpen = Boolean(
-    profileDialog || profileDeleteDialog || createDirectoryDialog || settingsForm || previewDialog || logPreviewDialog
+    profileDialog || profileDeleteDialog || createDirectoryDialog || scriptCommandDialog || scriptExecutionDialog || settingsForm || previewDialog || logPreviewDialog
       || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
       || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || activeRemoteMove?.conflict
       || activeRemoteCopy?.conflict || remoteOperationDetailsOpen || searchSessionId
@@ -390,6 +398,18 @@ export default function App() {
     })
     return removeClosedListener
   }, [activeSessionId, patchSession, showToast])
+
+  useEffect(() => window.remoteFiles.onScriptExecutionEvent((event: ScriptExecutionEvent) => {
+    setScriptExecutionDialog((current) => {
+      if (!current || current.request.requestId !== event.requestId) return current
+      if (event.type === 'output') {
+        return { ...current, output: [...current.output, { stream: event.stream, data: event.data }] }
+      }
+      if (event.type === 'completed') return { ...current, status: 'completed', message: '退出码 0' }
+      if (event.type === 'cancelled') return { ...current, status: 'cancelled', message: null }
+      return { ...current, status: 'failed', message: event.message }
+    })
+  }), [])
 
   useEffect(() => window.remoteFiles.onRemoteMoveEvent((event) => {
     if (event.type === 'conflict') {
@@ -609,6 +629,68 @@ export default function App() {
     void connectSession(session, profile)
   }
 
+  const requestScriptCommandEdit = (entry: RemoteEntry) => {
+    if (!activeSession || activeSession.kind !== 'sftp' || activeSession.status !== 'connected') return
+    setBrowserContextMenu(null)
+    setScriptCommandDialog({
+      entry,
+      sessionId: activeSession.id,
+      command: scriptExecutionCommand(entry.name),
+    })
+  }
+
+  const startScriptExecution = (entry: RemoteEntry, command: string, sessionId = activeSession?.id) => {
+    setBrowserContextMenu(null)
+    setScriptCommandDialog(null)
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session || session.kind !== 'sftp' || session.status !== 'connected') {
+      showToast('error', 'SFTP 会话已断开，无法执行脚本')
+      return
+    }
+    const request: ScriptExecutionRequest = {
+      requestId: crypto.randomUUID(),
+      sessionId: session.id,
+      scriptPath: entry.path,
+      command,
+    }
+    setScriptExecutionDialog({ request, name: entry.name, status: 'starting', output: [], message: null })
+    void window.remoteFiles.startScriptExecution(request).then(() => {
+      setScriptExecutionDialog((current) => current?.request.requestId === request.requestId && current.status === 'starting'
+        ? { ...current, status: 'running', message: null }
+        : current)
+    }).catch((error) => {
+      setScriptExecutionDialog((current) => current?.request.requestId === request.requestId
+        ? { ...current, status: 'failed', message: errorMessage(error) }
+        : current)
+    })
+  }
+
+  const submitScriptCommand = (event: ReactFormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!scriptCommandDialog || !scriptCommandDialog.command.trim()) return
+    if (scriptCommandDialog.command.length > 65535) {
+      showToast('error', '命令长度不能超过 65535 个字符')
+      return
+    }
+    startScriptExecution(scriptCommandDialog.entry, scriptCommandDialog.command, scriptCommandDialog.sessionId)
+  }
+
+  const closeScriptExecutionDialog = () => {
+    if (scriptExecutionDialog && ['starting', 'running', 'cancelling'].includes(scriptExecutionDialog.status)) {
+      void window.remoteFiles.cancelScriptExecution(scriptExecutionDialog.request.requestId)
+    }
+    setScriptExecutionDialog(null)
+  }
+
+  const stopScriptExecution = () => {
+    if (!scriptExecutionDialog || !['starting', 'running'].includes(scriptExecutionDialog.status)) return
+    const requestId = scriptExecutionDialog.request.requestId
+    setScriptExecutionDialog((current) => current?.request.requestId === requestId
+      ? { ...current, status: 'cancelling', message: null }
+      : current)
+    void window.remoteFiles.cancelScriptExecution(requestId)
+  }
+
   useEffect(() => {
     if (!profileDataLoaded || startupConnectionAttemptedRef.current) return
     startupConnectionAttemptedRef.current = true
@@ -770,11 +852,15 @@ export default function App() {
 
   const openBrowserContextMenu = (menu: BrowserContextMenuState) => {
     const menuWidth = 204
-    const menuHeight = menu.kind === 'directory-background'
-      ? 184
-      : menu.kind === 'multiple-entries'
-        ? 152
-        : menu.entry.type === 'file' ? 288 : 184
+    const menuHeight = menu.kind === 'single-entry'
+      ? (() => {
+          if (menu.entry.type !== 'file') return 6 * 36 + 8
+          const previewOptions = previewTypesForFile(menu.entry.name, fileTypeExtensions)
+          const isScript = classifyFileTypeCategories(menu.entry.name, fileTypeExtensions).includes('script')
+          const itemCount = 6 + Number(previewOptions.length > 0) + Number(previewOptions.includes('text')) + Number(isScript)
+          return itemCount * 36 + 8
+        })()
+      : 5 * 36 + 8
     setSessionContextMenu(null)
     setBrowserContextMenu({
       ...menu,
@@ -1445,6 +1531,8 @@ export default function App() {
               setBrowserContextMenu(null)
               void previewLogFile(entry)
             }}
+            onRunScript={(entry) => startScriptExecution(entry, scriptExecutionCommand(entry.name))}
+            onAdjustAndRunScript={requestScriptCommandEdit}
             onDownload={(entry) => {
               setBrowserContextMenu(null)
               download([entry])
@@ -1521,6 +1609,8 @@ export default function App() {
         profileDeleting={profileDeleting}
         createDirectoryDialog={createDirectoryDialog}
         creatingDirectory={creatingDirectory}
+        scriptCommandDialog={scriptCommandDialog ? { name: scriptCommandDialog.entry.name, command: scriptCommandDialog.command } : null}
+        scriptExecutionDialog={scriptExecutionDialog}
         settingsForm={settingsForm}
         profiles={profiles}
         previewDialog={previewDialog}
@@ -1552,6 +1642,11 @@ export default function App() {
         }}
         onUpdateCreateDirectoryName={(name) => setCreateDirectoryDialog((current) => current ? { ...current, name } : current)}
         onSubmitCreateDirectory={(event) => void submitCreateDirectory(event)}
+        onCloseScriptCommand={() => setScriptCommandDialog(null)}
+        onUpdateScriptCommand={(command) => setScriptCommandDialog((current) => current ? { ...current, command } : current)}
+        onSubmitScriptCommand={submitScriptCommand}
+        onCloseScriptExecution={closeScriptExecutionDialog}
+        onStopScriptExecution={stopScriptExecution}
         onUpdateProfile={updateProfileForm}
         onSubmitProfile={(event) => void submitProfile(event)}
         onCloseSettings={closeSettingsDialog}

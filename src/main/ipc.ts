@@ -7,6 +7,7 @@ import type {
   RemoteMoveDecision,
   RemoteMoveRequest,
   RemoteSearchRequest,
+  ScriptExecutionRequest,
   SaveProfileInput,
   ServerProfile,
   SessionKind,
@@ -39,6 +40,7 @@ import {
 import { cancelTransfer, downloadEntries, uploadDroppedEntries, uploadSelection, validateDownloadPaths, withTransferLock } from './transfers'
 import { previewFile, readLogPreview, releasePreview, saveTextFile } from './previews'
 import { cancelRemoteSearch, startRemoteSearch } from './search'
+import { cancelScriptExecution, startScriptExecution } from './script-execution-runtime'
 import { cancelRemoteMove, startRemoteMove } from './remote-moves'
 import { executeRemoteCopy } from './remote-copies'
 import { applyTheme } from './theme'
@@ -226,6 +228,11 @@ export function registerIpc(): void {
     listDirectory(sessionId, remotePath))
   ipcMain.handle('files:search', (_event, request: RemoteSearchRequest) => startRemoteSearch(request))
   ipcMain.handle('files:search-cancel', (_event, requestId: string) => cancelRemoteSearch(requestId))
+  ipcMain.handle('files:script-execution-start', (_event, request: ScriptExecutionRequest) => startScriptExecution(request))
+  ipcMain.handle('files:script-execution-cancel', (_event, requestId: unknown) => {
+    if (typeof requestId !== 'string' || !requestId) throw new Error('脚本执行请求编号无效')
+    return cancelScriptExecution(requestId)
+  })
   const transferSession = (sessionId: string) => {
     const session = sessions.get(sessionId)
     if (!session?.sftp) throw new Error('SFTP 会话未连接')

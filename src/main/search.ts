@@ -8,8 +8,9 @@ import type {
   RemoteSearchResult,
 } from '@shared/types'
 import { remoteRegexError } from '@shared/search-utils'
+import { shellQuote } from '@shared/shell'
 import { getMainWindow, sessions } from './runtime'
-import { normalizedRemotePath, shellQuote } from './sftp-utils'
+import { normalizedRemotePath } from './sftp-utils'
 
 interface SearchTask {
   request: RemoteSearchRequest

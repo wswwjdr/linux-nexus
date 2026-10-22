@@ -89,6 +89,19 @@ export type RemoteSearchEvent =
   | ({ type: 'results'; results: RemoteSearchResult[] } & RemoteSearchProgress)
   | ({ type: 'finished'; status: 'completed' | 'cancelled' | 'failed'; message?: string } & RemoteSearchProgress)
 
+export interface ScriptExecutionRequest {
+  requestId: string
+  sessionId: string
+  scriptPath: string
+  command: string
+}
+
+export type ScriptExecutionEvent =
+  | { type: 'output'; requestId: string; sessionId: string; stream: 'stdout' | 'stderr'; data: string }
+  | { type: 'completed'; requestId: string; sessionId: string; exitCode: 0 }
+  | { type: 'cancelled'; requestId: string; sessionId: string }
+  | { type: 'failed'; requestId: string; sessionId: string; exitCode?: number | null; message: string }
+
 export type ConnectResult =
   | { ok: true; path: string }
   | {
@@ -163,7 +176,7 @@ export interface PerformanceUpdate {
   message?: string
 }
 
-export type FileTypeCategory = 'text' | 'markdown' | 'pdf' | 'image' | 'audio' | 'video'
+export type FileTypeCategory = 'text' | 'markdown' | 'pdf' | 'image' | 'audio' | 'video' | 'script'
 
 export type PreviewType = 'text' | 'markdown' | 'pdf' | 'image' | 'audio' | 'video'
 
@@ -360,6 +373,8 @@ export interface RemoteFilesApi {
   listDirectory(sessionId: string, remotePath: string): Promise<RemoteEntry[]>
   searchFiles(request: RemoteSearchRequest): Promise<void>
   cancelSearch(requestId: string): Promise<boolean>
+  startScriptExecution(request: ScriptExecutionRequest): Promise<void>
+  cancelScriptExecution(requestId: string): Promise<boolean>
   uploadFiles(requestId: string, sessionId: string, remoteDirectory: string): Promise<TransferResult>
   uploadFolder(requestId: string, sessionId: string, remoteDirectory: string): Promise<TransferResult>
   getPathForFile(file: File): string
@@ -399,6 +414,7 @@ export interface RemoteFilesApi {
   onRemoteMoveEvent(callback: (event: RemoteMoveEvent) => void): () => void
   onRemoteCopyEvent(callback: (event: RemoteCopyEvent) => void): () => void
   onSearchEvent(callback: (event: RemoteSearchEvent) => void): () => void
+  onScriptExecutionEvent(callback: (event: ScriptExecutionEvent) => void): () => void
   onConnectionClosed(callback: (event: ConnectionClosedEvent) => void): () => void
   onTerminalOutput(callback: (event: TerminalOutputEvent) => void): () => void
   onPerformanceUpdate(callback: (event: PerformanceUpdate) => void): () => void

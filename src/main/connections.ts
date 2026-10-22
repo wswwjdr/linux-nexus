@@ -4,7 +4,9 @@ import { posix } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { Client } from 'ssh2'
 import type { ConnectResult, RemoteEntry, SessionKind } from '@shared/types'
+import { shellQuote } from '@shared/shell'
 import { cancelSearchesForSession, failSearchesForSession } from './search'
+import { cancelScriptExecutionsForSession, failScriptExecutionsForSession } from './script-execution-runtime'
 import { cancelTransfersForSession } from './transfers'
 import { getMainWindow, sessions, type ActiveSession } from './runtime'
 import { endpointKey, passwordFor, profileFromState, readState } from './state-store'
@@ -15,7 +17,6 @@ import {
   executeRemoteCommand,
   fileType,
   normalizedRemotePath,
-  shellQuote,
   sftpLstat,
   sftpMkdir,
 } from './sftp-utils'
@@ -36,6 +37,7 @@ function failActiveSession(activeSession: ActiveSession, message: string): void 
   sessions.delete(activeSession.sessionId)
   stopPerformanceMonitorForSession(activeSession.sessionId)
   cancelRemoteMovesForSession(activeSession.sessionId)
+  failScriptExecutionsForSession(activeSession.sessionId, message)
   failSearchesForSession(activeSession.sessionId, message)
   cancelTransfersForSession(activeSession.sessionId)
   clearPreviewAssetsForSession(activeSession.sessionId)
@@ -46,6 +48,7 @@ export function stopSession(sessionId: string): void {
   stopPerformanceMonitorForSession(sessionId)
   pendingConnections.get(sessionId)?.cancel()
   cancelSearchesForSession(sessionId)
+  cancelScriptExecutionsForSession(sessionId)
   cancelRemoteMovesForSession(sessionId)
   const transfers = cancelTransfersForSession(sessionId)
   clearPreviewAssetsForSession(sessionId)

@@ -21,6 +21,8 @@ import type {
   RemoteFilesApi,
   RemoteSearchEvent,
   RemoteSearchRequest,
+  ScriptExecutionEvent,
+  ScriptExecutionRequest,
   SaveProfileInput,
   TransferProgress,
   TransferQueuedEvent,
@@ -54,6 +56,8 @@ const api: RemoteFilesApi = {
     ipcRenderer.invoke('files:list', sessionId, remotePath),
   searchFiles: (request: RemoteSearchRequest) => ipcRenderer.invoke('files:search', request),
   cancelSearch: (requestId: string) => ipcRenderer.invoke('files:search-cancel', requestId),
+  startScriptExecution: (request: ScriptExecutionRequest): Promise<void> => ipcRenderer.invoke('files:script-execution-start', request),
+  cancelScriptExecution: (requestId: string): Promise<boolean> => ipcRenderer.invoke('files:script-execution-cancel', requestId),
   uploadFiles: (requestId: string, sessionId: string, remoteDirectory: string) =>
     ipcRenderer.invoke('files:upload-files', requestId, sessionId, remoteDirectory),
   uploadFolder: (requestId: string, sessionId: string, remoteDirectory: string) =>
@@ -113,6 +117,11 @@ const api: RemoteFilesApi = {
     const listener = (_event: Electron.IpcRendererEvent, searchEvent: RemoteSearchEvent) => callback(searchEvent)
     ipcRenderer.on('files:search-event', listener)
     return () => ipcRenderer.removeListener('files:search-event', listener)
+  },
+  onScriptExecutionEvent: (callback: (event: ScriptExecutionEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, executionEvent: ScriptExecutionEvent) => callback(executionEvent)
+    ipcRenderer.on('files:script-execution-event', listener)
+    return () => ipcRenderer.removeListener('files:script-execution-event', listener)
   },
   onConnectionClosed: (callback: (event: ConnectionClosedEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, event: ConnectionClosedEvent) => callback(event)

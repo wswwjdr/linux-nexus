@@ -5,6 +5,7 @@ import { fileTypeCategoryLabels, fileTypeCategories, normalizeFileTypeExtension 
 import ConfirmationDialog from './ConfirmationDialog'
 import LogPreviewDialog, { type LogPreviewDialogProps } from './previews/LogPreviewDialog'
 import PreviewDialog, { type PreviewDialogProps } from './previews/PreviewDialog'
+import ScriptExecutionDialog from './ScriptExecutionDialog'
 import type {
   FileViewMode,
   PendingHostKey,
@@ -13,6 +14,7 @@ import type {
   SettingsFieldKey,
   SettingsForm,
   PerformanceThresholdField,
+  ScriptExecutionDialogState,
 } from '@/app-types'
 import { previewLimitFields } from '@/app-utils'
 
@@ -36,6 +38,8 @@ interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
   profileDeleting: boolean
   createDirectoryDialog: { name: string } | null
   creatingDirectory: boolean
+  scriptCommandDialog: { name: string; command: string } | null
+  scriptExecutionDialog: ScriptExecutionDialogState | null
   settingsForm: SettingsForm | null
   profiles: ServerProfile[]
   textSaveError: string | null
@@ -54,6 +58,11 @@ interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
   onCloseCreateDirectory: () => void
   onUpdateCreateDirectoryName: (name: string) => void
   onSubmitCreateDirectory: (event: FormEvent<HTMLFormElement>) => void
+  onCloseScriptCommand: () => void
+  onUpdateScriptCommand: (command: string) => void
+  onSubmitScriptCommand: (event: FormEvent<HTMLFormElement>) => void
+  onCloseScriptExecution: () => void
+  onStopScriptExecution: () => void
   onUpdateProfile: (patch: Partial<ProfileForm>) => void
   onSubmitProfile: (event: FormEvent<HTMLFormElement>) => void
   onCloseSettings: () => void
@@ -156,6 +165,8 @@ export default function DialogLayer({
   profileDeleting,
   createDirectoryDialog,
   creatingDirectory,
+  scriptCommandDialog,
+  scriptExecutionDialog,
   settingsForm,
   profiles,
   previewDialog,
@@ -185,6 +196,11 @@ export default function DialogLayer({
   onCloseCreateDirectory,
   onUpdateCreateDirectoryName,
   onSubmitCreateDirectory,
+  onCloseScriptCommand,
+  onUpdateScriptCommand,
+  onSubmitScriptCommand,
+  onCloseScriptExecution,
+  onStopScriptExecution,
   onUpdateProfile,
   onSubmitProfile,
   onCloseSettings,
@@ -257,6 +273,11 @@ export default function DialogLayer({
         if (!creatingDirectory) onCloseCreateDirectory()
         return
       }
+      if (scriptCommandDialog) {
+        event.preventDefault()
+        onCloseScriptCommand()
+        return
+      }
       if (settingsForm) {
         event.preventDefault()
         if (!aliasOperationBusy) onCloseSettings()
@@ -286,6 +307,8 @@ export default function DialogLayer({
     profileDialog,
     createDirectoryDialog,
     creatingDirectory,
+    scriptCommandDialog,
+    onCloseScriptCommand,
     settingsForm,
     aliasOperationBusy,
   ])
@@ -391,6 +414,38 @@ export default function DialogLayer({
             </form>
           </section>
         </div>
+      )}
+
+      {scriptCommandDialog && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onCloseScriptCommand()}>
+          <section className="modal script-command-modal" role="dialog" aria-modal="true" aria-labelledby="script-command-title">
+            <div className="modal-heading">
+              <div>
+                <h2 id="script-command-title">调整并执行</h2>
+                <div className="script-command-file">{scriptCommandDialog.name}</div>
+              </div>
+              <button className="icon-button modal-close" title="关闭" aria-label="关闭" onClick={onCloseScriptCommand}><X size={18} /></button>
+            </div>
+            <form onSubmit={onSubmitScriptCommand}>
+              <label className="field">
+                <span>命令</span>
+                <textarea autoFocus required maxLength={65535} rows={5} spellCheck={false} value={scriptCommandDialog.command} onChange={(event) => onUpdateScriptCommand(event.target.value)} />
+              </label>
+              <div className="modal-footer">
+                <button type="button" className="secondary-button" onClick={onCloseScriptCommand}>取消</button>
+                <button type="submit" className="primary-button" disabled={!scriptCommandDialog.command.trim()}><Terminal size={15} /> 执行</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {scriptExecutionDialog && (
+        <ScriptExecutionDialog
+          execution={scriptExecutionDialog}
+          onClose={onCloseScriptExecution}
+          onStop={onStopScriptExecution}
+        />
       )}
 
       {settingsForm && (

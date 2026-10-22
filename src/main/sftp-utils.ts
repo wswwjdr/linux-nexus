@@ -92,10 +92,6 @@ export function normalizedRemotePath(remotePath: string): string {
   return posix.resolve('/', remotePath)
 }
 
-export function shellQuote(value: string): string {
-  return "'" + value.replace(/'/g, "'\\''") + "'"
-}
-
 export function executeRemoteCommand(client: Client, command: string): Promise<void> {
   return new Promise((resolve, reject) => {
     let stream: ClientChannel | null = null

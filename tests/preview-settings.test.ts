@@ -13,11 +13,23 @@ function copyDefaultExtensions(): FileTypeExtensions {
 test('normalizes extensions and matches overlapping and multi-part suffixes', () => {
   assert.equal(normalizeFileTypeExtension('  .TaR.GZ '), '.tar.gz')
   assert.deepEqual(classifyFileTypeCategories('/var/log/REPORT.MD', copyDefaultExtensions()), ['text', 'markdown'])
+  assert.deepEqual(classifyFileTypeCategories('/home/user/run.sh', copyDefaultExtensions()), ['text', 'script'])
+  assert.deepEqual(classifyFileTypeCategories('/home/user/job.py', copyDefaultExtensions()), ['text', 'script'])
   const extensions = copyDefaultExtensions()
   extensions.pdf.push('tar.gz')
   assert.deepEqual(classifyFileTypeCategories('/archive/backup.TAR.GZ', extensions), ['pdf'])
   assert.deepEqual(classifyFileTypeCategories('/home/user/.profile', extensions), [])
   assert.throws(() => normalizeFileTypeExtension('../secret'))
+})
+
+test('defaults script category to selected extensions and requires it in settings', () => {
+  assert.deepEqual(DEFAULT_FILE_TYPE_EXTENSIONS.script, ['sh', 'bash', 'zsh', 'py'])
+  const fileTypeExtensions = copyDefaultExtensions() as Partial<FileTypeExtensions>
+  delete fileTypeExtensions.script
+  assert.throws(() => validateAppSettings({
+    ...DEFAULT_APP_SETTINGS,
+    fileTypeExtensions,
+  }))
 })
 
 test('validates file type extension sets, deduplicates within a category, and keeps overlaps', () => {

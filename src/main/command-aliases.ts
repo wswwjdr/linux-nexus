@@ -9,7 +9,7 @@ import type {
 import { formatBashAliasDefinition, parseCommandAliasProtocol, validateCommandAlias } from '@shared/command-aliases'
 import { endpointKey, passwordFor, profileFromState, readState, writeState } from './state-store'
 import { messageFromError } from './runtime'
-import { shellQuote } from './sftp-utils'
+import { shellQuote } from '@shared/shell'
 
 const SSH_KEEPALIVE_INTERVAL_MS = 15_000
 const SSH_KEEPALIVE_COUNT_MAX = 3

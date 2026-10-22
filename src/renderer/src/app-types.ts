@@ -1,4 +1,4 @@
-import type { CommandAlias, LogPreviewPage, PerformanceThresholds, FileTypeExtensions, PreviewLimits, PreviewResult, RemoteEntry, ServerProfile, SessionKind, ThemeMode, TransferFailure, TransferFileProgress } from '@shared/types'
+import type { CommandAlias, LogPreviewPage, PerformanceThresholds, FileTypeExtensions, PreviewLimits, PreviewResult, RemoteEntry, ScriptExecutionRequest, ServerProfile, SessionKind, ThemeMode, TransferFailure, TransferFileProgress } from '@shared/types'
 
 export interface ProfileForm {
   id: string
@@ -60,6 +60,19 @@ export interface SessionTab {
   history: string[]
   historyIndex: number
   error: string | null
+}
+
+export interface ScriptExecutionOutputChunk {
+  stream: 'stdout' | 'stderr'
+  data: string
+}
+
+export interface ScriptExecutionDialogState {
+  request: ScriptExecutionRequest
+  name: string
+  status: 'starting' | 'running' | 'cancelling' | 'completed' | 'cancelled' | 'failed'
+  output: ScriptExecutionOutputChunk[]
+  message: string | null
 }
 
 export interface ImagePreviewSize {

@@ -7,9 +7,10 @@ export const fileTypeCategoryLabels: Record<FileTypeCategory, string> = {
   image: '图片',
   audio: '音频',
   video: '视频',
+  script: '脚本',
 }
 
-export const fileTypeCategories: readonly FileTypeCategory[] = ['text', 'markdown', 'pdf', 'image', 'audio', 'video']
+export const fileTypeCategories: readonly FileTypeCategory[] = ['text', 'markdown', 'pdf', 'image', 'audio', 'video', 'script']
 
 export const DEFAULT_FILE_TYPE_EXTENSIONS: FileTypeExtensions = {
   text: [
@@ -21,6 +22,7 @@ export const DEFAULT_FILE_TYPE_EXTENSIONS: FileTypeExtensions = {
   image: ['jpg', 'jpeg', 'jpe', 'png', 'gif', 'webp', 'bmp', 'ico', 'svg'],
   audio: ['mp3', 'wav', 'ogg', 'opus', 'm4a', 'aac', 'flac', 'weba'],
   video: ['mp4', 'm4v', 'webm', 'ogv', 'mov'],
+  script: ['sh', 'bash', 'zsh', 'py'],
 }
 
 export function normalizeFileTypeExtension(value: string): string {
