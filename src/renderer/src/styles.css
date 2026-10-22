@@ -352,7 +352,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .danger-button:hover:not(:disabled) { border-color:var(--border-danger-strong); background:var(--surface-danger-strong); }
 .warning-button { height: 35px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border:1px solid var(--gold-action); border-radius: var(--radius); color:var(--text-inverse); background:var(--gold-action); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s, border-color .15s; }
 .warning-button:hover:not(:disabled) { border-color:var(--border-warning-strong); background:var(--surface-warning-strong); }
-.global-toast { position: fixed; z-index: 8; top: 78px; right: 22px; width: min(420px, calc(100vw - 44px)); min-height: 44px; display: flex; align-items: center; gap: 9px; padding: 6px 8px 6px 12px; border:1px solid; border-radius: var(--radius); box-shadow: var(--shadow-toast); }
+.global-toast { position: fixed; z-index: 8; top: 78px; right: 22px; width: min(480px, calc(100vw - 44px)); min-height: 44px; display: flex; align-items: center; gap: 9px; padding: 6px 8px 6px 12px; border:1px solid; border-radius: var(--radius); box-shadow: var(--shadow-toast); }
 .global-toast.error { border-color:var(--border-danger); color:var(--text-danger); background:var(--surface-danger); }
 .global-toast.error > svg { color:var(--red); }
 .global-toast.info { border-color:var(--border-info); color:var(--text-info); background:var(--surface-info); }
@@ -737,7 +737,7 @@ details[open] > .settings-disclosure-summary .settings-disclosure-chevron { tran
   .pathbar-tools { gap: 8px; }
   .file-icon-grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 7px; padding: 12px; }
   .file-tile { height: 108px; }
-  .global-toast { top: 70px; right: 12px; width: min(420px, calc(100vw - 24px)); }
+  .global-toast { top: 70px; right: 12px; width: min(480px, calc(100vw - 24px)); }
   .file-table .date-col { display: none; }
   .file-table th.date-col, .file-table td.date-col { display: none; }
   .file-table .name-col { width: 72%; padding-left: 17px; }
