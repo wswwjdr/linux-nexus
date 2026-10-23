@@ -1,5 +1,5 @@
 import type { AppSettings, PerformanceThresholds, FileTypeExtensions, PreviewLimits, SessionKind, StartupConnection } from './types'
-import { DEFAULT_FILE_TYPE_EXTENSIONS, fileTypeCategories, normalizeFileTypeExtension } from './file-type-categories.ts'
+import { DEFAULT_FILE_TYPE_EXTENSIONS, fileTypeRegistry, normalizeFileTypeExtension } from './file-type-registry'
 
 export const DEFAULT_PREVIEW_LIMITS: PreviewLimits = {
   textMiB: 5,
@@ -17,9 +17,9 @@ export const DEFAULT_PERFORMANCE_THRESHOLDS: PerformanceThresholds = {
 }
 
 export function defaultFileTypeExtensions(): FileTypeExtensions {
-  return Object.fromEntries(fileTypeCategories.map((category) => [
-    category,
-    DEFAULT_FILE_TYPE_EXTENSIONS[category].map(normalizeFileTypeExtension),
+  return Object.fromEntries(fileTypeRegistry.map(({ id }) => [
+    id,
+    DEFAULT_FILE_TYPE_EXTENSIONS[id].map(normalizeFileTypeExtension),
   ])) as FileTypeExtensions
 }
 
@@ -92,10 +92,10 @@ export function validateAppSettings(value: unknown): AppSettings {
     return [key, { warning, critical }]
   })) as unknown as PerformanceThresholds
   const configuredExtensions = value.fileTypeExtensions
-  if (!isRecord(configuredExtensions) || !hasExactKeys(configuredExtensions, [...fileTypeCategories])) {
+  if (!isRecord(configuredExtensions) || !hasExactKeys(configuredExtensions, fileTypeRegistry.map(({ id }) => id))) {
     throw new Error('文件类型分类设置结构无效')
   }
-  const fileTypeExtensions = Object.fromEntries(fileTypeCategories.map((category) => {
+  const fileTypeExtensions = Object.fromEntries(fileTypeRegistry.map(({ id: category }) => {
     const extensions = configuredExtensions[category]
     if (!Array.isArray(extensions) || extensions.some((extension) => typeof extension !== 'string')) {
       throw new Error('文件类型分类设置无效：' + category)

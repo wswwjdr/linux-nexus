@@ -1,12 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   AlertTriangle,
-  ChevronRight,
   Clock3,
-  Eye,
   File,
   Folder,
-  FolderOpen,
   LoaderCircle,
   Search,
   SlidersHorizontal,
@@ -15,15 +12,15 @@ import {
 } from 'lucide-react'
 import type {
   FileTypeExtensions,
-  PreviewType,
   RemoteSearchEvent,
   RemoteSearchRequest,
   RemoteSearchResult,
   RemoteSearchScope,
 } from '@shared/types'
 import ConfirmationDialog from './ConfirmationDialog'
+import SftpContextMenu from './context-menus/SftpContextMenu'
 import { remoteRegexError } from '@shared/search-utils'
-import { previewTypesForFile, previewTypeLabels } from '@shared/preview-file-type'
+import type { SftpContextMenuContext, SftpMenuAction } from '@/context-menu/sftp-menu'
 import { errorMessage, formatSize } from '@/app-utils'
 
 type SearchConditions = Omit<RemoteSearchRequest, 'requestId' | 'profileId' | 'sessionId'>
@@ -36,15 +33,14 @@ interface SearchDialogProps {
   previewOpen: boolean
   fileTypeExtensions: FileTypeExtensions
   onClose: () => void
-  onSelectResult: (result: RemoteSearchResult) => void
-  onPreviewResult: (result: RemoteSearchResult, type: PreviewType) => void
+  onMenuAction: (action: SftpMenuAction, context: SftpContextMenuContext) => void
 }
 
 interface ResultActionMenuState {
   result: RemoteSearchResult
   x: number
   y: number
-  previewMenuOpen: boolean
+  anchor: HTMLElement
 }
 
 const DEFAULT_MAX_FILE_SIZE_MIB = 100
@@ -102,7 +98,7 @@ function Counter({ label, value }: { label: string; value: number }) {
   return <span className="search-counter"><strong>{value.toLocaleString()}</strong> {label}</span>
 }
 
-export default function SearchDialog({ sessionId, profileId, currentPath, previewOpen, fileTypeExtensions, onClose, onSelectResult, onPreviewResult }: SearchDialogProps) {
+export default function SearchDialog({ sessionId, profileId, currentPath, previewOpen, fileTypeExtensions, onClose, onMenuAction }: SearchDialogProps) {
   const [conditions, setConditions] = useState(() => initialConditions(currentPath))
   const [history, setHistory] = useState(() => readHistory(profileId))
   const [results, setResults] = useState<RemoteSearchResult[]>([])
@@ -116,10 +112,11 @@ export default function SearchDialog({ sessionId, profileId, currentPath, previe
   const activeRequestRef = useRef<string | null>(null)
   const requestCloseRef = useRef<() => void>(() => {})
   const resultActionMenuRef = useRef(resultActionMenu)
-  const resultActionMenuElementRef = useRef<HTMLDivElement>(null)
+  const resultActionMenuAnchorRef = useRef<HTMLElement | null>(null)
   const confirmCloseRef = useRef(confirmClose)
   const previewOpenRef = useRef(previewOpen)
   resultActionMenuRef.current = resultActionMenu
+  resultActionMenuAnchorRef.current = resultActionMenu?.anchor ?? null
   confirmCloseRef.current = confirmClose
   previewOpenRef.current = previewOpen
   const running = status === 'running' || status === 'cancelling'
@@ -148,12 +145,9 @@ export default function SearchDialog({ sessionId, profileId, currentPath, previe
     const dismissOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         if (previewOpenRef.current) return
+        if (resultActionMenuRef.current) return
         event.preventDefault()
         event.stopImmediatePropagation()
-        if (resultActionMenuRef.current) {
-          setResultActionMenu(null)
-          return
-        }
         if (confirmCloseRef.current) {
           setConfirmClose(false)
           return
@@ -168,21 +162,6 @@ export default function SearchDialog({ sessionId, profileId, currentPath, previe
       if (activeRequestRef.current) void window.remoteFiles.cancelSearch(activeRequestRef.current)
     }
   }, [])
-
-  useEffect(() => {
-    if (!resultActionMenu) return
-    const dismissOnOutsidePointer = (event: PointerEvent) => {
-      if (!resultActionMenuElementRef.current?.contains(event.target as Node)) setResultActionMenu(null)
-    }
-    const dismissOnResize = () => setResultActionMenu(null)
-    window.addEventListener('pointerdown', dismissOnOutsidePointer, true)
-    window.addEventListener('resize', dismissOnResize)
-    resultActionMenuElementRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
-    return () => {
-      window.removeEventListener('pointerdown', dismissOnOutsidePointer, true)
-      window.removeEventListener('resize', dismissOnResize)
-    }
-  }, [resultActionMenu])
 
   const update = <K extends keyof SearchConditions>(key: K, value: SearchConditions[K]) => {
     if (conditions[key] === value) return
@@ -283,16 +262,7 @@ export default function SearchDialog({ sessionId, profileId, currentPath, previe
       return
     }
     const bounds = event.currentTarget.getBoundingClientRect()
-    const menuWidth = 210
-    const previewOptions = result.type === 'directory' ? [] : previewTypesForFile(result.name, fileTypeExtensions)
-    const menuHeight = result.type === 'directory' ? 48
-      : 84 + (previewOptions.length > 1 ? 38 + previewOptions.length * 31 : 0)
-    const x = Math.max(8, Math.min(bounds.right - menuWidth, window.innerWidth - menuWidth - 8))
-    const belowY = bounds.bottom + 6
-    const y = belowY + menuHeight <= window.innerHeight - 8
-      ? belowY
-      : Math.max(8, bounds.top - menuHeight - 6)
-    setResultActionMenu({ result, x, y, previewMenuOpen: false })
+    setResultActionMenu({ result, x: bounds.right, y: bounds.top, anchor: event.currentTarget })
   }
 
   const statusText = status === 'running' ? '正在扫描'
@@ -487,77 +457,17 @@ export default function SearchDialog({ sessionId, profileId, currentPath, previe
         </div>
       </section>
       {resultActionMenu && (
-        <div
-          className="search-result-action-menu"
-          ref={resultActionMenuElementRef}
-          role="menu"
-          aria-label={resultActionMenu.result.name + '的操作'}
-          style={{ left: resultActionMenu.x, top: resultActionMenu.y }}
-        >
-          {resultActionMenu.result.type !== 'directory' && (() => {
-            const previewOptions = previewTypesForFile(resultActionMenu.result.name, fileTypeExtensions)
-            if (previewOptions.length === 0) return null
-            if (previewOptions.length === 1) return (
-              <button
-                type="button"
-                className="search-result-action"
-                role="menuitem"
-                onClick={() => {
-                  const { result } = resultActionMenu
-                  setResultActionMenu(null)
-                  onPreviewResult(result, previewOptions[0])
-                }}
-              >
-                <Eye size={15} /> 预览
-              </button>
-            )
-            return (
-              <>
-                <button
-                  type="button"
-                  className="search-result-action"
-                  role="menuitem"
-                  aria-haspopup="menu"
-                  aria-expanded={resultActionMenu.previewMenuOpen}
-                  onClick={() => setResultActionMenu((current) => current ? { ...current, previewMenuOpen: !current.previewMenuOpen } : current)}
-                >
-                  <Eye size={15} /> 预览方式 <ChevronRight size={14} />
-                </button>
-                {resultActionMenu.previewMenuOpen && (
-                  <div className="search-result-preview-submenu" role="menu" aria-label="预览方式">
-                    {previewOptions.map((type) => (
-                      <button
-                        key={type}
-                        type="button"
-                        className="search-result-action"
-                        role="menuitem"
-                        onClick={() => {
-                          const { result } = resultActionMenu
-                          setResultActionMenu(null)
-                          onPreviewResult(result, type)
-                        }}
-                      >
-                        {previewTypeLabels[type]}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
-            )
-          })()}
-          <button
-            type="button"
-            className="search-result-action"
-            role="menuitem"
-            onClick={() => {
-              const { result } = resultActionMenu
-              setResultActionMenu(null)
-              onSelectResult(result)
-            }}
-          >
-            <FolderOpen size={15} /> {resultActionMenu.result.type === 'directory' ? '打开文件夹' : '打开所在目录'}
-          </button>
-        </div>
+        <SftpContextMenu
+          context={{ kind: 'search-result', result: resultActionMenu.result }}
+          position={{ x: resultActionMenu.x, y: resultActionMenu.y }}
+          anchorRef={resultActionMenuAnchorRef}
+          fileTypeExtensions={fileTypeExtensions}
+          onAction={(action, context) => {
+            setResultActionMenu(null)
+            onMenuAction(action, context)
+          }}
+          onClose={() => setResultActionMenu(null)}
+        />
       )}
       {confirmClose && (
         <ConfirmationDialog

@@ -1,4 +1,5 @@
 import type { CommandAlias, LogPreviewPage, PerformanceThresholds, FileTypeExtensions, PreviewLimits, PreviewResult, RemoteEntry, ScriptExecutionRequest, ServerProfile, SessionKind, ThemeMode, TransferFailure, TransferFileProgress } from '@shared/types'
+import type { SftpContextMenuContext } from './context-menu/sftp-menu'
 
 export interface ProfileForm {
   id: string
@@ -90,10 +91,9 @@ export interface ContextMenuPosition {
   y: number
 }
 
-export type BrowserContextMenu =
-  | ({ kind: 'single-entry'; entry: RemoteEntry } & ContextMenuPosition)
-  | ({ kind: 'multiple-entries'; entries: RemoteEntry[] } & ContextMenuPosition)
-  | ({ kind: 'directory-background'; directory: string } & ContextMenuPosition)
+export type BrowserContextMenu = Exclude<SftpContextMenuContext, { kind: 'search-result' }>
+  & ContextMenuPosition
+  & { anchor: HTMLElement }
 
 export type PreviewDialog =
   | { kind: 'loading'; name: string }

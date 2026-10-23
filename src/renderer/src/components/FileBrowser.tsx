@@ -39,8 +39,8 @@ interface FileBrowserProps {
   onNavigate: (path: string) => void
   onToggleSort: (column: SortColumn) => void
   onSelectedPathsChange: (paths: string[]) => void
-  onOpenEntryContextMenu: (entries: RemoteEntry[], x: number, y: number) => void
-  onOpenDirectoryContextMenu: (x: number, y: number) => void
+  onOpenEntryContextMenu: (entries: RemoteEntry[], x: number, y: number, anchor: HTMLElement) => void
+  onOpenDirectoryContextMenu: (x: number, y: number, anchor: HTMLElement) => void
   onDeleteEntries: (entries: RemoteEntry[]) => void
   onDropUpload: (entries: DroppedUploadEntry[]) => void
   onDropMove: (sourcePaths: string[], targetDirectory: string) => void
@@ -226,6 +226,11 @@ export default function FileBrowser({
   const selectedEntries = () => {
     const paths = new Set(selectedPathsRef.current)
     return sortedEntries.filter((entry) => paths.has(entry.path) && (entry.type === 'file' || entry.type === 'directory'))
+  }
+
+  const selectedContextEntries = () => {
+    const paths = new Set(selectedPathsRef.current)
+    return sortedEntries.filter((entry) => paths.has(entry.path))
   }
 
   const changeSelectedPaths = (paths: Iterable<string>) => onSelectedPathsChange([...new Set(paths)])
@@ -546,10 +551,9 @@ export default function FileBrowser({
     event.preventDefault()
     event.stopPropagation()
     const currentSelection = new Set(selectedPathsRef.current)
-    const targets = currentSelection.has(entry.path) ? selectedEntries() : [entry]
+    const targets = currentSelection.has(entry.path) ? selectedContextEntries() : [entry]
     if (!currentSelection.has(entry.path)) changeSelectedPaths([entry.path])
-    const actionableEntries = targets.filter((candidate) => candidate.type === 'file' || candidate.type === 'directory')
-    if (actionableEntries.length > 0) onOpenEntryContextMenu([...actionableEntries], event.clientX, event.clientY)
+    if (targets.length > 0) onOpenEntryContextMenu([...targets], event.clientX, event.clientY, event.currentTarget)
   }
 
   const handleBackgroundContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -559,7 +563,7 @@ export default function FileBrowser({
     }
     event.preventDefault()
     changeSelectedPaths([])
-    onOpenDirectoryContextMenu(event.clientX, event.clientY)
+    onOpenDirectoryContextMenu(event.clientX, event.clientY, event.currentTarget)
   }
 
   const handleBrowserKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -567,9 +571,12 @@ export default function FileBrowser({
     const focusedEntry = entryElement?.dataset.entryPath
       ? sortedEntries.find((entry) => entry.path === entryElement.dataset.entryPath)
       : undefined
-    const targets = selectedEntries()
+    const targets = selectedContextEntries()
     if (event.key === 'Delete') {
-      const deletions = targets.length > 0 ? targets : focusedEntry && (focusedEntry.type === 'file' || focusedEntry.type === 'directory') ? [focusedEntry] : []
+      const allSelectedDeletable = targets.length > 0 && targets.every((entry) => entry.type === 'file' || entry.type === 'directory')
+      const deletions = targets.length > 0
+        ? allSelectedDeletable ? targets : []
+        : focusedEntry && (focusedEntry.type === 'file' || focusedEntry.type === 'directory') ? [focusedEntry] : []
       if (deletions.length === 0) return
       event.preventDefault()
       onDeleteEntries(deletions)
@@ -580,16 +587,14 @@ export default function FileBrowser({
     if (!focusedEntry || !entryElement) {
       changeSelectedPaths([])
       const bounds = contentRef.current?.getBoundingClientRect()
-      if (bounds) onOpenDirectoryContextMenu(bounds.left + 12, bounds.top + 12)
+      if (bounds && contentRef.current) onOpenDirectoryContextMenu(bounds.left + 12, bounds.top + 12, contentRef.current)
       return
     }
     const currentSelection = new Set(selectedPathsRef.current)
     const menuEntries = currentSelection.has(focusedEntry.path) ? targets : [focusedEntry]
     if (!currentSelection.has(focusedEntry.path)) changeSelectedPaths([focusedEntry.path])
-    const actionableEntries = menuEntries.filter((entry) => entry.type === 'file' || entry.type === 'directory')
-    if (actionableEntries.length === 0) return
     const bounds = entryElement.getBoundingClientRect()
-    onOpenEntryContextMenu([...actionableEntries], bounds.left + 12, bounds.top + 12)
+    onOpenEntryContextMenu([...menuEntries], bounds.left + 12, bounds.top + 12, entryElement)
   }
 
   return (

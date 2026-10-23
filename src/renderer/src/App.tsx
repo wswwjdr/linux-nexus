@@ -2,9 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent as Re
 import { Cloud, Copy, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, Plus, RefreshCw, Search, Settings, Terminal, Upload, X } from 'lucide-react'
 import GlobalToast, { type ToastNotice } from './GlobalToast'
 import FileBrowser from './components/FileBrowser'
-import SingleEntryContextMenu from './components/context-menus/SingleEntryContextMenu'
-import MultipleEntriesContextMenu from './components/context-menus/MultipleEntriesContextMenu'
-import DirectoryContextMenu from './components/context-menus/DirectoryContextMenu'
+import SftpContextMenu from './components/context-menus/SftpContextMenu'
 import ServerList from './components/ServerList'
 import TransferTray from './components/TransferTray'
 import SearchDialog from './components/SearchDialog'
@@ -40,9 +38,8 @@ import type {
   TrustHostKeyInput,
 } from '@shared/types'
 import { DEFAULT_PERFORMANCE_THRESHOLDS, defaultFileTypeExtensions } from '@shared/app-settings'
-import { classifyFileTypeCategories } from '@shared/file-type-categories'
-import { previewTypesForFile } from '@shared/preview-file-type'
 import { scriptExecutionCommand } from '@shared/shell'
+import type { SftpContextMenuContext, SftpMenuAction } from './context-menu/sftp-menu'
 import type {
   BrowserContextMenu as BrowserContextMenuState,
   FileViewMode,
@@ -133,14 +130,14 @@ export default function App() {
   const [remoteOperationDetailsOpen, setRemoteOperationDetailsOpen] = useState(false)
   const [createDirectoryDialog, setCreateDirectoryDialog] = useState<{ name: string } | null>(null)
   const [creatingDirectory, setCreatingDirectory] = useState(false)
-  const [scriptCommandDialog, setScriptCommandDialog] = useState<{ entry: RemoteEntry; sessionId: string; command: string } | null>(null)
+  const [scriptCommandDialog, setScriptCommandDialog] = useState<{ entry: Pick<RemoteEntry, 'name' | 'path'>; sessionId: string; command: string } | null>(null)
   const [scriptExecutionDialog, setScriptExecutionDialog] = useState<ScriptExecutionDialogState | null>(null)
   const [searchSessionId, setSearchSessionId] = useState<string | null>(null)
   const toastSequenceRef = useRef(0)
   const startupConnectionAttemptedRef = useRef(false)
   const connectingSessionsRef = useRef(new Set<string>())
   const directoryLoadIdsRef = useRef(new Map<string, number>())
-  const contextMenuRef = useRef<HTMLDivElement>(null)
+  const contextMenuAnchorRef = useRef<HTMLElement | null>(null)
   const sessionContextMenuRef = useRef<HTMLDivElement>(null)
   const activeSessionIdRef = useRef(activeSessionId)
   const performanceMonitorIdRef = useRef<string | null>(null)
@@ -431,32 +428,6 @@ export default function App() {
   }), [])
 
   useEffect(() => {
-    if (!browserContextMenu) return
-
-    const dismissOutside = (event: PointerEvent) => {
-      if (!contextMenuRef.current?.contains(event.target as Node)) setBrowserContextMenu(null)
-    }
-    const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setBrowserContextMenu(null)
-    }
-    const dismiss = () => setBrowserContextMenu(null)
-
-    document.addEventListener('pointerdown', dismissOutside, true)
-    window.addEventListener('keydown', dismissOnEscape)
-    window.addEventListener('blur', dismiss)
-    window.addEventListener('resize', dismiss)
-    window.addEventListener('scroll', dismiss, true)
-    contextMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not([aria-haspopup="menu"])')?.focus()
-    return () => {
-      document.removeEventListener('pointerdown', dismissOutside, true)
-      window.removeEventListener('keydown', dismissOnEscape)
-      window.removeEventListener('blur', dismiss)
-      window.removeEventListener('resize', dismiss)
-      window.removeEventListener('scroll', dismiss, true)
-    }
-  }, [browserContextMenu])
-
-  useEffect(() => {
     if (!sessionContextMenu) return
 
     const dismissOutside = (event: PointerEvent) => {
@@ -629,17 +600,18 @@ export default function App() {
     void connectSession(session, profile)
   }
 
-  const requestScriptCommandEdit = (entry: RemoteEntry) => {
-    if (!activeSession || activeSession.kind !== 'sftp' || activeSession.status !== 'connected') return
+  const requestScriptCommandEdit = (entry: Pick<RemoteEntry, 'name' | 'path'>, sessionId = activeSession?.id) => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session || session.kind !== 'sftp' || session.status !== 'connected') return
     setBrowserContextMenu(null)
     setScriptCommandDialog({
       entry,
-      sessionId: activeSession.id,
+      sessionId: session.id,
       command: scriptExecutionCommand(entry.name),
     })
   }
 
-  const startScriptExecution = (entry: RemoteEntry, command: string, sessionId = activeSession?.id) => {
+  const startScriptExecution = (entry: Pick<RemoteEntry, 'name' | 'path'>, command: string, sessionId = activeSession?.id) => {
     setBrowserContextMenu(null)
     setScriptCommandDialog(null)
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
@@ -851,33 +823,94 @@ export default function App() {
   }
 
   const openBrowserContextMenu = (menu: BrowserContextMenuState) => {
-    const menuWidth = 204
-    const menuHeight = menu.kind === 'single-entry'
-      ? (() => {
-          if (menu.entry.type !== 'file') return 6 * 36 + 8
-          const previewOptions = previewTypesForFile(menu.entry.name, fileTypeExtensions)
-          const isScript = classifyFileTypeCategories(menu.entry.name, fileTypeExtensions).includes('script')
-          const itemCount = 6 + Number(previewOptions.length > 0) + Number(previewOptions.includes('text')) + Number(isScript)
-          return itemCount * 36 + 8
-        })()
-      : 5 * 36 + 8
     setSessionContextMenu(null)
-    setBrowserContextMenu({
-      ...menu,
-      x: Math.max(8, Math.min(menu.x, window.innerWidth - menuWidth - 8)),
-      y: Math.max(8, Math.min(menu.y, window.innerHeight - menuHeight - 8)),
+    contextMenuAnchorRef.current = menu.anchor
+    setBrowserContextMenu({ ...menu, x: Math.max(8, menu.x), y: Math.max(8, menu.y) })
+  }
+
+  const openEntryContextMenu = (entries: RemoteEntry[], x: number, y: number, anchor: HTMLElement) => {
+    if (entries.length === 0) return
+    openBrowserContextMenu(entries.length === 1
+      ? { kind: 'single-entry', entry: entries[0], canPaste: canPasteRemote, x, y, anchor }
+      : { kind: 'multiple-entries', entries: [...entries], canPaste: canPasteRemote, x, y, anchor })
+  }
+
+  const openDirectoryContextMenu = (x: number, y: number, anchor: HTMLElement) => {
+    openBrowserContextMenu({
+      kind: 'directory-background',
+      directory: currentPath,
+      canPaste: canPasteRemote,
+      sort,
+      x,
+      y,
+      anchor,
     })
   }
 
-  const openEntryContextMenu = (entries: RemoteEntry[], x: number, y: number) => {
-    if (entries.length === 0) return
-    openBrowserContextMenu(entries.length === 1
-      ? { kind: 'single-entry', entry: entries[0], x, y }
-      : { kind: 'multiple-entries', entries: [...entries], x, y })
-  }
-
-  const openDirectoryContextMenu = (x: number, y: number) => {
-    openBrowserContextMenu({ kind: 'directory-background', directory: currentPath, x, y })
+  const dispatchSftpMenuAction = (action: SftpMenuAction, context: SftpContextMenuContext) => {
+    setBrowserContextMenu(null)
+    if (context.kind === 'search-result'
+      && (action.type === 'run-script' || action.type === 'adjust-script-command')) setSearchSessionId(null)
+    const entry = context.kind === 'single-entry' ? context.entry
+      : context.kind === 'search-result' ? context.result
+        : null
+    const entries = context.kind === 'single-entry' ? [context.entry]
+      : context.kind === 'multiple-entries' ? context.entries
+        : null
+    switch (action.type) {
+      case 'preview':
+        if (entry) void previewFile(entry, action.previewType)
+        break
+      case 'preview-log':
+        if (entry) void previewLogFile(entry)
+        break
+      case 'run-script':
+        if (entry) startScriptExecution(entry, scriptExecutionCommand(entry.name), context.kind === 'search-result' ? searchSessionId ?? undefined : undefined)
+        break
+      case 'adjust-script-command':
+        if (entry) requestScriptCommandEdit(entry, context.kind === 'search-result' ? searchSessionId ?? undefined : undefined)
+        break
+      case 'download':
+        if (entries) download(entries)
+        break
+      case 'copy':
+        if (entries) copyRemoteSelection(entries)
+        break
+      case 'cut':
+        if (entries) cutRemoteSelection(entries)
+        break
+      case 'paste':
+        if (context.kind === 'directory-background') pasteRemoteEntries(context.directory)
+        else if (context.kind === 'single-entry' && context.entry.type === 'directory') pasteRemoteEntries(context.entry.path)
+        else pasteRemoteEntries(currentPath)
+        break
+      case 'copy-path':
+        if (context.kind === 'single-entry') void copyEntryPath(context.entry)
+        else if (context.kind === 'directory-background') void copyPath(context.directory)
+        break
+      case 'delete':
+        if (entries) requestRemoteEntriesDeletion(entries)
+        break
+      case 'sort-column':
+        if (context.kind === 'directory-background' && activeSession?.kind === 'sftp') {
+          patchSession(activeSession.id, { sort: { ...context.sort, column: action.column } })
+        }
+        break
+      case 'sort-direction':
+        if (context.kind === 'directory-background' && activeSession?.kind === 'sftp') {
+          patchSession(activeSession.id, { sort: { ...context.sort, direction: action.direction } })
+        }
+        break
+      case 'create-directory':
+        setCreateDirectoryDialog({ name: '' })
+        break
+      case 'upload':
+        void uploadFiles()
+        break
+      case 'open-location':
+        if (context.kind === 'search-result') void locateSearchResult(context.result)
+        break
+    }
   }
 
   const copyPath = async (remotePath: string) => {
@@ -1138,27 +1171,6 @@ export default function App() {
     void window.remoteFiles.cancelRemoteMove(move.requestId).then((cancelled) => {
       if (!cancelled && activeRemoteMove?.requestId === move.requestId) showToast('info', '移动任务已结束')
     }).catch((error) => showToast('error', `取消移动失败：${errorMessage(error)}`))
-  }
-
-  const handleContextMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const activeItem = document.activeElement as HTMLElement
-    if (event.key === 'ArrowRight' && activeItem.getAttribute('aria-haspopup') === 'menu') {
-      event.preventDefault()
-      activeItem.parentElement?.querySelector<HTMLElement>('.sort-menu-item')?.focus()
-      return
-    }
-    if (event.key === 'ArrowLeft' && activeItem.closest('.sort-submenu-panel')) {
-      event.preventDefault()
-      activeItem.closest('.context-submenu')?.querySelector<HTMLElement>('.submenu-trigger')?.focus()
-      return
-    }
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
-    event.preventDefault()
-    const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]'))
-      .filter((item) => item.getClientRects().length > 0)
-    const index = items.indexOf(activeItem)
-    const step = event.key === 'ArrowDown' ? 1 : -1
-    items[(index + step + items.length) % items.length]?.focus()
   }
 
   const breadcrumbs = useMemo(() => {
@@ -1516,78 +1528,14 @@ export default function App() {
           ))}
         </div>
 
-        {browserContextMenu?.kind === 'single-entry' && activeSession?.kind === 'sftp' && (
-          <SingleEntryContextMenu
-            entry={browserContextMenu.entry}
+        {browserContextMenu && activeSession?.kind === 'sftp' && (
+          <SftpContextMenu
+            context={browserContextMenu}
             position={browserContextMenu}
             fileTypeExtensions={fileTypeExtensions}
-            elementRef={contextMenuRef}
-            onKeyDown={handleContextMenuKeyDown}
-            onPreview={(entry, type) => {
-              setBrowserContextMenu(null)
-              void previewFile(entry, type)
-            }}
-            onPreviewLog={(entry) => {
-              setBrowserContextMenu(null)
-              void previewLogFile(entry)
-            }}
-            onRunScript={(entry) => startScriptExecution(entry, scriptExecutionCommand(entry.name))}
-            onAdjustAndRunScript={requestScriptCommandEdit}
-            onDownload={(entry) => {
-              setBrowserContextMenu(null)
-              download([entry])
-            }}
-            canPaste={canPasteRemote}
-            onCopyEntry={(entry) => copyRemoteSelection([entry])}
-            onCutEntry={(entry) => cutRemoteSelection([entry])}
-            onPasteToDirectory={pasteRemoteEntries}
-            onPasteToCurrentDirectory={() => pasteRemoteEntries(currentPath)}
-            onCopyPath={(entry) => void copyEntryPath(entry)}
-            onDelete={(entry) => requestRemoteEntriesDeletion([entry])}
-          />
-        )}
-        {browserContextMenu?.kind === 'multiple-entries' && activeSession?.kind === 'sftp' && (
-          <MultipleEntriesContextMenu
-            entries={browserContextMenu.entries}
-            position={browserContextMenu}
-            elementRef={contextMenuRef}
-            onKeyDown={handleContextMenuKeyDown}
-            onDownload={(entries) => {
-              setBrowserContextMenu(null)
-              download(entries)
-            }}
-            onCopy={copyRemoteSelection}
-            onCut={cutRemoteSelection}
-            canPaste={canPasteRemote}
-            onPasteToCurrentDirectory={() => pasteRemoteEntries(currentPath)}
-            onDelete={requestRemoteEntriesDeletion}
-          />
-        )}
-        {browserContextMenu?.kind === 'directory-background' && activeSession?.kind === 'sftp' && (
-          <DirectoryContextMenu
-            position={browserContextMenu}
-            sort={sort}
-            elementRef={contextMenuRef}
-            onKeyDown={handleContextMenuKeyDown}
-            onSelectSortColumn={(column) => {
-              setBrowserContextMenu(null)
-              patchSession(activeSession.id, { sort: { ...sort, column } })
-            }}
-            onSelectSortDirection={(direction) => {
-              setBrowserContextMenu(null)
-              patchSession(activeSession.id, { sort: { ...sort, direction } })
-            }}
-            onCopyCurrentPath={() => void copyPath(browserContextMenu.directory)}
-            canPaste={canPasteRemote}
-            onPaste={() => pasteRemoteEntries(browserContextMenu.directory)}
-            onCreateDirectory={() => {
-              setBrowserContextMenu(null)
-              setCreateDirectoryDialog({ name: '' })
-            }}
-            onUpload={() => {
-              setBrowserContextMenu(null)
-              uploadFiles()
-            }}
+            anchorRef={contextMenuAnchorRef}
+            onAction={dispatchSftpMenuAction}
+            onClose={() => setBrowserContextMenu(null)}
           />
         )}
 
@@ -1754,8 +1702,7 @@ export default function App() {
           fileTypeExtensions={fileTypeExtensions}
           previewOpen={Boolean(previewDialog || logPreviewDialog)}
           onClose={() => setSearchSessionId(null)}
-          onSelectResult={(result) => void locateSearchResult(result)}
-          onPreviewResult={(result, type) => void previewFile(result, type)}
+          onMenuAction={dispatchSftpMenuAction}
         />
       )}
 

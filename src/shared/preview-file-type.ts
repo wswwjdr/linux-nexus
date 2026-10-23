@@ -1,5 +1,5 @@
-import type { FileTypeCategory, FileTypeExtensions, PreviewType } from './types'
-import { classifyFileTypeCategories } from './file-type-categories'
+import type { FileTypeExtensions, PreviewType } from './file-type-registry'
+import { classifyFileTypeCategories, fileTypeDefinition, fileTypeRegistry } from './file-type-registry'
 
 export const previewTypeLabels: Record<PreviewType, string> = {
   text: '文本预览',
@@ -10,18 +10,9 @@ export const previewTypeLabels: Record<PreviewType, string> = {
   video: '视频预览',
 }
 
-export const previewTypes: readonly PreviewType[] = ['text', 'markdown', 'pdf', 'image', 'audio', 'video']
-
-const previewCategoryByType: Record<PreviewType, FileTypeCategory> = {
-  text: 'text',
-  markdown: 'markdown',
-  pdf: 'pdf',
-  image: 'image',
-  audio: 'audio',
-  video: 'video',
-}
+export const previewTypes: readonly PreviewType[] = [...new Set(fileTypeRegistry.flatMap(({ previews }) => previews))]
 
 export function previewTypesForFile(fileName: string, extensionsByCategory: FileTypeExtensions): PreviewType[] {
   const categories = classifyFileTypeCategories(fileName, extensionsByCategory)
-  return previewTypes.filter((type) => categories.includes(previewCategoryByType[type]))
+  return [...new Set(categories.flatMap((category) => fileTypeDefinition(category).previews))]
 }

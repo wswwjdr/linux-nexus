@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type SyntheticEvent, type WheelEvent } from 'react'
-import type { FileTypeExtensions, PreviewType, RemoteEntry, TextFileRevision } from '@shared/types'
+import type { FileTypeExtensions, RemoteEntry, TextFileRevision } from '@shared/types'
+import type { PreviewType } from '@shared/file-type-registry'
 import { previewTypesForFile } from '@shared/preview-file-type'
 import type { ImagePreviewSize, LogPreviewDialog, PreviewDialog } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
@@ -123,7 +124,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     }
   }
 
-  const previewLogFile = async (entry: RemoteEntry) => {
+  const previewLogFile = async (entry: Pick<RemoteEntry, 'name' | 'path'>) => {
     closePreview()
     if (!sessionId) return
 

@@ -4,7 +4,8 @@ import type { FileTypeExtensions } from '../src/shared/types.ts'
 import { DEFAULT_APP_SETTINGS, DEFAULT_PERFORMANCE_THRESHOLDS, validateAppSettings } from '../src/shared/app-settings.ts'
 import { validateExternalUrl } from '../src/shared/external-url.ts'
 import { previewMimeType } from '../src/shared/preview-mime-type.ts'
-import { DEFAULT_FILE_TYPE_EXTENSIONS, normalizeFileTypeExtension, classifyFileTypeCategories } from '../src/shared/file-type-categories.ts'
+import { DEFAULT_FILE_TYPE_EXTENSIONS, normalizeFileTypeExtension, classifyFileTypeCategories } from '../src/shared/file-type-registry.ts'
+import { previewTypesForFile } from '../src/shared/preview-file-type.ts'
 
 function copyDefaultExtensions(): FileTypeExtensions {
   return Object.fromEntries(Object.entries(DEFAULT_FILE_TYPE_EXTENSIONS).map(([type, extensions]) => [type, [...extensions]])) as FileTypeExtensions
@@ -17,8 +18,15 @@ test('normalizes extensions and matches overlapping and multi-part suffixes', ()
   assert.deepEqual(classifyFileTypeCategories('/home/user/job.py', copyDefaultExtensions()), ['text', 'script'])
   const extensions = copyDefaultExtensions()
   extensions.pdf.push('tar.gz')
-  assert.deepEqual(classifyFileTypeCategories('/archive/backup.TAR.GZ', extensions), ['pdf'])
-  assert.deepEqual(classifyFileTypeCategories('/home/user/.profile', extensions), [])
+  extensions.text.push('tar.gz')
+  assert.deepEqual(classifyFileTypeCategories('/archive/backup.TAR.GZ', extensions), ['text', 'pdf'])
+  assert.deepEqual(classifyFileTypeCategories('/archive/backup.gz', extensions), [])
+  assert.deepEqual(classifyFileTypeCategories('/home/user/app.min.js', copyDefaultExtensions()), [])
+  assert.deepEqual(classifyFileTypeCategories('/home/user/app.js', copyDefaultExtensions()), ['text'])
+  extensions.text.push('.profile')
+  assert.deepEqual(classifyFileTypeCategories('/home/user/.PROFILE', extensions), ['text'])
+  assert.deepEqual(previewTypesForFile('README.md', extensions), ['text', 'markdown'])
+  assert.deepEqual(classifyFileTypeCategories('/home/user/.profile', copyDefaultExtensions()), [])
   assert.throws(() => normalizeFileTypeExtension('../secret'))
 })
 

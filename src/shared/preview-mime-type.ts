@@ -1,4 +1,4 @@
-import type { PreviewType } from './types'
+import type { PreviewType } from './file-type-registry'
 
 const mimeTypeByCategoryAndExtension: Partial<Record<PreviewType, Record<string, string>>> = {
   image: {

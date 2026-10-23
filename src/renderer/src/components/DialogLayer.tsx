@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Check, ChevronRight, FolderOpen, KeyRound, LayoutGrid, List, LoaderCircle, Monitor, Moon, Plus, RefreshCw, Server, ShieldCheck, Sun, Terminal, Trash2, X } from 'lucide-react'
 import type { CommandAlias, CommandAliasSnapshot, FileTypeCategory, ServerProfile, ThemeMode } from '@shared/types'
-import { fileTypeCategoryLabels, fileTypeCategories, normalizeFileTypeExtension } from '@shared/file-type-categories'
+import { fileTypeRegistry, normalizeFileTypeExtension } from '@shared/file-type-registry'
 import ConfirmationDialog from './ConfirmationDialog'
 import LogPreviewDialog, { type LogPreviewDialogProps } from './previews/LogPreviewDialog'
 import PreviewDialog, { type PreviewDialogProps } from './previews/PreviewDialog'
@@ -94,11 +94,15 @@ interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
 }
 
 function FileTypeCategoryEditor({
+  label,
+  capabilityDescription,
   category,
   extensions,
   onAdd,
   onRemove,
 }: {
+  label: string
+  capabilityDescription: string
   category: FileTypeCategory
   extensions: string[]
   onAdd: (category: FileTypeCategory, extension: string) => void
@@ -125,7 +129,10 @@ function FileTypeCategoryEditor({
   return (
     <div className="file-type-category-row">
       <div className="file-type-category-heading">
-        <strong>{fileTypeCategoryLabels[category]}</strong>
+        <div className="file-type-category-name">
+          <strong>{label}</strong>
+          <span>{capabilityDescription}</span>
+        </div>
         <div className="file-type-category-tags">
           {extensions.map((extension) => (
             <span className="file-type-category-tag" key={extension}>
@@ -138,7 +145,7 @@ function FileTypeCategoryEditor({
       <div className="file-type-category-add">
         <input
           value={draft}
-          aria-label={'添加' + fileTypeCategoryLabels[category] + '后缀'}
+          aria-label={'添加' + label + '后缀'}
           placeholder="添加后缀，如 .txt"
           onChange={(event) => {
             setDraft(event.target.value)
@@ -570,11 +577,13 @@ export default function DialogLayer({
                   <div className="file-type-categories-heading">
                   <button type="button" className="text-button" onClick={onResetFileTypeExtensions}>恢复默认</button>
                   </div>
-                  {fileTypeCategories.map((category) => (
+                  {fileTypeRegistry.map((definition) => (
                     <FileTypeCategoryEditor
-                      key={category}
-                      category={category}
-                      extensions={settingsForm.fileTypeExtensions[category]}
+                      key={definition.id}
+                      category={definition.id}
+                      label={definition.label}
+                      capabilityDescription={definition.capabilityDescription}
+                      extensions={settingsForm.fileTypeExtensions[definition.id]}
                       onAdd={onAddFileTypeExtension}
                       onRemove={onRemoveFileTypeExtension}
                     />

@@ -1,3 +1,6 @@
+import type { FileTypeExtensions, PreviewType } from './file-type-registry'
+export type { FileTypeCategory, FileTypeExtensions, PreviewType } from './file-type-registry'
+
 export interface ServerProfile {
   id: string
   name: string
@@ -175,12 +178,6 @@ export interface PerformanceUpdate {
   snapshot?: PerformanceSnapshot
   message?: string
 }
-
-export type FileTypeCategory = 'text' | 'markdown' | 'pdf' | 'image' | 'audio' | 'video' | 'script'
-
-export type PreviewType = 'text' | 'markdown' | 'pdf' | 'image' | 'audio' | 'video'
-
-export type FileTypeExtensions = Record<FileTypeCategory, string[]>
 
 export interface StartupConnection {
   profileId: string
@@ -419,3 +416,4 @@ export interface RemoteFilesApi {
   onTerminalOutput(callback: (event: TerminalOutputEvent) => void): () => void
   onPerformanceUpdate(callback: (event: PerformanceUpdate) => void): () => void
 }
+
