@@ -214,6 +214,10 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .path-nav { width: 27px; height: 27px; color:var(--text-secondary); }
 .nav-group-end { margin-right: 9px; }
 .breadcrumbs { display: flex; min-width: 0; align-items: center; gap: 7px; overflow: hidden; color:var(--text-secondary); }
+.path-edit-form { min-width: 0; flex: 1; display: flex; align-items: center; gap: 3px; }
+.path-edit-input { min-width: 0; flex: 1; height: 31px; padding: 0 8px; border:1px solid var(--line-strong); border-radius: var(--radius); color:var(--text-primary); background:var(--surface); font-family: 'Cascadia Code', Consolas, monospace; font-size: 11px; }
+.path-edit-input:focus { border-color:var(--border-success-strong); outline:2px solid var(--focus-outline); }
+.path-edit-button { flex: 0 0 auto; color:var(--text-secondary); }
 .breadcrumb-piece { display: inline-flex; min-width: 0; flex: 0 0 auto; align-items: center; gap: 7px; }
 .breadcrumb-piece svg { color:var(--muted); }
 .breadcrumb-piece button { max-width: 200px; overflow: hidden; padding: 4px 2px; border:0; color:var(--text-secondary); background:transparent; cursor: pointer; text-overflow: ellipsis; white-space: nowrap; }
@@ -226,6 +230,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .view-toggle-button[aria-pressed="true"] { border-color:var(--border-success); color:var(--green); background:var(--surface); box-shadow: var(--shadow-pressed); }
 .path-count { color:var(--text-secondary); font-size: 11px; white-space: nowrap; }
 .file-content-wrap { min-height: 0; flex: 1; overflow: auto; position: relative; }
+.file-content-wrap:focus { outline: none; }
 .file-content-wrap.selecting, .file-content-wrap.selecting * { user-select: none; cursor: crosshair; }
 .remote-move-status, .remote-copy-status { position: sticky; z-index: 2; top: 0; min-height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom:1px solid var(--border-success); color:var(--text-success); background:var(--surface-success); font-size: 11px; }
 .remote-move-status > span, .remote-copy-status > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

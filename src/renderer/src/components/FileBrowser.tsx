@@ -2,6 +2,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Check,
   ChevronRight,
   File,
   Folder,
@@ -10,10 +11,11 @@ import {
   List,
   LoaderCircle,
   MoveRight,
+  Pencil,
   Upload,
   X,
 } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState, type DragEvent as ReactDragEvent, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent as ReactDragEvent, type FocusEvent as ReactFocusEvent, type FormEvent as ReactFormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { DroppedUploadEntry, RemoteEntry, RemoteMoveProgress } from '@shared/types'
 import type { FileViewMode, SortColumn, SortDirection } from '@/app-types'
 import { formatDate, formatSize, getParentPath } from '@/app-utils'
@@ -36,7 +38,7 @@ interface FileBrowserProps {
   copying: boolean
   highlightedPath: string | null
   onViewModeChange: (mode: FileViewMode) => void
-  onNavigate: (path: string) => void
+  onNavigate: (path: string) => Promise<boolean>
   onToggleSort: (column: SortColumn) => void
   onSelectedPathsChange: (paths: string[]) => void
   onOpenEntryContextMenu: (entries: RemoteEntry[], x: number, y: number, anchor: HTMLElement) => void
@@ -194,6 +196,8 @@ export default function FileBrowser({
   onDropError,
 }: FileBrowserProps) {
   const contentRef = useRef<HTMLDivElement>(null)
+  const pathInputRef = useRef<HTMLInputElement>(null)
+  const pathEditFormRef = useRef<HTMLFormElement>(null)
   const hoverCardRef = useRef<HTMLDivElement>(null)
   const hoverTimerRef = useRef<number | null>(null)
   const dragDepthRef = useRef(0)
@@ -205,6 +209,9 @@ export default function FileBrowser({
   const suppressClickTimerRef = useRef<number | null>(null)
   const [dropActive, setDropActive] = useState(false)
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null)
+  const [pathEditing, setPathEditing] = useState(false)
+  const [pathDraft, setPathDraft] = useState(currentPath)
+  const [pathSubmitting, setPathSubmitting] = useState(false)
   const [selectionRectangle, setSelectionRectangle] = useState<SelectionRectangle | null>(null)
   const [hoveredEntry, setHoveredEntry] = useState<{
     entry: RemoteEntry
@@ -215,6 +222,45 @@ export default function FileBrowser({
     top: number
   } | null>(null)
   selectedPathsRef.current = selectedPaths
+
+  useEffect(() => {
+    setPathDraft(currentPath)
+    setPathEditing(false)
+  }, [currentPath])
+
+  useEffect(() => {
+    if (!pathEditing) return
+    pathInputRef.current?.focus()
+    pathInputRef.current?.select()
+  }, [pathEditing])
+
+  const cancelPathEdit = () => {
+    setPathDraft(currentPath)
+    setPathEditing(false)
+  }
+
+  useEffect(() => {
+    if (!pathEditing) return
+    const dismissOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !pathEditFormRef.current?.contains(event.target)) {
+        setPathDraft(currentPath)
+        setPathEditing(false)
+      }
+    }
+    document.addEventListener('pointerdown', dismissOutside, true)
+    return () => document.removeEventListener('pointerdown', dismissOutside, true)
+  }, [currentPath, pathEditing])
+
+  const submitPathEdit = async (event: ReactFormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (pathSubmitting) return
+    setPathSubmitting(true)
+    try {
+      if (await onNavigate(pathDraft)) setPathEditing(false)
+    } finally {
+      setPathSubmitting(false)
+    }
+  }
 
   useLayoutEffect(() => {
     if (previousPathRef.current === currentPath) return
@@ -606,14 +652,56 @@ export default function FileBrowser({
         <button className="icon-button path-nav nav-group-end" title="返回上级目录" aria-label="返回上级目录" disabled={currentPath === '/'} onClick={() => onNavigate(getParentPath(currentPath))}>
           <ArrowUp size={16} />
         </button>
-        <nav className="breadcrumbs" aria-label="当前路径">
-          {breadcrumbs.map((crumb, index) => (
-            <span className="breadcrumb-piece" key={crumb.path}>
-              {index > 0 && <ChevronRight size={13} />}
-              <button className={index === breadcrumbs.length - 1 ? 'current-crumb' : ''} onClick={() => onNavigate(crumb.path)}>{crumb.label}</button>
-            </span>
-          ))}
-        </nav>
+        {pathEditing ? (
+          <form ref={pathEditFormRef} className="path-edit-form" onSubmit={(event) => void submitPathEdit(event)}>
+            <input
+              ref={pathInputRef}
+              className="path-edit-input"
+              aria-label="远程路径"
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              value={pathDraft}
+              disabled={pathSubmitting}
+              onChange={(event) => setPathDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  cancelPathEdit()
+                }
+              }}
+            />
+            <button className="icon-button path-nav" type="submit" title="跳转到路径" aria-label="跳转到路径" disabled={pathSubmitting}>
+              {pathSubmitting ? <LoaderCircle className="spin" size={15} /> : <Check size={16} />}
+            </button>
+            <button className="icon-button path-nav" type="button" title="取消编辑" aria-label="取消编辑" disabled={pathSubmitting} onClick={cancelPathEdit}>
+              <X size={16} />
+            </button>
+          </form>
+        ) : (
+          <>
+            <nav className="breadcrumbs" aria-label="当前路径">
+              {breadcrumbs.map((crumb, index) => (
+                <span className="breadcrumb-piece" key={crumb.path}>
+                  {index > 0 && <ChevronRight size={13} />}
+                  <button className={index === breadcrumbs.length - 1 ? 'current-crumb' : ''} onClick={() => void onNavigate(crumb.path)}>{crumb.label}</button>
+                </span>
+              ))}
+            </nav>
+            <button
+              className="icon-button path-nav path-edit-button"
+              type="button"
+              title="编辑路径"
+              aria-label="编辑路径"
+              onClick={() => {
+                setPathDraft(currentPath)
+                setPathEditing(true)
+              }}
+            >
+              <Pencil size={15} />
+            </button>
+          </>
+        )}
         <div className="pathbar-tools">
           <div className="view-toggle" role="group" aria-label="文件视图">
             <button className="view-toggle-button" title="图标视图" aria-label="图标视图" aria-pressed={viewMode === 'icons'} onClick={() => onViewModeChange('icons')}>
