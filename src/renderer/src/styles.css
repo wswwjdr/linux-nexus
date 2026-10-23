@@ -590,6 +590,7 @@ details[open] > .settings-disclosure-summary .settings-disclosure-chevron { tran
 .media-preview-modal { width: min(100%, 960px); }
 .text-preview-modal { height: min(680px, calc(100vh - 48px)); }
 .markdown-preview-modal { height: min(760px, calc(100vh - 48px)); }
+.pdf-preview-modal { height: min(820px, calc(100vh - 48px)); }
 .text-preview-modal .preview-text { min-height: 0; max-height: none; flex: 1; }
 .text-preview-editor { width: 100%; resize: none; white-space: pre; overflow-wrap: normal; tab-size: 2; outline:0; }
 .text-preview-editor:focus { border-color:var(--border-success-strong); box-shadow: 0 0 0 2px var(--focus-surface); }

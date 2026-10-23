@@ -47,10 +47,11 @@ export default function PreviewDialog({
   const previewName = previewDialog.kind === 'ready' ? previewDialog.result.name : previewDialog.name
   const textPreview = result?.type === 'text'
   const markdownPreview = result?.type === 'markdown'
+  const pdfPreview = result?.type === 'pdf'
 
   return (
     <div className="modal-backdrop preview-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !textSaving && !textSaveConfirmation && onClosePreview()}>
-      <section className={`modal preview-modal${result ? ` media-preview-modal${textPreview ? ' text-preview-modal' : ''}${markdownPreview ? ' markdown-preview-modal' : ''}` : ''}`} role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
+      <section className={`modal preview-modal${result ? ` media-preview-modal${textPreview ? ' text-preview-modal' : ''}${markdownPreview ? ' markdown-preview-modal' : ''}${pdfPreview ? ' pdf-preview-modal' : ''}` : ''}`} role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
         <div className="modal-heading">
           <div>
             <h2 id="preview-modal-title">{previewName}</h2>
