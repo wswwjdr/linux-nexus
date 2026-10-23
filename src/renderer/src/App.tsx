@@ -30,7 +30,7 @@ import type {
   RemoteMoveProgress,
   RemoteMoveResult,
   RemoteEntry,
-  RemoteSearchResult,
+  SearchResultTarget,
   ScriptExecutionEvent,
   ScriptExecutionRequest,
   ServerProfile,
@@ -774,14 +774,13 @@ export default function App() {
     ? navigateSession(activeSession.id, remotePath)
     : Promise.resolve(false)
 
-  const locateSearchResult = async (result: RemoteSearchResult) => {
+  const locateSearchResult = async (result: SearchResultTarget) => {
     const sessionId = searchSessionId
     setSearchSessionId(null)
     if (!sessionId) return
     activateSession(sessionId)
-    const destination = result.type === 'directory' ? result.path : getParentPath(result.path)
-    const loaded = await navigateSession(sessionId, destination)
-    if (loaded) patchSession(sessionId, { highlightedPath: result.type === 'directory' ? null : result.path })
+    const loaded = await navigateSession(sessionId, getParentPath(result.path))
+    if (loaded) patchSession(sessionId, { highlightedPath: result.path })
   }
 
   const movePathHistory = (offset: -1 | 1) => {

@@ -43,54 +43,86 @@ export interface RemoteEntry {
   permissions: string
 }
 
-export type RemoteSearchMode = 'name' | 'content'
-export type RemoteSearchMatcher = 'literal' | 'regex'
-export type RemoteSearchScope = 'current' | 'root'
+export type SearchScope = 'current' | 'root' | 'custom'
+export type NameSearchMatchMode = 'exact' | 'contains'
 
-export interface RemoteSearchRequest {
+export interface NameSearchRequest {
   requestId: string
   sessionId: string
   profileId: string
-  query: string
-  mode: RemoteSearchMode
-  matcher: RemoteSearchMatcher
-  scope: RemoteSearchScope
   rootPath: string
-  maxFileSizeMiB: number
-  includeSystemPaths: boolean
-  includeMountedFilesystems: boolean
+  query: string
+  matchMode: NameSearchMatchMode
+  ignoreCase: boolean
 }
 
-export interface RemoteSearchLineMatch {
+export interface ContentSearchRequest {
+  requestId: string
+  sessionId: string
+  profileId: string
+  rootPath: string
+  query: string
+  ignoreCase: boolean
+  maxFileSizeMiB: number
+}
+
+export interface SearchResultTarget {
+  name: string
+  path: string
+  type: 'file'
+}
+
+export interface NameSearchResult extends SearchResultTarget {}
+
+export interface ContentSearchLineMatch {
   lineNumber: number
   before?: { lineNumber: number; text: string }
   text: string
   after?: { lineNumber: number; text: string }
 }
 
-export interface RemoteSearchResult {
-  name: string
-  path: string
-  type: RemoteEntry['type']
+export interface ContentSearchResult extends SearchResultTarget {
   size: number
-  matches: RemoteSearchLineMatch[]
+  matches: ContentSearchLineMatch[]
 }
 
-export interface RemoteSearchProgress {
+export type SearchRunStatus = 'completed' | 'cancelled' | 'failed'
+
+export interface NameSearchProgress {
   requestId: string
   sessionId: string
   profileId: string
-  scannedEntries: number
+  elapsedMs: number
+  matchedFiles: number
+  incomplete: boolean
+  hasReadErrors: boolean
+}
+
+export type NameSearchEvent =
+  | ({ type: 'progress' } & NameSearchProgress)
+  | ({ type: 'results'; results: NameSearchResult[] } & NameSearchProgress)
+  | ({ type: 'finished'; status: SearchRunStatus; message?: string } & NameSearchProgress)
+
+export interface ContentSearchProgress {
+  requestId: string
+  sessionId: string
+  profileId: string
+  elapsedMs: number
+  processedFiles: number
+  processedBytes: number
   matchedFiles: number
   matchedLines: number
-  skippedEntries: number
+  skippedLargeFiles: number
+  skippedBinaryFiles: number
+  readErrors: number
+  currentPath: string | null
   incomplete: boolean
 }
 
-export type RemoteSearchEvent =
-  | ({ type: 'progress' } & RemoteSearchProgress)
-  | ({ type: 'results'; results: RemoteSearchResult[] } & RemoteSearchProgress)
-  | ({ type: 'finished'; status: 'completed' | 'cancelled' | 'failed'; message?: string } & RemoteSearchProgress)
+export type ContentSearchEvent =
+  | ({ type: 'progress' } & ContentSearchProgress)
+  | ({ type: 'results'; results: ContentSearchResult[] } & ContentSearchProgress)
+  | ({ type: 'finished'; status: SearchRunStatus; message?: string } & ContentSearchProgress)
 
 export interface ScriptExecutionRequest {
   requestId: string
@@ -368,8 +400,10 @@ export interface RemoteFilesApi {
   saveCommandAlias(profileId: string, name: string, command: string, overwrite: boolean): Promise<CommandAliasOperationResult>
   deleteCommandAlias(profileId: string, name: string): Promise<CommandAliasOperationResult>
   listDirectory(sessionId: string, remotePath: string): Promise<RemoteEntry[]>
-  searchFiles(request: RemoteSearchRequest): Promise<void>
-  cancelSearch(requestId: string): Promise<boolean>
+  startNameSearch(request: NameSearchRequest): Promise<void>
+  cancelNameSearch(requestId: string): Promise<boolean>
+  startContentSearch(request: ContentSearchRequest): Promise<void>
+  cancelContentSearch(requestId: string): Promise<boolean>
   startScriptExecution(request: ScriptExecutionRequest): Promise<void>
   cancelScriptExecution(requestId: string): Promise<boolean>
   uploadFiles(requestId: string, sessionId: string, remoteDirectory: string): Promise<TransferResult>
@@ -410,7 +444,8 @@ export interface RemoteFilesApi {
   onTransferQueued(callback: (event: TransferQueuedEvent) => void): () => void
   onRemoteMoveEvent(callback: (event: RemoteMoveEvent) => void): () => void
   onRemoteCopyEvent(callback: (event: RemoteCopyEvent) => void): () => void
-  onSearchEvent(callback: (event: RemoteSearchEvent) => void): () => void
+  onNameSearchEvent(callback: (event: NameSearchEvent) => void): () => void
+  onContentSearchEvent(callback: (event: ContentSearchEvent) => void): () => void
   onScriptExecutionEvent(callback: (event: ScriptExecutionEvent) => void): () => void
   onConnectionClosed(callback: (event: ConnectionClosedEvent) => void): () => void
   onTerminalOutput(callback: (event: TerminalOutputEvent) => void): () => void

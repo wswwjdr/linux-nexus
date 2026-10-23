@@ -1,4 +1,4 @@
-import type { FileTypeExtensions, RemoteEntry, RemoteSearchResult } from '@shared/types'
+import type { FileTypeExtensions, RemoteEntry, SearchResultTarget } from '@shared/types'
 import type { PreviewType } from '@shared/file-type-registry'
 import { classifyFileTypeCategories, fileTypeDefinition } from '@shared/file-type-registry'
 import { previewTypesForFile, previewTypeLabels } from '@shared/preview-file-type'
@@ -58,7 +58,7 @@ export type SftpContextMenuContext =
   | { kind: 'single-entry'; entry: RemoteEntry; canPaste: boolean }
   | { kind: 'multiple-entries'; entries: RemoteEntry[]; canPaste: boolean }
   | { kind: 'directory-background'; directory: string; canPaste: boolean; sort: { column: SortColumn; direction: SortDirection } }
-  | { kind: 'search-result'; result: RemoteSearchResult }
+  | { kind: 'search-result'; result: SearchResultTarget }
 
 export interface SftpContextMenuStrategy {
   readonly id: string
@@ -250,7 +250,7 @@ const searchResultStrategy: SftpContextMenuStrategy = {
   matches: (context) => context.kind === 'search-result',
   contribute(context) {
     if (context.kind !== 'search-result') return []
-    return [action('open-location', context.result.type === 'directory' ? '打开文件夹' : '打开所在目录', 'folder-open', { type: 'open-location' })]
+    return [action('open-location', '打开所在目录', 'folder-open', { type: 'open-location' })]
   },
 }
 

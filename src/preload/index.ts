@@ -19,8 +19,10 @@ import type {
   RemoteCopyRequest,
   RemoteCopyResult,
   RemoteFilesApi,
-  RemoteSearchEvent,
-  RemoteSearchRequest,
+  ContentSearchEvent,
+  ContentSearchRequest,
+  NameSearchEvent,
+  NameSearchRequest,
   ScriptExecutionEvent,
   ScriptExecutionRequest,
   SaveProfileInput,
@@ -54,8 +56,10 @@ const api: RemoteFilesApi = {
     ipcRenderer.invoke('aliases:delete', profileId, name),
   listDirectory: (sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('files:list', sessionId, remotePath),
-  searchFiles: (request: RemoteSearchRequest) => ipcRenderer.invoke('files:search', request),
-  cancelSearch: (requestId: string) => ipcRenderer.invoke('files:search-cancel', requestId),
+  startNameSearch: (request: NameSearchRequest) => ipcRenderer.invoke('files:name-search', request),
+  cancelNameSearch: (requestId: string) => ipcRenderer.invoke('files:name-search-cancel', requestId),
+  startContentSearch: (request: ContentSearchRequest) => ipcRenderer.invoke('files:content-search', request),
+  cancelContentSearch: (requestId: string) => ipcRenderer.invoke('files:content-search-cancel', requestId),
   startScriptExecution: (request: ScriptExecutionRequest): Promise<void> => ipcRenderer.invoke('files:script-execution-start', request),
   cancelScriptExecution: (requestId: string): Promise<boolean> => ipcRenderer.invoke('files:script-execution-cancel', requestId),
   uploadFiles: (requestId: string, sessionId: string, remoteDirectory: string) =>
@@ -113,10 +117,15 @@ const api: RemoteFilesApi = {
     ipcRenderer.on('files:copy-event', listener)
     return () => ipcRenderer.removeListener('files:copy-event', listener)
   },
-  onSearchEvent: (callback: (event: RemoteSearchEvent) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, searchEvent: RemoteSearchEvent) => callback(searchEvent)
-    ipcRenderer.on('files:search-event', listener)
-    return () => ipcRenderer.removeListener('files:search-event', listener)
+  onNameSearchEvent: (callback: (event: NameSearchEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, searchEvent: NameSearchEvent) => callback(searchEvent)
+    ipcRenderer.on('files:name-search-event', listener)
+    return () => ipcRenderer.removeListener('files:name-search-event', listener)
+  },
+  onContentSearchEvent: (callback: (event: ContentSearchEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, searchEvent: ContentSearchEvent) => callback(searchEvent)
+    ipcRenderer.on('files:content-search-event', listener)
+    return () => ipcRenderer.removeListener('files:content-search-event', listener)
   },
   onScriptExecutionEvent: (callback: (event: ScriptExecutionEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, executionEvent: ScriptExecutionEvent) => callback(executionEvent)

@@ -6,7 +6,8 @@ import type {
   RemoteCopyRequest,
   RemoteMoveDecision,
   RemoteMoveRequest,
-  RemoteSearchRequest,
+  ContentSearchRequest,
+  NameSearchRequest,
   ScriptExecutionRequest,
   SaveProfileInput,
   ServerProfile,
@@ -39,7 +40,8 @@ import {
 } from './state-store'
 import { cancelTransfer, downloadEntries, uploadDroppedEntries, uploadSelection, validateDownloadPaths, withTransferLock } from './transfers'
 import { previewFile, readLogPreview, releasePreview, saveTextFile } from './previews'
-import { cancelRemoteSearch, startRemoteSearch } from './search'
+import { cancelNameSearch, startNameSearch } from './name-search'
+import { cancelContentSearch, startContentSearch } from './content-search'
 import { cancelScriptExecution, startScriptExecution } from './script-execution-runtime'
 import { cancelRemoteMove, startRemoteMove } from './remote-moves'
 import { executeRemoteCopy } from './remote-copies'
@@ -226,8 +228,10 @@ export function registerIpc(): void {
 
   ipcMain.handle('files:list', (_event, sessionId: string, remotePath: string) =>
     listDirectory(sessionId, remotePath))
-  ipcMain.handle('files:search', (_event, request: RemoteSearchRequest) => startRemoteSearch(request))
-  ipcMain.handle('files:search-cancel', (_event, requestId: string) => cancelRemoteSearch(requestId))
+  ipcMain.handle('files:name-search', (_event, request: NameSearchRequest) => startNameSearch(request))
+  ipcMain.handle('files:name-search-cancel', (_event, requestId: string) => cancelNameSearch(requestId))
+  ipcMain.handle('files:content-search', (_event, request: ContentSearchRequest) => startContentSearch(request))
+  ipcMain.handle('files:content-search-cancel', (_event, requestId: string) => cancelContentSearch(requestId))
   ipcMain.handle('files:script-execution-start', (_event, request: ScriptExecutionRequest) => startScriptExecution(request))
   ipcMain.handle('files:script-execution-cancel', (_event, requestId: unknown) => {
     if (typeof requestId !== 'string' || !requestId) throw new Error('脚本执行请求编号无效')

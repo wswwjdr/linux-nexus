@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { RemoteEntry, RemoteSearchResult } from '../src/shared/types.ts'
+import type { RemoteEntry, SearchResultTarget } from '../src/shared/types.ts'
 import { defaultFileTypeExtensions } from '../src/shared/app-settings.ts'
 import { resolveSftpContextMenu, type SftpContextMenuContext, type SftpMenuActionNode, type SftpMenuNode } from '../src/renderer/src/context-menu/sftp-menu.ts'
 
@@ -8,8 +8,8 @@ function entry(name: string, type: RemoteEntry['type'] = 'file'): RemoteEntry {
   return { name, path: '/home/user/' + name, type, size: 12, modifiedAt: null, permissions: 'rw-r--r--' }
 }
 
-function result(name: string, type: RemoteSearchResult['type'] = 'file'): RemoteSearchResult {
-  return { name, path: '/home/user/' + name, type, size: 12, matches: [] }
+function result(name: string): SearchResultTarget {
+  return { name, path: '/home/user/' + name, type: 'file' }
 }
 
 function actions(nodes: SftpMenuNode[]): SftpMenuActionNode[] {
@@ -102,6 +102,6 @@ test('search results share all applicable type actions and keep location navigat
   assert.deepEqual(nodes.map((node) => node.kind === 'separator' ? node.kind : node.id), [
     'preview', 'preview-log', 'script-execution', 'separator', 'open-location',
   ])
-  const directory = resolveSftpContextMenu({ kind: 'search-result', result: result('jobs', 'directory') }, defaultFileTypeExtensions())
-  assert.equal(directory[0].kind === 'action' ? directory[0].label : '', '打开文件夹')
+  const target = resolveSftpContextMenu({ kind: 'search-result', result: result('run.sh') }, defaultFileTypeExtensions())
+  assert.equal(target.at(-1)?.kind === 'action' ? target.at(-1)?.label : '', '打开所在目录')
 })

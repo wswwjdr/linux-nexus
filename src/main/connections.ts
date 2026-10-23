@@ -5,7 +5,8 @@ import { StringDecoder } from 'node:string_decoder'
 import { Client } from 'ssh2'
 import type { ConnectResult, RemoteEntry, SessionKind } from '@shared/types'
 import { shellQuote } from '@shared/shell'
-import { cancelSearchesForSession, failSearchesForSession } from './search'
+import { cancelNameSearchesForSession, failNameSearchesForSession } from './name-search'
+import { cancelContentSearchesForSession, failContentSearchesForSession } from './content-search'
 import { cancelScriptExecutionsForSession, failScriptExecutionsForSession } from './script-execution-runtime'
 import { cancelTransfersForSession } from './transfers'
 import { getMainWindow, sessions, type ActiveSession } from './runtime'
@@ -38,7 +39,8 @@ function failActiveSession(activeSession: ActiveSession, message: string): void 
   stopPerformanceMonitorForSession(activeSession.sessionId)
   cancelRemoteMovesForSession(activeSession.sessionId)
   failScriptExecutionsForSession(activeSession.sessionId, message)
-  failSearchesForSession(activeSession.sessionId, message)
+  failNameSearchesForSession(activeSession.sessionId, message)
+  failContentSearchesForSession(activeSession.sessionId, message)
   cancelTransfersForSession(activeSession.sessionId)
   clearPreviewAssetsForSession(activeSession.sessionId)
   sendConnectionClosed(activeSession.sessionId, activeSession.profileId, message)
@@ -47,7 +49,8 @@ function failActiveSession(activeSession: ActiveSession, message: string): void 
 export function stopSession(sessionId: string): void {
   stopPerformanceMonitorForSession(sessionId)
   pendingConnections.get(sessionId)?.cancel()
-  cancelSearchesForSession(sessionId)
+  cancelNameSearchesForSession(sessionId)
+  cancelContentSearchesForSession(sessionId)
   cancelScriptExecutionsForSession(sessionId)
   cancelRemoteMovesForSession(sessionId)
   const transfers = cancelTransfersForSession(sessionId)
