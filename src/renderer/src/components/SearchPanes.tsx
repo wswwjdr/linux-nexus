@@ -148,7 +148,13 @@ function ResultMenu({
 
 function openMenu(event: ReactMouseEvent<HTMLButtonElement>, result: SearchResultTarget): ResultMenuState {
   const bounds = event.currentTarget.getBoundingClientRect()
-  return { result, x: bounds.right, y: bounds.top, anchor: event.currentTarget }
+  const pointerActivated = event.detail > 0
+  return {
+    result,
+    x: pointerActivated ? event.clientX + 8 : bounds.right,
+    y: pointerActivated ? event.clientY : bounds.top,
+    anchor: event.currentTarget,
+  }
 }
 
 function NameVirtualResults({

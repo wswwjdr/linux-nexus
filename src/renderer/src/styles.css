@@ -636,7 +636,9 @@ details[open] > .settings-disclosure-summary .settings-disclosure-chevron { tran
 .preview-pdf { width: 100%; min-height: 0; flex: 1; border:0; background:var(--surface-terminal); }
 .preview-loading { min-height: 110px; display: flex; align-items: center; justify-content: center; gap: 9px; color:var(--text-secondary); }
 
-.search-backdrop { z-index: 6; }
+.search-backdrop { z-index: 6; background:transparent; backdrop-filter:none; }
+.search-backdrop::before { position:absolute; z-index:0; inset:0; content:""; background:var(--backdrop); backdrop-filter:blur(2px); pointer-events:none; }
+.search-modal { position:relative; z-index:1; }
 .preview-backdrop { z-index: 7; }
 .search-modal { width: min(100%, 1040px); height: min(790px, calc(100vh - 48px)); display: flex; flex-direction: column; padding: 20px; }
 .search-dialog-header { flex: 0 0 auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; margin-bottom: 15px; }
