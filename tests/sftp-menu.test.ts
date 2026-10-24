@@ -13,7 +13,9 @@ function result(name: string): SearchResultTarget {
 }
 
 function actions(nodes: SftpMenuNode[]): SftpMenuActionNode[] {
-  return nodes.flatMap((node) => node.kind === 'action' ? [node] : node.kind === 'submenu' ? node.children : [])
+  return nodes.flatMap((node) => node.kind === 'action'
+    ? [node]
+    : node.kind === 'submenu' ? actions(node.children) : [])
 }
 
 test('single file composes preview, reverse-preview and script strategies before common actions', () => {

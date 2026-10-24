@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronRight, ClipboardPaste, Copy, Eye, FileText, FolderOpen, FolderPlus, Pencil, Play, Scissors, Terminal, Trash2, Upload, type LucideIcon } from 'lucide-react'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from 'react'
 import type { FileTypeExtensions } from '@shared/types'
 import type { ContextMenuPosition } from '@/app-types'
 import {
@@ -56,7 +56,7 @@ function MenuAction({
   className: string
   onAction: (action: SftpMenuAction) => void
 }) {
-  const Icon = icons[node.icon]
+  const Icon = node.icon ? icons[node.icon] : null
   const role = node.checked === undefined ? 'menuitem' : 'menuitemradio'
   return (
     <button
@@ -69,7 +69,7 @@ function MenuAction({
       disabled={node.disabled}
       onClick={() => onAction(node.action)}
     >
-      <Icon size={16} /> {node.label}
+      <span className="context-menu-action-icon">{Icon && <Icon size={16} />}</span>{node.label}
     </button>
   )
 }
@@ -78,7 +78,6 @@ export default function SftpContextMenu({ context, fileTypeExtensions, position,
   const rootRef = useRef<HTMLDivElement>(null)
   const openSubmenuTriggerRef = useRef<HTMLButtonElement>(null)
   const pendingSubmenuFocusRef = useRef<string | null>(null)
-  const suppressSubmenuFocusRef = useRef(false)
   const [menuPosition, setMenuPosition] = useState(position)
   const [openSubmenu, setOpenSubmenu] = useState<string | null>(null)
   const [submenuPosition, setSubmenuPosition] = useState<ContextMenuPosition>({ x: 0, y: 0 })
@@ -140,9 +139,7 @@ export default function SftpContextMenu({ context, fileTypeExtensions, position,
   const handleAction = (action: SftpMenuAction) => onAction(action, context)
 
   const focusSubmenuTrigger = () => {
-    suppressSubmenuFocusRef.current = true
     openSubmenuTriggerRef.current?.focus()
-    suppressSubmenuFocusRef.current = false
   }
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -198,9 +195,9 @@ export default function SftpContextMenu({ context, fileTypeExtensions, position,
     items[(index + step + items.length) % items.length]?.focus()
   }
 
-  const renderNode = (node: SftpMenuNode) => {
+  const renderNode = (node: SftpMenuNode, actionClassName = 'entry-context-action'): ReactElement => {
     if (node.kind === 'separator') return <div className="context-menu-separator" role="separator" key={node.id} />
-    if (node.kind === 'action') return <MenuAction node={node} className="entry-context-action" onAction={handleAction} key={node.id} />
+    if (node.kind === 'action') return <MenuAction node={node} className={actionClassName} onAction={handleAction} key={node.id} />
     const Icon = icons[node.icon]
     const isOpen = openSubmenu === node.id
     return (
@@ -212,10 +209,7 @@ export default function SftpContextMenu({ context, fileTypeExtensions, position,
           openSubmenuTriggerRef.current = event.currentTarget.querySelector<HTMLButtonElement>('.submenu-trigger')
           setOpenSubmenu(node.id)
         }}
-        onMouseLeave={(event) => {
-          if (!(document.activeElement as HTMLElement).closest('[data-submenu-panel]')
-            && !event.currentTarget.contains(document.activeElement)) setOpenSubmenu(null)
-        }}
+        onMouseLeave={() => setOpenSubmenu(null)}
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpenSubmenu(null)
         }}
@@ -227,11 +221,8 @@ export default function SftpContextMenu({ context, fileTypeExtensions, position,
           aria-haspopup="menu"
           aria-expanded={isOpen}
           data-submenu-trigger={node.id}
-          onFocus={(event) => {
-            openSubmenuTriggerRef.current = event.currentTarget
-            if (!suppressSubmenuFocusRef.current) setOpenSubmenu(node.id)
-          }}
-          onClick={() => setOpenSubmenu((current) => current === node.id ? null : node.id)}
+          onFocus={(event) => { openSubmenuTriggerRef.current = event.currentTarget }}
+          onClick={() => setOpenSubmenu(node.id)}
         >
           <span className="submenu-trigger-label"><Icon size={16} /> {node.label}</span>
           <ChevronRight size={14} aria-hidden="true" />
@@ -244,9 +235,7 @@ export default function SftpContextMenu({ context, fileTypeExtensions, position,
             aria-label={node.label}
             style={{ position: 'fixed', left: submenuPosition.x, top: submenuPosition.y }}
           >
-            {node.children.map((child) => (
-              <MenuAction node={child} className="sftp-context-submenu-item" onAction={handleAction} key={child.id} />
-            ))}
+            {node.children.map((child) => renderNode(child, 'sftp-context-submenu-item'))}
           </div>
         )}
       </div>
@@ -263,7 +252,7 @@ export default function SftpContextMenu({ context, fileTypeExtensions, position,
       onContextMenu={(event) => event.preventDefault()}
       onKeyDown={handleKeyDown}
     >
-      {nodes.map(renderNode)}
+      {nodes.map((node) => renderNode(node))}
     </div>
   )
 }

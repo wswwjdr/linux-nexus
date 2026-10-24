@@ -309,6 +309,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .entry-context-action:disabled svg { color:var(--muted); }
 .entry-context-action:disabled:hover, .entry-context-action:disabled:focus-visible { background:transparent; }
 .entry-context-action svg { flex: 0 0 auto; color:var(--text-secondary); }
+.context-menu-action-icon { width:16px; height:16px; display:inline-flex; flex:0 0 16px; align-items:center; justify-content:center; color:var(--text-secondary); }
 .entry-context-action.preview-action svg { color:var(--blue); }
 .entry-context-action.log-preview-action svg { color:var(--green); }
 .entry-context-action.danger-action { color:var(--text-danger); }

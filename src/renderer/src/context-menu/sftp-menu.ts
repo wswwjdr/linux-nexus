@@ -43,7 +43,7 @@ export type SftpMenuActionNode = {
   kind: 'action'
   id: string
   label: string
-  icon: SftpMenuIcon
+  icon?: SftpMenuIcon
   action: SftpMenuAction
   disabled?: boolean
   disabledReason?: string
@@ -51,7 +51,7 @@ export type SftpMenuActionNode = {
 }
 
 export type SftpMenuNode = SftpMenuActionNode
-  | { kind: 'submenu'; id: string; label: string; icon: SftpMenuIcon; children: SftpMenuActionNode[] }
+  | { kind: 'submenu'; id: string; label: string; icon: SftpMenuIcon; children: SftpMenuNode[] }
   | { kind: 'separator'; id: string }
 
 export type SftpContextMenuContext =
@@ -70,7 +70,7 @@ export interface SftpContextMenuStrategy {
 const action = (
   id: string,
   label: string,
-  icon: SftpMenuIcon,
+  icon: SftpMenuIcon | undefined,
   menuAction: SftpMenuAction,
   options: Pick<SftpMenuActionNode, 'disabled' | 'disabledReason' | 'checked'> = {},
 ): SftpMenuActionNode => ({ kind: 'action', id, label, icon, action: menuAction, ...options })
@@ -221,14 +221,15 @@ const directoryBackgroundStrategy: SftpContextMenuStrategy = {
           ...sortColumns.map(({ column, label }) => action(
             'sort-' + column,
             label,
-            context.sort.column === column ? 'check' : 'arrow-up-down',
+            context.sort.column === column ? 'check' : undefined,
             { type: 'sort-column', column },
             { checked: context.sort.column === column },
           )),
-          action('sort-ascending', '递增', 'arrow-up', { type: 'sort-direction', direction: 'ascending' }, {
+          { kind: 'separator', id: 'sort-direction-separator' },
+          action('sort-ascending', '递增', context.sort.direction === 'ascending' ? 'check' : undefined, { type: 'sort-direction', direction: 'ascending' }, {
             checked: context.sort.direction === 'ascending',
           }),
-          action('sort-descending', '递减', 'arrow-down', { type: 'sort-direction', direction: 'descending' }, {
+          action('sort-descending', '递减', context.sort.direction === 'descending' ? 'check' : undefined, { type: 'sort-direction', direction: 'descending' }, {
             checked: context.sort.direction === 'descending',
           }),
         ],
