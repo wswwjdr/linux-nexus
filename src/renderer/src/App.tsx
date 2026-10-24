@@ -12,14 +12,14 @@ import { RemoteMoveConflictDialog, RemoteMoveSummaryDialog } from './components/
 import SessionChooser from './components/SessionChooser'
 import TerminalPanel from './components/TerminalPanel'
 import ShortcutGuideDialog from './components/ShortcutGuideDialog'
-import PerformanceMonitor, { type PerformanceMonitorState } from './components/PerformanceMonitor'
+import PerformanceMonitor from './components/PerformanceMonitor'
 import { useTransfers } from './hooks/useTransfers'
 import { useProfileManagement } from './hooks/useProfileManagement'
 import { useCommandAliases } from './hooks/useCommandAliases'
 import type {
   FileTypeExtensions,
   PerformanceThresholds,
-  PerformanceUpdate,
+  PerformanceMonitorState,
   RemoteCopyConflict,
   RemoteCopyDecision,
   RemoteCopyEvent,
@@ -112,7 +112,7 @@ export default function App() {
   const [shortcutGuideOpen, setShortcutGuideOpen] = useState(false)
   const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>('details')
   const [performanceThresholds, setPerformanceThresholds] = useState<PerformanceThresholds>(DEFAULT_PERFORMANCE_THRESHOLDS)
-  const [performanceMonitorState, setPerformanceMonitorState] = useState<PerformanceMonitorState | null>(null)
+  const [performanceMonitorStates, setPerformanceMonitorStates] = useState<Record<string, PerformanceMonitorState>>({})
   const [performancePanelOpen, setPerformancePanelOpen] = useState(false)
   const [fileTypeExtensions, setFileTypeExtensions] = useState<FileTypeExtensions>(defaultFileTypeExtensions)
   const [toast, setToast] = useState<ToastNotice | null>(null)
@@ -142,7 +142,6 @@ export default function App() {
   const contextMenuAnchorRef = useRef<HTMLElement | null>(null)
   const sessionContextMenuRef = useRef<HTMLDivElement>(null)
   const activeSessionIdRef = useRef(activeSessionId)
-  const performanceMonitorIdRef = useRef<string | null>(null)
   const previewActionsRef = useRef(new Map<string, SessionPreviewActions>())
   activeSessionIdRef.current = activeSessionId
   const sessionsRef = useRef(sessions)
@@ -209,6 +208,13 @@ export default function App() {
       return next
     })
   }, [])
+  const removeSessionPerformanceState = useCallback((sessionIds: string[]) => {
+    setPerformanceMonitorStates((current) => {
+      const next = { ...current }
+      for (const sessionId of sessionIds) delete next[sessionId]
+      return next
+    })
+  }, [])
   const dismissToast = useCallback((noticeId: number) => {
     setToast((current) => current?.id === noticeId ? null : current)
   }, [])
@@ -261,6 +267,7 @@ export default function App() {
         connectingSessionsRef.current.delete(session.id)
       }
       removeSessionWorkspaceState(affectedSessions.map(({ id }) => id))
+      removeSessionPerformanceState(affectedSessions.map(({ id }) => id))
       for (const session of affectedSessions) previewActionsRef.current.delete(session.id)
       if (activeSessionId && !remaining.some((session) => session.id === activeSessionId)) {
         setActiveSessionId(remaining.at(-1)?.id ?? null)
@@ -292,51 +299,48 @@ export default function App() {
     [profiles, activeSession?.profileId],
   )
 
-  useEffect(() => window.remoteFiles.onPerformanceUpdate((event: PerformanceUpdate) => {
-    if (event.sessionId !== activeSessionIdRef.current || event.monitorId !== performanceMonitorIdRef.current) return
-    setPerformanceMonitorState((current) => {
-      if (!current || current.sessionId !== event.sessionId || current.monitorId !== event.monitorId) return current
-      if (event.status === 'ready' && event.snapshot) {
-        const history = [...current.history, event.snapshot].slice(-180)
-        return { ...current, status: 'ready', snapshot: event.snapshot, message: null, history }
-      }
-      return { ...current, status: event.status, message: event.status === 'error' ? event.message ?? '性能指标采集失败' : null }
+  useEffect(() => window.remoteFiles.onPerformanceUpdate((event: PerformanceMonitorState) => {
+    if (!sessionsRef.current.some((session) => session.id === event.sessionId)) return
+    setPerformanceMonitorStates((current) => {
+      const previous = current[event.sessionId]
+      return previous && previous.version >= event.version
+        ? current
+        : { ...current, [event.sessionId]: event }
     })
   }), [])
 
   useEffect(() => {
     setPerformancePanelOpen(false)
-    if (!connectedSessionId) {
-      performanceMonitorIdRef.current = null
-      setPerformanceMonitorState(null)
-      return
-    }
+    if (!connectedSessionId) return
     const sessionId = connectedSessionId
-    const monitorId = window.crypto.randomUUID()
-    performanceMonitorIdRef.current = monitorId
-    setPerformanceMonitorState({ sessionId, monitorId, status: 'sampling', snapshot: null, message: null, history: [] })
-    void window.remoteFiles.startPerformanceMonitor(sessionId, monitorId).catch((error: unknown) => {
-      if (performanceMonitorIdRef.current !== monitorId || activeSessionIdRef.current !== sessionId) return
-      setPerformanceMonitorState((current) => current?.monitorId === monitorId
-        ? { ...current, status: 'error', message: errorMessage(error) }
-        : current)
-    })
+    let cancelled = false
+    void window.remoteFiles.activatePerformanceMonitor(sessionId)
+      .then(() => window.remoteFiles.getPerformanceMonitorState(sessionId))
+      .then((state) => {
+        if (cancelled) return
+        setPerformanceMonitorStates((current) => {
+          const previous = current[sessionId]
+          return previous && previous.version > state.version
+            ? current
+            : { ...current, [sessionId]: state }
+        })
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) showToast('error', '启动性能监控失败：' + errorMessage(error))
+      })
     return () => {
-      if (performanceMonitorIdRef.current === monitorId) performanceMonitorIdRef.current = null
-      void window.remoteFiles.stopPerformanceMonitor(sessionId, monitorId).catch(() => {})
+      cancelled = true
+      void window.remoteFiles.deactivatePerformanceMonitor(sessionId).catch((error: unknown) => {
+        showToast('error', '停止性能监控失败：' + errorMessage(error))
+      })
     }
-  }, [connectedSessionId])
+  }, [connectedSessionId, showToast])
 
-  const refreshPerformance = useCallback((sessionId: string, monitorId: string) => {
-    setPerformanceMonitorState((current) => current?.sessionId === sessionId && current.monitorId === monitorId
-      ? { ...current, status: 'sampling', message: null }
-      : current)
-    void window.remoteFiles.refreshPerformanceMonitor(sessionId, monitorId).catch((error: unknown) => {
-      setPerformanceMonitorState((current) => current?.sessionId === sessionId && current.monitorId === monitorId
-        ? { ...current, status: 'error', message: errorMessage(error) }
-        : current)
+  const refreshPerformance = useCallback((sessionId: string) => {
+    void window.remoteFiles.refreshPerformanceMonitor(sessionId).catch((error: unknown) => {
+      showToast('error', '刷新性能监控失败：' + errorMessage(error))
     })
-  }, [])
+  }, [showToast])
   const clipboardMatchesProfile = Boolean(remoteClipboard && connectedProfile
     && remoteClipboard.profile.id === connectedProfile.id
     && remoteClipboard.profile.host === connectedProfile.host
@@ -403,11 +407,12 @@ export default function App() {
     const removeClosedListener = window.remoteFiles.onConnectionClosed((event) => {
       const session = sessionsRef.current.find((candidate) => candidate.id === event.sessionId)
       if (!session) return
+      removeSessionPerformanceState([event.sessionId])
       patchSession(event.sessionId, { status: 'disconnected', error: event.message, loading: false })
       if (activeSessionId === event.sessionId) showToast('error', `连接已断开：${event.message}`)
     })
     return removeClosedListener
-  }, [activeSessionId, patchSession, showToast])
+  }, [activeSessionId, patchSession, removeSessionPerformanceState, showToast])
 
   useEffect(() => window.remoteFiles.onScriptExecutionEvent((event: ScriptExecutionEvent) => {
     setScriptExecutionDialog((current) => {
@@ -736,6 +741,7 @@ export default function App() {
     setSessions(remaining)
     setPendingHostKeys((current) => current.filter((pending) => pending.sessionId !== sessionId))
     removeSessionWorkspaceState([sessionId])
+    removeSessionPerformanceState([sessionId])
     previewActionsRef.current.delete(sessionId)
     if (activeSessionId === sessionId) {
       const next = remaining[previousIndex] ?? remaining[previousIndex - 1]
@@ -1358,7 +1364,7 @@ export default function App() {
           <div className="topbar-actions">
             {connectedSessionId && (
               <PerformanceMonitor
-                state={performanceMonitorState?.sessionId === connectedSessionId ? performanceMonitorState : null}
+                state={performanceMonitorStates[connectedSessionId] ?? null}
                 thresholds={performanceThresholds}
                 open={performancePanelOpen}
                 onOpenChange={setPerformancePanel}

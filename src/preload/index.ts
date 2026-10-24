@@ -11,7 +11,7 @@ import type {
   RemoteMoveResult,
   PreviewResult,
   PreviewType,
-  PerformanceUpdate,
+  PerformanceMonitorState,
   AppSettings,
   AppSettingsPatch,
   RemoteCopyDecision,
@@ -43,9 +43,10 @@ const api: RemoteFilesApi = {
   disconnect: (sessionId: string) => ipcRenderer.invoke('connection:disconnect', sessionId),
   writeTerminal: (sessionId: string, data: string) => ipcRenderer.invoke('terminal:write', sessionId, data),
   resizeTerminal: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
-  startPerformanceMonitor: (sessionId: string, monitorId: string) => ipcRenderer.invoke('performance:start', sessionId, monitorId),
-  stopPerformanceMonitor: (sessionId: string, monitorId: string) => ipcRenderer.invoke('performance:stop', sessionId, monitorId),
-  refreshPerformanceMonitor: (sessionId: string, monitorId: string) => ipcRenderer.invoke('performance:refresh', sessionId, monitorId),
+  getPerformanceMonitorState: (sessionId: string): Promise<PerformanceMonitorState> => ipcRenderer.invoke('performance:state', sessionId),
+  activatePerformanceMonitor: (sessionId: string): Promise<PerformanceMonitorState> => ipcRenderer.invoke('performance:activate', sessionId),
+  deactivatePerformanceMonitor: (sessionId: string): Promise<void> => ipcRenderer.invoke('performance:deactivate', sessionId),
+  refreshPerformanceMonitor: (sessionId: string): Promise<void> => ipcRenderer.invoke('performance:refresh', sessionId),
   getAppSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
   updateAppSettings: (patch: AppSettingsPatch): Promise<AppSettings> => ipcRenderer.invoke('settings:update', patch),
   listCommandAliasSnapshots: (): Promise<CommandAliasSnapshot[]> => ipcRenderer.invoke('aliases:list'),
@@ -142,8 +143,8 @@ const api: RemoteFilesApi = {
     ipcRenderer.on('terminal:output', listener)
     return () => ipcRenderer.removeListener('terminal:output', listener)
   },
-  onPerformanceUpdate: (callback: (event: PerformanceUpdate) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, update: PerformanceUpdate) => callback(update)
+  onPerformanceUpdate: (callback: (event: PerformanceMonitorState) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, update: PerformanceMonitorState) => callback(update)
     ipcRenderer.on('performance:update', listener)
     return () => ipcRenderer.removeListener('performance:update', listener)
   },

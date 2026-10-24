@@ -46,7 +46,13 @@ import { cancelScriptExecution, startScriptExecution } from './script-execution-
 import { cancelRemoteMove, startRemoteMove } from './remote-moves'
 import { executeRemoteCopy } from './remote-copies'
 import { applyTheme } from './theme'
-import { refreshPerformanceMonitor, startPerformanceMonitor, stopPerformanceMonitor } from './performance-monitor'
+import {
+  activatePerformanceMonitor,
+  configurePerformanceMonitorInterval,
+  deactivatePerformanceMonitor,
+  getPerformanceMonitorState,
+  refreshPerformanceMonitor,
+} from './performance-monitor'
 
 const pendingMoveDecisions = new Map<string, {
   conflictId: string
@@ -162,21 +168,21 @@ export function registerIpc(): void {
     return connectProfile(sessionId, profileId, kind, cols, rows, startPath)
   })
   ipcMain.handle('connection:disconnect', (_event, sessionId: string) => stopSession(sessionId))
-  ipcMain.handle('performance:start', (_event, sessionId: unknown, monitorId: unknown) => {
-    if (typeof sessionId !== 'string' || !sessionId || typeof monitorId !== 'string' || !monitorId) {
-      throw new Error('性能监控参数无效')
-    }
-    startPerformanceMonitor(sessionId, monitorId)
+  ipcMain.handle('performance:state', (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || !sessionId) throw new Error('性能监控会话编号无效')
+    return getPerformanceMonitorState(sessionId)
   })
-  ipcMain.handle('performance:stop', (_event, sessionId: unknown, monitorId: unknown) => {
-    if (typeof sessionId !== 'string' || !sessionId || typeof monitorId !== 'string' || !monitorId) return
-    stopPerformanceMonitor(sessionId, monitorId)
+  ipcMain.handle('performance:activate', (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || !sessionId) throw new Error('性能监控会话编号无效')
+    return activatePerformanceMonitor(sessionId)
   })
-  ipcMain.handle('performance:refresh', (_event, sessionId: unknown, monitorId: unknown) => {
-    if (typeof sessionId !== 'string' || !sessionId || typeof monitorId !== 'string' || !monitorId) {
-      throw new Error('性能监控参数无效')
-    }
-    refreshPerformanceMonitor(sessionId, monitorId)
+  ipcMain.handle('performance:deactivate', (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || !sessionId) throw new Error('性能监控会话编号无效')
+    deactivatePerformanceMonitor(sessionId)
+  })
+  ipcMain.handle('performance:refresh', (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || !sessionId) throw new Error('性能监控会话编号无效')
+    refreshPerformanceMonitor(sessionId)
   })
   ipcMain.handle('terminal:write', (_event, sessionId: string, data: string) => {
     if (typeof data !== 'string' || data.length > 65536) throw new Error('终端输入无效')
@@ -190,13 +196,17 @@ export function registerIpc(): void {
   })
   ipcMain.handle('settings:get', () => readAppSettings())
   ipcMain.handle('settings:update', (_event, input: AppSettingsPatch) => {
-    const settings = applyAppSettingsPatch(readAppSettings(), input)
+    const currentSettings = readAppSettings()
+    const settings = applyAppSettingsPatch(currentSettings, input)
     if (settings.startupConnection
       && !readState().profiles.some((profile) => profile.id === settings.startupConnection?.profileId)) {
       throw new Error('启动连接所选服务器不存在')
     }
     const savedSettings = writeAppSettings(settings)
     applyTheme(savedSettings.theme)
+    if (savedSettings.performanceSampleIntervalSeconds !== currentSettings.performanceSampleIntervalSeconds) {
+      configurePerformanceMonitorInterval(savedSettings.performanceSampleIntervalSeconds)
+    }
     return savedSettings
   })
   ipcMain.handle('shell:open-external', (_event, url: unknown) => shell.openExternal(validateExternalUrl(url)))

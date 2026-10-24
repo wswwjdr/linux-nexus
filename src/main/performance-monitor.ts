@@ -1,12 +1,13 @@
 import type { ClientChannel } from 'ssh2'
-import type { PerformanceUpdate } from '../shared/types.ts'
+import { DEFAULT_APP_SETTINGS } from '../shared/app-settings.ts'
+import type { PerformanceMonitorState, PerformanceSnapshot } from '../shared/types.ts'
 import { createPerformanceSnapshot, parsePerformanceReport } from '../shared/performance.ts'
 import { getMainWindow, sessions, type ActiveSession } from './runtime.ts'
 
-const SAMPLE_INTERVAL_MS = 5_000
 const COMMAND_TIMEOUT_MS = 4_500
 const MAX_STDOUT_BYTES = 16 * 1024
 const MAX_STDERR_BYTES = 2 * 1024
+const HISTORY_WINDOW_MS = 15 * 60 * 1000
 
 export const PERFORMANCE_COMMAND = `LC_ALL=C; export LC_ALL
 printf 'cpu '; awk '$1 == "cpu" { for (i = 2; i <= 9; i++) printf "%s%s", $i, i == 9 ? ORS : OFS }' /proc/stat
@@ -16,31 +17,53 @@ printf 'uptime '; awk '{ print $1 }' /proc/uptime
 printf 'cores '; getconf _NPROCESSORS_ONLN
 printf 'disk '; df -P -B1 / | awk 'NR == 2 { print $2, $3, $4, $5 }'`
 
-interface ActivePerformanceMonitor {
+interface SessionPerformanceMonitor {
   sessionId: string
-  monitorId: string
   session: ActiveSession
-  timer: NodeJS.Timeout
+  timer: NodeJS.Timeout | null
   stream: ClientChannel | null
   previousCpuTicks: number[] | null
   inFlight: boolean
-  stopped: boolean
+  sampleRequested: boolean
+  active: boolean
+  generation: number
+  rescheduleAfterSample: boolean
+  segmentOpen: boolean
+  state: PerformanceMonitorState
 }
 
-const activeMonitors = new Map<string, ActivePerformanceMonitor>()
+const monitors = new Map<string, SessionPerformanceMonitor>()
+let sampleIntervalSeconds = DEFAULT_APP_SETTINGS.performanceSampleIntervalSeconds
+let nextVersion = 0
 
-function sendUpdate(update: PerformanceUpdate): void {
-  const window = getMainWindow()
-  if (window && !window.isDestroyed()) window.webContents.send('performance:update', update)
+function cloneState(state: PerformanceMonitorState): PerformanceMonitorState {
+  return { ...state, history: state.history.map((segment) => [...segment]) }
 }
 
-function current(monitor: ActivePerformanceMonitor): boolean {
-  return !monitor.stopped
-    && activeMonitors.get(monitor.sessionId) === monitor
+function current(monitor: SessionPerformanceMonitor): boolean {
+  return monitor.active
+    && monitors.get(monitor.sessionId) === monitor
     && sessions.get(monitor.sessionId) === monitor.session
 }
 
-function readRemoteReport(monitor: ActivePerformanceMonitor): Promise<string> {
+function publish(monitor: SessionPerformanceMonitor): PerformanceMonitorState {
+  pruneHistory(monitor, Date.now())
+  monitor.state.version = ++nextVersion
+  const state = cloneState(monitor.state)
+  const window = getMainWindow()
+  if (window && !window.isDestroyed()) window.webContents.send('performance:update', state)
+  return state
+}
+
+function pruneHistory(monitor: SessionPerformanceMonitor, now: number): void {
+  const earliest = now - HISTORY_WINDOW_MS
+  monitor.state.history = monitor.state.history.flatMap((segment) => {
+    const retained = segment.filter((snapshot) => Date.parse(snapshot.sampledAt) >= earliest)
+    return retained.length ? [retained] : []
+  })
+}
+
+function readRemoteReport(monitor: SessionPerformanceMonitor, generation: number): Promise<string> {
   return new Promise((resolve, reject) => {
     let stream: ClientChannel | null = null
     let settled = false
@@ -112,7 +135,7 @@ function readRemoteReport(monitor: ActivePerformanceMonitor): Promise<string> {
         }
         stream = commandStream
         monitor.stream = commandStream
-        if (settled || !current(monitor)) {
+        if (settled || !current(monitor) || monitor.generation !== generation) {
           commandStream.close()
           finish(new Error('性能采集已停止'))
           return
@@ -129,77 +152,190 @@ function readRemoteReport(monitor: ActivePerformanceMonitor): Promise<string> {
   })
 }
 
-async function sample(monitor: ActivePerformanceMonitor): Promise<void> {
-  if (!current(monitor) || monitor.inFlight) return
+function scheduleNextSample(monitor: SessionPerformanceMonitor, sampleStartedAt: number): void {
+  if (!current(monitor)) return
+  const delay = monitor.rescheduleAfterSample
+    ? sampleIntervalSeconds * 1000
+    : Math.max(0, sampleStartedAt + sampleIntervalSeconds * 1000 - Date.now())
+  monitor.rescheduleAfterSample = false
+  monitor.timer = setTimeout(() => {
+    monitor.timer = null
+    void sample(monitor)
+  }, delay)
+}
+
+async function sample(monitor: SessionPerformanceMonitor): Promise<void> {
+  if (!current(monitor)) return
+  if (monitor.inFlight) {
+    monitor.sampleRequested = true
+    return
+  }
   monitor.inFlight = true
-  sendUpdate({ sessionId: monitor.sessionId, monitorId: monitor.monitorId, status: 'sampling' })
+  monitor.sampleRequested = false
+  const generation = monitor.generation
+  const sampleStartedAt = Date.now()
+  monitor.state.status = 'sampling'
+  monitor.state.message = null
+  publish(monitor)
   try {
-    const output = await readRemoteReport(monitor)
-    if (!current(monitor)) return
+    const output = await readRemoteReport(monitor, generation)
+    if (!current(monitor) || monitor.generation !== generation) return
     const raw = parsePerformanceReport(output)
     const snapshot = createPerformanceSnapshot(raw, monitor.previousCpuTicks)
     monitor.previousCpuTicks = raw.cpuTicks
-    sendUpdate({ sessionId: monitor.sessionId, monitorId: monitor.monitorId, status: 'ready', snapshot })
+    appendSnapshot(monitor, snapshot)
+    monitor.state.snapshot = snapshot
+    monitor.state.status = 'ready'
+    monitor.state.message = null
+    publish(monitor)
   } catch (error) {
-    if (!current(monitor)) return
-    sendUpdate({
-      sessionId: monitor.sessionId,
-      monitorId: monitor.monitorId,
-      status: 'error',
-      message: error instanceof Error ? error.message : String(error),
-    })
+    if (!current(monitor) || monitor.generation !== generation) return
+    monitor.previousCpuTicks = null
+    monitor.segmentOpen = false
+    monitor.state.status = 'error'
+    monitor.state.message = error instanceof Error ? error.message : String(error)
+    publish(monitor)
   } finally {
     monitor.inFlight = false
+    if (!current(monitor)) return
+    if (monitor.sampleRequested) {
+      monitor.sampleRequested = false
+      void sample(monitor)
+    } else {
+      scheduleNextSample(monitor, sampleStartedAt)
+    }
   }
 }
 
-export function startPerformanceMonitor(sessionId: string, monitorId: string): void {
-  if (typeof monitorId !== 'string' || !monitorId || monitorId.length > 128) throw new Error('性能监控编号无效')
-  const session = sessions.get(sessionId)
-  if (!session) throw new Error('SSH 会话未连接')
-  const previous = activeMonitors.get(sessionId)
-  if (previous?.monitorId === monitorId) return
-  if (previous) stopMonitor(previous)
+function appendSnapshot(monitor: SessionPerformanceMonitor, snapshot: PerformanceSnapshot): void {
+  if (!monitor.segmentOpen) {
+    monitor.state.history.push([])
+    monitor.segmentOpen = true
+  }
+  monitor.state.history[monitor.state.history.length - 1].push(snapshot)
+  pruneHistory(monitor, Date.now())
+}
 
-  const monitor: ActivePerformanceMonitor = {
+function createMonitor(sessionId: string, session: ActiveSession): SessionPerformanceMonitor {
+  return {
     sessionId,
-    monitorId,
     session,
-    timer: setInterval(() => { void sample(monitor) }, SAMPLE_INTERVAL_MS),
+    timer: null,
     stream: null,
     previousCpuTicks: null,
     inFlight: false,
-    stopped: false,
+    sampleRequested: false,
+    active: false,
+    generation: 0,
+    rescheduleAfterSample: false,
+    segmentOpen: false,
+    state: {
+      sessionId,
+      version: nextVersion,
+      status: 'inactive',
+      snapshot: null,
+      message: null,
+      history: [],
+    },
   }
-  activeMonitors.set(sessionId, monitor)
-  void sample(monitor)
 }
 
-function stopMonitor(monitor: ActivePerformanceMonitor): void {
-  if (monitor.stopped) return
-  monitor.stopped = true
-  clearInterval(monitor.timer)
+export function getPerformanceMonitorState(sessionId: string): PerformanceMonitorState {
+  const monitor = monitors.get(sessionId)
+  if (!monitor) {
+    return {
+      sessionId,
+      version: nextVersion,
+      status: 'inactive',
+      snapshot: null,
+      message: null,
+      history: [],
+    }
+  }
+  pruneHistory(monitor, Date.now())
+  return cloneState(monitor.state)
+}
+
+export function activatePerformanceMonitor(sessionId: string): PerformanceMonitorState {
+  const session = sessions.get(sessionId)
+  if (!session) throw new Error('SSH 会话未连接')
+  let monitor = monitors.get(sessionId)
+  if (monitor && monitor.session !== session) {
+    removePerformanceMonitorForSession(sessionId)
+    monitor = undefined
+  }
+  if (!monitor) {
+    monitor = createMonitor(sessionId, session)
+    monitors.set(sessionId, monitor)
+  }
+  if (monitor.active) return getPerformanceMonitorState(sessionId)
+  monitor.active = true
+  monitor.generation += 1
+  monitor.previousCpuTicks = null
+  monitor.segmentOpen = false
+  monitor.state.status = 'sampling'
+  monitor.state.message = null
+  monitor.sampleRequested = monitor.inFlight
+  publish(monitor)
+  if (!monitor.inFlight) void sample(monitor)
+  return getPerformanceMonitorState(sessionId)
+}
+
+export function deactivatePerformanceMonitor(sessionId: string): void {
+  const monitor = monitors.get(sessionId)
+  if (!monitor || !monitor.active) return
+  monitor.active = false
+  monitor.generation += 1
+  monitor.sampleRequested = false
+  monitor.segmentOpen = false
+  if (monitor.timer) clearTimeout(monitor.timer)
+  monitor.timer = null
   monitor.stream?.close()
   monitor.stream = null
-  if (activeMonitors.get(monitor.sessionId) === monitor) activeMonitors.delete(monitor.sessionId)
+  monitor.state.status = 'inactive'
+  monitor.state.message = null
+  publish(monitor)
 }
 
-export function stopPerformanceMonitor(sessionId: string, monitorId: string): void {
-  const monitor = activeMonitors.get(sessionId)
-  if (monitor?.monitorId === monitorId) stopMonitor(monitor)
+export function removePerformanceMonitorForSession(sessionId: string): void {
+  const monitor = monitors.get(sessionId)
+  if (!monitor) return
+  monitor.active = false
+  monitor.generation += 1
+  monitor.sampleRequested = false
+  if (monitor.timer) clearTimeout(monitor.timer)
+  monitor.timer = null
+  monitor.stream?.close()
+  monitor.stream = null
+  monitors.delete(sessionId)
+  nextVersion += 1
 }
 
-export function stopPerformanceMonitorForSession(sessionId: string): void {
-  const monitor = activeMonitors.get(sessionId)
-  if (monitor) stopMonitor(monitor)
+export function configurePerformanceMonitorInterval(seconds: number): void {
+  sampleIntervalSeconds = seconds
+  for (const monitor of monitors.values()) {
+    if (!monitor.active) continue
+    if (monitor.inFlight) {
+      monitor.rescheduleAfterSample = true
+      continue
+    }
+    if (monitor.timer) clearTimeout(monitor.timer)
+    monitor.timer = setTimeout(() => {
+      monitor.timer = null
+      void sample(monitor)
+    }, sampleIntervalSeconds * 1000)
+  }
 }
 
 export function stopAllPerformanceMonitors(): void {
-  for (const monitor of activeMonitors.values()) stopMonitor(monitor)
+  for (const sessionId of monitors.keys()) removePerformanceMonitorForSession(sessionId)
+  monitors.clear()
 }
 
-export function refreshPerformanceMonitor(sessionId: string, monitorId: string): void {
-  const monitor = activeMonitors.get(sessionId)
-  if (!monitor || monitor.monitorId !== monitorId || !current(monitor)) throw new Error('性能监控已停止')
+export function refreshPerformanceMonitor(sessionId: string): void {
+  const monitor = monitors.get(sessionId)
+  if (!monitor || !current(monitor)) throw new Error('性能监控当前未启用')
+  if (monitor.timer) clearTimeout(monitor.timer)
+  monitor.timer = null
   void sample(monitor)
 }

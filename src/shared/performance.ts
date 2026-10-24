@@ -12,6 +12,38 @@ export interface RawPerformanceMetrics {
 }
 
 export type PerformanceSeverity = 'normal' | 'warning' | 'critical'
+export type PerformanceSeries = 'cpuPercent' | 'memoryPercent' | 'diskPercent'
+
+export function performanceTrendPaths(
+  history: PerformanceSnapshot[][],
+  series: PerformanceSeries,
+  nowMs: number,
+  windowMs: number,
+): string[] {
+  const startMs = nowMs - windowMs
+  return history.flatMap((segment) => {
+    const paths: string[] = []
+    let points: string[] = []
+    const flush = () => {
+      if (points.length) paths.push(points.join(' '))
+      points = []
+    }
+
+    for (const snapshot of segment) {
+      const sampledAt = Date.parse(snapshot.sampledAt)
+      const value = snapshot[series]
+      if (sampledAt < startMs || sampledAt > nowMs || value === null) {
+        flush()
+        continue
+      }
+      const x = Math.max(0, Math.min(600, 600 * ((sampledAt - startMs) / windowMs)))
+      const y = 34 - Math.max(0, Math.min(100, value)) * 0.3
+      points.push(`${points.length ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`)
+    }
+    flush()
+    return paths
+  })
+}
 
 const requiredFields = ['cpu', 'mem', 'load', 'uptime', 'cores', 'disk']
 

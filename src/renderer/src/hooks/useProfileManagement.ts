@@ -152,6 +152,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
         defaultView: settings.defaultView,
         fileTypeExtensions: Object.fromEntries(Object.entries(settings.fileTypeExtensions).map(([type, extensions]) => [type, [...extensions]])) as FileTypeExtensions,
         transferFileConcurrency: String(settings.transferFileConcurrency),
+        performanceSampleIntervalSeconds: String(settings.performanceSampleIntervalSeconds),
         performanceThresholds: performanceThresholdsToForm(settings.performanceThresholds),
         startupProfileId: profileId && profiles.some((profile) => profile.id === profileId) ? profileId : '',
         startupKind: settings.startupConnection?.kind ?? 'sftp',
@@ -187,7 +188,9 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
       return
     }
     const numericValue = Number(value)
-    const maximum = key === 'transferFileConcurrency' ? 16 : 1024
+    const maximum = key === 'transferFileConcurrency' ? 16
+      : key === 'performanceSampleIntervalSeconds' ? 300
+        : 1024
     const settingsKey = key as keyof AppSettings
     if (Number.isInteger(numericValue) && numericValue >= 1 && numericValue <= maximum) {
       persistSetting(settingsKey, { [settingsKey]: numericValue })

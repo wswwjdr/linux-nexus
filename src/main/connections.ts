@@ -13,7 +13,7 @@ import { getMainWindow, sessions, type ActiveSession } from './runtime'
 import { endpointKey, passwordFor, profileFromState, readState } from './state-store'
 import { clearPreviewAssetsForSession } from './previews'
 import { cancelRemoteMovesForSession } from './remote-moves'
-import { stopPerformanceMonitorForSession } from './performance-monitor'
+import { removePerformanceMonitorForSession } from './performance-monitor'
 import {
   executeRemoteCommand,
   fileType,
@@ -36,7 +36,7 @@ function sendConnectionClosed(sessionId: string, profileId: string, message: str
 function failActiveSession(activeSession: ActiveSession, message: string): void {
   if (sessions.get(activeSession.sessionId) !== activeSession) return
   sessions.delete(activeSession.sessionId)
-  stopPerformanceMonitorForSession(activeSession.sessionId)
+  removePerformanceMonitorForSession(activeSession.sessionId)
   cancelRemoteMovesForSession(activeSession.sessionId)
   failScriptExecutionsForSession(activeSession.sessionId, message)
   failNameSearchesForSession(activeSession.sessionId, message)
@@ -47,7 +47,7 @@ function failActiveSession(activeSession: ActiveSession, message: string): void 
 }
 
 export function stopSession(sessionId: string): void {
-  stopPerformanceMonitorForSession(sessionId)
+  removePerformanceMonitorForSession(sessionId)
   pendingConnections.get(sessionId)?.cancel()
   cancelNameSearchesForSession(sessionId)
   cancelContentSearchesForSession(sessionId)
@@ -79,7 +79,6 @@ export function stopSessionsForProfile(profileId: string): void {
 }
 
 export function stopAllSessions(): void {
-  for (const sessionId of sessions.keys()) stopPerformanceMonitorForSession(sessionId)
   for (const sessionId of pendingConnections.keys()) stopSession(sessionId)
   for (const sessionId of sessions.keys()) stopSession(sessionId)
 }

@@ -1,27 +1,17 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Gauge, RefreshCw, X } from 'lucide-react'
-import type { PerformanceSnapshot, PerformanceThresholds } from '@shared/types'
-import { performanceSeverity } from '@shared/performance'
-
-export interface PerformanceMonitorState {
-  sessionId: string
-  monitorId: string
-  status: 'sampling' | 'ready' | 'error'
-  snapshot: PerformanceSnapshot | null
-  message: string | null
-  history: PerformanceSnapshot[]
-}
+import type { PerformanceMonitorState, PerformanceSeries, PerformanceThresholds } from '@shared/types'
+import { performanceSeverity, performanceTrendPaths } from '@shared/performance'
 
 interface PerformanceMonitorProps {
   state: PerformanceMonitorState | null
   thresholds: PerformanceThresholds
   open: boolean
   onOpenChange: (open: boolean) => void
-  onRefresh: (sessionId: string, monitorId: string) => void
+  onRefresh: (sessionId: string) => void
 }
 
 const WINDOW_MS = 15 * 60 * 1000
-const HISTORY_LIMIT = 180
 
 function percent(value: number | null): string {
   return value === null ? '…' : Math.round(value) + '%'
@@ -46,37 +36,26 @@ function metricSeverity(value: number | null, warning: number, critical: number)
   return 'normal'
 }
 
-function trendPath(history: PerformanceSnapshot[], key: 'cpuPercent' | 'memoryPercent' | 'diskPercent'): string {
-  if (history.length === 0) return ''
-  const latestTime = Date.parse(history.at(-1)!.sampledAt)
-  return history.flatMap((snapshot, index) => {
-    const value = snapshot[key]
-    if (value === null) return []
-    const age = latestTime - Date.parse(snapshot.sampledAt)
-    const x = Math.max(0, Math.min(600, 600 * (1 - age / WINDOW_MS)))
-    const y = 34 - Math.max(0, Math.min(100, value)) * 0.3
-    return [`${index === 0 || history.slice(0, index).every((item) => item[key] === null) ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`]
-  }).join(' ')
-}
-
 function MetricTrend({
   label,
   value,
   history,
+  nowMs,
   warning,
   critical,
   series,
 }: {
   label: string
   value: number | null
-  history: PerformanceSnapshot[]
+  history: PerformanceMonitorState['history']
+  nowMs: number
   warning: number
   critical: number
   series: 'cpu' | 'memory' | 'disk'
 }) {
   const severity = metricSeverity(value, warning, critical)
-  const key = series === 'cpu' ? 'cpuPercent' : series === 'memory' ? 'memoryPercent' : 'diskPercent'
-  const path = trendPath(history, key)
+  const key: PerformanceSeries = series === 'cpu' ? 'cpuPercent' : series === 'memory' ? 'memoryPercent' : 'diskPercent'
+  const paths = performanceTrendPaths(history, key, nowMs, WINDOW_MS)
   return (
     <div className={'performance-trend-row ' + severity}>
       <div className="performance-trend-heading">
@@ -86,7 +65,7 @@ function MetricTrend({
       <svg className={'performance-trend-chart ' + series} viewBox="0 0 600 40" preserveAspectRatio="none" role="img" aria-label={`${label}最近 15 分钟趋势，纵轴 0 到 100%`}>
         <title>{label}最近 15 分钟趋势</title>
         <path className="performance-trend-grid" d="M0 4H600 M0 19H600 M0 34H600" />
-        {path && <path className="performance-trend-line" d={path} />}
+        {paths.map((path, index) => <path className="performance-trend-line" d={path} key={index} />)}
       </svg>
     </div>
   )
@@ -94,6 +73,7 @@ function MetricTrend({
 
 export default function PerformanceMonitor({ state, thresholds, open, onOpenChange, onRefresh }: PerformanceMonitorProps) {
   const rootRef = useRef<HTMLDivElement>(null)
+  const [nowMs, setNowMs] = useState(Date.now())
   const snapshot = state?.snapshot ?? null
   const severity = state?.status === 'error' || !snapshot
     ? 'unavailable'
@@ -106,6 +86,8 @@ export default function PerformanceMonitor({ state, thresholds, open, onOpenChan
 
   useEffect(() => {
     if (!open) return
+    setNowMs(Date.now())
+    const clock = window.setInterval(() => setNowMs(Date.now()), 1_000)
     const dismissOutside = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) onOpenChange(false)
     }
@@ -117,10 +99,11 @@ export default function PerformanceMonitor({ state, thresholds, open, onOpenChan
     return () => {
       document.removeEventListener('pointerdown', dismissOutside, true)
       window.removeEventListener('keydown', dismissOnEscape)
+      window.clearInterval(clock)
     }
   }, [open, onOpenChange])
 
-  const history = (state?.history ?? []).slice(-HISTORY_LIMIT)
+  const history = state?.history ?? []
   const statusText = state?.status === 'error'
     ? '采集失败，将自动重试'
     : snapshot ? `最近更新 ${new Date(snapshot.sampledAt).toLocaleTimeString('zh-CN')}` : '正在读取服务器指标…'
@@ -150,7 +133,7 @@ export default function PerformanceMonitor({ state, thresholds, open, onOpenChan
               <span className={'performance-status ' + severity} role="status" aria-live="off">{severity === 'normal' ? '正常' : severity === 'warning' ? '注意' : severity === 'critical' ? '严重' : '不可用'} · {statusText}</span>
             </div>
             <div className="performance-popover-actions">
-              <button type="button" className="icon-button subtle" title="立即刷新" aria-label="立即刷新性能指标" disabled={!state || state.status === 'sampling'} onClick={() => state && onRefresh(state.sessionId, state.monitorId)}>
+              <button type="button" className="icon-button subtle" title="立即刷新" aria-label="立即刷新性能指标" disabled={!state || state.status === 'sampling'} onClick={() => state && onRefresh(state.sessionId)}>
                 <RefreshCw className={state?.status === 'sampling' ? 'spin' : ''} size={15} />
               </button>
               <button type="button" className="icon-button subtle" title="关闭" aria-label="关闭性能监控" onClick={() => onOpenChange(false)}><X size={15} /></button>
@@ -161,9 +144,9 @@ export default function PerformanceMonitor({ state, thresholds, open, onOpenChan
           {snapshot ? (
             <>
               <div className="performance-trends">
-                <MetricTrend label="CPU 使用率" value={snapshot.cpuPercent} history={history} warning={thresholds.cpu.warning} critical={thresholds.cpu.critical} series="cpu" />
-                <MetricTrend label="内存使用率" value={snapshot.memoryPercent} history={history} warning={thresholds.memory.warning} critical={thresholds.memory.critical} series="memory" />
-                <MetricTrend label="根分区使用率" value={snapshot.diskPercent} history={history} warning={thresholds.disk.warning} critical={thresholds.disk.critical} series="disk" />
+                <MetricTrend label="CPU 使用率" value={snapshot.cpuPercent} history={history} nowMs={nowMs} warning={thresholds.cpu.warning} critical={thresholds.cpu.critical} series="cpu" />
+                <MetricTrend label="内存使用率" value={snapshot.memoryPercent} history={history} nowMs={nowMs} warning={thresholds.memory.warning} critical={thresholds.memory.critical} series="memory" />
+                <MetricTrend label="根分区使用率" value={snapshot.diskPercent} history={history} nowMs={nowMs} warning={thresholds.disk.warning} critical={thresholds.disk.critical} series="disk" />
                 <div className="performance-trend-axis"><span>15 分钟前</span><span>0%</span><span>50%</span><span>100%</span><span>现在</span></div>
               </div>
               <div className="performance-details">

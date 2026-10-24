@@ -67,9 +67,21 @@ test('defaults to light theme and validates all supported theme modes', () => {
 
 test('requires a complete settings structure with performance thresholds', () => {
   assert.deepEqual(DEFAULT_APP_SETTINGS.performanceThresholds, DEFAULT_PERFORMANCE_THRESHOLDS)
+  assert.equal(DEFAULT_APP_SETTINGS.performanceSampleIntervalSeconds, 3)
+  const missingInterval = { ...DEFAULT_APP_SETTINGS } as Record<string, unknown>
+  delete missingInterval.performanceSampleIntervalSeconds
+  assert.throws(() => validateAppSettings(missingInterval))
   const incomplete = { ...DEFAULT_APP_SETTINGS } as Record<string, unknown>
   delete incomplete.performanceThresholds
   assert.throws(() => validateAppSettings(incomplete))
+})
+
+test('validates the performance sample interval in whole seconds from 1 to 300', () => {
+  assert.equal(validateAppSettings({ ...DEFAULT_APP_SETTINGS, performanceSampleIntervalSeconds: 1 }).performanceSampleIntervalSeconds, 1)
+  assert.equal(validateAppSettings({ ...DEFAULT_APP_SETTINGS, performanceSampleIntervalSeconds: 300 }).performanceSampleIntervalSeconds, 300)
+  for (const performanceSampleIntervalSeconds of [0, 1.5, 301]) {
+    assert.throws(() => validateAppSettings({ ...DEFAULT_APP_SETTINGS, performanceSampleIntervalSeconds }))
+  }
 })
 
 test('rejects invalid performance threshold pairs and values', () => {

@@ -227,6 +227,9 @@ export default function DialogLayer({
       || !Number.isFinite(warningValue) || !Number.isFinite(criticalValue)
       || warningValue < 0 || criticalValue > 100 || warningValue >= criticalValue
   }))
+  const sampleInterval = Number(settingsForm?.performanceSampleIntervalSeconds)
+  const invalidPerformanceSampleInterval = Boolean(settingsForm && (!settingsForm.performanceSampleIntervalSeconds.trim()
+    || !Number.isInteger(sampleInterval) || sampleInterval < 1 || sampleInterval > 300))
   useEffect(() => {
     const dismissOnEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape') return
@@ -508,7 +511,20 @@ export default function DialogLayer({
                 </div>
               </fieldset>
               <fieldset className="settings-section settings-section-performance">
-                <legend>性能监控阈值</legend>
+                <legend>性能监控</legend>
+                <label className="field settings-performance-interval">
+                  <span>采样间隔（秒）</span>
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    max="300"
+                    step="1"
+                    value={settingsForm.performanceSampleIntervalSeconds}
+                    onChange={(event) => onUpdateSettings('performanceSampleIntervalSeconds', event.target.value)}
+                  />
+                </label>
+                {invalidPerformanceSampleInterval && <p className="settings-performance-error" role="alert">采样间隔必须是 1 到 300 秒之间的整数。</p>}
                 <div className="settings-performance-grid">
                   {performanceThresholdFields.map(({ label, warning, critical, unit, step }) => (
                     <div className="settings-performance-row" key={warning}>

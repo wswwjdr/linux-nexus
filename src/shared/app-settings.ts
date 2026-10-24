@@ -31,6 +31,7 @@ export function defaultAppSettings(): AppSettings {
     fileTypeExtensions: defaultFileTypeExtensions(),
     startupConnection: null,
     transferFileConcurrency: 4,
+    performanceSampleIntervalSeconds: 3,
     performanceThresholds: {
       cpu: { ...DEFAULT_PERFORMANCE_THRESHOLDS.cpu },
       memory: { ...DEFAULT_PERFORMANCE_THRESHOLDS.memory },
@@ -41,12 +42,14 @@ export function defaultAppSettings(): AppSettings {
 }
 
 export const DEFAULT_APP_SETTINGS = defaultAppSettings()
-const appSettingsKeys = [...Object.keys(DEFAULT_PREVIEW_LIMITS), 'theme', 'defaultView', 'fileTypeExtensions', 'startupConnection', 'transferFileConcurrency', 'performanceThresholds']
+const appSettingsKeys = [...Object.keys(DEFAULT_PREVIEW_LIMITS), 'theme', 'defaultView', 'fileTypeExtensions', 'startupConnection', 'transferFileConcurrency', 'performanceSampleIntervalSeconds', 'performanceThresholds']
 const performanceThresholdKeys = ['cpu', 'memory', 'disk', 'loadPerCore'] as const
 
 const MAX_PREVIEW_LIMIT_MIB = 1024
 const MIN_TRANSFER_FILE_CONCURRENCY = 1
 const MAX_TRANSFER_FILE_CONCURRENCY = 16
+const MIN_PERFORMANCE_SAMPLE_INTERVAL_SECONDS = 1
+const MAX_PERFORMANCE_SAMPLE_INTERVAL_SECONDS = 300
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -73,6 +76,12 @@ export function validateAppSettings(value: unknown): AppSettings {
   if (typeof transferFileConcurrency !== 'number' || !Number.isInteger(transferFileConcurrency)
     || transferFileConcurrency < MIN_TRANSFER_FILE_CONCURRENCY || transferFileConcurrency > MAX_TRANSFER_FILE_CONCURRENCY) {
     throw new Error('同时传输文件数必须是 1 到 16 之间的整数')
+  }
+  const performanceSampleIntervalSeconds = value.performanceSampleIntervalSeconds
+  if (typeof performanceSampleIntervalSeconds !== 'number' || !Number.isInteger(performanceSampleIntervalSeconds)
+    || performanceSampleIntervalSeconds < MIN_PERFORMANCE_SAMPLE_INTERVAL_SECONDS
+    || performanceSampleIntervalSeconds > MAX_PERFORMANCE_SAMPLE_INTERVAL_SECONDS) {
+    throw new Error('性能监控采样间隔必须是 1 到 300 秒之间的整数')
   }
   const configuredThresholds = value.performanceThresholds
   if (!isRecord(configuredThresholds) || !hasExactKeys(configuredThresholds, [...performanceThresholdKeys])) {
@@ -119,6 +128,7 @@ export function validateAppSettings(value: unknown): AppSettings {
     fileTypeExtensions,
     startupConnection,
     transferFileConcurrency,
+    performanceSampleIntervalSeconds,
     performanceThresholds,
   }
 }

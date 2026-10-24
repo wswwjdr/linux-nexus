@@ -203,12 +203,13 @@ export interface PerformanceSnapshot {
   cpuCores: number
 }
 
-export interface PerformanceUpdate {
+export interface PerformanceMonitorState {
   sessionId: string
-  monitorId: string
-  status: 'sampling' | 'ready' | 'error'
-  snapshot?: PerformanceSnapshot
-  message?: string
+  version: number
+  status: 'inactive' | 'sampling' | 'ready' | 'error'
+  snapshot: PerformanceSnapshot | null
+  message: string | null
+  history: PerformanceSnapshot[][]
 }
 
 export interface StartupConnection {
@@ -224,6 +225,7 @@ export interface AppSettings extends PreviewLimits {
   fileTypeExtensions: FileTypeExtensions
   startupConnection: StartupConnection | null
   transferFileConcurrency: number
+  performanceSampleIntervalSeconds: number
   performanceThresholds: PerformanceThresholds
 }
 
@@ -390,9 +392,10 @@ export interface RemoteFilesApi {
   disconnect(sessionId: string): Promise<void>
   writeTerminal(sessionId: string, data: string): Promise<void>
   resizeTerminal(sessionId: string, cols: number, rows: number): Promise<void>
-  startPerformanceMonitor(sessionId: string, monitorId: string): Promise<void>
-  stopPerformanceMonitor(sessionId: string, monitorId: string): Promise<void>
-  refreshPerformanceMonitor(sessionId: string, monitorId: string): Promise<void>
+  getPerformanceMonitorState(sessionId: string): Promise<PerformanceMonitorState>
+  activatePerformanceMonitor(sessionId: string): Promise<PerformanceMonitorState>
+  deactivatePerformanceMonitor(sessionId: string): Promise<void>
+  refreshPerformanceMonitor(sessionId: string): Promise<void>
   getAppSettings(): Promise<AppSettings>
   updateAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
   listCommandAliasSnapshots(): Promise<CommandAliasSnapshot[]>
@@ -449,6 +452,6 @@ export interface RemoteFilesApi {
   onScriptExecutionEvent(callback: (event: ScriptExecutionEvent) => void): () => void
   onConnectionClosed(callback: (event: ConnectionClosedEvent) => void): () => void
   onTerminalOutput(callback: (event: TerminalOutputEvent) => void): () => void
-  onPerformanceUpdate(callback: (event: PerformanceUpdate) => void): () => void
+  onPerformanceUpdate(callback: (event: PerformanceMonitorState) => void): () => void
 }
 

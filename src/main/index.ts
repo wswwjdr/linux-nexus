@@ -8,7 +8,7 @@ import { registerPreviewProtocol } from './preview-protocol'
 import { clearPreviewAssets, getMainWindow, messageFromError, setMainWindow } from './runtime'
 import { configureStateFiles, readAppSettings, readState } from './state-store'
 import { applyTheme, themeBackgroundColor } from './theme'
-import { stopAllPerformanceMonitors } from './performance-monitor'
+import { configurePerformanceMonitorInterval, stopAllPerformanceMonitors } from './performance-monitor'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'remote-preview',
@@ -131,6 +131,7 @@ app.whenReady().then(async () => {
   try {
     readState(true)
     const settings = readAppSettings()
+    configurePerformanceMonitorInterval(settings.performanceSampleIntervalSeconds)
     applyTheme(settings.theme)
   } catch (error) {
     dialog.showErrorBox(
