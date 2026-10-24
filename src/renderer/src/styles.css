@@ -194,15 +194,19 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .session-tab-close { width: 25px; height: 25px; flex: 0 0 auto; display: grid; place-items: center; margin-right: 4px; padding: 0; border:0; border-radius: 4px; color:var(--muted); background:transparent; cursor: pointer; }
 .session-tab-close:hover { color:var(--red); background:var(--red-soft); }
 .session-add-button { width: 28px; height: 28px; flex: 0 0 auto; border-color:var(--line); color:var(--text-primary); background:var(--surface); }
-.sftp-session-panel { min-width: 0; min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.session-content { position: relative; min-width: 0; min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.sftp-session-panel { min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; }
 .session-connection-state { min-height: 0; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; color:var(--text-secondary); text-align: center; }
 .session-connection-state > svg { color:var(--text-secondary); }
 .session-connection-state strong { color:var(--text-primary); font-size: 13px; font-weight: 600; }
 .session-connection-state > span { max-width: 560px; color:var(--text-secondary); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
-.terminal-session-stack { position: relative; min-width: 0; min-height: 0; flex: 1; overflow: hidden; background:var(--surface-terminal); }
+.terminal-session-stack { position: absolute; inset: 0; min-width: 0; min-height: 0; overflow: hidden; background:var(--surface-terminal); }
 .terminal-session-stack[hidden] { display: none; }
 .terminal-session-pane { position: absolute; inset: 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .terminal-session-pane[hidden] { display: none; }
+.session-workspace-layer { position: absolute; z-index: 1; inset: 0; visibility: hidden; pointer-events: none; }
+.session-workspace-layer.active { visibility: visible; }
+.session-workspace-layer .modal-backdrop { position: absolute; inset: 0; pointer-events: auto; }
 .terminal-host { min-width: 0; min-height: 0; flex: 1; overflow: hidden; background:var(--surface-terminal); }
 .terminal-host .xterm { height: 100%; padding: 12px 15px; }
 .terminal-session-notice { min-height: 36px; flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 5px 14px; border-bottom:1px solid var(--line-terminal); color:var(--muted); background:var(--surface-terminal); font-size: 11px; }

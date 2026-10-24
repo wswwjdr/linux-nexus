@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type SyntheticEvent, type WheelEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type SyntheticEvent, type WheelEvent } from 'react'
 import type { FileTypeExtensions, RemoteEntry, TextFileRevision } from '@shared/types'
 import type { PreviewType } from '@shared/file-type-registry'
 import { previewTypesForFile } from '@shared/preview-file-type'
@@ -63,10 +63,13 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
   }, [logPreviewDialog])
 
   useEffect(() => () => {
-    if (previewTokenRef.current) void window.remoteFiles.releasePreview(previewTokenRef.current)
+    previewRequestRef.current += 1
+    const token = previewTokenRef.current
+    previewTokenRef.current = null
+    if (token) void window.remoteFiles.releasePreview(token)
   }, [])
 
-  const closePreview = () => {
+  const closePreview = useCallback(() => {
     previewRequestRef.current += 1
     const token = previewTokenRef.current
     previewTokenRef.current = null
@@ -84,9 +87,9 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     setTextSaveConfirmation(null)
     setTextSaveError(null)
     if (token) window.setTimeout(() => void window.remoteFiles.releasePreview(token), 0)
-  }
+  }, [])
 
-  const previewFile = async (entry: Pick<RemoteEntry, 'name' | 'path'>, type: PreviewType) => {
+  const previewFile = useCallback(async (entry: Pick<RemoteEntry, 'name' | 'path'>, type: PreviewType) => {
     closePreview()
     if (!previewTypesForFile(entry.name, fileTypeExtensions).includes(type)) {
       showToast('info', '暂不支持的文件类型：' + entry.name)
@@ -122,9 +125,9 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
         showToast('error', '预览失败：' + errorMessage(error))
       }
     }
-  }
+  }, [closePreview, fileTypeExtensions, sessionId, showToast])
 
-  const previewLogFile = async (entry: Pick<RemoteEntry, 'name' | 'path'>) => {
+  const previewLogFile = useCallback(async (entry: Pick<RemoteEntry, 'name' | 'path'>) => {
     closePreview()
     if (!sessionId) return
 
@@ -148,7 +151,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
         showToast('error', '倒序预览失败：' + errorMessage(error))
       }
     }
-  }
+  }, [closePreview, sessionId, showToast])
 
   const loadEarlierLogPreview = async () => {
     const current = logPreviewRef.current

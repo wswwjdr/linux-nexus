@@ -3,8 +3,6 @@ import { Check, ChevronRight, FolderOpen, KeyRound, LayoutGrid, List, LoaderCirc
 import type { CommandAlias, CommandAliasSnapshot, FileTypeCategory, ServerProfile, ThemeMode } from '@shared/types'
 import { fileTypeRegistry, normalizeFileTypeExtension } from '@shared/file-type-registry'
 import ConfirmationDialog from './ConfirmationDialog'
-import LogPreviewDialog, { type LogPreviewDialogProps } from './previews/LogPreviewDialog'
-import PreviewDialog, { type PreviewDialogProps } from './previews/PreviewDialog'
 import ScriptExecutionDialog from './ScriptExecutionDialog'
 import type {
   FileViewMode,
@@ -31,7 +29,7 @@ const performanceThresholdFields: Array<{
   { label: '每核 1 分钟负载', warning: 'loadPerCoreWarning', critical: 'loadPerCoreCritical', unit: '', step: '0.1' },
 ]
 
-interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
+interface DialogLayerProps {
   profileDialog: { mode: 'create' | 'edit'; form: ProfileForm } | null
   profileDeleteDialog: ServerProfile | null
   profileDeleteError: string | null
@@ -42,7 +40,6 @@ interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
   scriptExecutionDialog: ScriptExecutionDialogState | null
   settingsForm: SettingsForm | null
   profiles: ServerProfile[]
-  textSaveError: string | null
   pendingHostKey: PendingHostKey | null
   pendingAliasHostKey: PendingAliasHostKey | null
   aliasSnapshot: CommandAliasSnapshot | null
@@ -74,9 +71,6 @@ interface DialogLayerProps extends PreviewDialogProps, LogPreviewDialogProps {
   onUpdateTheme: (theme: ThemeMode) => void
   onUpdateStartupProfile: (profileId: string) => void
   onUpdateStartupKind: (kind: SettingsForm['startupKind']) => void
-  onClosePreview: () => void
-  onConfirmTextSave: () => void
-  onCancelTextSave: () => void
   onTrustHostKey: () => void
   onDismissHostKey: () => void
   onSelectAliasProfile: (profileId: string) => void
@@ -176,13 +170,6 @@ export default function DialogLayer({
   scriptExecutionDialog,
   settingsForm,
   profiles,
-  previewDialog,
-  logPreviewDialog,
-  textDraft,
-  textDirty,
-  textSaving,
-  textSaveConfirmation,
-  textSaveError,
   pendingHostKey,
   pendingAliasHostKey,
   aliasSnapshot,
@@ -192,11 +179,6 @@ export default function DialogLayer({
   aliasCommand,
   aliasOverwriteConfirmation,
   aliasDeleteConfirmation,
-  imageZoom,
-  imagePreviewSize,
-  imageViewportRef,
-  previewImageRef,
-  logViewportRef,
   onCloseProfile,
   onCloseProfileDelete,
   onConfirmProfileDelete,
@@ -219,15 +201,6 @@ export default function DialogLayer({
   onUpdateTheme,
   onUpdateStartupProfile,
   onUpdateStartupKind,
-  onClosePreview,
-  onOpenExternalLink,
-  onLogPreviewScroll,
-  onUpdateTextDraft,
-  onRequestTextSave,
-  onConfirmTextSave,
-  onCancelTextSave,
-  onPreviewImageLoad,
-  onZoomPreviewImage,
   onTrustHostKey,
   onDismissHostKey,
   onSelectAliasProfile,
@@ -264,17 +237,6 @@ export default function DialogLayer({
         else onDismissHostKey()
         return
       }
-      if (textSaveConfirmation) return
-      if (previewDialog) {
-        event.preventDefault()
-        onClosePreview()
-        return
-      }
-      if (logPreviewDialog) {
-        event.preventDefault()
-        onClosePreview()
-        return
-      }
       if (createDirectoryDialog) {
         event.preventDefault()
         if (!creatingDirectory) onCloseCreateDirectory()
@@ -299,7 +261,6 @@ export default function DialogLayer({
     window.addEventListener('keydown', dismissOnEscape)
     return () => window.removeEventListener('keydown', dismissOnEscape)
   }, [
-    onClosePreview,
     onCloseProfile,
     onCloseCreateDirectory,
     onCloseSettings,
@@ -308,9 +269,6 @@ export default function DialogLayer({
     aliasHostKeyVisible,
     pendingHostKey,
     pendingAliasHostKey,
-    previewDialog,
-    logPreviewDialog,
-    textSaveConfirmation,
     profileDialog,
     createDirectoryDialog,
     creatingDirectory,
@@ -675,50 +633,6 @@ export default function DialogLayer({
             </div>
           </section>
         </div>
-      )}
-
-      <PreviewDialog
-        previewDialog={previewDialog}
-        textDraft={textDraft}
-        textDirty={textDirty}
-        textSaving={textSaving}
-        textSaveConfirmation={textSaveConfirmation}
-        imageZoom={imageZoom}
-        imagePreviewSize={imagePreviewSize}
-        imageViewportRef={imageViewportRef}
-        previewImageRef={previewImageRef}
-        onClosePreview={onClosePreview}
-        onOpenExternalLink={onOpenExternalLink}
-        onUpdateTextDraft={onUpdateTextDraft}
-        onRequestTextSave={onRequestTextSave}
-        onPreviewImageLoad={onPreviewImageLoad}
-        onZoomPreviewImage={onZoomPreviewImage}
-      />
-
-      <LogPreviewDialog
-        logPreviewDialog={logPreviewDialog}
-        logViewportRef={logViewportRef}
-        onClosePreview={onClosePreview}
-        onLogPreviewScroll={onLogPreviewScroll}
-      />
-
-      {textSaveConfirmation && (
-        <ConfirmationDialog
-          eyebrow="保存远程文件"
-          title={`覆盖 ${textSaveConfirmation.name}？`}
-          details={[
-            { label: '远程路径', value: textSaveConfirmation.path },
-          ]}
-          description="确认后将以当前编辑内容覆盖服务器上的源文件。保存前会检查该文件是否已被其他人修改。"
-          tone="warning"
-          confirmLabel="覆盖并保存"
-          busyLabel="正在保存"
-          error={textSaveError}
-          errorLabel="保存失败"
-          busy={textSaving}
-          onConfirm={onConfirmTextSave}
-          onCancel={onCancelTextSave}
-        />
       )}
 
       {visibleHostKey && (

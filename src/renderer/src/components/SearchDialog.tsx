@@ -9,6 +9,7 @@ interface SearchDialogProps {
   sessionId: string
   profileId: string
   currentPath: string
+  visible: boolean
   previewOpen: boolean
   fileTypeExtensions: FileTypeExtensions
   onClose: () => void
@@ -17,7 +18,7 @@ interface SearchDialogProps {
 
 type SearchTab = 'name' | 'content'
 
-export default function SearchDialog({ sessionId, profileId, currentPath, previewOpen, fileTypeExtensions, onClose, onMenuAction }: SearchDialogProps) {
+export default function SearchDialog({ sessionId, profileId, currentPath, visible, previewOpen, fileTypeExtensions, onClose, onMenuAction }: SearchDialogProps) {
   const [activeTab, setActiveTab] = useState<SearchTab>('name')
   const [running, setRunning] = useState({ name: false, content: false })
   const [menuOpen, setMenuOpen] = useState({ name: false, content: false })
@@ -72,7 +73,7 @@ export default function SearchDialog({ sessionId, profileId, currentPath, previe
     <div className="modal-backdrop search-backdrop" onMouseDown={(event) => {
       if (event.target === event.currentTarget) requestClose()
     }}>
-      <section className="modal search-modal" role="dialog" aria-modal="true" aria-labelledby="search-dialog-title">
+      <section className="modal search-modal" role="dialog" aria-labelledby="search-dialog-title">
         <header className="search-dialog-header">
           <div className="search-dialog-heading">
             <h2 id="search-dialog-title">搜索文件</h2>
@@ -108,7 +109,7 @@ export default function SearchDialog({ sessionId, profileId, currentPath, previe
             sessionId={sessionId}
             profileId={profileId}
             currentPath={currentPath}
-            active={activeTab === 'name'}
+            active={visible && activeTab === 'name'}
             fileTypeExtensions={fileTypeExtensions}
             onRunningChange={updateNameRunning}
             onMenuOpenChange={updateNameMenu}
@@ -121,7 +122,7 @@ export default function SearchDialog({ sessionId, profileId, currentPath, previe
             sessionId={sessionId}
             profileId={profileId}
             currentPath={currentPath}
-            active={activeTab === 'content'}
+            active={visible && activeTab === 'content'}
             fileTypeExtensions={fileTypeExtensions}
             onRunningChange={updateContentRunning}
             onMenuOpenChange={updateContentMenu}

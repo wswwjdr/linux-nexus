@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent as Re
 import { Cloud, Copy, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, Plus, RefreshCw, Search, Settings, Terminal, Upload, X } from 'lucide-react'
 import GlobalToast, { type ToastNotice } from './GlobalToast'
 import FileBrowser from './components/FileBrowser'
+import SftpSessionWorkspace, { type SessionPreviewActions } from './components/SftpSessionWorkspace'
 import SftpContextMenu from './components/context-menus/SftpContextMenu'
 import ServerList from './components/ServerList'
 import TransferTray from './components/TransferTray'
-import SearchDialog from './components/SearchDialog'
 import DialogLayer from './components/DialogLayer'
 import ConfirmationDialog from './components/ConfirmationDialog'
 import { RemoteMoveConflictDialog, RemoteMoveSummaryDialog } from './components/RemoteMoveDialogs'
@@ -13,7 +13,6 @@ import SessionChooser from './components/SessionChooser'
 import TerminalPanel from './components/TerminalPanel'
 import ShortcutGuideDialog from './components/ShortcutGuideDialog'
 import PerformanceMonitor, { type PerformanceMonitorState } from './components/PerformanceMonitor'
-import { usePreview } from './hooks/usePreview'
 import { useTransfers } from './hooks/useTransfers'
 import { useProfileManagement } from './hooks/useProfileManagement'
 import { useCommandAliases } from './hooks/useCommandAliases'
@@ -37,6 +36,7 @@ import type {
   SessionKind,
   TrustHostKeyInput,
 } from '@shared/types'
+import type { PreviewType } from '@shared/file-type-registry'
 import { DEFAULT_PERFORMANCE_THRESHOLDS, defaultFileTypeExtensions } from '@shared/app-settings'
 import { scriptExecutionCommand } from '@shared/shell'
 import type { SftpContextMenuContext, SftpMenuAction } from './context-menu/sftp-menu'
@@ -132,7 +132,9 @@ export default function App() {
   const [creatingDirectory, setCreatingDirectory] = useState(false)
   const [scriptCommandDialog, setScriptCommandDialog] = useState<{ entry: Pick<RemoteEntry, 'name' | 'path'>; sessionId: string; command: string } | null>(null)
   const [scriptExecutionDialog, setScriptExecutionDialog] = useState<ScriptExecutionDialogState | null>(null)
-  const [searchSessionId, setSearchSessionId] = useState<string | null>(null)
+  const [searchOpenSessionIds, setSearchOpenSessionIds] = useState<Set<string>>(() => new Set())
+  const [workspaceOpenSessionIds, setWorkspaceOpenSessionIds] = useState<Set<string>>(() => new Set())
+  const [workspaceBlockingSessionIds, setWorkspaceBlockingSessionIds] = useState<Set<string>>(() => new Set())
   const toastSequenceRef = useRef(0)
   const startupConnectionAttemptedRef = useRef(false)
   const connectingSessionsRef = useRef(new Set<string>())
@@ -141,6 +143,7 @@ export default function App() {
   const sessionContextMenuRef = useRef<HTMLDivElement>(null)
   const activeSessionIdRef = useRef(activeSessionId)
   const performanceMonitorIdRef = useRef<string | null>(null)
+  const previewActionsRef = useRef(new Map<string, SessionPreviewActions>())
   activeSessionIdRef.current = activeSessionId
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
@@ -155,37 +158,57 @@ export default function App() {
   const showToast = useCallback((kind: ToastNotice['kind'], message: string, action?: ToastNotice['action']) => {
     setToast({ id: ++toastSequenceRef.current, kind, message, action })
   }, [])
-  const {
-    previewDialog,
-    logPreviewDialog,
-    imageZoom,
-    imagePreviewSize,
-    textDraft,
-    textDirty,
-    textSaving,
-    textSaveConfirmation,
-    textSaveError,
-    imageViewportRef,
-    previewImageRef,
-    logViewportRef,
-    closePreview,
-    previewFile,
-    previewLogFile,
-    onLogPreviewScroll,
-    updateTextDraft,
-    requestTextSave,
-    confirmTextSave,
-    cancelTextSave,
-    onImageLoad,
-    zoomImage,
-  } = usePreview({
-    sessionId: sessions.find((session) => session.id === activeSessionId)?.kind === 'sftp'
-      && sessions.find((session) => session.id === activeSessionId)?.status === 'connected'
-      ? activeSessionId
-      : null,
-    fileTypeExtensions,
-    showToast,
-  })
+  const setSearchOpen = useCallback((sessionId: string, open: boolean) => {
+    setSearchOpenSessionIds((current) => {
+      if (current.has(sessionId) === open) return current
+      const next = new Set(current)
+      if (open) next.add(sessionId)
+      else next.delete(sessionId)
+      return next
+    })
+  }, [])
+  const setWorkspaceBlocking = useCallback((sessionId: string, blocking: boolean) => {
+    setWorkspaceBlockingSessionIds((current) => {
+      if (current.has(sessionId) === blocking) return current
+      const next = new Set(current)
+      if (blocking) next.add(sessionId)
+      else next.delete(sessionId)
+      return next
+    })
+  }, [])
+  const setWorkspaceOpen = useCallback((sessionId: string, open: boolean) => {
+    setWorkspaceOpenSessionIds((current) => {
+      if (current.has(sessionId) === open) return current
+      const next = new Set(current)
+      if (open) next.add(sessionId)
+      else next.delete(sessionId)
+      return next
+    })
+  }, [])
+  const registerPreviewActions = useCallback((sessionId: string, actions: {
+    previewFile: (entry: Pick<RemoteEntry, 'name' | 'path'>, type: PreviewType) => Promise<void>
+    previewLogFile: (entry: Pick<RemoteEntry, 'name' | 'path'>) => Promise<void>
+  } | null) => {
+    if (actions) previewActionsRef.current.set(sessionId, actions)
+    else previewActionsRef.current.delete(sessionId)
+  }, [])
+  const removeSessionWorkspaceState = useCallback((sessionIds: string[]) => {
+    setSearchOpenSessionIds((current) => {
+      const next = new Set(current)
+      for (const sessionId of sessionIds) next.delete(sessionId)
+      return next
+    })
+    setWorkspaceBlockingSessionIds((current) => {
+      const next = new Set(current)
+      for (const sessionId of sessionIds) next.delete(sessionId)
+      return next
+    })
+    setWorkspaceOpenSessionIds((current) => {
+      const next = new Set(current)
+      for (const sessionId of sessionIds) next.delete(sessionId)
+      return next
+    })
+  }, [])
   const dismissToast = useCallback((noticeId: number) => {
     setToast((current) => current?.id === noticeId ? null : current)
   }, [])
@@ -220,19 +243,15 @@ export default function App() {
     showToast,
     onProfileSaved: (profile) => {
       const affectedSessions = sessionsRef.current.filter((session) => session.profileId === profile.id)
-      const activeProfileId = sessionsRef.current.find((session) => session.id === activeSessionId)?.profileId
-      if (activeProfileId === profile.id) closePreview()
       setPendingHostKeys((current) => current.filter((pending) => pending.profile.id !== profile.id))
       for (const session of affectedSessions) {
         patchSession(session.id, { status: 'disconnected', error: '服务器配置已更新', loading: false })
       }
-      if (searchSessionId && affectedSessions.some((session) => session.id === searchSessionId)) setSearchSessionId(null)
+      removeSessionWorkspaceState(affectedSessions.map(({ id }) => id))
     },
     onProfileDeleted: (profileId) => {
       setRecentConnections((current) => current.filter((connection) => connection.profileId !== profileId))
       const affectedSessions = sessionsRef.current.filter((session) => session.profileId === profileId)
-      const activeProfileId = sessionsRef.current.find((session) => session.id === activeSessionId)?.profileId
-      if (activeProfileId === profileId) closePreview()
       setPendingHostKeys((current) => current.filter((pending) => pending.profile.id !== profileId))
       const remaining = sessionsRef.current.filter((session) => session.profileId !== profileId)
       sessionsRef.current = remaining
@@ -241,7 +260,8 @@ export default function App() {
         directoryLoadIdsRef.current.delete(session.id)
         connectingSessionsRef.current.delete(session.id)
       }
-      if (searchSessionId && affectedSessions.some((session) => session.id === searchSessionId)) setSearchSessionId(null)
+      removeSessionWorkspaceState(affectedSessions.map(({ id }) => id))
+      for (const session of affectedSessions) previewActionsRef.current.delete(session.id)
       if (activeSessionId && !remaining.some((session) => session.id === activeSessionId)) {
         setActiveSessionId(remaining.at(-1)?.id ?? null)
       }
@@ -333,20 +353,13 @@ export default function App() {
     void openSettingsDialog()
   }
   const closeShortcutGuide = useCallback(() => setShortcutGuideOpen(false), [])
-  const searchSession = useMemo(
-    () => sessions.find((session) => session.id === searchSessionId) ?? null,
-    [sessions, searchSessionId],
-  )
-  const searchProfile = useMemo(
-    () => profiles.find((profile) => profile.id === searchSession?.profileId) ?? null,
-    [profiles, searchSession?.profileId],
-  )
   const pendingHostKey = pendingHostKeys[0] ?? null
   const modalOpen = Boolean(
-    profileDialog || profileDeleteDialog || createDirectoryDialog || scriptCommandDialog || scriptExecutionDialog || settingsForm || previewDialog || logPreviewDialog
+    profileDialog || profileDeleteDialog || createDirectoryDialog || scriptCommandDialog || scriptExecutionDialog || settingsForm
       || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
       || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || activeRemoteMove?.conflict
-      || activeRemoteCopy?.conflict || remoteOperationDetailsOpen || searchSessionId
+      || activeRemoteCopy?.conflict || remoteOperationDetailsOpen
+      || (activeSessionId && workspaceBlockingSessionIds.has(activeSessionId))
       || sessionChooserOpen || shortcutGuideOpen,
   )
   const offlineProfiles = useMemo(
@@ -380,11 +393,11 @@ export default function App() {
       }
       if (activeSession?.kind !== 'sftp' || activeSession.status !== 'connected') return
       event.preventDefault()
-      if (!searchSessionId) setSearchSessionId(activeSession.id)
+      if (!searchOpenSessionIds.has(activeSession.id)) setSearchOpen(activeSession.id, true)
     }
     window.addEventListener('keydown', openSearchShortcut)
     return () => window.removeEventListener('keydown', openSearchShortcut)
-  }, [activeSession, searchSessionId, shortcutGuideOpen])
+  }, [activeSession, searchOpenSessionIds, setSearchOpen, shortcutGuideOpen])
 
   useEffect(() => {
     const removeClosedListener = window.remoteFiles.onConnectionClosed((event) => {
@@ -590,8 +603,6 @@ export default function App() {
     }
     setBrowserContextMenu(null)
     setSessionContextMenu(null)
-    setSearchSessionId(null)
-    closePreview()
     setActiveSessionId(id)
     const nextSessions = [...sessionsRef.current, session]
     sessionsRef.current = nextSessions
@@ -724,12 +735,12 @@ export default function App() {
     sessionsRef.current = remaining
     setSessions(remaining)
     setPendingHostKeys((current) => current.filter((pending) => pending.sessionId !== sessionId))
+    removeSessionWorkspaceState([sessionId])
+    previewActionsRef.current.delete(sessionId)
     if (activeSessionId === sessionId) {
       const next = remaining[previousIndex] ?? remaining[previousIndex - 1]
       setActiveSessionId(next?.id ?? null)
-      closePreview()
     }
-    if (searchSessionId === sessionId) setSearchSessionId(null)
     setBrowserContextMenu(null)
     setSessionContextMenu(null)
     void window.remoteFiles.disconnect(sessionId).catch((error) => showToast('error', errorMessage(error)))
@@ -737,16 +748,12 @@ export default function App() {
 
   const activateSession = (sessionId: string) => {
     if (activeSessionId === sessionId) return
-    closePreview()
-    setSearchSessionId(null)
     setBrowserContextMenu(null)
     setCreateDirectoryDialog(null)
     setActiveSessionId(sessionId)
   }
 
   const goHome = () => {
-    closePreview()
-    setSearchSessionId(null)
     setBrowserContextMenu(null)
     setCreateDirectoryDialog(null)
     setActiveSessionId(null)
@@ -774,10 +781,8 @@ export default function App() {
     ? navigateSession(activeSession.id, remotePath)
     : Promise.resolve(false)
 
-  const locateSearchResult = async (result: SearchResultTarget) => {
-    const sessionId = searchSessionId
-    setSearchSessionId(null)
-    if (!sessionId) return
+  const locateSearchResult = async (result: SearchResultTarget, sessionId: string) => {
+    setSearchOpen(sessionId, false)
     activateSession(sessionId)
     const loaded = await navigateSession(sessionId, getParentPath(result.path))
     if (loaded) patchSession(sessionId, { highlightedPath: result.path })
@@ -846,10 +851,10 @@ export default function App() {
     })
   }
 
-  const dispatchSftpMenuAction = (action: SftpMenuAction, context: SftpContextMenuContext) => {
+  const dispatchSftpMenuAction = (action: SftpMenuAction, context: SftpContextMenuContext, sessionId: string) => {
     setBrowserContextMenu(null)
     if (context.kind === 'search-result'
-      && (action.type === 'run-script' || action.type === 'adjust-script-command')) setSearchSessionId(null)
+      && (action.type === 'run-script' || action.type === 'adjust-script-command')) setSearchOpen(sessionId, false)
     const entry = context.kind === 'single-entry' ? context.entry
       : context.kind === 'search-result' ? context.result
         : null
@@ -858,16 +863,16 @@ export default function App() {
         : null
     switch (action.type) {
       case 'preview':
-        if (entry) void previewFile(entry, action.previewType)
+        if (entry) void previewActionsRef.current.get(sessionId)?.previewFile(entry, action.previewType)
         break
       case 'preview-log':
-        if (entry) void previewLogFile(entry)
+        if (entry) void previewActionsRef.current.get(sessionId)?.previewLogFile(entry)
         break
       case 'run-script':
-        if (entry) startScriptExecution(entry, scriptExecutionCommand(entry.name), context.kind === 'search-result' ? searchSessionId ?? undefined : undefined)
+        if (entry) startScriptExecution(entry, scriptExecutionCommand(entry.name), sessionId)
         break
       case 'adjust-script-command':
-        if (entry) requestScriptCommandEdit(entry, context.kind === 'search-result' ? searchSessionId ?? undefined : undefined)
+        if (entry) requestScriptCommandEdit(entry, sessionId)
         break
       case 'download':
         if (entries) download(entries)
@@ -907,7 +912,7 @@ export default function App() {
         void uploadFiles()
         break
       case 'open-location':
-        if (context.kind === 'search-result') void locateSearchResult(context.result)
+        if (context.kind === 'search-result') void locateSearchResult(context.result, sessionId)
         break
     }
   }
@@ -1214,7 +1219,9 @@ export default function App() {
 
   useEffect(() => {
     const handleRemoteFileShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing || modalOpen || browserContextMenu || sessionContextMenu) return
+      if (event.defaultPrevented || event.isComposing || modalOpen
+        || (activeSessionId && workspaceOpenSessionIds.has(activeSessionId))
+        || browserContextMenu || sessionContextMenu) return
       if (!activeSession || activeSession.kind !== 'sftp' || activeSession.status !== 'connected') return
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
 
@@ -1252,6 +1259,7 @@ export default function App() {
     pasteRemoteEntries,
     sessionContextMenu,
     sortedEntries,
+    workspaceOpenSessionIds,
   ])
 
   const toggleSort = (column: SortColumn) => {
@@ -1264,7 +1272,7 @@ export default function App() {
   }
 
   const openSearch = () => {
-    if (activeSession?.kind === 'sftp' && activeSession.status === 'connected') setSearchSessionId(activeSession.id)
+    if (activeSession?.kind === 'sftp' && activeSession.status === 'connected') setSearchOpen(activeSession.id, true)
   }
 
   const openTerminalForCurrentPath = () => {
@@ -1456,6 +1464,7 @@ export default function App() {
           </div>
         )}
 
+        <div className="session-content">
         {activeSession?.kind === 'sftp' && connectedSessionId ? (
           <div className="sftp-session-panel" id={'session-panel-' + activeSession.id} role="tabpanel" aria-labelledby={'session-tab-' + activeSession.id}>
             <FileBrowser
@@ -1527,16 +1536,41 @@ export default function App() {
           ))}
         </div>
 
+        {sessions.filter((session) => session.kind === 'sftp').map((session) => {
+          const profile = profiles.find((candidate) => candidate.id === session.profileId)
+          if (!profile) return null
+          return (
+            <SftpSessionWorkspace
+              key={session.id}
+              session={session}
+              active={activeSessionId === session.id}
+              searchOpen={searchOpenSessionIds.has(session.id)}
+              fileTypeExtensions={fileTypeExtensions}
+              showToast={showToast}
+              onSearchOpenChange={setSearchOpen}
+              onWorkspaceOpenChange={setWorkspaceOpen}
+              onBlockingChange={setWorkspaceBlocking}
+              onRegisterPreviewActions={registerPreviewActions}
+              onMenuAction={dispatchSftpMenuAction}
+              onOpenExternalLink={(url) => {
+                void window.remoteFiles.openExternalUrl(url).catch((error) => showToast('error', '无法打开链接：' + errorMessage(error)))
+              }}
+            />
+          )
+        })}
+
         {browserContextMenu && activeSession?.kind === 'sftp' && (
           <SftpContextMenu
             context={browserContextMenu}
             position={browserContextMenu}
             fileTypeExtensions={fileTypeExtensions}
             anchorRef={contextMenuAnchorRef}
-            onAction={dispatchSftpMenuAction}
+            onAction={(action, context) => dispatchSftpMenuAction(action, context, activeSession.id)}
             onClose={() => setBrowserContextMenu(null)}
           />
         )}
+
+        </div>
 
         <TransferTray
           transfers={transfers}
@@ -1560,13 +1594,6 @@ export default function App() {
         scriptExecutionDialog={scriptExecutionDialog}
         settingsForm={settingsForm}
         profiles={profiles}
-        previewDialog={previewDialog}
-        logPreviewDialog={logPreviewDialog}
-        textDraft={textDraft}
-        textDirty={textDirty}
-        textSaving={textSaving}
-        textSaveConfirmation={textSaveConfirmation}
-        textSaveError={textSaveError}
         pendingHostKey={pendingHostKey}
         pendingAliasHostKey={commandAliases.pendingHostKey}
         aliasSnapshot={commandAliases.snapshot}
@@ -1576,11 +1603,6 @@ export default function App() {
         aliasCommand={commandAliases.command}
         aliasOverwriteConfirmation={commandAliases.overwriteConfirmation}
         aliasDeleteConfirmation={commandAliases.deleteConfirmation}
-        imageZoom={imageZoom}
-        imagePreviewSize={imagePreviewSize}
-        imageViewportRef={imageViewportRef}
-        previewImageRef={previewImageRef}
-        logViewportRef={logViewportRef}
         onCloseProfile={closeProfileDialog}
         onCloseProfileDelete={closeProfileDeleteDialog}
         onConfirmProfileDelete={() => void confirmProfileDeletion()}
@@ -1605,17 +1627,6 @@ export default function App() {
         onUpdateTheme={updateTheme}
         onUpdateStartupProfile={updateStartupProfile}
         onUpdateStartupKind={updateStartupKind}
-        onClosePreview={closePreview}
-        onOpenExternalLink={(url) => {
-          void window.remoteFiles.openExternalUrl(url).catch((error) => showToast('error', '无法打开链接：' + errorMessage(error)))
-        }}
-        onLogPreviewScroll={onLogPreviewScroll}
-        onUpdateTextDraft={updateTextDraft}
-        onRequestTextSave={requestTextSave}
-        onConfirmTextSave={() => void confirmTextSave()}
-        onCancelTextSave={cancelTextSave}
-        onPreviewImageLoad={onImageLoad}
-        onZoomPreviewImage={zoomImage}
         onTrustHostKey={() => void trustAndReconnect()}
         onDismissHostKey={dismissHostKey}
         onSelectAliasProfile={commandAliases.selectProfile}
@@ -1689,19 +1700,6 @@ export default function App() {
           operation={remoteOperationSummary.operation}
           result={remoteOperationSummary.result}
           onClose={() => setRemoteOperationDetailsOpen(false)}
-        />
-      )}
-
-      {searchProfile && searchSession && searchSessionId && (
-        <SearchDialog
-          key={searchSessionId}
-          sessionId={searchSessionId}
-          profileId={searchSession.profileId}
-          currentPath={searchSession.currentPath}
-          fileTypeExtensions={fileTypeExtensions}
-          previewOpen={Boolean(previewDialog || logPreviewDialog)}
-          onClose={() => setSearchSessionId(null)}
-          onMenuAction={dispatchSftpMenuAction}
         />
       )}
 
