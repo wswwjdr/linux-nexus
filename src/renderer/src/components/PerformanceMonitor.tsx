@@ -62,6 +62,11 @@ function MetricTrend({
         <span>{label}</span>
         <strong>{percent(value)}</strong>
       </div>
+      <div className="performance-trend-scale" aria-hidden="true">
+        <span>100%</span>
+        <span>50%</span>
+        <span>0%</span>
+      </div>
       <svg className={'performance-trend-chart ' + series} viewBox="0 0 600 40" preserveAspectRatio="none" role="img" aria-label={`${label}最近 15 分钟趋势，纵轴 0 到 100%`}>
         <title>{label}最近 15 分钟趋势</title>
         <path className="performance-trend-grid" d="M0 4H600 M0 19H600 M0 34H600" />
@@ -147,7 +152,7 @@ export default function PerformanceMonitor({ state, thresholds, open, onOpenChan
                 <MetricTrend label="CPU 使用率" value={snapshot.cpuPercent} history={history} nowMs={nowMs} warning={thresholds.cpu.warning} critical={thresholds.cpu.critical} series="cpu" />
                 <MetricTrend label="内存使用率" value={snapshot.memoryPercent} history={history} nowMs={nowMs} warning={thresholds.memory.warning} critical={thresholds.memory.critical} series="memory" />
                 <MetricTrend label="根分区使用率" value={snapshot.diskPercent} history={history} nowMs={nowMs} warning={thresholds.disk.warning} critical={thresholds.disk.critical} series="disk" />
-                <div className="performance-trend-axis"><span>15 分钟前</span><span>0%</span><span>50%</span><span>100%</span><span>现在</span></div>
+                <div className="performance-trend-axis"><span>15 分钟前</span><span>现在</span></div>
               </div>
               <div className="performance-details">
                 <div className={'performance-detail-load ' + metricSeverity(snapshot.loadAverage[0] / snapshot.cpuCores, thresholds.loadPerCore.warning, thresholds.loadPerCore.critical)}>
