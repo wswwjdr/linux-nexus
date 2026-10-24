@@ -50,7 +50,7 @@ export default function PreviewDialog({
   const pdfPreview = result?.type === 'pdf'
 
   return (
-    <div className="modal-backdrop preview-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !textSaving && !textSaveConfirmation && onClosePreview()}>
+    <div className={`modal-backdrop preview-backdrop${pdfPreview ? ' pdf-preview-backdrop' : ''}`} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !textSaving && !textSaveConfirmation && onClosePreview()}>
       <section className={`modal preview-modal${result ? ` media-preview-modal${textPreview ? ' text-preview-modal' : ''}${markdownPreview ? ' markdown-preview-modal' : ''}${pdfPreview ? ' pdf-preview-modal' : ''}` : ''}`} role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
         <div className="modal-heading">
           <div>

@@ -590,7 +590,7 @@ details[open] > .settings-disclosure-summary .settings-disclosure-chevron { tran
 .media-preview-modal { width: min(100%, 960px); }
 .text-preview-modal { height: min(680px, calc(100vh - 48px)); }
 .markdown-preview-modal { height: min(760px, calc(100vh - 48px)); }
-.pdf-preview-modal { height: min(820px, calc(100vh - 48px)); }
+.pdf-preview-modal { width: min(80vw, calc(100vw - 48px)); height: min(82vh, calc(100vh - 48px)); padding: 16px; }
 .text-preview-modal .preview-text { min-height: 0; max-height: none; flex: 1; }
 .text-preview-editor { width: 100%; resize: none; white-space: pre; overflow-wrap: normal; tab-size: 2; outline:0; }
 .text-preview-editor:focus { border-color:var(--border-success-strong); box-shadow: 0 0 0 2px var(--focus-surface); }
@@ -796,6 +796,8 @@ details[open] > .settings-disclosure-summary .settings-disclosure-chevron { tran
 }
 
 @media (max-width: 780px) {
+  .pdf-preview-backdrop { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); place-items: stretch; padding: 8px; }
+  .pdf-preview-modal { width: 100%; height: 100%; max-height: none; padding: 12px; }
   .log-preview-backdrop { padding: 8px; }
   .log-preview-modal { width: 100%; height: calc(100vh - 16px); padding: 15px; }
   .settings-modal { width: 100%; max-height: calc(100vh - 16px); padding: 16px; }
