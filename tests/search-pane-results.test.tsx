@@ -33,7 +33,7 @@ Object.defineProperties(globalThis, {
 test('clicking a filename result opens its menu while the click target is still available', async () => {
   const [{ createRoot }, { NameSearchPane }] = await Promise.all([
     import('react-dom/client'),
-    import('../src/renderer/src/components/SearchPanes.tsx'),
+    import('../src/renderer/src/features/search/NameSearchPane.tsx'),
   ])
   let listener: ((event: NameSearchEvent) => void) | null = null
   let request: NameSearchRequest | null = null
@@ -116,7 +116,7 @@ test('clicking a filename result opens its menu while the click target is still 
 test('clicking a content result opens its menu while the click target is still available', async () => {
   const [{ createRoot }, { ContentSearchPane }] = await Promise.all([
     import('react-dom/client'),
-    import('../src/renderer/src/components/SearchPanes.tsx'),
+    import('../src/renderer/src/features/search/ContentSearchPane.tsx'),
   ])
   let listener: ((event: ContentSearchEvent) => void) | null = null
   let request: ContentSearchRequest | null = null

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RemoteEntry, SearchResultTarget } from '../src/shared/types.ts'
 import { defaultFileTypeExtensions } from '../src/shared/app-settings.ts'
-import { resolveSftpContextMenu, type SftpContextMenuContext, type SftpMenuActionNode, type SftpMenuNode } from '../src/renderer/src/context-menu/sftp-menu.ts'
+import { resolveSftpContextMenu, type SftpContextMenuContext, type SftpMenuActionNode, type SftpMenuNode } from '../src/renderer/src/features/files/sftp-menu.ts'
 
 function entry(name: string, type: RemoteEntry['type'] = 'file'): RemoteEntry {
   return { name, path: '/home/user/' + name, type, size: 12, modifiedAt: null, permissions: 'rw-r--r--' }

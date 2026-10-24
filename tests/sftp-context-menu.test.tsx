@@ -5,8 +5,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { JSDOM } from 'jsdom'
 import type { RemoteEntry } from '../src/shared/types.ts'
 import { defaultFileTypeExtensions } from '../src/shared/app-settings.ts'
-import SftpContextMenu from '../src/renderer/src/components/context-menus/SftpContextMenu.tsx'
-import type { SftpContextMenuContext, SftpMenuAction } from '../src/renderer/src/context-menu/sftp-menu.ts'
+import SftpContextMenu from '../src/renderer/src/features/files/SftpContextMenu.tsx'
+import type { SftpContextMenuContext, SftpMenuAction } from '../src/renderer/src/features/files/sftp-menu.ts'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })
 Object.defineProperties(globalThis, {
@@ -133,6 +133,8 @@ test('measures the real menu and flips a submenu to fit the viewport', () => {
     return original.call(this)
   }
   const menu = mount({ kind: 'single-entry', entry: entry('README.md'), canPaste: true })
+  const trigger = menu.host.querySelector<HTMLButtonElement>('[data-submenu-trigger="preview"]')!
+  act(() => trigger.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })))
   const rootMenu = menu.host.querySelector<HTMLElement>('.browser-context-menu')!
   const panel = menu.host.querySelector<HTMLElement>('[data-submenu-panel="preview"]')!
   assert.equal(rootMenu.style.left, '288px')

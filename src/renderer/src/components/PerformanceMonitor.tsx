@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Gauge, RefreshCw, X } from 'lucide-react'
-import type { PerformanceMonitorState, PerformanceSeries, PerformanceThresholds } from '@shared/types'
+import type { PerformanceMonitorState, PerformanceThresholds } from '@shared/types'
+import type { PerformanceSeries } from '@shared/performance'
 import { performanceSeverity, performanceTrendPaths } from '@shared/performance'
 
 interface PerformanceMonitorProps {

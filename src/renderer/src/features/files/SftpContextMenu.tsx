@@ -9,7 +9,7 @@ import {
   type SftpMenuActionNode,
   type SftpMenuIcon,
   type SftpMenuNode,
-} from '@/context-menu/sftp-menu'
+} from './sftp-menu'
 
 interface SftpContextMenuProps {
   context: SftpContextMenuContext

@@ -10,9 +10,9 @@ import type {
   RemoteFilesApi,
 } from '../src/shared/types.ts'
 import { defaultFileTypeExtensions } from '../src/shared/app-settings.ts'
-import SftpSessionWorkspace, { type SessionPreviewActions } from '../src/renderer/src/components/SftpSessionWorkspace.tsx'
+import SftpSessionWorkspace, { type SessionPreviewActions } from '../src/renderer/src/features/files/SftpSessionWorkspace.tsx'
 import type { SessionTab } from '../src/renderer/src/app-types.ts'
-import type { SftpContextMenuContext, SftpMenuAction } from '../src/renderer/src/context-menu/sftp-menu.ts'
+import type { SftpContextMenuContext, SftpMenuAction } from '../src/renderer/src/features/files/sftp-menu.ts'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })
 Object.defineProperties(globalThis, {

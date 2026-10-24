@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FileSearch, FileText, X } from 'lucide-react'
 import type { FileTypeExtensions } from '@shared/types'
-import ConfirmationDialog from './ConfirmationDialog'
-import { ContentSearchPane, NameSearchPane, type SearchPaneHandle } from './SearchPanes'
-import type { SftpContextMenuContext, SftpMenuAction } from '@/context-menu/sftp-menu'
+import ConfirmationDialog from '@/components/ConfirmationDialog'
+import { ContentSearchPane } from '@/features/search/ContentSearchPane'
+import { NameSearchPane } from '@/features/search/NameSearchPane'
+import type { SearchPaneHandle } from '@/features/search/SearchPaneShared'
+import type { SftpContextMenuContext, SftpMenuAction } from '@/features/files/sftp-menu'
 
 interface SearchDialogProps {
   sessionId: string

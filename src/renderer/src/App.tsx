@@ -1,109 +1,45 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent as ReactFormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { Cloud, Copy, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, Plus, RefreshCw, Search, Settings, Terminal, Upload, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Cloud, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, RefreshCw, Search, Settings, Terminal, Upload } from 'lucide-react'
 import GlobalToast, { type ToastNotice } from './GlobalToast'
-import FileBrowser from './components/FileBrowser'
-import SftpSessionWorkspace, { type SessionPreviewActions } from './components/SftpSessionWorkspace'
-import SftpContextMenu from './components/context-menus/SftpContextMenu'
-import ServerList from './components/ServerList'
-import TransferTray from './components/TransferTray'
+import type { SessionPreviewActions } from './features/files/SftpSessionWorkspace'
+import { useScriptExecution } from './features/files/useScriptExecution'
+import { useSftpMenuActions } from './features/files/useSftpMenuActions'
+import SessionWorkspaceView from './features/sessions/SessionWorkspaceView'
 import DialogLayer from './components/DialogLayer'
 import ConfirmationDialog from './components/ConfirmationDialog'
 import { RemoteMoveConflictDialog, RemoteMoveSummaryDialog } from './components/RemoteMoveDialogs'
 import SessionChooser from './components/SessionChooser'
-import TerminalPanel from './components/TerminalPanel'
 import ShortcutGuideDialog from './components/ShortcutGuideDialog'
 import PerformanceMonitor from './components/PerformanceMonitor'
 import { useTransfers } from './hooks/useTransfers'
 import { useProfileManagement } from './hooks/useProfileManagement'
 import { useCommandAliases } from './hooks/useCommandAliases'
+import { useRemoteOperations } from './features/remote-files/useRemoteOperations'
+import { useSessionOperations } from './features/sessions/useSessionOperations'
+import { usePerformanceMonitoring } from './features/performance/usePerformanceMonitoring'
+import { useRemoteFileShortcuts } from './features/files/useRemoteFileShortcuts'
+import { useFileListing } from './features/files/useFileListing'
 import type {
   FileTypeExtensions,
   PerformanceThresholds,
-  PerformanceMonitorState,
-  RemoteCopyConflict,
-  RemoteCopyDecision,
-  RemoteCopyEvent,
-  RemoteCopyResult,
-  RemoteMoveConflict,
-  RemoteMoveDecision,
-  RemoteMoveProgress,
-  RemoteMoveResult,
   RemoteEntry,
-  SearchResultTarget,
-  ScriptExecutionEvent,
-  ScriptExecutionRequest,
   ServerProfile,
-  SessionKind,
-  TrustHostKeyInput,
 } from '@shared/types'
 import type { PreviewType } from '@shared/file-type-registry'
 import { DEFAULT_PERFORMANCE_THRESHOLDS, defaultFileTypeExtensions } from '@shared/app-settings'
-import { scriptExecutionCommand } from '@shared/shell'
-import type { SftpContextMenuContext, SftpMenuAction } from './context-menu/sftp-menu'
 import type {
   BrowserContextMenu as BrowserContextMenuState,
   FileViewMode,
   PendingHostKey,
   RecentConnection,
   SessionTab,
-  SortColumn,
-  SortDirection,
-  ScriptExecutionDialogState,
+  SessionContextMenuState,
 } from './app-types'
 import {
   connectFailureText,
-  entryNameCollator,
   errorMessage,
   readRecentConnections,
-  getParentPath,
 } from './app-utils'
-
-const entryTypeLabels: Record<RemoteEntry['type'], string> = {
-  directory: '文件夹',
-  file: '文件',
-  symlink: '符号链接',
-  other: '其他',
-}
-
-interface SessionContextMenuState {
-  sessionId: string
-  x: number
-  y: number
-}
-
-interface ActiveRemoteMove {
-  requestId: string
-  sessionId: string
-  progress: RemoteMoveProgress
-  conflict: RemoteMoveConflict | null
-  decisionPending: boolean
-}
-
-interface RemoteClipboard {
-  mode: 'copy' | 'cut'
-  profile: Pick<ServerProfile, 'id' | 'host' | 'port' | 'username'>
-  sourcePaths: string[]
-}
-
-interface ActiveRemoteCopy {
-  requestId: string
-  sessionId: string
-  targetDirectory: string
-  conflict: RemoteCopyConflict | null
-  decisionPending: boolean
-}
-
-interface RemoteOperationSummary {
-  operation: 'move' | 'copy'
-  result: RemoteMoveResult | RemoteCopyResult
-}
-
-function getEntryTypeExtension(name: string): string {
-  const extensionStart = name.lastIndexOf('.')
-  return extensionStart > 0 && extensionStart < name.length - 1
-    ? name.slice(extensionStart + 1).toLocaleLowerCase('zh-CN')
-    : ''
-}
 
 export default function App() {
   const [sessions, setSessions] = useState<SessionTab[]>([])
@@ -112,38 +48,21 @@ export default function App() {
   const [shortcutGuideOpen, setShortcutGuideOpen] = useState(false)
   const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>('details')
   const [performanceThresholds, setPerformanceThresholds] = useState<PerformanceThresholds>(DEFAULT_PERFORMANCE_THRESHOLDS)
-  const [performanceMonitorStates, setPerformanceMonitorStates] = useState<Record<string, PerformanceMonitorState>>({})
-  const [performancePanelOpen, setPerformancePanelOpen] = useState(false)
   const [fileTypeExtensions, setFileTypeExtensions] = useState<FileTypeExtensions>(defaultFileTypeExtensions)
   const [toast, setToast] = useState<ToastNotice | null>(null)
   const [recentConnections, setRecentConnections] = useState<RecentConnection[]>(readRecentConnections)
   const [pendingHostKeys, setPendingHostKeys] = useState<PendingHostKey[]>([])
   const [browserContextMenu, setBrowserContextMenu] = useState<BrowserContextMenuState | null>(null)
   const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null)
-  const [remoteEntryDeleteDialog, setRemoteEntryDeleteDialog] = useState<{ entries: RemoteEntry[]; sessionId: string; directory: string } | null>(null)
-  const [remoteEntryDeleteError, setRemoteEntryDeleteError] = useState<string | null>(null)
-  const [remoteEntryDeleting, setRemoteEntryDeleting] = useState(false)
-  const [activeRemoteMove, setActiveRemoteMove] = useState<ActiveRemoteMove | null>(null)
-  const [remoteClipboard, setRemoteClipboard] = useState<RemoteClipboard | null>(null)
-  const [activeRemoteCopy, setActiveRemoteCopy] = useState<ActiveRemoteCopy | null>(null)
-  const [remoteOperationSummary, setRemoteOperationSummary] = useState<RemoteOperationSummary | null>(null)
-  const [remoteOperationDetailsOpen, setRemoteOperationDetailsOpen] = useState(false)
-  const [createDirectoryDialog, setCreateDirectoryDialog] = useState<{ name: string } | null>(null)
-  const [creatingDirectory, setCreatingDirectory] = useState(false)
-  const [scriptCommandDialog, setScriptCommandDialog] = useState<{ entry: Pick<RemoteEntry, 'name' | 'path'>; sessionId: string; command: string } | null>(null)
-  const [scriptExecutionDialog, setScriptExecutionDialog] = useState<ScriptExecutionDialogState | null>(null)
   const [searchOpenSessionIds, setSearchOpenSessionIds] = useState<Set<string>>(() => new Set())
   const [workspaceOpenSessionIds, setWorkspaceOpenSessionIds] = useState<Set<string>>(() => new Set())
   const [workspaceBlockingSessionIds, setWorkspaceBlockingSessionIds] = useState<Set<string>>(() => new Set())
   const toastSequenceRef = useRef(0)
-  const startupConnectionAttemptedRef = useRef(false)
   const connectingSessionsRef = useRef(new Set<string>())
   const directoryLoadIdsRef = useRef(new Map<string, number>())
   const contextMenuAnchorRef = useRef<HTMLElement | null>(null)
   const sessionContextMenuRef = useRef<HTMLDivElement>(null)
-  const activeSessionIdRef = useRef(activeSessionId)
   const previewActionsRef = useRef(new Map<string, SessionPreviewActions>())
-  activeSessionIdRef.current = activeSessionId
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
   const patchSession = useCallback((sessionId: string, patch: Partial<SessionTab>) => {
@@ -157,6 +76,30 @@ export default function App() {
   const showToast = useCallback((kind: ToastNotice['kind'], message: string, action?: ToastNotice['action']) => {
     setToast({ id: ++toastSequenceRef.current, kind, message, action })
   }, [])
+  const activeSession = useMemo(
+    () => sessions.find((session) => session.id === activeSessionId) ?? null,
+    [sessions, activeSessionId],
+  )
+  const connectedProfileId = activeSession?.status === 'connected' ? activeSession.profileId : null
+  const connectedSessionId = connectedProfileId ? activeSessionId : null
+  const {
+    currentPath,
+    entries,
+    loading,
+    viewMode,
+    sort,
+    highlightedPath,
+    breadcrumbs,
+    sortedEntries,
+    toggleSort,
+  } = useFileListing({ activeSession, viewModeDefault, patchSession })
+  const {
+    states: performanceMonitorStates,
+    panelOpen: performancePanelOpen,
+    setPanelOpen: setPerformancePanelOpen,
+    removeSessionStates: removeSessionPerformanceState,
+    refresh: refreshPerformance,
+  } = usePerformanceMonitoring({ connectedSessionId, sessionsRef, showToast })
   const setSearchOpen = useCallback((sessionId: string, open: boolean) => {
     setSearchOpenSessionIds((current) => {
       if (current.has(sessionId) === open) return current
@@ -205,13 +148,6 @@ export default function App() {
     setWorkspaceOpenSessionIds((current) => {
       const next = new Set(current)
       for (const sessionId of sessionIds) next.delete(sessionId)
-      return next
-    })
-  }, [])
-  const removeSessionPerformanceState = useCallback((sessionIds: string[]) => {
-    setPerformanceMonitorStates((current) => {
-      const next = { ...current }
-      for (const sessionId of sessionIds) delete next[sessionId]
       return next
     })
   }, [])
@@ -281,73 +217,21 @@ export default function App() {
     onPerformanceThresholdsChange: setPerformanceThresholds,
   })
 
-  const activeSession = useMemo(
-    () => sessions.find((session) => session.id === activeSessionId) ?? null,
-    [sessions, activeSessionId],
-  )
-  const connectedProfileId = activeSession?.status === 'connected' ? activeSession.profileId : null
-  const connectedSessionId = connectedProfileId ? activeSessionId : null
-  const setPerformancePanel = useCallback((open: boolean) => setPerformancePanelOpen(open), [])
-  const currentPath = activeSession?.currentPath ?? '/'
-  const entries = activeSession?.entries ?? []
-  const loading = activeSession?.loading ?? false
-  const viewMode = activeSession?.viewMode ?? viewModeDefault
-  const sort = activeSession?.sort ?? { column: 'name' as SortColumn, direction: 'ascending' as SortDirection }
-  const highlightedPath = activeSession?.highlightedPath ?? null
+  const {
+    scriptCommandDialog,
+    scriptExecutionDialog,
+    setScriptCommandDialog,
+    requestScriptCommandEdit,
+    runScript,
+    submitScriptCommand,
+    closeScriptExecutionDialog,
+    stopScriptExecution,
+  } = useScriptExecution({ activeSessionId: activeSession?.id, sessionsRef, setBrowserContextMenu, showToast })
   const connectedProfile = useMemo(
     () => profiles.find((profile) => profile.id === activeSession?.profileId) ?? null,
     [profiles, activeSession?.profileId],
   )
 
-  useEffect(() => window.remoteFiles.onPerformanceUpdate((event: PerformanceMonitorState) => {
-    if (!sessionsRef.current.some((session) => session.id === event.sessionId)) return
-    setPerformanceMonitorStates((current) => {
-      const previous = current[event.sessionId]
-      return previous && previous.version >= event.version
-        ? current
-        : { ...current, [event.sessionId]: event }
-    })
-  }), [])
-
-  useEffect(() => {
-    setPerformancePanelOpen(false)
-    if (!connectedSessionId) return
-    const sessionId = connectedSessionId
-    let cancelled = false
-    void window.remoteFiles.activatePerformanceMonitor(sessionId)
-      .then(() => window.remoteFiles.getPerformanceMonitorState(sessionId))
-      .then((state) => {
-        if (cancelled) return
-        setPerformanceMonitorStates((current) => {
-          const previous = current[sessionId]
-          return previous && previous.version > state.version
-            ? current
-            : { ...current, [sessionId]: state }
-        })
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) showToast('error', '启动性能监控失败：' + errorMessage(error))
-      })
-    return () => {
-      cancelled = true
-      void window.remoteFiles.deactivatePerformanceMonitor(sessionId).catch((error: unknown) => {
-        showToast('error', '停止性能监控失败：' + errorMessage(error))
-      })
-    }
-  }, [connectedSessionId, showToast])
-
-  const refreshPerformance = useCallback((sessionId: string) => {
-    void window.remoteFiles.refreshPerformanceMonitor(sessionId).catch((error: unknown) => {
-      showToast('error', '刷新性能监控失败：' + errorMessage(error))
-    })
-  }, [showToast])
-  const clipboardMatchesProfile = Boolean(remoteClipboard && connectedProfile
-    && remoteClipboard.profile.id === connectedProfile.id
-    && remoteClipboard.profile.host === connectedProfile.host
-    && remoteClipboard.profile.port === connectedProfile.port
-    && remoteClipboard.profile.username === connectedProfile.username)
-  const canPasteRemote = Boolean(clipboardMatchesProfile && activeSession?.kind === 'sftp'
-    && activeSession.status === 'connected' && !activeRemoteCopy && !activeRemoteMove)
   const commandAliases = useCommandAliases({
     profiles,
     showToast,
@@ -357,15 +241,6 @@ export default function App() {
     void openSettingsDialog()
   }
   const closeShortcutGuide = useCallback(() => setShortcutGuideOpen(false), [])
-  const pendingHostKey = pendingHostKeys[0] ?? null
-  const modalOpen = Boolean(
-    profileDialog || profileDeleteDialog || createDirectoryDialog || scriptCommandDialog || scriptExecutionDialog || settingsForm
-      || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
-      || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || activeRemoteMove?.conflict
-      || activeRemoteCopy?.conflict || remoteOperationDetailsOpen
-      || (activeSessionId && workspaceBlockingSessionIds.has(activeSessionId))
-      || sessionChooserOpen || shortcutGuideOpen,
-  )
   const offlineProfiles = useMemo(
     () => {
       const connectionTimes = new Map(
@@ -389,21 +264,6 @@ export default function App() {
   }, [recentConnections])
 
   useEffect(() => {
-    const openSearchShortcut = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f') return
-      if (shortcutGuideOpen) {
-        event.preventDefault()
-        return
-      }
-      if (activeSession?.kind !== 'sftp' || activeSession.status !== 'connected') return
-      event.preventDefault()
-      if (!searchOpenSessionIds.has(activeSession.id)) setSearchOpen(activeSession.id, true)
-    }
-    window.addEventListener('keydown', openSearchShortcut)
-    return () => window.removeEventListener('keydown', openSearchShortcut)
-  }, [activeSession, searchOpenSessionIds, setSearchOpen, shortcutGuideOpen])
-
-  useEffect(() => {
     const removeClosedListener = window.remoteFiles.onConnectionClosed((event) => {
       const session = sessionsRef.current.find((candidate) => candidate.id === event.sessionId)
       if (!session) return
@@ -413,37 +273,6 @@ export default function App() {
     })
     return removeClosedListener
   }, [activeSessionId, patchSession, removeSessionPerformanceState, showToast])
-
-  useEffect(() => window.remoteFiles.onScriptExecutionEvent((event: ScriptExecutionEvent) => {
-    setScriptExecutionDialog((current) => {
-      if (!current || current.request.requestId !== event.requestId) return current
-      if (event.type === 'output') {
-        return { ...current, output: [...current.output, { stream: event.stream, data: event.data }] }
-      }
-      if (event.type === 'completed') return { ...current, status: 'completed', message: '退出码 0' }
-      if (event.type === 'cancelled') return { ...current, status: 'cancelled', message: null }
-      return { ...current, status: 'failed', message: event.message }
-    })
-  }), [])
-
-  useEffect(() => window.remoteFiles.onRemoteMoveEvent((event) => {
-    if (event.type === 'conflict') {
-      setActiveRemoteMove((current) => current?.requestId === event.conflict.requestId
-        ? { ...current, conflict: event.conflict, decisionPending: false }
-        : current)
-      return
-    }
-    setActiveRemoteMove((current) => current?.requestId === event.progress.requestId
-      ? { ...current, progress: event.progress }
-      : current)
-  }), [])
-
-  useEffect(() => window.remoteFiles.onRemoteCopyEvent((event: RemoteCopyEvent) => {
-    if (event.type !== 'conflict') return
-    setActiveRemoteCopy((current) => current?.requestId === event.conflict.requestId
-      ? { ...current, conflict: event.conflict, decisionPending: false }
-      : current)
-  }), [])
 
   useEffect(() => {
     if (!sessionContextMenu) return
@@ -516,766 +345,140 @@ export default function App() {
     showToast,
   })
 
-  const connectSession = async (session: SessionTab, profile: ServerProfile) => {
-    if (connectingSessionsRef.current.has(session.id)) return
-    connectingSessionsRef.current.add(session.id)
-    patchSession(session.id, { status: 'connecting', error: null })
-    try {
-      const result = await window.remoteFiles.connect(
-        session.id,
-        profile.id,
-        session.kind,
-        100,
-        30,
-        session.kind === 'terminal' ? session.startPath : '',
-      )
-      if (!sessionsRef.current.some((candidate) => candidate.id === session.id)) {
-        if (result.ok) await window.remoteFiles.disconnect(session.id)
-        return
-      }
-      if (!result.ok) {
-        const latestSession = sessionsRef.current.find((candidate) => candidate.id === session.id)
-        if (result.reason === 'other' && result.message === '连接已取消'
-          && latestSession?.status !== 'connecting') return
-        if (result.reason === 'host-key-unknown') {
-          patchSession(session.id, { status: 'awaiting-trust' })
-          setPendingHostKeys((current) => [...current, {
-            sessionId: session.id,
-            profile,
-            kind: session.kind,
-            startPath: session.startPath,
-            fingerprint: result.fingerprint,
-          }])
-        } else if (result.reason === 'host-key-changed') {
-          patchSession(session.id, { status: 'awaiting-trust' })
-          setPendingHostKeys((current) => [...current, {
-            sessionId: session.id,
-            profile,
-            kind: session.kind,
-            startPath: session.startPath,
-            fingerprint: result.fingerprint,
-            previousFingerprint: result.previousFingerprint,
-          }])
-        } else {
-          const message = connectFailureText(result)
-          patchSession(session.id, { status: 'disconnected', error: message })
-          if (activeSessionId === session.id) showToast('error', message)
-        }
-        return
-      }
-      patchSession(session.id, { status: 'connected', error: null })
-      setRecentConnections((current) => [
-        { profileId: profile.id, connectedAt: Date.now() },
-        ...current.filter((connection) => connection.profileId !== profile.id),
-      ])
-      if (session.kind === 'sftp') {
-        const path = session.currentPath || result.path
-        patchSession(session.id, {
-          currentPath: path,
-          history: session.history.length ? session.history : [path],
-          historyIndex: session.history.length ? session.historyIndex : 0,
-        })
-        await loadDirectory(session.id, path)
-      }
-    } catch (error) {
-      const message = errorMessage(error)
-      patchSession(session.id, { status: 'disconnected', error: message })
-      if (activeSessionId === session.id) showToast('error', message)
-    } finally {
-      connectingSessionsRef.current.delete(session.id)
-    }
-  }
-
-  const openSession = (profile: ServerProfile, kind: SessionKind, startPath = '', source?: SessionTab) => {
-    const id = crypto.randomUUID()
-    const currentPath = kind === 'sftp' ? source?.currentPath || '/' : ''
-    const session: SessionTab = {
-      id,
-      profileId: profile.id,
-      kind,
-      status: 'connecting',
-      currentPath,
-      startPath,
-      entries: [],
-      selectedPaths: [],
-      loading: kind === 'sftp',
-      viewMode: source?.viewMode ?? viewModeDefault,
-      sort: source?.sort ?? { column: 'name', direction: 'ascending' },
-      highlightedPath: null,
-      history: kind === 'sftp' ? [currentPath] : [],
-      historyIndex: kind === 'sftp' ? 0 : -1,
-      error: null,
-    }
-    setBrowserContextMenu(null)
-    setSessionContextMenu(null)
-    setActiveSessionId(id)
-    const nextSessions = [...sessionsRef.current, session]
-    sessionsRef.current = nextSessions
-    setSessions(nextSessions)
-    setSessionChooserOpen(false)
-    void connectSession(session, profile)
-  }
-
-  const requestScriptCommandEdit = (entry: Pick<RemoteEntry, 'name' | 'path'>, sessionId = activeSession?.id) => {
-    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    if (!session || session.kind !== 'sftp' || session.status !== 'connected') return
-    setBrowserContextMenu(null)
-    setScriptCommandDialog({
-      entry,
-      sessionId: session.id,
-      command: scriptExecutionCommand(entry.name),
-    })
-  }
-
-  const startScriptExecution = (entry: Pick<RemoteEntry, 'name' | 'path'>, command: string, sessionId = activeSession?.id) => {
-    setBrowserContextMenu(null)
-    setScriptCommandDialog(null)
-    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    if (!session || session.kind !== 'sftp' || session.status !== 'connected') {
-      showToast('error', 'SFTP 会话已断开，无法执行脚本')
-      return
-    }
-    const request: ScriptExecutionRequest = {
-      requestId: crypto.randomUUID(),
-      sessionId: session.id,
-      scriptPath: entry.path,
-      command,
-    }
-    setScriptExecutionDialog({ request, name: entry.name, status: 'starting', output: [], message: null })
-    void window.remoteFiles.startScriptExecution(request).then(() => {
-      setScriptExecutionDialog((current) => current?.request.requestId === request.requestId && current.status === 'starting'
-        ? { ...current, status: 'running', message: null }
-        : current)
-    }).catch((error) => {
-      setScriptExecutionDialog((current) => current?.request.requestId === request.requestId
-        ? { ...current, status: 'failed', message: errorMessage(error) }
-        : current)
-    })
-  }
-
-  const submitScriptCommand = (event: ReactFormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!scriptCommandDialog || !scriptCommandDialog.command.trim()) return
-    if (scriptCommandDialog.command.length > 65535) {
-      showToast('error', '命令长度不能超过 65535 个字符')
-      return
-    }
-    startScriptExecution(scriptCommandDialog.entry, scriptCommandDialog.command, scriptCommandDialog.sessionId)
-  }
-
-  const closeScriptExecutionDialog = () => {
-    if (scriptExecutionDialog && ['starting', 'running', 'cancelling'].includes(scriptExecutionDialog.status)) {
-      void window.remoteFiles.cancelScriptExecution(scriptExecutionDialog.request.requestId)
-    }
-    setScriptExecutionDialog(null)
-  }
-
-  const stopScriptExecution = () => {
-    if (!scriptExecutionDialog || !['starting', 'running'].includes(scriptExecutionDialog.status)) return
-    const requestId = scriptExecutionDialog.request.requestId
-    setScriptExecutionDialog((current) => current?.request.requestId === requestId
-      ? { ...current, status: 'cancelling', message: null }
-      : current)
-    void window.remoteFiles.cancelScriptExecution(requestId)
-  }
-
-  useEffect(() => {
-    if (!profileDataLoaded || startupConnectionAttemptedRef.current) return
-    startupConnectionAttemptedRef.current = true
-    if (!startupConnection || sessionsRef.current.length > 0) return
-    const profile = profiles.find((candidate) => candidate.id === startupConnection.profileId)
-    if (!profile) {
-      showToast('error', '启动连接所选服务器不存在，请在设置中重新选择')
-      return
-    }
-    openSession(profile, startupConnection.kind)
-  }, [profileDataLoaded, startupConnection, profiles, showToast])
-
-  const createChosenSession = (profileId: string, kind: SessionKind) => {
-    const profile = profiles.find((candidate) => candidate.id === profileId)
-    if (profile) openSession(profile, kind)
-  }
-
-  const duplicateSession = (sessionId: string) => {
-    const source = sessionsRef.current.find((session) => session.id === sessionId)
-    const profile = profiles.find((candidate) => candidate.id === source?.profileId)
-    if (!source || !profile) return
-    openSession(profile, source.kind, source.startPath, source)
-  }
-
-  const openSessionContextMenu = (sessionId: string, x: number, y: number) => {
-    const menuWidth = 204
-    const menuHeight = 48
-    const inset = 8
-    setBrowserContextMenu(null)
-    setSessionContextMenu({
-      sessionId,
-      x: Math.max(inset, Math.min(x, window.innerWidth - menuWidth - inset)),
-      y: Math.max(inset, Math.min(y, window.innerHeight - menuHeight - inset)),
-    })
-  }
-
-  const handleSessionTabContextMenuKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, sessionId: string) => {
-    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
-    event.preventDefault()
-    const bounds = event.currentTarget.getBoundingClientRect()
-    openSessionContextMenu(sessionId, bounds.left + 12, bounds.bottom)
-  }
-
-  const reconnectSession = (sessionId: string) => {
-    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    const profile = profiles.find((candidate) => candidate.id === session?.profileId)
-    if (!session || !profile) return
-    setActiveSessionId(session.id)
-    void connectSession(session, profile)
-  }
-
-  const closeSession = (sessionId: string) => {
-    const previousSessions = sessionsRef.current
-    const closing = previousSessions.find((session) => session.id === sessionId)
-    if (!closing) return
-    const previousIndex = previousSessions.findIndex((session) => session.id === sessionId)
-    directoryLoadIdsRef.current.delete(sessionId)
-    const remaining = previousSessions.filter((session) => session.id !== sessionId)
-    sessionsRef.current = remaining
-    setSessions(remaining)
-    setPendingHostKeys((current) => current.filter((pending) => pending.sessionId !== sessionId))
-    removeSessionWorkspaceState([sessionId])
-    removeSessionPerformanceState([sessionId])
-    previewActionsRef.current.delete(sessionId)
-    if (activeSessionId === sessionId) {
-      const next = remaining[previousIndex] ?? remaining[previousIndex - 1]
-      setActiveSessionId(next?.id ?? null)
-    }
-    setBrowserContextMenu(null)
-    setSessionContextMenu(null)
-    void window.remoteFiles.disconnect(sessionId).catch((error) => showToast('error', errorMessage(error)))
-  }
-
-  const activateSession = (sessionId: string) => {
-    if (activeSessionId === sessionId) return
-    setBrowserContextMenu(null)
-    setCreateDirectoryDialog(null)
-    setActiveSessionId(sessionId)
-  }
-
-  const goHome = () => {
-    setBrowserContextMenu(null)
-    setCreateDirectoryDialog(null)
-    setActiveSessionId(null)
-  }
-
-  const navigateSession = (sessionId: string, remotePath: string): Promise<boolean> => {
-    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    if (session?.kind !== 'sftp' || session.status !== 'connected') return Promise.resolve(false)
-    const nextHistory = session.history.slice(0, session.historyIndex + 1)
-    if (nextHistory.at(-1) !== remotePath) nextHistory.push(remotePath)
-    updateSession(sessionId, (current) => ({
-      ...current,
-      history: nextHistory,
-      historyIndex: nextHistory.length - 1,
-    }))
-    return loadDirectory(sessionId, remotePath).then((loaded) => {
-      if (!loaded && sessionsRef.current.some((candidate) => candidate.id === sessionId)) {
-        updateSession(sessionId, (current) => ({ ...current, history: session.history, historyIndex: session.historyIndex }))
-      }
-      return loaded
-    })
-  }
-
-  const navigate = (remotePath: string): Promise<boolean> => activeSession
-    ? navigateSession(activeSession.id, remotePath)
-    : Promise.resolve(false)
-
-  const locateSearchResult = async (result: SearchResultTarget, sessionId: string) => {
-    setSearchOpen(sessionId, false)
-    activateSession(sessionId)
-    const loaded = await navigateSession(sessionId, getParentPath(result.path))
-    if (loaded) patchSession(sessionId, { highlightedPath: result.path })
-  }
-
-  const movePathHistory = (offset: -1 | 1) => {
-    if (!activeSession || activeSession.kind !== 'sftp' || activeSession.status !== 'connected') return
-    const previousIndex = activeSession.historyIndex
-    const nextIndex = previousIndex + offset
-    const remotePath = activeSession.history[nextIndex]
-    if (remotePath === undefined) return
-
-    patchSession(activeSession.id, { historyIndex: nextIndex })
-    void loadDirectory(activeSession.id, remotePath).then((loaded) => {
-      if (!loaded) patchSession(activeSession.id, { historyIndex: previousIndex })
-    })
-  }
-
-  const trustAndReconnect = async () => {
-    if (!pendingHostKey) return
-    const trust: TrustHostKeyInput = {
-      profileId: pendingHostKey.profile.id,
-      fingerprint: pendingHostKey.fingerprint,
-      previousFingerprint: pendingHostKey.previousFingerprint,
-    }
-    try {
-      await window.remoteFiles.trustHostKey(trust)
-      setPendingHostKeys((current) => current.filter((pending) => pending.sessionId !== pendingHostKey.sessionId))
-      const session = sessionsRef.current.find((candidate) => candidate.id === pendingHostKey.sessionId)
-      if (session) void connectSession(session, pendingHostKey.profile)
-    } catch (error) {
-      setPendingHostKeys((current) => current.filter((pending) => pending.sessionId !== pendingHostKey.sessionId))
-      patchSession(pendingHostKey.sessionId, { status: 'disconnected', error: errorMessage(error) })
-      showToast('error', errorMessage(error))
-    }
-  }
-
-  const dismissHostKey = () => {
-    if (!pendingHostKey) return
-    setPendingHostKeys((current) => current.filter((pending) => pending.sessionId !== pendingHostKey.sessionId))
-    patchSession(pendingHostKey.sessionId, { status: 'disconnected', error: '服务器指纹尚未验证' })
-  }
-
-  const openBrowserContextMenu = (menu: BrowserContextMenuState) => {
-    setSessionContextMenu(null)
-    contextMenuAnchorRef.current = menu.anchor
-    setBrowserContextMenu({ ...menu, x: Math.max(8, menu.x), y: Math.max(8, menu.y) })
-  }
-
-  const openEntryContextMenu = (entries: RemoteEntry[], x: number, y: number, anchor: HTMLElement) => {
-    if (entries.length === 0) return
-    openBrowserContextMenu(entries.length === 1
-      ? { kind: 'single-entry', entry: entries[0], canPaste: canPasteRemote, x, y, anchor }
-      : { kind: 'multiple-entries', entries: [...entries], canPaste: canPasteRemote, x, y, anchor })
-  }
-
-  const openDirectoryContextMenu = (x: number, y: number, anchor: HTMLElement) => {
-    openBrowserContextMenu({
-      kind: 'directory-background',
-      directory: currentPath,
-      canPaste: canPasteRemote,
-      sort,
-      x,
-      y,
-      anchor,
-    })
-  }
-
-  const dispatchSftpMenuAction = (action: SftpMenuAction, context: SftpContextMenuContext, sessionId: string) => {
-    setBrowserContextMenu(null)
-    if (context.kind === 'search-result'
-      && (action.type === 'run-script' || action.type === 'adjust-script-command')) setSearchOpen(sessionId, false)
-    const entry = context.kind === 'single-entry' ? context.entry
-      : context.kind === 'search-result' ? context.result
-        : null
-    const entries = context.kind === 'single-entry' ? [context.entry]
-      : context.kind === 'multiple-entries' ? context.entries
-        : null
-    switch (action.type) {
-      case 'preview':
-        if (entry) void previewActionsRef.current.get(sessionId)?.previewFile(entry, action.previewType)
-        break
-      case 'preview-log':
-        if (entry) void previewActionsRef.current.get(sessionId)?.previewLogFile(entry)
-        break
-      case 'run-script':
-        if (entry) startScriptExecution(entry, scriptExecutionCommand(entry.name), sessionId)
-        break
-      case 'adjust-script-command':
-        if (entry) requestScriptCommandEdit(entry, sessionId)
-        break
-      case 'download':
-        if (entries) download(entries)
-        break
-      case 'copy':
-        if (entries) copyRemoteSelection(entries)
-        break
-      case 'cut':
-        if (entries) cutRemoteSelection(entries)
-        break
-      case 'paste':
-        if (context.kind === 'directory-background') pasteRemoteEntries(context.directory)
-        else if (context.kind === 'single-entry' && context.entry.type === 'directory') pasteRemoteEntries(context.entry.path)
-        else pasteRemoteEntries(currentPath)
-        break
-      case 'copy-path':
-        if (context.kind === 'single-entry') void copyEntryPath(context.entry)
-        else if (context.kind === 'directory-background') void copyPath(context.directory)
-        break
-      case 'delete':
-        if (entries) requestRemoteEntriesDeletion(entries)
-        break
-      case 'sort-column':
-        if (context.kind === 'directory-background' && activeSession?.kind === 'sftp') {
-          patchSession(activeSession.id, { sort: { ...context.sort, column: action.column } })
-        }
-        break
-      case 'sort-direction':
-        if (context.kind === 'directory-background' && activeSession?.kind === 'sftp') {
-          patchSession(activeSession.id, { sort: { ...context.sort, direction: action.direction } })
-        }
-        break
-      case 'create-directory':
-        setCreateDirectoryDialog({ name: '' })
-        break
-      case 'upload':
-        void uploadFiles()
-        break
-      case 'open-location':
-        if (context.kind === 'search-result') void locateSearchResult(context.result, sessionId)
-        break
-    }
-  }
-
-  const copyPath = async (remotePath: string) => {
-    if (!connectedSessionId) return
-    setBrowserContextMenu(null)
-    try {
-      await window.remoteFiles.copyRemotePath(connectedSessionId, remotePath)
-      showToast('info', '路径已复制')
-    } catch (error) {
-      showToast('error', `复制路径失败：${errorMessage(error)}`)
-    }
-  }
-
-  const copyEntryPath = (entry: RemoteEntry) => copyPath(entry.path)
-
-  const setRemoteSelectionClipboard = (selectedEntries: RemoteEntry[], mode: RemoteClipboard['mode']) => {
-    if (!connectedProfile || !connectedSessionId || selectedEntries.length === 0) return
-    setRemoteClipboard({
-      mode,
-      profile: {
-        id: connectedProfile.id,
-        host: connectedProfile.host,
-        port: connectedProfile.port,
-        username: connectedProfile.username,
-      },
-      sourcePaths: selectedEntries.map((entry) => entry.path),
-    })
-    setBrowserContextMenu(null)
-    showToast('info', `已${mode === 'copy' ? '复制' : '剪切'} ${selectedEntries.length} 项，可粘贴到目标目录`)
-  }
-
-  const copyRemoteSelection = (selectedEntries: RemoteEntry[]) => setRemoteSelectionClipboard(selectedEntries, 'copy')
-  const cutRemoteSelection = (selectedEntries: RemoteEntry[]) => setRemoteSelectionClipboard(selectedEntries, 'cut')
-
-  const submitCreateDirectory = async (event: ReactFormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!connectedSessionId || !createDirectoryDialog) return
-    const sessionId = connectedSessionId
-    const directory = currentPath
-    const { name } = createDirectoryDialog
-    setCreatingDirectory(true)
-    try {
-      await window.remoteFiles.createRemoteDirectory(sessionId, directory, name)
-      setCreateDirectoryDialog(null)
-      if (await loadDirectory(sessionId, directory)) {
-        showToast('info', '文件夹已创建')
-      }
-    } catch (error) {
-      showToast('error', `创建失败：${errorMessage(error)}`)
-    } finally {
-      setCreatingDirectory(false)
-    }
-  }
-
-  const requestRemoteEntriesDeletion = (entries: RemoteEntry[]) => {
-    if (entries.length === 0) return
-    if (!connectedSessionId) return
-    setBrowserContextMenu(null)
-    setRemoteEntryDeleteError(null)
-    setRemoteEntryDeleteDialog({ entries, sessionId: connectedSessionId, directory: currentPath })
-  }
-
-  const cancelRemoteEntryDeletion = () => {
-    if (remoteEntryDeleting) return
-    setRemoteEntryDeleteDialog(null)
-    setRemoteEntryDeleteError(null)
-  }
-
-  const confirmRemoteEntryDeletion = async () => {
-    if (!remoteEntryDeleteDialog || remoteEntryDeleting) return
-    const { entries, sessionId, directory } = remoteEntryDeleteDialog
-    setRemoteEntryDeleting(true)
-    setRemoteEntryDeleteError(null)
-    const deleted: RemoteEntry[] = []
-    const failed: { entry: RemoteEntry; error: string }[] = []
-    try {
-      for (const entry of entries) {
-        try {
-          await window.remoteFiles.deleteRemoteEntry(sessionId, entry.path)
-          deleted.push(entry)
-        } catch (error) {
-          failed.push({ entry, error: errorMessage(error) })
-        }
-      }
-    } finally {
-      setRemoteEntryDeleting(false)
-    }
-
-    if (deleted.length > 0) {
-      const deletedPaths = new Set(deleted.map((entry) => entry.path))
-      updateSession(sessionId, (session) => ({
-        ...session,
-        entries: session.entries.filter((item) => !deletedPaths.has(item.path)),
-      }))
-      await loadDirectory(sessionId, directory)
-    }
-
-    setRemoteEntryDeleteDialog(failed.length > 0
-      ? { entries: failed.map(({ entry }) => entry), sessionId, directory }
-      : null)
-    setRemoteEntryDeleteError(failed.length > 0
-      ? failed.map(({ entry, error }) => `${entry.name}: ${error}`).join('；')
-      : null)
-    if (deleted.length > 0) showToast('info', `已删除 ${deleted.length} 项`)
-  }
-
-  const showRemoteOperationResult = (operation: 'move' | 'copy', result: RemoteMoveResult | RemoteCopyResult) => {
-    const label = operation === 'copy' ? '复制' : '移动'
-    const completedCount = operation === 'copy'
-      ? (result as RemoteCopyResult).copiedCount
-      : (result as RemoteMoveResult).movedCount
-    const status = result.status === 'cancelled' ? '已取消' : '已完成'
-    const counts = `已${label} ${completedCount} 项，跳过 ${result.skippedCount} 项，失败 ${result.failedCount} 项`
-      + (result.cancelledCount > 0 ? `，未完成 ${result.cancelledCount} 项` : '')
-    setRemoteOperationSummary({ operation, result })
-    setRemoteOperationDetailsOpen(false)
-    showToast('info', `远程${label}${status}：${counts}`, result.failedCount > 0
-      ? { label: `查看${label}详情`, onClick: () => setRemoteOperationDetailsOpen(true) }
-      : undefined)
-  }
-
-  const beginRemoteCopy = (targetDirectory: string) => {
-    const session = activeSession
-    const clipboard = remoteClipboard
-    if (!session || session.kind !== 'sftp' || session.status !== 'connected'
-      || !clipboard || !canPasteRemote || activeRemoteCopy || activeRemoteMove) return
-    const requestId = window.crypto.randomUUID()
-    const sourcePaths = [...clipboard.sourcePaths]
-    setBrowserContextMenu(null)
-    setActiveRemoteCopy({ requestId, sessionId: session.id, targetDirectory, conflict: null, decisionPending: false })
-    void (async () => {
-      try {
-        const result = await window.remoteFiles.copyRemoteEntries({
-          requestId,
-          sessionId: session.id,
-          sourcePaths,
-          targetDirectory,
-        })
-        showRemoteOperationResult('copy', result)
-      } catch (error) {
-        showToast('error', `复制失败：${errorMessage(error)}`)
-      } finally {
-        setActiveRemoteCopy((current) => current?.requestId === requestId ? null : current)
-        if (sessionsRef.current.some((candidate) => candidate.id === session.id
-          && candidate.status === 'connected' && candidate.currentPath === targetDirectory)) {
-          await loadDirectory(session.id, targetDirectory)
-        }
-      }
-    })()
-  }
-
-  const decideRemoteCopyConflict = async (decision: RemoteCopyDecision) => {
-    const copy = activeRemoteCopy
-    const conflict = copy?.conflict
-    if (!copy || !conflict || copy.decisionPending) return
-    setActiveRemoteCopy((current) => current?.requestId === copy.requestId
-      ? { ...current, decisionPending: true }
-      : current)
-    try {
-      const accepted = await window.remoteFiles.decideRemoteCopy(copy.requestId, conflict.conflictId, decision)
-      if (!accepted) throw new Error('复制冲突已失效，请重试')
-      setActiveRemoteCopy((current) => current?.requestId === copy.requestId && current.conflict?.conflictId === conflict.conflictId
-        ? { ...current, conflict: null, decisionPending: false }
-        : current)
-    } catch (error) {
-      showToast('error', `提交复制决策失败：${errorMessage(error)}`)
-      setActiveRemoteCopy((current) => current?.requestId === copy.requestId
-        ? { ...current, decisionPending: false }
-        : current)
-    }
-  }
-
-  const beginRemoteMove = (sourcePaths: string[], targetDirectory: string, consumeCutClipboard = false) => {
-    const session = activeSession
-    if (!session || session.kind !== 'sftp' || session.status !== 'connected' || activeRemoteMove || activeRemoteCopy) return
-    const cutClipboard = consumeCutClipboard && remoteClipboard?.mode === 'cut' ? remoteClipboard : null
-    const requestId = window.crypto.randomUUID()
-    const profileId = session.profileId
-    const pathsToMove = [...sourcePaths]
-    setActiveRemoteMove({
-      requestId,
-      sessionId: session.id,
-      progress: { requestId, sessionId: session.id, completedCount: 0, totalCount: pathsToMove.length, currentPath: null },
-      conflict: null,
-      decisionPending: false,
-    })
-    void (async () => {
-      try {
-        const result = await window.remoteFiles.moveRemoteEntries({
-          requestId,
-          sessionId: session.id,
-          sourcePaths: pathsToMove,
-          targetDirectory,
-        })
-        showRemoteOperationResult('move', result)
-        if (cutClipboard && cutClipboard.sourcePaths.length === pathsToMove.length
-          && cutClipboard.sourcePaths.every((path, index) => path === pathsToMove[index])) {
-          const completedPaths = new Set(result.results
-            .filter((item) => item.status === 'moved' && !item.message)
-            .map((item) => item.sourcePath))
-          const remainingPaths = pathsToMove.filter((path) => !completedPaths.has(path))
-          setRemoteClipboard((current) => current?.mode === 'cut'
-            && current.profile.id === cutClipboard.profile.id
-            && current.profile.host === cutClipboard.profile.host
-            && current.profile.port === cutClipboard.profile.port
-            && current.profile.username === cutClipboard.profile.username
-            && current.sourcePaths.length === cutClipboard.sourcePaths.length
-            && current.sourcePaths.every((path, index) => path === cutClipboard.sourcePaths[index])
-            ? remainingPaths.length > 0 ? { ...current, sourcePaths: current.sourcePaths.filter((path) => remainingPaths.includes(path)) } : null
-            : current)
-        }
-      } catch (error) {
-        showToast('error', `移动失败：${errorMessage(error)}`)
-      } finally {
-        setActiveRemoteMove((current) => current?.requestId === requestId ? null : current)
-        const affectedDirectories = new Set([
-          ...pathsToMove.map(getParentPath),
-          targetDirectory,
-          getParentPath(targetDirectory),
-        ])
-        const sessionsToRefresh = sessionsRef.current.filter((candidate) => candidate.profileId === profileId
-          && candidate.kind === 'sftp' && candidate.status === 'connected'
-          && affectedDirectories.has(candidate.currentPath))
-        await Promise.all(sessionsToRefresh.map((candidate) => loadDirectory(candidate.id, candidate.currentPath)))
-      }
-    })()
-  }
-
-  const pasteRemoteEntries = (targetDirectory: string) => {
-    if (remoteClipboard?.mode === 'cut') beginRemoteMove(remoteClipboard.sourcePaths, targetDirectory, true)
-    else beginRemoteCopy(targetDirectory)
-  }
-
-  const decideRemoteMoveConflict = async (decision: RemoteMoveDecision) => {
-    const move = activeRemoteMove
-    const conflict = move?.conflict
-    if (!move || !conflict || move.decisionPending) return
-    setActiveRemoteMove((current) => current?.requestId === move.requestId
-      ? { ...current, decisionPending: true }
-      : current)
-    try {
-      const accepted = await window.remoteFiles.decideRemoteMove(move.requestId, conflict.conflictId, decision)
-      if (!accepted) throw new Error('移动冲突已失效，请重试')
-      setActiveRemoteMove((current) => current?.requestId === move.requestId && current.conflict?.conflictId === conflict.conflictId
-        ? { ...current, conflict: null, decisionPending: false }
-        : current)
-    } catch (error) {
-      showToast('error', `提交移动决策失败：${errorMessage(error)}`)
-      setActiveRemoteMove((current) => current?.requestId === move.requestId
-        ? { ...current, decisionPending: false }
-        : current)
-    }
-  }
-
-  const cancelActiveRemoteMove = () => {
-    const move = activeRemoteMove
-    if (!move) return
-    void window.remoteFiles.cancelRemoteMove(move.requestId).then((cancelled) => {
-      if (!cancelled && activeRemoteMove?.requestId === move.requestId) showToast('info', '移动任务已结束')
-    }).catch((error) => showToast('error', `取消移动失败：${errorMessage(error)}`))
-  }
-
-  const breadcrumbs = useMemo(() => {
-    const parts = currentPath.split('/').filter(Boolean)
-    const items = [{ label: '/', path: '/' }]
-    let path = ''
-    for (const part of parts) {
-      path += `/${part}`
-      items.push({ label: part, path })
-    }
-    return items
-  }, [currentPath])
-
-  const sortedEntries = useMemo(() => [...entries].sort((left, right) => {
-    if (left.type === 'directory' && right.type !== 'directory') return -1
-    if (left.type !== 'directory' && right.type === 'directory') return 1
-
-    let comparison = 0
-    if (sort.column === 'name') {
-      comparison = entryNameCollator.compare(left.name, right.name)
-    } else if (sort.column === 'size') {
-      comparison = left.type === 'directory' ? 0 : left.size - right.size
-    } else if (sort.column === 'type') {
-      comparison = entryNameCollator.compare(entryTypeLabels[left.type], entryTypeLabels[right.type])
-      if (comparison === 0 && left.type === 'file' && right.type === 'file') {
-        comparison = entryNameCollator.compare(getEntryTypeExtension(left.name), getEntryTypeExtension(right.name))
-      }
-    } else if (sort.column === 'modifiedAt') {
-      if (left.modifiedAt === null || right.modifiedAt === null) {
-        if (left.modifiedAt === null && right.modifiedAt !== null) return 1
-        if (left.modifiedAt !== null && right.modifiedAt === null) return -1
-      } else {
-        comparison = Date.parse(left.modifiedAt) - Date.parse(right.modifiedAt)
-      }
-    } else {
-      comparison = entryNameCollator.compare(left.permissions, right.permissions)
-    }
-
-    if (comparison === 0) return entryNameCollator.compare(left.name, right.name)
-    return sort.direction === 'ascending' ? comparison : -comparison
-  }), [entries, sort])
-
-  useEffect(() => {
-    const handleRemoteFileShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing || modalOpen
-        || (activeSessionId && workspaceOpenSessionIds.has(activeSessionId))
-        || browserContextMenu || sessionContextMenu) return
-      if (!activeSession || activeSession.kind !== 'sftp' || activeSession.status !== 'connected') return
-      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
-
-      const target = event.target
-      if (target instanceof HTMLElement
-        && (target.isContentEditable || target.closest('input, textarea, select, [contenteditable="true"]'))) return
-
-      const key = event.key.toLowerCase()
-      if (key === 'c' || key === 'x') {
-        const selectedPaths = new Set(activeSession.selectedPaths)
-        const selectedEntries = sortedEntries.filter((entry) => selectedPaths.has(entry.path)
-          && (entry.type === 'file' || entry.type === 'directory'))
-        if (selectedEntries.length === 0) return
-        event.preventDefault()
-        if (key === 'c') copyRemoteSelection(selectedEntries)
-        else cutRemoteSelection(selectedEntries)
-        return
-      }
-
-      if (key === 'v' && canPasteRemote) {
-        event.preventDefault()
-        pasteRemoteEntries(activeSession.currentPath)
-      }
-    }
-
-    window.addEventListener('keydown', handleRemoteFileShortcut)
-    return () => window.removeEventListener('keydown', handleRemoteFileShortcut)
-  }, [
+  const {
+    activeRemoteMove,
+    activeRemoteCopy,
+    canPasteRemote,
+    remoteEntryDeleteDialog,
+    remoteEntryDeleteError,
+    remoteEntryDeleting,
+    remoteOperationSummary,
+    remoteOperationDetailsOpen,
+    setRemoteOperationDetailsOpen,
+    createDirectoryDialog,
+    setCreateDirectoryDialog,
+    creatingDirectory,
+    submitCreateDirectory,
+    requestRemoteEntriesDeletion,
+    cancelRemoteEntryDeletion,
+    confirmRemoteEntryDeletion,
+    copyRemoteSelection,
+    cutRemoteSelection,
+    beginRemoteCopy,
+    beginRemoteMove,
+    pasteRemoteEntries,
+    decideRemoteCopyConflict,
+    decideRemoteMoveConflict,
+    cancelActiveRemoteMove,
+  } = useRemoteOperations({
     activeSession,
+    connectedProfile,
+    connectedSessionId,
+    currentPath,
+    sessionsRef,
+    patchSession,
+    updateSession,
+    loadDirectory,
+    showToast,
+    setBrowserContextMenu,
+  })
+
+  const pendingHostKey = pendingHostKeys[0] ?? null
+  const {
+    startupConnectionAttempted,
+    openSession,
+    createChosenSession,
+    duplicateSession,
+    openSessionContextMenu,
+    handleSessionTabContextMenuKeyDown,
+    reconnectSession,
+    closeSession,
+    activateSession,
+    goHome,
+    navigateSession,
+    navigate,
+    locateSearchResult,
+    movePathHistory,
+    trustAndReconnect,
+    dismissHostKey,
+  } = useSessionOperations({
+    sessions,
+    sessionsRef,
+    profiles,
+    activeSessionId,
+    activeSession,
+    viewModeDefault,
+    pendingHostKey,
+    startupConnection,
+    profileDataLoaded,
+    setSessions,
+    setActiveSessionId,
+    setPendingHostKeys,
+    setRecentConnections,
+    setBrowserContextMenu,
+    setSessionContextMenu,
+    setSessionChooserOpen,
+    setCreateDirectoryDialog,
+    patchSession,
+    updateSession,
+    loadDirectory,
+    removeSessionWorkspaceState,
+    removeSessionPerformanceState,
+    previewActionsRef,
+    directoryLoadIdsRef,
+    connectingSessionsRef,
+    setSearchOpen,
+    showToast,
+  })
+  const { openEntryContextMenu, openDirectoryContextMenu, dispatchSftpMenuAction } = useSftpMenuActions({
+    activeSession,
+    connectedSessionId,
+    currentPath,
+    sort,
+    canPasteRemote,
+    setBrowserContextMenu,
+    setSessionContextMenu,
+    contextMenuAnchorRef,
+    setSearchOpen,
+    previewActionsRef,
+    scriptExecution: { runScript, requestScriptCommandEdit },
+    transfers: { download, uploadFiles },
+    remoteOperations: {
+      copyRemoteSelection,
+      cutRemoteSelection,
+      pasteRemoteEntries,
+      requestRemoteEntriesDeletion,
+      setCreateDirectoryDialog,
+    },
+    locateSearchResult,
+    patchSession,
+    showToast,
+  })
+  const modalOpen = Boolean(
+    profileDialog || profileDeleteDialog || createDirectoryDialog || scriptCommandDialog || scriptExecutionDialog || settingsForm
+      || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
+      || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || activeRemoteMove?.conflict
+      || activeRemoteCopy?.conflict || remoteOperationDetailsOpen
+      || (activeSessionId && workspaceBlockingSessionIds.has(activeSessionId))
+      || sessionChooserOpen || shortcutGuideOpen,
+  )
+
+  useRemoteFileShortcuts({
+    activeSession,
+    activeSessionId,
+    shortcutGuideOpen,
+    searchOpenSessionIds,
+    setSearchOpen,
+    modalOpen,
+    workspaceOpenSessionIds,
     browserContextMenu,
+    sessionContextMenu,
+    sortedEntries,
     canPasteRemote,
     copyRemoteSelection,
     cutRemoteSelection,
-    modalOpen,
     pasteRemoteEntries,
-    sessionContextMenu,
-    sortedEntries,
-    workspaceOpenSessionIds,
-  ])
-
-  const toggleSort = (column: SortColumn) => {
-    if (!activeSession || activeSession.kind !== 'sftp') return
-    patchSession(activeSession.id, {
-      sort: activeSession.sort.column === column
-        ? { column, direction: activeSession.sort.direction === 'ascending' ? 'descending' : 'ascending' }
-        : { column, direction: 'ascending' },
-    })
-  }
+  })
 
   const openSearch = () => {
     if (activeSession?.kind === 'sftp' && activeSession.status === 'connected') setSearchOpen(activeSession.id, true)
@@ -1301,10 +504,8 @@ export default function App() {
     showToast('error', '终端操作失败：' + message)
   }, [showToast])
 
-  const profileForSession = (session: SessionTab) => profiles.find((profile) => profile.id === session.profileId)
-
   if (!profileDataLoaded
-    || (startupConnection && !startupConnectionAttemptedRef.current && sessions.length === 0)) {
+    || (startupConnection && !startupConnectionAttempted && sessions.length === 0)) {
     return (
       <div className="app-shell startup-shell">
         <main className="main-area">
@@ -1367,7 +568,7 @@ export default function App() {
                 state={performanceMonitorStates[connectedSessionId] ?? null}
                 thresholds={performanceThresholds}
                 open={performancePanelOpen}
-                onOpenChange={setPerformancePanel}
+                onOpenChange={setPerformancePanelOpen}
                 onRefresh={refreshPerformance}
               />
             )}
@@ -1397,191 +598,84 @@ export default function App() {
           </div>
         </header>
 
-        <nav className="session-tabbar" role="tablist" aria-label="会话标签">
-          <div className="session-tab-list">
-            {sessions.map((session) => {
-              const profile = profileForSession(session)
-              const isActive = activeSessionId === session.id
-              const kindLabel = session.kind === 'sftp' ? 'SFTP' : 'SSH'
-              const sameKindSessions = sessions.filter((candidate) =>
-                candidate.profileId === session.profileId && candidate.kind === session.kind)
-              const duplicateIndex = sameKindSessions.findIndex((candidate) => candidate.id === session.id)
-              const baseLabel = profile?.name ?? '服务器'
-              const label = sameKindSessions.length > 1 ? `${baseLabel} (${duplicateIndex + 1})` : baseLabel
-              const title = `${label} · ${kindLabel}${session.kind === 'sftp' ? ' · ' + session.currentPath : ''}`
-              return (
-                <div
-                  className={'session-tab ' + (isActive ? 'active' : '')}
-                  key={session.id}
-                  onMouseDown={(event) => {
-                    if (event.button !== 1) return
-                    event.preventDefault()
-                    closeSession(session.id)
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault()
-                    openSessionContextMenu(session.id, event.clientX, event.clientY)
-                  }}
-                >
-                  <button
-                    className="session-tab-select"
-                    id={'session-tab-' + session.id}
-                    role="tab"
-                    aria-selected={isActive}
-                    aria-controls={'session-panel-' + session.id}
-                    title={title}
-                    onClick={() => activateSession(session.id)}
-                    onKeyDown={(event) => handleSessionTabContextMenuKeyDown(event, session.id)}
-                  >
-                    {session.kind === 'sftp' ? <FolderOpen size={14} /> : <Terminal size={14} />}
-                    <span className="session-tab-label">{label}</span>
-                    <small>{kindLabel}</small>
-                    {session.status === 'connecting' || session.status === 'awaiting-trust'
-                      ? <LoaderCircle className="spin session-tab-state" size={12} />
-                      : <span className={'session-tab-state-dot ' + session.status} />}
-                  </button>
-                  <button
-                    className="session-tab-close"
-                    title={'关闭 ' + label + ' ' + kindLabel}
-                    aria-label={'关闭 ' + label + ' ' + kindLabel}
-                    onClick={() => closeSession(session.id)}
-                  ><X size={13} /></button>
-                </div>
-              )
-            })}
-          </div>
-          <button className="icon-button session-add-button" title="新建会话" aria-label="新建会话" onClick={() => setSessionChooserOpen(true)}>
-            <Plus size={16} />
-          </button>
-        </nav>
-
-        {sessionContextMenu && (
-          <div
-            className="browser-context-menu session-context-menu"
-            ref={sessionContextMenuRef}
-            role="menu"
-            aria-label="会话操作"
-            style={{ left: sessionContextMenu.x, top: sessionContextMenu.y }}
-            onContextMenu={(event) => event.preventDefault()}
-          >
-            <button className="entry-context-action" role="menuitem" onClick={() => duplicateSession(sessionContextMenu.sessionId)}>
-              <Copy size={16} /> 复制会话
-            </button>
-          </div>
-        )}
-
-        <div className="session-content">
-        {activeSession?.kind === 'sftp' && connectedSessionId ? (
-          <div className="sftp-session-panel" id={'session-panel-' + activeSession.id} role="tabpanel" aria-labelledby={'session-tab-' + activeSession.id}>
-            <FileBrowser
-              currentPath={currentPath}
-              entries={entries}
-              loading={loading}
-              viewMode={viewMode}
-              breadcrumbs={breadcrumbs}
-              sort={sort}
-              sortedEntries={sortedEntries}
-              selectedPaths={activeSession.selectedPaths}
-              moveProgress={activeRemoteMove?.sessionId === activeSession.id ? activeRemoteMove.progress : null}
-              copying={activeRemoteCopy?.sessionId === activeSession.id}
-              highlightedPath={highlightedPath}
-              onViewModeChange={(mode) => patchSession(activeSession.id, { viewMode: mode })}
-              onNavigate={navigate}
-              onToggleSort={toggleSort}
-              onSelectedPathsChange={(selectedPaths) => patchSession(activeSession.id, { selectedPaths })}
-              onOpenEntryContextMenu={openEntryContextMenu}
-              onOpenDirectoryContextMenu={openDirectoryContextMenu}
-              onDeleteEntries={requestRemoteEntriesDeletion}
-              onDropUpload={uploadDroppedEntries}
-              onDropMove={beginRemoteMove}
-              onCancelMove={cancelActiveRemoteMove}
-              onDropError={(error) => showToast('error', errorMessage(error))}
-            />
-          </div>
-        ) : !activeSession ? (
-          <ServerList
-            profiles={offlineProfiles}
-            connectionPending={false}
-            onAdd={() => openProfileDialog('create')}
-            onConnect={openSession}
-            onEdit={(profile) => openProfileDialog('edit', profile)}
-            onDelete={requestProfileDeletion}
-          />
-        ) : activeSession?.kind === 'terminal' ? null : activeSession ? (
-          <div className="session-connection-state" id={'session-panel-' + activeSession.id} role="tabpanel" aria-labelledby={'session-tab-' + activeSession.id}>
-            {activeSession.status === 'connecting' ? <LoaderCircle className="spin" size={20} /> : <Cloud size={20} />}
-            <strong>{activeSession.status === 'connecting' ? '正在连接服务器' : '会话已断开'}</strong>
-            {activeSession.error && <span>{activeSession.error}</span>}
-            {activeSession.status === 'disconnected' && <button className="text-button" onClick={() => reconnectSession(activeSession.id)}>重连</button>}
-          </div>
-        ) : null}
-
-        <div className="terminal-session-stack" hidden={activeSession?.kind !== 'terminal'}>
-          {sessions.filter((session) => session.kind === 'terminal').map((session) => (
-            <div
-              className="terminal-session-pane"
-              id={'session-panel-' + session.id}
-              role="tabpanel"
-              aria-labelledby={'session-tab-' + session.id}
-              hidden={activeSessionId !== session.id || activeSession?.kind !== 'terminal'}
-              key={session.id}
-            >
-              {session.status !== 'connected' && (
-                <div className={'terminal-session-notice ' + session.status}>
-                  {session.error ?? (session.status === 'connecting' ? '正在连接 SSH 终端…' : '等待确认服务器指纹')}
-                  {session.status === 'disconnected' && <button className="text-button" onClick={() => reconnectSession(session.id)}>重连</button>}
-                </div>
-              )}
-              <TerminalPanel
-                sessionId={session.id}
-                active={activeSessionId === session.id && activeSession?.kind === 'terminal'}
-                connected={session.status === 'connected'}
-                onError={reportTerminalError}
-              />
-            </div>
-          ))}
-        </div>
-
-        {sessions.filter((session) => session.kind === 'sftp').map((session) => {
-          const profile = profiles.find((candidate) => candidate.id === session.profileId)
-          if (!profile) return null
-          return (
-            <SftpSessionWorkspace
-              key={session.id}
-              session={session}
-              active={activeSessionId === session.id}
-              searchOpen={searchOpenSessionIds.has(session.id)}
-              fileTypeExtensions={fileTypeExtensions}
-              showToast={showToast}
-              onSearchOpenChange={setSearchOpen}
-              onWorkspaceOpenChange={setWorkspaceOpen}
-              onBlockingChange={setWorkspaceBlocking}
-              onRegisterPreviewActions={registerPreviewActions}
-              onMenuAction={dispatchSftpMenuAction}
-              onOpenExternalLink={(url) => {
+        <SessionWorkspaceView
+          state={{
+            sessions,
+            profiles,
+            offlineProfiles,
+            activeSession,
+            activeSessionId,
+            connectedSessionId,
+            currentPath,
+            entries,
+            loading,
+            viewMode,
+            breadcrumbs,
+            sort,
+            sortedEntries,
+            moveProgress: activeSession && activeRemoteMove?.sessionId === activeSession.id
+              ? activeRemoteMove.progress
+              : null,
+            copying: activeSession ? activeRemoteCopy?.sessionId === activeSession.id : false,
+            highlightedPath,
+            sessionContextMenu,
+            browserContextMenu,
+            searchOpenSessionIds,
+            fileTypeExtensions,
+            transfers,
+          }}
+          actions={{
+            sessions: {
+              closeSession,
+              openSessionContextMenu,
+              handleSessionTabContextMenuKeyDown,
+              duplicateSession,
+              activateSession,
+              reconnectSession,
+              navigate,
+            },
+            remoteFiles: {
+              requestRemoteEntriesDeletion,
+              beginRemoteMove,
+              cancelActiveRemoteMove,
+            },
+            browser: {
+              onOpenEntryContextMenu: openEntryContextMenu,
+              onOpenDirectoryContextMenu: openDirectoryContextMenu,
+              onDropUpload: uploadDroppedEntries,
+              onDropError: (error) => showToast('error', errorMessage(error)),
+            },
+            serverList: {
+              onAdd: () => openProfileDialog('create'),
+              onConnect: openSession,
+              onEdit: (profile) => openProfileDialog('edit', profile),
+              onDelete: requestProfileDeletion,
+            },
+            terminal: {
+              onReconnect: reconnectSession,
+              onError: reportTerminalError,
+            },
+            sftpWorkspace: {
+              showToast,
+              onSearchOpenChange: setSearchOpen,
+              onWorkspaceOpenChange: setWorkspaceOpen,
+              onBlockingChange: setWorkspaceBlocking,
+              onRegisterPreviewActions: registerPreviewActions,
+              onMenuAction: dispatchSftpMenuAction,
+              onOpenExternalLink: (url) => {
                 void window.remoteFiles.openExternalUrl(url).catch((error) => showToast('error', '无法打开链接：' + errorMessage(error)))
-              }}
-            />
-          )
-        })}
-
-        {browserContextMenu && activeSession?.kind === 'sftp' && (
-          <SftpContextMenu
-            context={browserContextMenu}
-            position={browserContextMenu}
-            fileTypeExtensions={fileTypeExtensions}
-            anchorRef={contextMenuAnchorRef}
-            onAction={(action, context) => dispatchSftpMenuAction(action, context, activeSession.id)}
-            onClose={() => setBrowserContextMenu(null)}
-          />
-        )}
-
-        </div>
-
-        <TransferTray
-          transfers={transfers}
-          onCancel={cancelTransferJob}
-          onDismiss={dismissTransfer}
+              },
+            },
+            loadDirectory,
+            setSessionChooserOpen,
+            onCancelTransfer: cancelTransferJob,
+            onDismissTransfer: dismissTransfer,
+            onCloseBrowserContextMenu: () => setBrowserContextMenu(null),
+            patchSession,
+            toggleSort,
+          }}
+          sessionContextMenuRef={sessionContextMenuRef}
+          contextMenuAnchorRef={contextMenuAnchorRef}
         />
       </main>
 

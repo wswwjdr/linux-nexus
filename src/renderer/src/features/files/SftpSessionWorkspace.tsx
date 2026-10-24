@@ -1,14 +1,14 @@
 import { useEffect } from 'react'
 import type { FileTypeExtensions, RemoteEntry } from '@shared/types'
 import type { PreviewType } from '@shared/file-type-registry'
-import ConfirmationDialog from './ConfirmationDialog'
-import LogPreviewDialog from './previews/LogPreviewDialog'
-import PreviewDialog from './previews/PreviewDialog'
-import SearchDialog from './SearchDialog'
-import { usePreview } from '../hooks/usePreview'
-import type { SessionTab } from '../app-types'
-import type { SftpContextMenuContext, SftpMenuAction } from '../context-menu/sftp-menu'
-import type { ToastNotice } from '../GlobalToast'
+import ConfirmationDialog from '@/components/ConfirmationDialog'
+import LogPreviewDialog from '@/components/previews/LogPreviewDialog'
+import PreviewDialog from '@/components/previews/PreviewDialog'
+import SearchDialog from '@/features/search/SearchDialog'
+import { usePreview } from '@/hooks/usePreview'
+import type { SessionTab } from '@/app-types'
+import type { SftpContextMenuContext, SftpMenuAction } from './sftp-menu'
+import type { ToastNotice } from '@/GlobalToast'
 
 export interface SessionPreviewActions {
   previewFile: (entry: Pick<RemoteEntry, 'name' | 'path'>, type: PreviewType) => Promise<void>
