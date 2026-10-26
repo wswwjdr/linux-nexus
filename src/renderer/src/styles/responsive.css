@@ -38,6 +38,12 @@
   .server-entry-connected-at { display: none; }
 }
 
+@media (max-width: 640px) {
+  .command-alias-control-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .command-alias-profile-field { width: 100%; grid-column: 1 / -1; flex: initial; }
+  .command-alias-toolbar-copy { flex-wrap: wrap; white-space: normal; }
+}
+
 @media (max-width: 780px) {
   .pdf-preview-backdrop { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); place-items: stretch; padding: 8px; }
   .pdf-preview-modal { width: 100%; height: 100%; max-height: none; padding: 12px; }

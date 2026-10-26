@@ -201,29 +201,31 @@ export function SettingsDialog(props: Pick<DialogLayerProps, "settingsForm" | "p
                     <details className="settings-section settings-section-aliases command-aliases-field" aria-labelledby="command-aliases-title">
                       <summary className="settings-disclosure-summary command-aliases-heading">
                         <h3 id="command-aliases-title">命令别名</h3>
-                        <span className={'command-alias-status ' + (aliasSnapshot?.status ?? 'unsynced')}>
-                          {aliasSnapshot?.status === 'synced'
-                            ? `已同步 · ${aliasSnapshot.syncedAt ? new Date(aliasSnapshot.syncedAt).toLocaleString() : ''}`
-                            : aliasSnapshot?.status === 'stale'
-                              ? `待重新同步${aliasSnapshot.syncedAt ? ` · ${new Date(aliasSnapshot.syncedAt).toLocaleString()}` : ''}`
-                              : '未同步'}
-                        </span>
                         <ChevronRight className="settings-disclosure-chevron" size={15} />
                       </summary>
-                      <label className="field command-alias-profile-field">
-                        <span>服务器</span>
-                        <select
-                          value={aliasProfileId}
-                          disabled={aliasOperationBusy || !profiles.length}
-                          onChange={(event) => onSelectAliasProfile(event.target.value)}
-                        >
-                          {profiles.map((profile) => (
-                            <option value={profile.id} key={profile.id}>{profile.name}（{profile.username}@{profile.host}:{profile.port}）</option>
-                          ))}
-                        </select>
-                      </label>
-                      <div className="command-alias-toolbar">
-                        <span>{aliasSnapshot?.aliases.length ?? 0} 个别名</span>
+                      <div className="command-alias-control-row">
+                        <label className="field command-alias-profile-field">
+                          <span>服务器</span>
+                          <select
+                            value={aliasProfileId}
+                            disabled={aliasOperationBusy || !profiles.length}
+                            onChange={(event) => onSelectAliasProfile(event.target.value)}
+                          >
+                            {profiles.map((profile) => (
+                              <option value={profile.id} key={profile.id}>{profile.name}（{profile.username}@{profile.host}:{profile.port}）</option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="command-alias-toolbar-copy">
+                          <span>{aliasSnapshot?.aliases.length ?? 0} 个别名</span>
+                          <span className={'command-alias-status ' + (aliasSnapshot?.status ?? 'unsynced')}>
+                            {aliasSnapshot?.status === 'synced'
+                              ? `已同步 · ${aliasSnapshot.syncedAt ? new Date(aliasSnapshot.syncedAt).toLocaleString() : ''}`
+                              : aliasSnapshot?.status === 'stale'
+                                ? `待重新同步${aliasSnapshot.syncedAt ? ` · ${new Date(aliasSnapshot.syncedAt).toLocaleString()}` : ''}`
+                                : '未同步'}
+                          </span>
+                        </div>
                         <button type="button" className="secondary-button command-alias-sync" disabled={aliasOperationBusy || !aliasProfileId} onClick={onSyncAliases}>
                           {aliasOperationBusy ? <LoaderCircle className="spin" size={14} /> : <RefreshCw size={14} />}
                           {aliasOperationBusy ? '处理中' : aliasSnapshot?.status === 'synced' ? '重新同步' : '同步'}
