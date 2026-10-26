@@ -121,7 +121,7 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
   }
 
   const add = () => {
-    if (!selectedProfileId || operation) return
+    if (!selectedProfileId || operation || snapshot?.status !== 'synced') return
     try {
       validateCommandAlias(name, command)
     } catch (error) {
