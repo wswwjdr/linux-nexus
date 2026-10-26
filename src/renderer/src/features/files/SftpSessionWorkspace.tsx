@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type FormEvent } from 'react'
 import type { FileTypeExtensions, RemoteEntry } from '@shared/types'
 import type { PreviewType } from '@shared/file-type-registry'
 import ConfirmationDialog from '@/components/ConfirmationDialog'
@@ -6,9 +6,10 @@ import LogPreviewDialog from '@/components/previews/LogPreviewDialog'
 import PreviewDialog from '@/components/previews/PreviewDialog'
 import SearchDialog from '@/features/search/SearchDialog'
 import { usePreview } from '@/hooks/usePreview'
-import type { SessionTab } from '@/app-types'
+import type { ScriptExecutionDialogState, SessionTab } from '@/app-types'
 import type { SftpContextMenuContext, SftpMenuAction } from './sftp-menu'
 import type { ToastNotice } from '@/GlobalToast'
+import ScriptSessionDialogs from './ScriptSessionDialogs'
 
 export interface SessionPreviewActions {
   previewFile: (entry: Pick<RemoteEntry, 'name' | 'path'>, type: PreviewType) => Promise<void>
@@ -19,12 +20,19 @@ interface SftpSessionWorkspaceProps {
   session: SessionTab
   active: boolean
   searchOpen: boolean
+  scriptCommandDialog: { name: string; command: string } | null
+  scriptExecutionDialog: ScriptExecutionDialogState | null
   fileTypeExtensions: FileTypeExtensions
   showToast: (kind: ToastNotice['kind'], message: string) => void
   onSearchOpenChange: (sessionId: string, open: boolean) => void
   onWorkspaceOpenChange: (sessionId: string, open: boolean) => void
   onBlockingChange: (sessionId: string, blocking: boolean) => void
   onRegisterPreviewActions: (sessionId: string, actions: SessionPreviewActions | null) => void
+  onCloseScriptCommand: (sessionId: string) => void
+  onUpdateScriptCommand: (sessionId: string, command: string) => void
+  onSubmitScriptCommand: (sessionId: string, event: FormEvent<HTMLFormElement>) => void
+  onCloseScriptExecution: (sessionId: string) => void
+  onStopScriptExecution: (sessionId: string) => void
   onMenuAction: (action: SftpMenuAction, context: SftpContextMenuContext, sessionId: string) => void
   onOpenExternalLink: (url: string) => void
 }
@@ -33,12 +41,19 @@ export default function SftpSessionWorkspace({
   session,
   active,
   searchOpen,
+  scriptCommandDialog,
+  scriptExecutionDialog,
   fileTypeExtensions,
   showToast,
   onSearchOpenChange,
   onWorkspaceOpenChange,
   onBlockingChange,
   onRegisterPreviewActions,
+  onCloseScriptCommand,
+  onUpdateScriptCommand,
+  onSubmitScriptCommand,
+  onCloseScriptExecution,
+  onStopScriptExecution,
   onMenuAction,
   onOpenExternalLink,
 }: SftpSessionWorkspaceProps) {
@@ -68,9 +83,22 @@ export default function SftpSessionWorkspace({
   }, [active, onBlockingChange, preview.textSaveConfirmation, session.id])
 
   useEffect(() => {
-    onWorkspaceOpenChange(session.id, active && (searchOpen || Boolean(preview.previewDialog || preview.logPreviewDialog)))
+    onWorkspaceOpenChange(session.id, active && (
+      searchOpen
+      || Boolean(preview.previewDialog || preview.logPreviewDialog)
+      || Boolean(scriptCommandDialog || scriptExecutionDialog)
+    ))
     return () => onWorkspaceOpenChange(session.id, false)
-  }, [active, onWorkspaceOpenChange, preview.logPreviewDialog, preview.previewDialog, searchOpen, session.id])
+  }, [
+    active,
+    onWorkspaceOpenChange,
+    preview.logPreviewDialog,
+    preview.previewDialog,
+    scriptCommandDialog,
+    scriptExecutionDialog,
+    searchOpen,
+    session.id,
+  ])
 
   useEffect(() => {
     const dismissOnEscape = (event: KeyboardEvent) => {
@@ -121,6 +149,18 @@ export default function SftpSessionWorkspace({
         logViewportRef={preview.logViewportRef}
         onClosePreview={preview.closePreview}
         onLogPreviewScroll={preview.onLogPreviewScroll}
+      />
+
+      <ScriptSessionDialogs
+        sessionId={session.id}
+        active={active}
+        commandDialog={scriptCommandDialog}
+        executionDialog={scriptExecutionDialog}
+        onCloseCommand={() => onCloseScriptCommand(session.id)}
+        onUpdateCommand={(command) => onUpdateScriptCommand(session.id, command)}
+        onSubmitCommand={(event) => onSubmitScriptCommand(session.id, event)}
+        onCloseExecution={() => onCloseScriptExecution(session.id)}
+        onStopExecution={() => onStopScriptExecution(session.id)}
       />
 
       {active && preview.textSaveConfirmation && (

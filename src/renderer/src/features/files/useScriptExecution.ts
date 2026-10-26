@@ -5,10 +5,25 @@ import type { ToastNotice } from '../../GlobalToast'
 import { scriptExecutionCommand } from '@shared/shell'
 import { errorMessage } from '../../app-utils'
 
-interface ScriptCommandDialog {
+export interface ScriptCommandDialog {
   entry: Pick<RemoteEntry, 'name' | 'path'>
-  sessionId: string
   command: string
+}
+
+function updateExecutionByRequest(
+  setExecutions: Dispatch<SetStateAction<Map<string, ScriptExecutionDialogState>>>,
+  requestId: string,
+  update: (execution: ScriptExecutionDialogState) => ScriptExecutionDialogState,
+) {
+  setExecutions((current) => {
+    for (const [sessionId, execution] of current) {
+      if (execution.request.requestId !== requestId) continue
+      const next = new Map(current)
+      next.set(sessionId, update(execution))
+      return next
+    }
+    return current
+  })
 }
 
 interface UseScriptExecutionOptions {
@@ -24,12 +39,11 @@ export function useScriptExecution({
   setBrowserContextMenu,
   showToast,
 }: UseScriptExecutionOptions) {
-  const [scriptCommandDialog, setScriptCommandDialog] = useState<ScriptCommandDialog | null>(null)
-  const [scriptExecutionDialog, setScriptExecutionDialog] = useState<ScriptExecutionDialogState | null>(null)
+  const [scriptCommandDialogs, setScriptCommandDialogs] = useState<Map<string, ScriptCommandDialog>>(() => new Map())
+  const [scriptExecutionDialogs, setScriptExecutionDialogs] = useState<Map<string, ScriptExecutionDialogState>>(() => new Map())
 
   useEffect(() => window.remoteFiles.onScriptExecutionEvent((event: ScriptExecutionEvent) => {
-    setScriptExecutionDialog((current) => {
-      if (!current || current.request.requestId !== event.requestId) return current
+    updateExecutionByRequest(setScriptExecutionDialogs, event.requestId, (current) => {
       if (event.type === 'output') {
         return { ...current, output: [...current.output, { stream: event.stream, data: event.data }] }
       }
@@ -43,16 +57,22 @@ export function useScriptExecution({
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session || session.kind !== 'sftp' || session.status !== 'connected') return
     setBrowserContextMenu(null)
-    setScriptCommandDialog({
+    setScriptCommandDialogs((current) => new Map(current).set(session.id, {
       entry,
-      sessionId: session.id,
       command: scriptExecutionCommand(entry.name),
-    })
+    }))
   }
 
   const startScriptExecution = (entry: Pick<RemoteEntry, 'name' | 'path'>, command: string, sessionId = activeSessionId) => {
     setBrowserContextMenu(null)
-    setScriptCommandDialog(null)
+    if (sessionId) {
+      setScriptCommandDialogs((current) => {
+        if (!current.has(sessionId)) return current
+        const next = new Map(current)
+        next.delete(sessionId)
+        return next
+      })
+    }
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session || session.kind !== 'sftp' || session.status !== 'connected') {
       showToast('error', 'SFTP 会话已断开，无法执行脚本')
@@ -64,15 +84,23 @@ export function useScriptExecution({
       scriptPath: entry.path,
       command,
     }
-    setScriptExecutionDialog({ request, name: entry.name, status: 'starting', output: [], message: null })
+    setScriptExecutionDialogs((current) => new Map(current).set(session.id, {
+      request,
+      name: entry.name,
+      status: 'starting',
+      output: [],
+      message: null,
+    }))
     void window.remoteFiles.startScriptExecution(request).then(() => {
-      setScriptExecutionDialog((current) => current?.request.requestId === request.requestId && current.status === 'starting'
+      updateExecutionByRequest(setScriptExecutionDialogs, request.requestId, (current) => current.status === 'starting'
         ? { ...current, status: 'running', message: null }
         : current)
     }).catch((error) => {
-      setScriptExecutionDialog((current) => current?.request.requestId === request.requestId
-        ? { ...current, status: 'failed', message: errorMessage(error) }
-        : current)
+      updateExecutionByRequest(setScriptExecutionDialogs, request.requestId, (current) => ({
+        ...current,
+        status: 'failed',
+        message: errorMessage(error),
+      }))
     })
   }
 
@@ -80,41 +108,90 @@ export function useScriptExecution({
     startScriptExecution(entry, scriptExecutionCommand(entry.name), sessionId)
   }
 
-  const submitScriptCommand = (event: FormEvent<HTMLFormElement>) => {
+  const updateScriptCommand = (sessionId: string, command: string) => {
+    setScriptCommandDialogs((current) => {
+      const dialog = current.get(sessionId)
+      if (!dialog) return current
+      return new Map(current).set(sessionId, { ...dialog, command })
+    })
+  }
+
+  const closeScriptCommandDialog = (sessionId: string) => {
+    setScriptCommandDialogs((current) => {
+      if (!current.has(sessionId)) return current
+      const next = new Map(current)
+      next.delete(sessionId)
+      return next
+    })
+  }
+
+  const submitScriptCommand = (sessionId: string, event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!scriptCommandDialog || !scriptCommandDialog.command.trim()) return
-    if (scriptCommandDialog.command.length > 65535) {
+    const dialog = scriptCommandDialogs.get(sessionId)
+    if (!dialog || !dialog.command.trim()) return
+    if (dialog.command.length > 65535) {
       showToast('error', '命令长度不能超过 65535 个字符')
       return
     }
-    startScriptExecution(scriptCommandDialog.entry, scriptCommandDialog.command, scriptCommandDialog.sessionId)
+    startScriptExecution(dialog.entry, dialog.command, sessionId)
   }
 
-  const closeScriptExecutionDialog = () => {
-    if (scriptExecutionDialog && ['starting', 'running', 'cancelling'].includes(scriptExecutionDialog.status)) {
-      void window.remoteFiles.cancelScriptExecution(scriptExecutionDialog.request.requestId)
+  const closeScriptExecutionDialog = (sessionId: string) => {
+    const execution = scriptExecutionDialogs.get(sessionId)
+    if (execution && ['starting', 'running', 'cancelling'].includes(execution.status)) {
+      void window.remoteFiles.cancelScriptExecution(execution.request.requestId)
     }
-    setScriptExecutionDialog(null)
+    setScriptExecutionDialogs((current) => {
+      if (!current.has(sessionId)) return current
+      const next = new Map(current)
+      next.delete(sessionId)
+      return next
+    })
   }
 
-  const stopScriptExecution = () => {
-    if (!scriptExecutionDialog || !['starting', 'running'].includes(scriptExecutionDialog.status)) return
-    const requestId = scriptExecutionDialog.request.requestId
-    setScriptExecutionDialog((current) => current?.request.requestId === requestId
-      ? { ...current, status: 'cancelling', message: null }
-      : current)
+  const stopScriptExecution = (sessionId: string) => {
+    const execution = scriptExecutionDialogs.get(sessionId)
+    if (!execution || !['starting', 'running'].includes(execution.status)) return
+    const requestId = execution.request.requestId
+    updateExecutionByRequest(setScriptExecutionDialogs, requestId, (current) => ({
+      ...current,
+      status: 'cancelling',
+      message: null,
+    }))
     void window.remoteFiles.cancelScriptExecution(requestId)
   }
 
+  const removeSessionStates = (sessionIds: string[]) => {
+    const removedIds = new Set(sessionIds)
+    for (const sessionId of removedIds) {
+      const execution = scriptExecutionDialogs.get(sessionId)
+      if (execution && ['starting', 'running', 'cancelling'].includes(execution.status)) {
+        void window.remoteFiles.cancelScriptExecution(execution.request.requestId)
+      }
+    }
+    setScriptCommandDialogs((current) => {
+      const next = new Map(current)
+      for (const sessionId of removedIds) next.delete(sessionId)
+      return next.size === current.size ? current : next
+    })
+    setScriptExecutionDialogs((current) => {
+      const next = new Map(current)
+      for (const sessionId of removedIds) next.delete(sessionId)
+      return next.size === current.size ? current : next
+    })
+  }
+
   return {
-    scriptCommandDialog,
-    scriptExecutionDialog,
-    setScriptCommandDialog,
+    scriptCommandDialogs,
+    scriptExecutionDialogs,
     requestScriptCommandEdit,
     startScriptExecution,
     runScript,
+    updateScriptCommand,
+    closeScriptCommandDialog,
     submitScriptCommand,
     closeScriptExecutionDialog,
     stopScriptExecution,
+    removeSessionStates,
   }
 }

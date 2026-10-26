@@ -10,6 +10,7 @@ import type { FileTypeExtensions, RemoteEntry, RemoteMoveProgress, ServerProfile
 import type {
   BrowserContextMenu,
   FileViewMode,
+  ScriptExecutionDialogState,
   SessionContextMenuState,
   SessionTab,
   SortColumn,
@@ -18,6 +19,7 @@ import type {
 import type { useSessionOperations } from './useSessionOperations'
 import type { useRemoteOperations } from '../remote-files/useRemoteOperations'
 import type { useProfileManagement } from '../../hooks/useProfileManagement'
+import type { ScriptCommandDialog } from '../files/useScriptExecution'
 import { errorMessage } from '../../app-utils'
 
 type FileBrowserProps = ComponentProps<typeof FileBrowser>
@@ -49,6 +51,8 @@ interface SessionWorkspaceState {
   sessionContextMenu: SessionContextMenuState | null
   browserContextMenu: BrowserContextMenu | null
   searchOpenSessionIds: Set<string>
+  scriptCommandDialogs: ReadonlyMap<string, ScriptCommandDialog>
+  scriptExecutionDialogs: ReadonlyMap<string, ScriptExecutionDialogState>
   fileTypeExtensions: FileTypeExtensions
   transfers: Record<string, TransferJob>
 }
@@ -67,7 +71,9 @@ interface SessionWorkspaceActions {
   }
   sftpWorkspace: Pick<SftpWorkspaceProps,
     'showToast' | 'onSearchOpenChange' | 'onWorkspaceOpenChange' | 'onBlockingChange'
-    | 'onRegisterPreviewActions' | 'onMenuAction' | 'onOpenExternalLink'>
+    | 'onRegisterPreviewActions' | 'onCloseScriptCommand' | 'onUpdateScriptCommand'
+    | 'onSubmitScriptCommand' | 'onCloseScriptExecution' | 'onStopScriptExecution'
+    | 'onMenuAction' | 'onOpenExternalLink'>
   loadDirectory: (sessionId: string, remotePath: string) => Promise<boolean>
   setSessionChooserOpen: (open: boolean) => void
   onCancelTransfer: TransferTrayProps['onCancel']
@@ -90,6 +96,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
     sessions, profiles, offlineProfiles, activeSession, activeSessionId, connectedSessionId,
     currentPath, entries, loading, viewMode, breadcrumbs, sort, sortedEntries, moveProgress,
     copying, highlightedPath, sessionContextMenu, browserContextMenu, searchOpenSessionIds,
+    scriptCommandDialogs, scriptExecutionDialogs,
     fileTypeExtensions, transfers,
   } = state
   const {
@@ -118,6 +125,11 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
     onWorkspaceOpenChange: setWorkspaceOpen,
     onBlockingChange: setWorkspaceBlocking,
     onRegisterPreviewActions: registerPreviewActions,
+    onCloseScriptCommand,
+    onUpdateScriptCommand,
+    onSubmitScriptCommand,
+    onCloseScriptExecution,
+    onStopScriptExecution,
     onMenuAction,
     onOpenExternalLink,
   } = actions.sftpWorkspace
@@ -281,18 +293,28 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
         {sessions.filter((session) => session.kind === 'sftp').map((session) => {
           const profile = profiles.find((candidate) => candidate.id === session.profileId)
           if (!profile) return null
+          const scriptCommandDialog = scriptCommandDialogs.get(session.id)
           return (
             <SftpSessionWorkspace
               key={session.id}
               session={session}
               active={activeSessionId === session.id}
               searchOpen={searchOpenSessionIds.has(session.id)}
+              scriptCommandDialog={scriptCommandDialog
+                ? { name: scriptCommandDialog.entry.name, command: scriptCommandDialog.command }
+                : null}
+              scriptExecutionDialog={scriptExecutionDialogs.get(session.id) ?? null}
               fileTypeExtensions={fileTypeExtensions}
               showToast={showToast}
               onSearchOpenChange={setSearchOpen}
               onWorkspaceOpenChange={setWorkspaceOpen}
               onBlockingChange={setWorkspaceBlocking}
               onRegisterPreviewActions={registerPreviewActions}
+              onCloseScriptCommand={onCloseScriptCommand}
+              onUpdateScriptCommand={onUpdateScriptCommand}
+              onSubmitScriptCommand={onSubmitScriptCommand}
+              onCloseScriptExecution={onCloseScriptExecution}
+              onStopScriptExecution={onStopScriptExecution}
               onMenuAction={dispatchSftpMenuAction}
               onOpenExternalLink={onOpenExternalLink}
             />

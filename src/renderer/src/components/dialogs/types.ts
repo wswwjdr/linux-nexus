@@ -1,6 +1,6 @@
 import type { CommandAlias, CommandAliasSnapshot, FileTypeCategory, ServerProfile, ThemeMode } from '@shared/types'
 import type { FormEvent } from 'react'
-import type { FileViewMode, PendingAliasHostKey, PendingHostKey, PerformanceThresholdField, ProfileForm, ScriptExecutionDialogState, SettingsFieldKey, SettingsForm } from '@/app-types'
+import type { FileViewMode, PendingAliasHostKey, PendingHostKey, PerformanceThresholdField, ProfileForm, SettingsFieldKey, SettingsForm } from '@/app-types'
 
 export interface DialogLayerProps {
   profileDialog: { mode: 'create' | 'edit'; form: ProfileForm } | null
@@ -9,8 +9,6 @@ export interface DialogLayerProps {
   profileDeleting: boolean
   createDirectoryDialog: { name: string } | null
   creatingDirectory: boolean
-  scriptCommandDialog: { name: string; command: string } | null
-  scriptExecutionDialog: ScriptExecutionDialogState | null
   settingsForm: SettingsForm | null
   profiles: ServerProfile[]
   pendingHostKey: PendingHostKey | null
@@ -28,11 +26,6 @@ export interface DialogLayerProps {
   onCloseCreateDirectory: () => void
   onUpdateCreateDirectoryName: (name: string) => void
   onSubmitCreateDirectory: (event: FormEvent<HTMLFormElement>) => void
-  onCloseScriptCommand: () => void
-  onUpdateScriptCommand: (command: string) => void
-  onSubmitScriptCommand: (event: FormEvent<HTMLFormElement>) => void
-  onCloseScriptExecution: () => void
-  onStopScriptExecution: () => void
   onUpdateProfile: (patch: Partial<ProfileForm>) => void
   onSubmitProfile: (event: FormEvent<HTMLFormElement>) => void
   onCloseSettings: () => void

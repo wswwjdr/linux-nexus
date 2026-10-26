@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import type { DialogLayerProps } from './dialogs/types'
 import { ProfileDialogs } from './dialogs/ProfileDialogs'
-import { DirectoryScriptDialogs } from './dialogs/DirectoryScriptDialogs'
+import { DirectoryDialogs } from './dialogs/DirectoryDialogs'
 import { SettingsDialog } from './dialogs/SettingsDialog'
 import { SecurityDialogs } from './dialogs/SecurityDialogs'
 
@@ -25,11 +25,6 @@ export default function DialogLayer(props: DialogLayerProps) {
         if (!props.creatingDirectory) props.onCloseCreateDirectory()
         return
       }
-      if (props.scriptCommandDialog) {
-        event.preventDefault()
-        props.onCloseScriptCommand()
-        return
-      }
       if (props.settingsForm) {
         event.preventDefault()
         if (!props.aliasOperationBusy) props.onCloseSettings()
@@ -49,12 +44,10 @@ export default function DialogLayer(props: DialogLayerProps) {
     props.onCloseSettings,
     props.onDismissHostKey,
     props.onDismissAliasHostKey,
-    props.onCloseScriptCommand,
     props.pendingHostKey,
     props.pendingAliasHostKey,
     props.createDirectoryDialog,
     props.creatingDirectory,
-    props.scriptCommandDialog,
     props.settingsForm,
     props.aliasOperationBusy,
     props.profileDialog,
@@ -64,7 +57,7 @@ export default function DialogLayer(props: DialogLayerProps) {
   return (
     <>
       <ProfileDialogs {...props} />
-      <DirectoryScriptDialogs {...props} />
+      <DirectoryDialogs {...props} />
       <SettingsDialog {...props} />
       <SecurityDialogs {...props} />
     </>

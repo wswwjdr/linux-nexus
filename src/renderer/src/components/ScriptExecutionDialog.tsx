@@ -3,6 +3,7 @@ import { CheckCircle2, CircleX, LoaderCircle, Square, X } from 'lucide-react'
 import type { ScriptExecutionDialogState } from '@/app-types'
 
 interface ScriptExecutionDialogProps {
+  active: boolean
   execution: ScriptExecutionDialogState
   onClose: () => void
   onStop: () => void
@@ -17,7 +18,7 @@ const statusLabels: Record<ScriptExecutionDialogState['status'], string> = {
   failed: '执行失败',
 }
 
-export default function ScriptExecutionDialog({ execution, onClose, onStop }: ScriptExecutionDialogProps) {
+export default function ScriptExecutionDialog({ active, execution, onClose, onStop }: ScriptExecutionDialogProps) {
   const outputRef = useRef<HTMLPreElement>(null)
   const onCloseRef = useRef(onClose)
   const followOutputRef = useRef(true)
@@ -26,6 +27,7 @@ export default function ScriptExecutionDialog({ execution, onClose, onStop }: Sc
   onCloseRef.current = onClose
 
   useEffect(() => {
+    if (!active) return
     const dismissOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       event.preventDefault()
@@ -33,7 +35,7 @@ export default function ScriptExecutionDialog({ execution, onClose, onStop }: Sc
     }
     window.addEventListener('keydown', dismissOnEscape)
     return () => window.removeEventListener('keydown', dismissOnEscape)
-  }, [])
+  }, [active])
 
   useEffect(() => {
     if (!followOutputRef.current || !outputRef.current) return
@@ -50,10 +52,10 @@ export default function ScriptExecutionDialog({ execution, onClose, onStop }: Sc
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="modal script-execution-modal" role="dialog" aria-modal="true" aria-labelledby="script-execution-title">
+      <section className="modal script-execution-modal" role="dialog" aria-labelledby={`script-execution-title-${execution.request.sessionId}`}>
         <div className="modal-heading">
           <div className="script-execution-heading-copy">
-            <h2 id="script-execution-title">{execution.name}</h2>
+            <h2 id={`script-execution-title-${execution.request.sessionId}`}>{execution.name}</h2>
             <div className="script-command-file" title={execution.request.scriptPath}>{execution.request.scriptPath}</div>
           </div>
           <button className="icon-button modal-close" title="关闭" aria-label="关闭执行窗口" onClick={onClose}><X size={18} /></button>

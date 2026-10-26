@@ -80,6 +80,18 @@ export default function App() {
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
     [sessions, activeSessionId],
   )
+  const {
+    scriptCommandDialogs,
+    scriptExecutionDialogs,
+    requestScriptCommandEdit,
+    runScript,
+    updateScriptCommand,
+    closeScriptCommandDialog,
+    submitScriptCommand,
+    closeScriptExecutionDialog,
+    stopScriptExecution,
+    removeSessionStates: removeScriptSessionStates,
+  } = useScriptExecution({ activeSessionId: activeSession?.id, sessionsRef, setBrowserContextMenu, showToast })
   const connectedProfileId = activeSession?.status === 'connected' ? activeSession.profileId : null
   const connectedSessionId = connectedProfileId ? activeSessionId : null
   const {
@@ -186,6 +198,7 @@ export default function App() {
     showToast,
     onProfileSaved: (profile) => {
       const affectedSessions = sessionsRef.current.filter((session) => session.profileId === profile.id)
+      removeScriptSessionStates(affectedSessions.map(({ id }) => id))
       setPendingHostKeys((current) => current.filter((pending) => pending.profile.id !== profile.id))
       for (const session of affectedSessions) {
         patchSession(session.id, { status: 'disconnected', error: '服务器配置已更新', loading: false })
@@ -195,6 +208,7 @@ export default function App() {
     onProfileDeleted: (profileId) => {
       setRecentConnections((current) => current.filter((connection) => connection.profileId !== profileId))
       const affectedSessions = sessionsRef.current.filter((session) => session.profileId === profileId)
+      removeScriptSessionStates(affectedSessions.map(({ id }) => id))
       setPendingHostKeys((current) => current.filter((pending) => pending.profile.id !== profileId))
       const remaining = sessionsRef.current.filter((session) => session.profileId !== profileId)
       sessionsRef.current = remaining
@@ -218,16 +232,6 @@ export default function App() {
     onPerformanceThresholdsChange: setPerformanceThresholds,
   })
 
-  const {
-    scriptCommandDialog,
-    scriptExecutionDialog,
-    setScriptCommandDialog,
-    requestScriptCommandEdit,
-    runScript,
-    submitScriptCommand,
-    closeScriptExecutionDialog,
-    stopScriptExecution,
-  } = useScriptExecution({ activeSessionId: activeSession?.id, sessionsRef, setBrowserContextMenu, showToast })
   const connectedProfile = useMemo(
     () => profiles.find((profile) => profile.id === activeSession?.profileId) ?? null,
     [profiles, activeSession?.profileId],
@@ -269,12 +273,13 @@ export default function App() {
     const removeClosedListener = window.remoteFiles.onConnectionClosed((event) => {
       const session = sessionsRef.current.find((candidate) => candidate.id === event.sessionId)
       if (!session) return
+      removeScriptSessionStates([event.sessionId])
       removeSessionPerformanceState([event.sessionId])
       patchSession(event.sessionId, { status: 'disconnected', error: event.message, loading: false })
       if (activeSessionId === event.sessionId) showToast('error', `连接已断开：${event.message}`)
     })
     return removeClosedListener
-  }, [activeSessionId, patchSession, removeSessionPerformanceState, showToast])
+  }, [activeSessionId, patchSession, removeScriptSessionStates, removeSessionPerformanceState, showToast])
 
   useEffect(() => {
     if (!sessionContextMenu) return
@@ -425,6 +430,7 @@ export default function App() {
     updateSession,
     loadDirectory,
     removeSessionWorkspaceState,
+    removeSessionScriptStates: removeScriptSessionStates,
     removeSessionPerformanceState,
     previewActionsRef,
     directoryLoadIdsRef,
@@ -457,7 +463,7 @@ export default function App() {
     showToast,
   })
   const modalOpen = Boolean(
-    profileDialog || profileDeleteDialog || createDirectoryDialog || scriptCommandDialog || scriptExecutionDialog || settingsForm
+    profileDialog || profileDeleteDialog || createDirectoryDialog || settingsForm
       || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
       || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || activeRemoteMove?.conflict
       || activeRemoteCopy?.conflict || remoteOperationDetailsOpen
@@ -623,6 +629,8 @@ export default function App() {
             sessionContextMenu,
             browserContextMenu,
             searchOpenSessionIds,
+            scriptCommandDialogs,
+            scriptExecutionDialogs,
             fileTypeExtensions,
             transfers,
           }}
@@ -664,6 +672,11 @@ export default function App() {
               onWorkspaceOpenChange: setWorkspaceOpen,
               onBlockingChange: setWorkspaceBlocking,
               onRegisterPreviewActions: registerPreviewActions,
+              onCloseScriptCommand: closeScriptCommandDialog,
+              onUpdateScriptCommand: updateScriptCommand,
+              onSubmitScriptCommand: submitScriptCommand,
+              onCloseScriptExecution: closeScriptExecutionDialog,
+              onStopScriptExecution: stopScriptExecution,
               onMenuAction: dispatchSftpMenuAction,
               onOpenExternalLink: (url) => {
                 void window.remoteFiles.openExternalUrl(url).catch((error) => showToast('error', '无法打开链接：' + errorMessage(error)))
@@ -693,8 +706,6 @@ export default function App() {
         profileDeleting={profileDeleting}
         createDirectoryDialog={createDirectoryDialog}
         creatingDirectory={creatingDirectory}
-        scriptCommandDialog={scriptCommandDialog ? { name: scriptCommandDialog.entry.name, command: scriptCommandDialog.command } : null}
-        scriptExecutionDialog={scriptExecutionDialog}
         settingsForm={settingsForm}
         profiles={profiles}
         pendingHostKey={pendingHostKey}
@@ -714,11 +725,6 @@ export default function App() {
         }}
         onUpdateCreateDirectoryName={(name) => setCreateDirectoryDialog((current) => current ? { ...current, name } : current)}
         onSubmitCreateDirectory={(event) => void submitCreateDirectory(event)}
-        onCloseScriptCommand={() => setScriptCommandDialog(null)}
-        onUpdateScriptCommand={(command) => setScriptCommandDialog((current) => current ? { ...current, command } : current)}
-        onSubmitScriptCommand={submitScriptCommand}
-        onCloseScriptExecution={closeScriptExecutionDialog}
-        onStopScriptExecution={stopScriptExecution}
         onUpdateProfile={updateProfileForm}
         onSubmitProfile={(event) => void submitProfile(event)}
         onCloseSettings={closeSettingsDialog}

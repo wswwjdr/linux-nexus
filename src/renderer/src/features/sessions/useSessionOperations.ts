@@ -33,6 +33,7 @@ interface UseSessionOperationsOptions {
   updateSession: (sessionId: string, update: (session: SessionTab) => SessionTab) => void
   loadDirectory: (sessionId: string, remotePath: string) => Promise<boolean>
   removeSessionWorkspaceState: (sessionIds: string[]) => void
+  removeSessionScriptStates: (sessionIds: string[]) => void
   removeSessionPerformanceState: (sessionIds: string[]) => void
   previewActionsRef: MutableRefObject<Map<string, SessionPreviewActions>>
   directoryLoadIdsRef: MutableRefObject<Map<string, number>>
@@ -63,6 +64,7 @@ export function useSessionOperations({
   updateSession,
   loadDirectory,
   removeSessionWorkspaceState,
+  removeSessionScriptStates,
   removeSessionPerformanceState,
   previewActionsRef,
   directoryLoadIdsRef,
@@ -233,6 +235,7 @@ export function useSessionOperations({
     setSessions(remaining)
     setPendingHostKeys((current) => current.filter((pending) => pending.sessionId !== sessionId))
     removeSessionWorkspaceState([sessionId])
+    removeSessionScriptStates([sessionId])
     removeSessionPerformanceState([sessionId])
     previewActionsRef.current.delete(sessionId)
     if (activeSessionId === sessionId) {
