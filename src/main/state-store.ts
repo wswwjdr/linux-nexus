@@ -41,12 +41,13 @@ function validateStoredState(value: unknown, verifyPasswordCiphertexts = false):
 
   const profileIds = new Set<string>()
   for (const profile of value.profiles) {
-    if (!isRecord(profile) || !hasExactKeys(profile, ['id', 'name', 'host', 'port', 'username'])
+    if (!isRecord(profile) || !hasExactKeys(profile, ['id', 'name', 'host', 'port', 'username', 'pinned'])
       || typeof profile.id !== 'string' || !profile.id
       || typeof profile.name !== 'string' || !profile.name.trim()
       || typeof profile.host !== 'string' || !profile.host.trim()
       || !Number.isInteger(profile.port) || (profile.port as number) < 1 || (profile.port as number) > 65535
       || typeof profile.username !== 'string' || !profile.username.trim()
+      || typeof profile.pinned !== 'boolean'
       || profileIds.has(profile.id)) {
       throw new Error('服务器配置中包含无效或重复的连接')
     }

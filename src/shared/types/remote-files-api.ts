@@ -11,6 +11,7 @@ import type { PreviewType } from '../file-type-registry'
 export interface RemoteFilesApi {
   listProfiles(): Promise<ServerProfile[]>
   saveProfile(input: SaveProfileInput): Promise<ServerProfile>
+  setProfilePinned(profileId: string, pinned: boolean): Promise<ServerProfile>
   deleteProfile(profileId: string): Promise<void>
   connect(sessionId: string, profileId: string, kind: SessionKind, cols: number, rows: number, startPath: string): Promise<ConnectResult>
   trustHostKey(input: TrustHostKeyInput): Promise<void>

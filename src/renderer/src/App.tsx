@@ -171,6 +171,7 @@ export default function App() {
     requestProfileDeletion,
     closeProfileDeleteDialog,
     confirmProfileDeletion,
+    setProfilePinned,
     updateSettingsForm,
     addFileTypeExtension,
     removeFileTypeExtension,
@@ -249,6 +250,7 @@ export default function App() {
       return profiles
         .map((profile, index) => ({ profile, index, connectedAt: connectionTimes.get(profile.id) }))
         .sort((left, right) => {
+          if (left.profile.pinned !== right.profile.pinned) return left.profile.pinned ? -1 : 1
           if (left.connectedAt === undefined) {
             return right.connectedAt === undefined ? left.index - right.index : 1
           }
@@ -649,6 +651,7 @@ export default function App() {
               onAdd: () => openProfileDialog('create'),
               onConnect: openSession,
               onEdit: (profile) => openProfileDialog('edit', profile),
+              onSetPinned: (profile, pinned) => void setProfilePinned(profile.id, pinned),
               onDelete: requestProfileDeletion,
             },
             terminal: {

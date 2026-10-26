@@ -208,6 +208,8 @@
 .server-entry-connect { min-width: 0; width: 100%; min-height: 68px; display: grid; grid-template-columns: 34px minmax(0, 1fr) 150px 18px; align-items: center; gap: 12px; padding: 9px 8px; border:0; color:inherit; background:transparent; text-align: left; cursor: pointer; }
 .server-entry-connect:hover { background:transparent; }
 .server-entry-actions { display: flex; align-items: center; gap: 2px; padding: 0 5px 0 0; }
+.server-entry-pin.is-pinned { color:var(--green); background:var(--green-soft); }
+.server-entry-pin.is-pinned:hover:not(:disabled) { color:var(--green); background:var(--green-soft); border-color:var(--border-success); }
 .server-entry-icon { width: 32px; height: 32px; display: grid; place-items: center; color:var(--text-secondary); background:var(--surface-success); border-radius: 5px; }
 .server-entry-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .server-entry-name, .server-entry-address { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

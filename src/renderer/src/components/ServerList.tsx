@@ -1,4 +1,4 @@
-import { FolderOpen, ChevronRight, HardDrive, LoaderCircle, Pencil, Plus, Server, Terminal, Trash2 } from 'lucide-react'
+import { FolderOpen, ChevronRight, HardDrive, LoaderCircle, Pencil, Pin, Plus, Server, Terminal, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { ServerProfile, SessionKind } from '@shared/types'
 import { formatDate } from '@/app-utils'
@@ -15,6 +15,7 @@ interface ServerListProps {
   onAdd: () => void
   onConnect: (profile: ServerProfile, kind: SessionKind) => void
   onEdit: (profile: ServerProfile) => void
+  onSetPinned: (profile: ServerProfile, pinned: boolean) => void
   onDelete: (profile: ServerProfile) => void
 }
 
@@ -24,6 +25,7 @@ export default function ServerList({
   onAdd,
   onConnect,
   onEdit,
+  onSetPinned,
   onDelete,
 }: ServerListProps) {
   const [contextMenu, setContextMenu] = useState<ServerContextMenuState | null>(null)
@@ -101,6 +103,15 @@ export default function ServerList({
                   <ChevronRight className="server-entry-chevron" size={16} />
                 </button>
                 <div className="server-entry-actions">
+                  <button
+                    className={'icon-button subtle server-entry-pin' + (profile.pinned ? ' is-pinned' : '')}
+                    title={profile.pinned ? '取消置顶' : '置顶服务器'}
+                    aria-label={profile.pinned ? '取消置顶 ' + profile.name : '置顶 ' + profile.name}
+                    aria-pressed={profile.pinned}
+                    onClick={() => onSetPinned(profile, !profile.pinned)}
+                  >
+                    <Pin size={14} />
+                  </button>
                   <button className="icon-button subtle" title="编辑连接" aria-label={'编辑 ' + profile.name} onClick={() => onEdit(profile)}>
                     <Pencil size={14} />
                   </button>

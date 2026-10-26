@@ -32,15 +32,16 @@ export function registerProfilesIpc(): void {
 
     const state = readState()
     const id = profile.id || randomUUID()
+    const existingIndex = state.profiles.findIndex((candidate) => candidate.id === id)
+    const previousProfile = state.profiles[existingIndex]
     const savedProfile: ServerProfile = {
       id,
       name: profile.name.trim(),
       host: profile.host.trim(),
       port: profile.port,
       username: profile.username.trim(),
+      pinned: previousProfile?.pinned ?? false,
     }
-    const existingIndex = state.profiles.findIndex((candidate) => candidate.id === id)
-    const previousProfile = state.profiles[existingIndex]
     if (!password && !state.passwords[id]) throw new Error('请填写 SSH 密码')
     if (existingIndex === -1) state.profiles.push(savedProfile)
     else {
@@ -53,6 +54,18 @@ export function registerProfilesIpc(): void {
     writeState(state)
     stopSessionsForProfile(id)
     return savedProfile
+  })
+
+  ipcMain.handle('profiles:set-pinned', (_event, profileId: string, pinned: boolean) => {
+    if (typeof profileId !== 'string' || !profileId || typeof pinned !== 'boolean') {
+      throw new Error('服务器置顶状态格式无效')
+    }
+    const state = readState()
+    const profile = state.profiles.find((candidate) => candidate.id === profileId)
+    if (!profile) throw new Error('找不到服务器配置')
+    profile.pinned = pinned
+    writeState(state)
+    return profile
   })
 
   ipcMain.handle('profiles:delete', (_event, profileId: string) => {

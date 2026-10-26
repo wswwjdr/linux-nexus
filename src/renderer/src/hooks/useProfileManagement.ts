@@ -325,6 +325,15 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
     }
   }
 
+  const setProfilePinned = async (profileId: string, pinned: boolean) => {
+    try {
+      const updatedProfile = await window.remoteFiles.setProfilePinned(profileId, pinned)
+      setProfiles((current) => current.map((profile) => profile.id === profileId ? updatedProfile : profile))
+    } catch (error) {
+      showToast('error', '更新服务器置顶状态失败：' + errorMessage(error))
+    }
+  }
+
   const closeProfileDialog = () => setDialog(null)
   const closeSettingsDialog = () => replaceSettingsForm(null)
 
@@ -345,6 +354,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
     requestProfileDeletion,
     closeProfileDeleteDialog,
     confirmProfileDeletion,
+    setProfilePinned,
     updateSettingsForm,
     addFileTypeExtension,
     removeFileTypeExtension,

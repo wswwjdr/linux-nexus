@@ -60,7 +60,7 @@ interface SessionWorkspaceActions {
     'requestRemoteEntriesDeletion' | 'beginRemoteMove' | 'cancelActiveRemoteMove'>
   browser: Pick<FileBrowserProps,
     'onOpenEntryContextMenu' | 'onOpenDirectoryContextMenu' | 'onDropUpload' | 'onDropError'>
-  serverList: Pick<ServerListProps, 'onAdd' | 'onConnect' | 'onEdit' | 'onDelete'>
+  serverList: Pick<ServerListProps, 'onAdd' | 'onConnect' | 'onEdit' | 'onSetPinned' | 'onDelete'>
   terminal: {
     onReconnect: SessionOperations['reconnectSession']
     onError: TerminalPanelProps['onError']
@@ -111,7 +111,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
   const openEntryContextMenu = onOpenEntryContextMenu
   const openDirectoryContextMenu = onOpenDirectoryContextMenu
   const uploadDroppedEntries = onDropUpload
-  const { onAdd, onConnect, onEdit, onDelete } = actions.serverList
+  const { onAdd, onConnect, onEdit, onSetPinned, onDelete } = actions.serverList
   const {
     showToast,
     onSearchOpenChange: setSearchOpen,
@@ -240,6 +240,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
             onAdd={onAdd}
             onConnect={onConnect}
             onEdit={onEdit}
+            onSetPinned={onSetPinned}
             onDelete={onDelete}
           />
         ) : activeSession?.kind === 'terminal' ? null : activeSession ? (

@@ -4,6 +4,7 @@ export interface ServerProfile {
   host: string
   port: number
   username: string
+  pinned: boolean
 }
 
 export interface CommandAlias {
@@ -27,7 +28,7 @@ export type CommandAliasOperationResult =
   | { status: 'updated-sync-failed'; message: string; snapshot: CommandAliasSnapshot }
 
 export interface SaveProfileInput {
-  profile: ServerProfile
+  profile: Omit<ServerProfile, 'pinned'>
   password?: string
 }
 
