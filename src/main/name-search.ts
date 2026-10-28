@@ -9,7 +9,7 @@ import type {
 } from '@shared/types'
 import { shellQuote } from '@shared/shell'
 import { getMainWindow, sessions } from './runtime'
-import { normalizedRemotePath } from './sftp-utils'
+import { normalizedRemotePath } from './remote-fs'
 
 interface NameSearchTask {
   request: NameSearchRequest
@@ -166,7 +166,7 @@ export function startNameSearch(input: NameSearchRequest): void {
   const request = validateRequest(input)
   if (activeSearches.has(request.requestId)) throw new Error('文件名搜索请求编号已在使用')
   const session = sessions.get(request.sessionId)
-  if (!session?.sftp || session.profileId !== request.profileId) throw new Error('SFTP 会话未连接')
+  if (!session || session.kind !== 'files' || session.profileId !== request.profileId) throw new Error('文件会话未连接')
 
   const task: NameSearchTask = {
     request,

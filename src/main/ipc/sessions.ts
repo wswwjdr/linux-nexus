@@ -7,7 +7,7 @@ import { activatePerformanceMonitor, deactivatePerformanceMonitor, getPerformanc
 export function registerSessionsIpc(): void {
   ipcMain.handle('connection:connect', (_event, sessionId: string, profileId: string, kind: SessionKind, cols: number, rows: number, startPath: string) => {
     if (typeof sessionId !== 'string' || !sessionId || typeof profileId !== 'string' || !profileId
-      || (kind !== 'sftp' && kind !== 'terminal')
+      || (kind !== 'files' && kind !== 'terminal')
       || !Number.isInteger(cols) || cols < 1 || cols > 500
       || !Number.isInteger(rows) || rows < 1 || rows > 200
       || typeof startPath !== 'string') {

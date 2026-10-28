@@ -1,13 +1,12 @@
 import { useRef, useState, type DragEvent, type MutableRefObject } from 'react'
-import type { DroppedUploadEntry, RemoteEntry, RemoteMoveProgress } from '@shared/types'
+import type { DroppedUploadEntry, RemoteEntry } from '@shared/types'
 
 const remoteMoveMime = 'application/x-linux-nexus-remote-files'
 
 interface UseFileDragAndDropOptions {
   sortedEntries: RemoteEntry[]
   selectedPathsRef: MutableRefObject<string[]>
-  moveProgress: RemoteMoveProgress | null
-  copying: boolean
+  operationActive: boolean
   onDropUpload: (entries: DroppedUploadEntry[]) => void
   onDropMove: (sourcePaths: string[], targetDirectory: string) => void
   onDropError: (error: unknown) => void
@@ -86,8 +85,7 @@ async function collectDroppedEntries(dataTransfer: DataTransfer): Promise<Droppe
 export function useFileDragAndDrop({
   sortedEntries,
   selectedPathsRef,
-  moveProgress,
-  copying,
+  operationActive,
   onDropUpload,
   onDropMove,
   onDropError,
@@ -112,7 +110,7 @@ export function useFileDragAndDrop({
         ? sortedEntries.find((entry) => entry.path === targetElement.dataset.entryPath)
         : undefined
       const sourcePaths = readRemoteMovePaths(event.dataTransfer)
-      event.dataTransfer.dropEffect = !moveProgress && !copying && target?.type === 'directory' && !sourcePaths.includes(target.path) ? 'move' : 'none'
+      event.dataTransfer.dropEffect = !operationActive && target?.type === 'directory' && !sourcePaths.includes(target.path) ? 'move' : 'none'
       return
     }
     event.dataTransfer.dropEffect = hasDraggedFiles(event.dataTransfer) ? 'copy' : 'none'
@@ -138,7 +136,7 @@ export function useFileDragAndDrop({
   }
 
   const handleEntryDragStart = (entry: RemoteEntry, event: DragEvent<HTMLElement>) => {
-    if (moveProgress || copying || (entry.type !== 'file' && entry.type !== 'directory')) {
+    if (operationActive || (entry.type !== 'file' && entry.type !== 'directory')) {
       event.preventDefault()
       return
     }
@@ -163,7 +161,7 @@ export function useFileDragAndDrop({
     if (!hasRemoteMove(event.dataTransfer)) return
     event.preventDefault()
     const paths = readRemoteMovePaths(event.dataTransfer)
-    const validTarget = !moveProgress && !copying && entry.type === 'directory' && paths.length > 0 && !paths.includes(entry.path)
+    const validTarget = !operationActive && entry.type === 'directory' && paths.length > 0 && !paths.includes(entry.path)
     event.dataTransfer.dropEffect = validTarget ? 'move' : 'none'
     setDropTargetPath(validTarget ? entry.path : null)
   }
@@ -179,7 +177,7 @@ export function useFileDragAndDrop({
     event.stopPropagation()
     setDropTargetPath(null)
     const paths = readRemoteMovePaths(event.dataTransfer)
-    if (moveProgress || copying || entry.type !== 'directory' || paths.length === 0) return
+    if (operationActive || entry.type !== 'directory' || paths.length === 0) return
     if (paths.includes(entry.path)) {
       onDropError(new Error('不能将文件夹移动到自身'))
       return

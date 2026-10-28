@@ -24,8 +24,7 @@ interface ScriptExecutionTask {
 
 interface ScriptExecutionSession {
   client: Client
-  kind: 'sftp' | 'terminal'
-  sftp?: unknown
+  kind: 'files' | 'terminal'
 }
 
 type SessionLookup = (sessionId: string) => ScriptExecutionSession | undefined
@@ -74,7 +73,7 @@ export class ScriptExecutionManager {
     const request = parseScriptExecutionRequest(value)
     if (this.tasks.has(request.requestId)) throw new Error('脚本执行请求编号已在使用')
     const session = this.getSession(request.sessionId)
-    if (!session?.sftp || session.kind !== 'sftp') throw new Error('SFTP 会话未连接')
+    if (!session || session.kind !== 'files') throw new Error('文件会话未连接')
 
     const task: ScriptExecutionTask = {
       request,

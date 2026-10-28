@@ -65,7 +65,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
     if (key === 'startupConnection') return {
       ...current,
       startupProfileId: settings.startupConnection?.profileId ?? '',
-      startupKind: settings.startupConnection?.kind ?? 'sftp',
+      startupKind: settings.startupConnection?.kind ?? 'files',
     }
     return current
   }
@@ -155,7 +155,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
         performanceSampleIntervalSeconds: String(settings.performanceSampleIntervalSeconds),
         performanceThresholds: performanceThresholdsToForm(settings.performanceThresholds),
         startupProfileId: profileId && profiles.some((profile) => profile.id === profileId) ? profileId : '',
-        startupKind: settings.startupConnection?.kind ?? 'sftp',
+        startupKind: settings.startupConnection?.kind ?? 'files',
       })
       setStartupConnection(settings.startupConnection)
     } catch (error) {

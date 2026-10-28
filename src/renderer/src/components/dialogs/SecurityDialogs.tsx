@@ -1,5 +1,4 @@
 import { ShieldCheck } from 'lucide-react'
-import type { CommandAlias } from '@shared/types'
 import ConfirmationDialog from '../ConfirmationDialog'
 import type { DialogLayerProps } from './types'
 
@@ -40,7 +39,8 @@ export function SecurityDialogs(props: Pick<DialogLayerProps, "pendingHostKey" |
                 title={`覆盖 ${aliasOverwriteConfirmation.name}？`}
                 details={[
                   { label: '当前命令', value: aliasOverwriteConfirmation.existingCommand },
-                  { label: '新命令', value: aliasOverwriteConfirmation.command },
+                  { label: '新命令', value: aliasOverwriteConfirmation.command ?? '' },
+                  { label: '服务器命令', value: aliasOverwriteConfirmation.commandPreview },
                 ]}
                 description="确认后会替换 ~/.bashrc 中唯一且完全匹配的定义；若无法安全定位，服务器文件不会修改。"
                 tone="warning"
@@ -55,7 +55,10 @@ export function SecurityDialogs(props: Pick<DialogLayerProps, "pendingHostKey" |
               <ConfirmationDialog
                 eyebrow="删除命令别名"
                 title={`删除 ${aliasDeleteConfirmation.name}？`}
-                details={[{ label: '实际命令', value: aliasDeleteConfirmation.command }]}
+                details={[
+                  { label: '实际命令', value: aliasDeleteConfirmation.existingCommand },
+                  { label: '服务器命令', value: aliasDeleteConfirmation.commandPreview },
+                ]}
                 description="将从 ~/.bashrc 删除唯一且完全匹配的定义。此更改会在新开的终端中生效。"
                 tone="danger"
                 confirmLabel="删除别名"

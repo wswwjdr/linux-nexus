@@ -5,8 +5,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { JSDOM } from 'jsdom'
 import type { RemoteEntry } from '../src/shared/types.ts'
 import { defaultFileTypeExtensions } from '../src/shared/app-settings.ts'
-import SftpContextMenu from '../src/renderer/src/features/files/SftpContextMenu.tsx'
-import type { SftpContextMenuContext, SftpMenuAction } from '../src/renderer/src/features/files/sftp-menu.ts'
+import FileContextMenu from '../src/renderer/src/features/files/FileContextMenu.tsx'
+import type { FileContextMenuContext, FileMenuAction } from '../src/renderer/src/features/files/file-menu.ts'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })
 Object.defineProperties(globalThis, {
@@ -25,7 +25,7 @@ function entry(name: string): RemoteEntry {
   return { name, path: '/home/user/' + name, type: 'file', size: 12, modifiedAt: null, permissions: 'rw-r--r--' }
 }
 
-function mount(context: SftpContextMenuContext) {
+function mount(context: FileContextMenuContext) {
   const anchor = document.createElement('button')
   anchor.textContent = 'open menu'
   document.body.append(anchor)
@@ -34,9 +34,9 @@ function mount(context: SftpContextMenuContext) {
   const host = document.createElement('div')
   document.body.append(host)
   const root: Root = createRoot(host)
-  const actions: SftpMenuAction[] = []
+  const actions: FileMenuAction[] = []
   let closeCount = 0
-  act(() => root.render(createElement(SftpContextMenu, {
+  act(() => root.render(createElement(FileContextMenu, {
     context,
     fileTypeExtensions: defaultFileTypeExtensions(),
     position: { x: 440, y: 260 },
@@ -66,8 +66,12 @@ test('renders disabled commands accessibly and supports Home, End and arrow navi
   const menu = mount({ kind: 'single-entry', entry: entry('plain.txt'), canPaste: false })
   const buttons = Array.from(menu.host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
   assert.equal(document.activeElement, buttons[0])
-  assert.equal(buttons.find((button) => button.textContent?.includes('粘贴'))?.disabled, true)
-  assert.match(buttons.find((button) => button.textContent?.includes('粘贴'))?.getAttribute('aria-label') ?? '', /剪贴板为空/)
+  const pasteTrigger = menu.host.querySelector<HTMLButtonElement>('[data-submenu-trigger="paste-strategy"]')!
+  act(() => pasteTrigger.click())
+  const pasteActions = Array.from(menu.host.querySelectorAll<HTMLButtonElement>('[data-submenu-panel="paste-strategy"] [role="menuitem"]'))
+  assert.equal(pasteActions.length, 5)
+  assert.equal(pasteActions.every((button) => button.disabled), true)
+  assert.match(pasteActions[0].getAttribute('aria-label') ?? '', /剪贴板为空/)
 
   key(buttons[0], 'End')
   assert.equal(document.activeElement, buttons.at(-1))

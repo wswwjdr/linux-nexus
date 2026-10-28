@@ -1,12 +1,11 @@
 import type { BrowserWindow } from 'electron'
-import type { Client, ClientChannel, SFTPWrapper } from 'ssh2'
+import type { Client, ClientChannel } from 'ssh2'
 export { clearPreviewAssets } from './previews/preview-assets.ts'
 
 export interface ActiveSession {
   sessionId: string
   client: Client
-  kind: 'sftp' | 'terminal'
-  sftp?: SFTPWrapper
+  kind: 'files' | 'terminal'
   shell?: ClientChannel
   profileId: string
 }
@@ -15,6 +14,7 @@ export interface TransferItem {
   relativePath: string
   type: 'directory' | 'file'
   size: number
+  modifiedAtMs?: number
   localPath?: string
   remotePath?: string
 }

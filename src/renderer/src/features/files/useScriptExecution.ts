@@ -55,7 +55,7 @@ export function useScriptExecution({
 
   const requestScriptCommandEdit = (entry: Pick<RemoteEntry, 'name' | 'path'>, sessionId = activeSessionId) => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    if (!session || session.kind !== 'sftp' || session.status !== 'connected') return
+    if (!session || session.kind !== 'files' || session.status !== 'connected') return
     setBrowserContextMenu(null)
     setScriptCommandDialogs((current) => new Map(current).set(session.id, {
       entry,
@@ -74,8 +74,8 @@ export function useScriptExecution({
       })
     }
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    if (!session || session.kind !== 'sftp' || session.status !== 'connected') {
-      showToast('error', 'SFTP 会话已断开，无法执行脚本')
+    if (!session || session.kind !== 'files' || session.status !== 'connected') {
+      showToast('error', '文件会话已断开，无法执行脚本')
       return
     }
     const request: ScriptExecutionRequest = {

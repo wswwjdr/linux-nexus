@@ -3,17 +3,16 @@ import type { Dirent } from 'node:fs'
 import { isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
 import type { TransferFailure, TransferResult } from '@shared/types'
 import { activeTransfers, messageFromError, sessions, type TransferItem } from '../runtime'
-import { fileType, sftpLstat, sftpReaddir } from '../sftp-utils'
-import type { SFTPWrapper } from 'ssh2'
+import { collectRemoteTree as collectRemoteTreeEntries } from '../remote-fs'
+import type { Client } from 'ssh2'
 import type { TransferProgressReporter } from './progress'
-import { MAX_TRANSFER_REQUESTS } from './block-transfer'
 
 const transferQueues = new Map<string, Promise<void>>()
 
 export interface TransferFileTask {
   path: string
   size: number
-  transfer: (requestConcurrency: number, onProgress: (bytes: number) => void) => Promise<void>
+  transfer: (onProgress: (bytes: number) => void) => Promise<void>
 }
 
 export interface CollectedTransferTree {
@@ -46,7 +45,6 @@ export async function runTransferTasks(
 ): Promise<TransferFailure[]> {
   const failures: TransferFailure[] = []
   const workerCount = Math.min(concurrency, tasks.length)
-  const requestConcurrency = workerCount ? Math.max(1, Math.floor(MAX_TRANSFER_REQUESTS / workerCount)) : 1
   let nextTask = 0
 
   await Promise.all(Array.from({ length: workerCount }, async () => {
@@ -55,7 +53,7 @@ export async function runTransferTasks(
       if (!task) return
       progress.fileStarted(task.path, task.size)
       try {
-        await task.transfer(requestConcurrency, (bytes) => progress.fileAdvanced(task.path, bytes))
+        await task.transfer((bytes) => progress.fileAdvanced(task.path, bytes))
         progress.fileFinished(task.path, true)
       } catch (error) {
         if (signal.aborted) {
@@ -72,45 +70,26 @@ export async function runTransferTasks(
   return failures
 }
 
-export async function collectRemoteTree(sftp: SFTPWrapper, remoteRoot: string, signal: AbortSignal): Promise<CollectedTransferTree> {
-  const items: TransferItem[] = []
-  const failures: TransferFailure[] = []
-  const visit = async (remotePath: string, relativePath: string, attrs: Awaited<ReturnType<typeof sftpLstat>>) => {
-    signal.throwIfAborted()
-    const type = fileType(attrs.mode)
-    if (type === 'symlink') {
-      failures.push({ path: remotePath, message: '目录包含符号链接，无法传输' })
-      return
-    }
-    if (type === 'other') {
-      failures.push({ path: remotePath, message: '目录包含暂不支持的文件类型' })
-      return
-    }
-    items.push({ relativePath, type, size: attrs.size ?? 0, remotePath })
-    if (type !== 'directory') return
-    let entries: Awaited<ReturnType<typeof sftpReaddir>>
-    try {
-      entries = await sftpReaddir(sftp, remotePath)
-    } catch (error) {
-      if (signal.aborted) throw error
-      failures.push({ path: remotePath, message: messageFromError(error) })
-      return
-    }
-    for (const entry of entries) {
-      signal.throwIfAborted()
-      if (entry.filename === '.' || entry.filename === '..') continue
-      const childPath = posix.join(remotePath, entry.filename)
-      const childRelativePath = relativePath ? posix.join(relativePath, entry.filename) : entry.filename
-      await visit(childPath, childRelativePath, entry.attrs)
-    }
-  }
+export async function collectRemoteTree(client: Client, remoteRoot: string, signal: AbortSignal): Promise<CollectedTransferTree> {
   try {
-    await visit(remoteRoot, '', await sftpLstat(sftp, remoteRoot))
+    const entries = await collectRemoteTreeEntries(client, remoteRoot, signal)
+    const items = entries.filter((entry) => entry.type === 'file' || entry.type === 'directory')
+      .map((entry) => ({
+        relativePath: entry.relativePath,
+        type: entry.type as 'file' | 'directory',
+        size: entry.size,
+        remotePath: entry.remotePath,
+      }))
+    const failures = entries.filter((entry) => entry.type === 'symlink' || entry.type === 'other')
+      .map((entry) => ({
+        path: entry.remotePath,
+        message: entry.type === 'symlink' ? '目录包含符号链接，无法传输' : '目录包含暂不支持的文件类型',
+      }))
+    return { items, failures }
   } catch (error) {
     if (signal.aborted) throw error
-    failures.push({ path: remoteRoot, message: messageFromError(error) })
+    return { items: [], failures: [{ path: remoteRoot, message: messageFromError(error) }] }
   }
-  return { items, failures }
 }
 
 export async function collectLocalTree(localRoot: string, signal: AbortSignal): Promise<CollectedTransferTree> {
@@ -131,7 +110,7 @@ export async function collectLocalTree(localRoot: string, signal: AbortSignal): 
       return
     }
     if (attrs.isDirectory()) {
-      items.push({ relativePath, type: 'directory', size: 0, localPath })
+      items.push({ relativePath, type: 'directory', size: 0, modifiedAtMs: attrs.mtimeMs, localPath })
       let entries: Dirent[]
       try {
         entries = await localReaddir(localPath, { withFileTypes: true })
@@ -152,7 +131,7 @@ export async function collectLocalTree(localRoot: string, signal: AbortSignal): 
       failures.push({ path: localPath, message: '目录包含暂不支持的文件类型' })
       return
     }
-    items.push({ relativePath, type: 'file', size: attrs.size, localPath })
+    items.push({ relativePath, type: 'file', size: attrs.size, modifiedAtMs: attrs.mtimeMs, localPath })
   }
   await visit(localRoot, '')
   return { items, failures }

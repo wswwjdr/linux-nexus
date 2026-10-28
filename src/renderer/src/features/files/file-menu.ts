@@ -4,8 +4,9 @@ import { classifyFileTypeCategories, fileTypeDefinition } from '@shared/file-typ
 import { previewTypesForFile, previewTypeLabels } from '@shared/preview-file-type'
 import { archiveBaseName, archiveFormatForName } from '@shared/archive'
 import type { SortColumn, SortDirection } from '@/app-types'
+import type { OperationStrategy } from '@shared/types'
 
-export type SftpMenuIcon =
+export type FileMenuIcon =
   | 'arrow-down'
   | 'arrow-up'
   | 'arrow-up-down'
@@ -24,74 +25,115 @@ export type SftpMenuIcon =
   | 'trash'
   | 'upload'
 
-export type SftpMenuAction =
+export type FileMenuAction =
   | { type: 'preview'; previewType: PreviewType }
   | { type: 'preview-log' }
-  | { type: 'extract-archive'; target: 'current-directory' | 'archive-directory' | 'choose-directory' }
+  | { type: 'extract-archive'; target: 'current-directory' | 'archive-directory' | 'choose-directory'; strategy: OperationStrategy }
   | { type: 'run-script' }
   | { type: 'adjust-script-command' }
   | { type: 'download' }
   | { type: 'copy' }
   | { type: 'cut' }
-  | { type: 'paste' }
+  | { type: 'paste'; strategy: OperationStrategy }
   | { type: 'copy-path' }
   | { type: 'delete' }
   | { type: 'sort-column'; column: SortColumn }
   | { type: 'sort-direction'; direction: SortDirection }
   | { type: 'create-directory' }
-  | { type: 'upload' }
+  | { type: 'upload'; strategy: OperationStrategy }
   | { type: 'open-location' }
 
-export type SftpMenuActionNode = {
+export type FileMenuActionNode = {
   kind: 'action'
   id: string
   label: string
-  icon?: SftpMenuIcon
-  action: SftpMenuAction
+  icon?: FileMenuIcon
+  action: FileMenuAction
   disabled?: boolean
   disabledReason?: string
+  description?: string
   checked?: boolean
 }
 
-export type SftpMenuNode = SftpMenuActionNode
-  | { kind: 'submenu'; id: string; label: string; icon: SftpMenuIcon; children: SftpMenuNode[] }
+export type FileMenuNode = FileMenuActionNode
+  | { kind: 'submenu'; id: string; label: string; icon: FileMenuIcon; children: FileMenuNode[]; disabled?: boolean; disabledReason?: string }
   | { kind: 'separator'; id: string }
 
-export type SftpContextMenuContext =
+export type FileContextMenuContext =
   | { kind: 'single-entry'; entry: RemoteEntry; canPaste: boolean }
   | { kind: 'multiple-entries'; entries: RemoteEntry[]; canPaste: boolean }
   | { kind: 'directory-background'; directory: string; canPaste: boolean; sort: { column: SortColumn; direction: SortDirection } }
   | { kind: 'search-result'; result: SearchResultTarget }
 
-export interface SftpContextMenuStrategy {
+export interface FileContextMenuStrategy {
   readonly id: string
   readonly group: 'specialized' | 'common'
-  matches(context: SftpContextMenuContext, fileTypeExtensions: FileTypeExtensions): boolean
-  contribute(context: SftpContextMenuContext, fileTypeExtensions: FileTypeExtensions): SftpMenuNode[]
+  matches(context: FileContextMenuContext, fileTypeExtensions: FileTypeExtensions): boolean
+  contribute(context: FileContextMenuContext, fileTypeExtensions: FileTypeExtensions): FileMenuNode[]
 }
 
 const action = (
   id: string,
   label: string,
-  icon: SftpMenuIcon | undefined,
-  menuAction: SftpMenuAction,
-  options: Pick<SftpMenuActionNode, 'disabled' | 'disabledReason' | 'checked'> = {},
-): SftpMenuActionNode => ({ kind: 'action', id, label, icon, action: menuAction, ...options })
+  icon: FileMenuIcon | undefined,
+  menuAction: FileMenuAction,
+  options: Pick<FileMenuActionNode, 'disabled' | 'disabledReason' | 'description' | 'checked'> = {},
+): FileMenuActionNode => ({ kind: 'action', id, label, icon, action: menuAction, ...options })
 
-function fileForContext(context: SftpContextMenuContext): Pick<RemoteEntry, 'name' | 'path' | 'type'> | null {
+const operationStrategies: Array<{ strategy: OperationStrategy; label: string; description: string }> = [
+  { strategy: 'force', label: '强制覆盖 (-f)', description: '使用服务器命令的强制覆盖选项；权限和目录结构限制仍然生效。' },
+  { strategy: 'skip', label: '跳过已有目标 (-n)', description: '目标中存在同名项目时保留目标并跳过该项。' },
+  { strategy: 'update', label: '仅源项目较新时处理 (-u)', description: '目标不存在，或来源的修改时间晚于目标时才处理。' },
+  { strategy: 'confirm', label: '确认后处理', description: '执行前检查同名冲突；有冲突时可统一选择覆盖或跳过。' },
+]
+
+function pasteStrategyMenu(disabled: boolean): FileMenuNode {
+  return {
+    kind: 'submenu',
+    id: 'paste-strategy',
+    label: '粘贴',
+    icon: 'clipboard-paste',
+    disabled,
+    disabledReason: disabled ? '剪贴板为空' : undefined,
+    children: operationStrategies.filter(({ strategy }) => strategy !== 'update').map(({ strategy, label, description }) => action(
+      'paste-' + strategy,
+      label,
+      undefined,
+      { type: 'paste', strategy },
+      { disabled, disabledReason: disabled ? '剪贴板为空' : undefined, description },
+    )),
+  }
+}
+
+function uploadStrategyMenu(): FileMenuNode {
+  return {
+    kind: 'submenu',
+    id: 'upload-strategy',
+    label: '上传',
+    icon: 'upload',
+    children: operationStrategies.map(({ strategy, label }) => action(
+      'upload-' + strategy,
+      label,
+      undefined,
+      { type: 'upload', strategy },
+    )),
+  }
+}
+
+function fileForContext(context: FileContextMenuContext): Pick<RemoteEntry, 'name' | 'path' | 'type'> | null {
   if (context.kind === 'single-entry') return context.entry
   if (context.kind === 'search-result') return context.result
   return null
 }
 
-function matchingCapabilities(context: SftpContextMenuContext, fileTypeExtensions: FileTypeExtensions) {
+function matchingCapabilities(context: FileContextMenuContext, fileTypeExtensions: FileTypeExtensions) {
   const entry = fileForContext(context)
   if (!entry || entry.type !== 'file') return new Set()
   return new Set(classifyFileTypeCategories(entry.name, fileTypeExtensions)
     .flatMap((category) => fileTypeDefinition(category).menuCapabilities))
 }
 
-const previewStrategy: SftpContextMenuStrategy = {
+const previewStrategy: FileContextMenuStrategy = {
   id: 'file-previews',
   group: 'specialized',
   matches(context, fileTypeExtensions) {
@@ -118,7 +160,7 @@ const previewStrategy: SftpContextMenuStrategy = {
   },
 }
 
-const reversePreviewStrategy: SftpContextMenuStrategy = {
+const reversePreviewStrategy: FileContextMenuStrategy = {
   id: 'reverse-preview',
   group: 'specialized',
   matches(context, fileTypeExtensions) {
@@ -129,7 +171,7 @@ const reversePreviewStrategy: SftpContextMenuStrategy = {
   },
 }
 
-const scriptExecutionStrategy: SftpContextMenuStrategy = {
+const scriptExecutionStrategy: FileContextMenuStrategy = {
   id: 'script-execution',
   group: 'specialized',
   matches(context, fileTypeExtensions) {
@@ -149,7 +191,7 @@ const scriptExecutionStrategy: SftpContextMenuStrategy = {
   },
 }
 
-const archiveExtractionStrategy: SftpContextMenuStrategy = {
+const archiveExtractionStrategy: FileContextMenuStrategy = {
   id: 'archive-extraction',
   group: 'specialized',
   matches(context) {
@@ -159,21 +201,30 @@ const archiveExtractionStrategy: SftpContextMenuStrategy = {
   contribute(context) {
     const entry = fileForContext(context)
     if (!entry) return []
+    const destinations = [
+      { target: 'current-directory' as const, id: 'current-directory', label: '当前路径' },
+      { target: 'archive-directory' as const, id: 'archive-directory', label: archiveBaseName(entry.name) + '/' },
+      { target: 'choose-directory' as const, id: 'choose-directory', label: '选择目录' },
+    ]
     return [{
       kind: 'submenu',
       id: 'extract-archive',
       label: '解压',
       icon: 'archive',
-      children: [
-        action('extract-current-directory', '解压到当前路径', 'folder-open', { type: 'extract-archive', target: 'current-directory' }),
-        action('extract-archive-directory', `解压到 ${archiveBaseName(entry.name)}/`, 'folder-open', { type: 'extract-archive', target: 'archive-directory' }),
-        action('extract-choose-directory', '解压到...', 'folder-plus', { type: 'extract-archive', target: 'choose-directory' }),
-      ],
+      children: destinations.flatMap((destination, index) => [
+        ...(index ? [{ kind: 'separator' as const, id: 'extract-' + destination.id + '-separator' }] : []),
+        ...operationStrategies.map(({ strategy, label }) => action(
+          'extract-' + destination.id + '-' + strategy,
+          destination.label + ' · ' + label,
+          undefined,
+          { type: 'extract-archive', target: destination.target, strategy },
+        )),
+      ]),
     }]
   },
 }
 
-const singleEntryStrategy: SftpContextMenuStrategy = {
+const singleEntryStrategy: FileContextMenuStrategy = {
   id: 'single-entry-common',
   group: 'common',
   matches: (context) => context.kind === 'single-entry',
@@ -188,17 +239,14 @@ const singleEntryStrategy: SftpContextMenuStrategy = {
       action('download', isDirectory ? '下载文件夹' : '下载文件', 'arrow-down', { type: 'download' }),
       action('copy', '复制', 'copy', { type: 'copy' }),
       action('cut', '剪切', 'scissors', { type: 'cut' }),
-      action('paste', isDirectory ? '粘贴到文件夹' : '粘贴到当前目录', 'clipboard-paste', { type: 'paste' }, {
-        disabled: !context.canPaste,
-        disabledReason: context.canPaste ? undefined : '剪贴板为空',
-      }),
+      pasteStrategyMenu(!context.canPaste),
       action('copy-path', '复制路径', 'copy', { type: 'copy-path' }),
       action('delete', '删除', 'trash', { type: 'delete' }),
     ]
   },
 }
 
-const multipleEntriesStrategy: SftpContextMenuStrategy = {
+const multipleEntriesStrategy: FileContextMenuStrategy = {
   id: 'multiple-entries-common',
   group: 'common',
   matches: (context) => context.kind === 'multiple-entries',
@@ -207,7 +255,7 @@ const multipleEntriesStrategy: SftpContextMenuStrategy = {
     const { entries } = context
     const count = entries.length
     const allEntriesSupported = entries.every((entry) => entry.type === 'file' || entry.type === 'directory')
-    const nodes: SftpMenuNode[] = []
+    const nodes: FileMenuNode[] = []
     if (allEntriesSupported) {
       nodes.push(
         action('download', `下载 ${count} 项`, 'arrow-down', { type: 'download' }),
@@ -215,10 +263,7 @@ const multipleEntriesStrategy: SftpContextMenuStrategy = {
         action('cut', `剪切 ${count} 项`, 'scissors', { type: 'cut' }),
       )
     }
-    nodes.push(action('paste', '粘贴到当前目录', 'clipboard-paste', { type: 'paste' }, {
-      disabled: !context.canPaste,
-      disabledReason: context.canPaste ? undefined : '剪贴板为空',
-    }))
+    nodes.push(pasteStrategyMenu(!context.canPaste))
     if (allEntriesSupported) nodes.push(action('delete', `删除 ${count} 项`, 'trash', { type: 'delete' }))
     return nodes
   },
@@ -232,7 +277,7 @@ const sortColumns: { column: SortColumn; label: string }[] = [
   { column: 'permissions', label: '权限' },
 ]
 
-const directoryBackgroundStrategy: SftpContextMenuStrategy = {
+const directoryBackgroundStrategy: FileContextMenuStrategy = {
   id: 'directory-background-common',
   group: 'common',
   matches: (context) => context.kind === 'directory-background',
@@ -262,17 +307,14 @@ const directoryBackgroundStrategy: SftpContextMenuStrategy = {
         ],
       },
       action('copy-path', '复制路径', 'copy', { type: 'copy-path' }),
-      action('paste', '粘贴', 'clipboard-paste', { type: 'paste' }, {
-        disabled: !context.canPaste,
-        disabledReason: context.canPaste ? undefined : '剪贴板为空',
-      }),
+      pasteStrategyMenu(!context.canPaste),
       action('create-directory', '新建文件夹', 'folder-plus', { type: 'create-directory' }),
-      action('upload', '上传', 'upload', { type: 'upload' }),
+      uploadStrategyMenu(),
     ]
   },
 }
 
-const searchResultStrategy: SftpContextMenuStrategy = {
+const searchResultStrategy: FileContextMenuStrategy = {
   id: 'search-result-common',
   group: 'common',
   matches: (context) => context.kind === 'search-result',
@@ -282,7 +324,7 @@ const searchResultStrategy: SftpContextMenuStrategy = {
   },
 }
 
-export const sftpContextMenuStrategies: readonly SftpContextMenuStrategy[] = [
+export const fileContextMenuStrategies: readonly FileContextMenuStrategy[] = [
   previewStrategy,
   reversePreviewStrategy,
   scriptExecutionStrategy,
@@ -293,10 +335,10 @@ export const sftpContextMenuStrategies: readonly SftpContextMenuStrategy[] = [
   searchResultStrategy,
 ]
 
-export function resolveSftpContextMenu(context: SftpContextMenuContext, fileTypeExtensions: FileTypeExtensions): SftpMenuNode[] {
-  const specialized: SftpMenuNode[] = []
-  const common: SftpMenuNode[] = []
-  for (const strategy of sftpContextMenuStrategies) {
+export function resolveFileContextMenu(context: FileContextMenuContext, fileTypeExtensions: FileTypeExtensions): FileMenuNode[] {
+  const specialized: FileMenuNode[] = []
+  const common: FileMenuNode[] = []
+  for (const strategy of fileContextMenuStrategies) {
     if (!strategy.matches(context, fileTypeExtensions)) continue
     const destination = strategy.group === 'specialized' ? specialized : common
     destination.push(...strategy.contribute(context, fileTypeExtensions))

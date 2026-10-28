@@ -4,10 +4,9 @@ import type { ScriptExecutionRequest, ScriptExecutionEvent } from './script-exec
 import type { ConnectResult, TrustHostKeyInput, SessionKind, TerminalOutputEvent, ConnectionClosedEvent } from './sessions'
 import type { PerformanceMonitorState } from './performance'
 import type { AppSettings, AppSettingsPatch } from './settings'
-import type { DroppedUploadEntry, TransferResult, RemoteMoveRequest, RemoteMoveDecision, RemoteMoveResult, RemoteCopyRequest, RemoteCopyDecision, RemoteCopyResult, TransferProgress, TransferQueuedEvent, RemoteMoveEvent, RemoteCopyEvent } from './transfers'
-import type { PreviewResult, TextFileRevision, TextFileSaveResult, LogPreviewPage } from './previews'
+import type { DroppedUploadEntry, TransferResult, OperationPreflightRequest, OperationPreflight, OperationExecutionRequest, OperationExecutionResult, UploadPreflightRequest, UploadPreflight, UploadExecutionRequest, TransferProgress, TransferQueuedEvent, ArchiveDependency } from './transfers'
+import type { PreviewResult, TextFileRevision, TextFileSaveResult, TextFileSaveConflict, LogPreviewPage } from './previews'
 import type { PreviewType } from '../file-type-registry'
-import type { RemoteArchiveDecision, RemoteArchiveEvent, RemoteArchiveRequest, RemoteArchiveResult } from '../archive'
 
 export interface RemoteFilesApi {
   listProfiles(): Promise<ServerProfile[]>
@@ -27,8 +26,10 @@ export interface RemoteFilesApi {
   updateAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
   listCommandAliasSnapshots(): Promise<CommandAliasSnapshot[]>
   syncCommandAliases(profileId: string): Promise<CommandAliasOperationResult>
-  saveCommandAlias(profileId: string, name: string, command: string, overwrite: boolean): Promise<CommandAliasOperationResult>
-  deleteCommandAlias(profileId: string, name: string): Promise<CommandAliasOperationResult>
+  saveCommandAlias(profileId: string, name: string, command: string): Promise<CommandAliasOperationResult>
+  preflightDeleteCommandAlias(profileId: string, name: string, expectedCommand: string): Promise<CommandAliasOperationResult>
+  executeCommandAliasOperation(preflightId: string): Promise<CommandAliasOperationResult>
+  cancelCommandAliasPreflight(preflightId: string): Promise<boolean>
   listDirectory(sessionId: string, remotePath: string): Promise<RemoteEntry[]>
   startNameSearch(request: NameSearchRequest): Promise<void>
   cancelNameSearch(requestId: string): Promise<boolean>
@@ -36,28 +37,19 @@ export interface RemoteFilesApi {
   cancelContentSearch(requestId: string): Promise<boolean>
   startScriptExecution(request: ScriptExecutionRequest): Promise<void>
   cancelScriptExecution(requestId: string): Promise<boolean>
-  uploadFiles(requestId: string, sessionId: string, remoteDirectory: string): Promise<TransferResult>
-  uploadFolder(requestId: string, sessionId: string, remoteDirectory: string): Promise<TransferResult>
+  preflightUpload(request: UploadPreflightRequest): Promise<UploadPreflight | null>
+  executeUpload(request: UploadExecutionRequest): Promise<TransferResult>
+  cancelUploadPreflight(preflightId: string): Promise<boolean>
   getPathForFile(file: File): string
-  uploadDroppedEntries(
-    requestId: string,
-    sessionId: string,
-    remoteDirectory: string,
-    entries: DroppedUploadEntry[],
-  ): Promise<TransferResult>
   downloadEntries(requestId: string, sessionId: string, remotePaths: string[]): Promise<TransferResult>
   cancelTransfer(requestId: string): Promise<boolean>
-  moveRemoteEntries(request: RemoteMoveRequest): Promise<RemoteMoveResult>
-  decideRemoteMove(requestId: string, conflictId: string, decision: RemoteMoveDecision): Promise<boolean>
-  cancelRemoteMove(requestId: string): Promise<boolean>
-  copyRemoteEntries(request: RemoteCopyRequest): Promise<RemoteCopyResult>
-  decideRemoteCopy(requestId: string, conflictId: string, decision: RemoteCopyDecision): Promise<boolean>
+  preflightOperation(request: OperationPreflightRequest): Promise<OperationPreflight>
+  executeOperation(request: OperationExecutionRequest): Promise<OperationExecutionResult>
+  cancelOperation(preflightId: string): Promise<boolean>
+  installArchiveDependencies(sessionId: string, dependencies: ArchiveDependency[], password: string): Promise<void>
   createRemoteDirectory(sessionId: string, remoteDirectory: string, name: string): Promise<void>
   copyRemotePath(sessionId: string, remotePath: string): Promise<void>
-  deleteRemoteEntry(sessionId: string, remotePath: string): Promise<void>
-  startRemoteArchiveExtraction(request: RemoteArchiveRequest): Promise<RemoteArchiveResult>
-  decideRemoteArchiveExtraction(requestId: string, conflictId: string, decision: RemoteArchiveDecision): Promise<boolean>
-  cancelRemoteArchiveExtraction(requestId: string): Promise<boolean>
+  deleteRemoteEntries(sessionId: string, remotePaths: string[]): Promise<void>
   previewFile(sessionId: string, remotePath: string, type: PreviewType): Promise<PreviewResult>
   openExternalUrl(url: string): Promise<void>
   saveTextFile(
@@ -65,7 +57,8 @@ export interface RemoteFilesApi {
     remotePath: string,
     content: string,
     expectedRevision: TextFileRevision,
-  ): Promise<TextFileSaveResult>
+    forceOverwrite?: boolean,
+  ): Promise<TextFileSaveResult | TextFileSaveConflict>
   readLogPreview(
     sessionId: string,
     remotePath: string,
@@ -75,9 +68,6 @@ export interface RemoteFilesApi {
   releasePreview(token: string): Promise<void>
   onTransferProgress(callback: (progress: TransferProgress) => void): () => void
   onTransferQueued(callback: (event: TransferQueuedEvent) => void): () => void
-  onRemoteMoveEvent(callback: (event: RemoteMoveEvent) => void): () => void
-  onRemoteCopyEvent(callback: (event: RemoteCopyEvent) => void): () => void
-  onRemoteArchiveEvent(callback: (event: RemoteArchiveEvent) => void): () => void
   onNameSearchEvent(callback: (event: NameSearchEvent) => void): () => void
   onContentSearchEvent(callback: (event: ContentSearchEvent) => void): () => void
   onScriptExecutionEvent(callback: (event: ScriptExecutionEvent) => void): () => void

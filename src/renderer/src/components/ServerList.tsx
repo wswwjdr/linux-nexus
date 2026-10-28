@@ -89,7 +89,7 @@ export default function ServerList({
                 <button
                   className="server-entry-connect"
                   disabled={connectionPending}
-                  onClick={() => onConnect(profile, 'sftp')}
+                  onClick={() => onConnect(profile, 'files')}
                   onContextMenu={(event) => openContextMenu(event, profile)}
                 >
                   <span className="server-entry-icon"><Server size={17} /></span>
@@ -140,8 +140,8 @@ export default function ServerList({
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onContextMenu={(event) => event.preventDefault()}
         >
-          <button className="entry-context-action" role="menuitem" onClick={() => onConnect(contextMenu.profile, 'sftp')}>
-            <FolderOpen size={16} /> SFTP 文件管理
+          <button className="entry-context-action" role="menuitem" onClick={() => onConnect(contextMenu.profile, 'files')}>
+            <FolderOpen size={16} /> 文件管理
           </button>
           <button className="entry-context-action" role="menuitem" onClick={() => onConnect(contextMenu.profile, 'terminal')}>
             <Terminal size={16} /> SSH 终端

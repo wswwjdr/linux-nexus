@@ -15,8 +15,8 @@ interface ShortcutGroup {
 
 const shortcutGroups: ShortcutGroup[] = [
   {
-    id: 'sftp',
-    scope: 'SFTP 文件管理',
+    id: 'files',
+    scope: '文件管理',
     icon: FolderOpen,
     items: [
       { bindings: [['Ctrl', 'F']], action: '打开文件搜索' },

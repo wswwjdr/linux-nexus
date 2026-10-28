@@ -1,7 +1,7 @@
 import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { ServerProfile, SessionKind, StartupConnection, TrustHostKeyInput } from '@shared/types'
 import type { PendingHostKey, RecentConnection, SessionTab, BrowserContextMenu } from '@/app-types'
-import type { SessionPreviewActions } from '@/features/files/SftpSessionWorkspace'
+import type { SessionPreviewActions } from '@/features/files/FileSessionWorkspace'
 import type { ToastNotice } from '@/GlobalToast'
 import { connectFailureText, errorMessage, getParentPath } from '@/app-utils'
 
@@ -138,7 +138,7 @@ export function useSessionOperations({
         { profileId: profile.id, connectedAt: Date.now() },
         ...current.filter((connection) => connection.profileId !== profile.id),
       ])
-      if (session.kind === 'sftp') {
+      if (session.kind === 'files') {
         const path = session.currentPath || result.path
         patchSession(session.id, {
           currentPath: path,
@@ -158,7 +158,7 @@ export function useSessionOperations({
 
   const openSession = (profile: ServerProfile, kind: SessionKind, startPath = '', source?: SessionTab) => {
     const id = crypto.randomUUID()
-    const currentPath = kind === 'sftp' ? source?.currentPath || '/' : ''
+    const currentPath = kind === 'files' ? source?.currentPath || '/' : ''
     const session: SessionTab = {
       id,
       profileId: profile.id,
@@ -168,12 +168,12 @@ export function useSessionOperations({
       startPath,
       entries: [],
       selectedPaths: [],
-      loading: kind === 'sftp',
+      loading: kind === 'files',
       viewMode: source?.viewMode ?? viewModeDefault,
       sort: source?.sort ?? { column: 'name', direction: 'ascending' },
       highlightedPath: null,
-      history: kind === 'sftp' ? [currentPath] : [],
-      historyIndex: kind === 'sftp' ? 0 : -1,
+      history: kind === 'files' ? [currentPath] : [],
+      historyIndex: kind === 'files' ? 0 : -1,
       error: null,
     }
     setBrowserContextMenu(null)
@@ -262,7 +262,7 @@ export function useSessionOperations({
 
   const navigateSession = (sessionId: string, remotePath: string): Promise<boolean> => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    if (session?.kind !== 'sftp' || session.status !== 'connected') return Promise.resolve(false)
+    if (session?.kind !== 'files' || session.status !== 'connected') return Promise.resolve(false)
     const nextHistory = session.history.slice(0, session.historyIndex + 1)
     if (nextHistory.at(-1) !== remotePath) nextHistory.push(remotePath)
     updateSession(sessionId, (current) => ({ ...current, history: nextHistory, historyIndex: nextHistory.length - 1 }))
@@ -286,7 +286,7 @@ export function useSessionOperations({
   }
 
   const movePathHistory = (offset: -1 | 1) => {
-    if (!activeSession || activeSession.kind !== 'sftp' || activeSession.status !== 'connected') return
+    if (!activeSession || activeSession.kind !== 'files' || activeSession.status !== 'connected') return
     const previousIndex = activeSession.historyIndex
     const nextIndex = previousIndex + offset
     const remotePath = activeSession.history[nextIndex]

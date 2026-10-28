@@ -13,9 +13,9 @@ import type {
   NameSearchResult,
   SearchResultTarget,
 } from '@shared/types'
-import SftpContextMenu from '@/features/files/SftpContextMenu'
+import FileContextMenu from '@/features/files/FileContextMenu'
 import { SearchHistory, SearchScopeControl, type SearchScopeConditions, isNormalizedAbsoluteRemotePath, readSearchHistory } from './SearchShared'
-import type { SftpContextMenuContext, SftpMenuAction } from '@/features/files/sftp-menu'
+import type { FileContextMenuContext, FileMenuAction } from '@/features/files/file-menu'
 import { errorMessage, formatSize } from '@/app-utils'
 
 import { NameVirtualResults, ResultMenu, emptyNameProgress, emptyContentProgress, historyScopeLabel, initialNameConditions, initialContentConditions, isNameConditions, isContentConditions, openMenu, statusLabel, MAX_QUERY_LENGTH, NAME_HISTORY_KEY, CONTENT_HISTORY_KEY, DEFAULT_MAX_FILE_SIZE_MIB, type NameConditions, type ContentConditions, type ResultMenuState, type SearchPaneHandle, type SearchPaneProps, type SearchStatus } from './SearchPaneShared'

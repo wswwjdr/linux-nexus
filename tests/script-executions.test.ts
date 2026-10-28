@@ -46,7 +46,7 @@ function createHarness() {
   }
   const manager = new ScriptExecutionManager(
     (sessionId) => sessionId === request.sessionId
-      ? { sessionId, profileId: 'profile-1', kind: 'sftp', client: client as unknown as Client, sftp: {} as never }
+      ? { sessionId, profileId: 'profile-1', kind: 'files', client: client as unknown as Client }
       : undefined,
     (event) => events.push(event),
   )

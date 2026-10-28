@@ -1,8 +1,8 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { RemoteEntry } from '@shared/types'
 import type { BrowserContextMenu, SessionTab } from '../../app-types'
-import type { SessionPreviewActions } from './SftpSessionWorkspace'
-import type { SftpContextMenuContext, SftpMenuAction } from './sftp-menu'
+import type { SessionPreviewActions } from './FileSessionWorkspace'
+import type { FileContextMenuContext, FileMenuAction } from './file-menu'
 import type { ToastNotice } from '../../GlobalToast'
 import type { useRemoteOperations } from '../remote-files/useRemoteOperations'
 import type { useSessionOperations } from '../sessions/useSessionOperations'
@@ -15,7 +15,7 @@ type SessionOperations = ReturnType<typeof useSessionOperations>
 type TransferOperations = ReturnType<typeof useTransfers>
 type ScriptExecution = ReturnType<typeof useScriptExecution>
 
-interface UseSftpMenuActionsOptions {
+interface UseFileMenuActionsOptions {
   activeSession: SessionTab | null
   connectedSessionId: string | null
   currentPath: string
@@ -35,7 +35,7 @@ interface UseSftpMenuActionsOptions {
   showToast: (kind: ToastNotice['kind'], message: string, action?: ToastNotice['action']) => void
 }
 
-export function useSftpMenuActions({
+export function useFileMenuActions({
   activeSession,
   connectedSessionId,
   currentPath,
@@ -52,7 +52,7 @@ export function useSftpMenuActions({
   locateSearchResult,
   patchSession,
   showToast,
-}: UseSftpMenuActionsOptions) {
+}: UseFileMenuActionsOptions) {
   const openBrowserContextMenu = (menu: BrowserContextMenu) => {
     setSessionContextMenu(null)
     contextMenuAnchorRef.current = menu.anchor
@@ -89,7 +89,7 @@ export function useSftpMenuActions({
     }
   }
 
-  const dispatchSftpMenuAction = (action: SftpMenuAction, context: SftpContextMenuContext, sessionId: string) => {
+  const dispatchFileMenuAction = (action: FileMenuAction, context: FileContextMenuContext, sessionId: string) => {
     setBrowserContextMenu(null)
     if (context.kind === 'search-result'
       && (action.type === 'run-script' || action.type === 'adjust-script-command')) setSearchOpen(sessionId, false)
@@ -107,7 +107,7 @@ export function useSftpMenuActions({
         if (entry) void previewActionsRef.current.get(sessionId)?.previewLogFile(entry)
         break
       case 'extract-archive':
-        if (entry) remoteOperations.extractRemoteArchive(entry, action.target, currentPath)
+        if (entry) remoteOperations.extractRemoteArchive(entry, action.target, currentPath, action.strategy)
         break
       case 'run-script':
         if (entry) scriptExecution.runScript(entry, sessionId)
@@ -125,9 +125,9 @@ export function useSftpMenuActions({
         if (entries) remoteOperations.cutRemoteSelection(entries)
         break
       case 'paste':
-        if (context.kind === 'directory-background') remoteOperations.pasteRemoteEntries(context.directory)
-        else if (context.kind === 'single-entry' && context.entry.type === 'directory') remoteOperations.pasteRemoteEntries(context.entry.path)
-        else remoteOperations.pasteRemoteEntries(currentPath)
+        if (context.kind === 'directory-background') remoteOperations.pasteRemoteEntries(context.directory, action.strategy)
+        else if (context.kind === 'single-entry' && context.entry.type === 'directory') remoteOperations.pasteRemoteEntries(context.entry.path, action.strategy)
+        else remoteOperations.pasteRemoteEntries(currentPath, action.strategy)
         break
       case 'copy-path':
         if (context.kind === 'single-entry') void copyPath(context.entry.path)
@@ -137,12 +137,12 @@ export function useSftpMenuActions({
         if (entries) remoteOperations.requestRemoteEntriesDeletion(entries)
         break
       case 'sort-column':
-        if (context.kind === 'directory-background' && activeSession?.kind === 'sftp') {
+        if (context.kind === 'directory-background' && activeSession?.kind === 'files') {
           patchSession(activeSession.id, { sort: { ...context.sort, column: action.column } })
         }
         break
       case 'sort-direction':
-        if (context.kind === 'directory-background' && activeSession?.kind === 'sftp') {
+        if (context.kind === 'directory-background' && activeSession?.kind === 'files') {
           patchSession(activeSession.id, { sort: { ...context.sort, direction: action.direction } })
         }
         break
@@ -150,7 +150,7 @@ export function useSftpMenuActions({
         remoteOperations.setCreateDirectoryDialog({ name: '' })
         break
       case 'upload':
-        void transfers.uploadFiles()
+        transfers.uploadFiles(action.strategy)
         break
       case 'open-location':
         if (context.kind === 'search-result') void locateSearchResult(context.result, sessionId)
@@ -158,5 +158,5 @@ export function useSftpMenuActions({
     }
   }
 
-  return { openEntryContextMenu, openDirectoryContextMenu, dispatchSftpMenuAction }
+  return { openEntryContextMenu, openDirectoryContextMenu, dispatchFileMenuAction }
 }

@@ -8,9 +8,9 @@ type PdfPreviewResult = Extract<PreviewResult, { type: 'pdf' }>
 
 export const pdfPreviewStrategy: PreviewStrategy<PdfPreviewResult> = {
   types: ['pdf'],
-  async preview({ sessionId, profileId, sftp, remotePath, name, size }) {
+  async preview({ sessionId, profileId, remotePath, name, size }) {
     const token = randomUUID()
-    registerRemotePreviewAsset(token, sessionId, profileId, sftp, remotePath, size, previewMimeType('pdf', remotePath))
+    registerRemotePreviewAsset(token, sessionId, profileId, remotePath, size, previewMimeType('pdf', remotePath))
     return { type: 'pdf', name, url: previewUrl(token, name), token }
   },
 }

@@ -11,7 +11,7 @@ export function ProfileDialogs(props: Pick<DialogLayerProps, "profileDialog" | "
                 <section className="modal profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
                   <div className="modal-heading">
                     <div>
-                      <div className="modal-kicker"><Server size={14} /> SSH / SFTP</div>
+                      <div className="modal-kicker"><Server size={14} /> SSH</div>
                       <h2 id="profile-modal-title">{profileDialog.mode === 'create' ? '添加服务器' : '编辑服务器'}</h2>
                     </div>
                     <button className="icon-button modal-close" title="关闭" aria-label="关闭" onClick={onCloseProfile}><X size={18} /></button>

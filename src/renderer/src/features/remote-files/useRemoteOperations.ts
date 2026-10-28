@@ -1,30 +1,21 @@
-import { useEffect, useState, type Dispatch, type FormEvent, type MutableRefObject, type SetStateAction } from 'react'
+import { useState, type Dispatch, type FormEvent, type MutableRefObject, type SetStateAction } from 'react'
 import type {
-  RemoteCopyConflict,
-  RemoteCopyDecision,
-  RemoteCopyEvent,
-  RemoteCopyResult,
+  ArchiveDependency,
+  OperationExecutionStrategy,
+  OperationPreflight,
+  OperationPreflightRequest,
+  OperationStrategy,
+  RemoteOperationKind,
   RemoteEntry,
-  RemoteArchiveConflict,
-  RemoteArchiveDecision,
-  RemoteArchiveEvent,
-  RemoteArchiveProgress,
-  RemoteArchiveResult,
-  RemoteMoveConflict,
-  RemoteMoveDecision,
-  RemoteMoveProgress,
-  RemoteMoveResult,
   ServerProfile,
 } from '@shared/types'
 import type { BrowserContextMenu, SessionTab } from '@/app-types'
 import { errorMessage, getParentPath } from '@/app-utils'
 
-interface ActiveRemoteMove {
-  requestId: string
+interface ActiveOperation {
+  preflightId: string
   sessionId: string
-  progress: RemoteMoveProgress
-  conflict: RemoteMoveConflict | null
-  decisionPending: boolean
+  operation: RemoteOperationKind
 }
 
 interface RemoteClipboard {
@@ -33,41 +24,23 @@ interface RemoteClipboard {
   sourcePaths: string[]
 }
 
-interface ActiveRemoteCopy {
-  requestId: string
-  sessionId: string
-  targetDirectory: string
-  conflict: RemoteCopyConflict | null
-  decisionPending: boolean
-}
-
-interface RemoteOperationSummary {
-  operation: 'move' | 'copy'
-  result: RemoteMoveResult | RemoteCopyResult
-}
-
 interface RemoteEntryDeleteDialog {
   entries: RemoteEntry[]
   sessionId: string
   directory: string
 }
 
-export interface ActiveArchiveExtraction {
-  requestId: string
+export interface ArchiveDependencyInstallRequest {
   sessionId: string
-  name: string
-  path: string
-  targetDirectory: string
-  wrapInDirectory: boolean
-  progress: RemoteArchiveProgress
-  conflict: RemoteArchiveConflict | null
-  decisionPending: boolean
+  dependencies: ArchiveDependency[]
+  operationRequest: OperationPreflightRequest
 }
 
 export interface ArchiveDestinationDialogState {
   sessionId: string
   entry: Pick<RemoteEntry, 'name' | 'path'>
   directory: string
+  strategy: OperationStrategy
 }
 
 interface UseRemoteOperationsOptions {
@@ -98,55 +71,24 @@ export function useRemoteOperations({
   const [remoteEntryDeleteDialog, setRemoteEntryDeleteDialog] = useState<RemoteEntryDeleteDialog | null>(null)
   const [remoteEntryDeleteError, setRemoteEntryDeleteError] = useState<string | null>(null)
   const [remoteEntryDeleting, setRemoteEntryDeleting] = useState(false)
-  const [activeRemoteMove, setActiveRemoteMove] = useState<ActiveRemoteMove | null>(null)
   const [remoteClipboard, setRemoteClipboard] = useState<RemoteClipboard | null>(null)
-  const [activeRemoteCopy, setActiveRemoteCopy] = useState<ActiveRemoteCopy | null>(null)
-  const [remoteOperationSummary, setRemoteOperationSummary] = useState<RemoteOperationSummary | null>(null)
-  const [remoteOperationDetailsOpen, setRemoteOperationDetailsOpen] = useState(false)
+  const [operationPreflight, setOperationPreflight] = useState<OperationPreflight | null>(null)
+  const [activeOperation, setActiveOperation] = useState<ActiveOperation | null>(null)
+  const [operationBusy, setOperationBusy] = useState(false)
   const [createDirectoryDialog, setCreateDirectoryDialog] = useState<{ name: string } | null>(null)
   const [creatingDirectory, setCreatingDirectory] = useState(false)
-  const [activeArchiveExtraction, setActiveArchiveExtraction] = useState<ActiveArchiveExtraction | null>(null)
   const [archiveDestinationDialog, setArchiveDestinationDialog] = useState<ArchiveDestinationDialogState | null>(null)
-  const [archiveSummary, setArchiveSummary] = useState<RemoteArchiveResult | null>(null)
-
-  useEffect(() => window.remoteFiles.onRemoteArchiveEvent((event: RemoteArchiveEvent) => {
-    if (event.type === 'conflict') {
-      setActiveArchiveExtraction((current) => current?.requestId === event.conflict.requestId
-        ? { ...current, conflict: event.conflict, decisionPending: false }
-        : current)
-      return
-    }
-    setActiveArchiveExtraction((current) => current?.requestId === event.progress.requestId
-      ? { ...current, progress: event.progress }
-      : current)
-  }), [])
-
-  useEffect(() => window.remoteFiles.onRemoteMoveEvent((event) => {
-    if (event.type === 'conflict') {
-      setActiveRemoteMove((current) => current?.requestId === event.conflict.requestId
-        ? { ...current, conflict: event.conflict, decisionPending: false }
-        : current)
-      return
-    }
-    setActiveRemoteMove((current) => current?.requestId === event.progress.requestId
-      ? { ...current, progress: event.progress }
-      : current)
-  }), [])
-
-  useEffect(() => window.remoteFiles.onRemoteCopyEvent((event: RemoteCopyEvent) => {
-    if (event.type !== 'conflict') return
-    setActiveRemoteCopy((current) => current?.requestId === event.conflict.requestId
-      ? { ...current, conflict: event.conflict, decisionPending: false }
-      : current)
-  }), [])
+  const [archiveInstallRequest, setArchiveInstallRequest] = useState<ArchiveDependencyInstallRequest | null>(null)
+  const [archiveInstallBusy, setArchiveInstallBusy] = useState(false)
+  const [archiveInstallError, setArchiveInstallError] = useState<string | null>(null)
 
   const clipboardMatchesProfile = Boolean(remoteClipboard && connectedProfile
     && remoteClipboard.profile.id === connectedProfile.id
     && remoteClipboard.profile.host === connectedProfile.host
     && remoteClipboard.profile.port === connectedProfile.port
     && remoteClipboard.profile.username === connectedProfile.username)
-  const canPasteRemote = Boolean(clipboardMatchesProfile && activeSession?.kind === 'sftp'
-    && activeSession.status === 'connected' && !activeRemoteCopy && !activeRemoteMove)
+  const canPasteRemote = Boolean(clipboardMatchesProfile && activeSession?.kind === 'files'
+    && activeSession.status === 'connected' && !activeOperation && !operationPreflight && !archiveInstallRequest)
 
   const setRemoteSelectionClipboard = (selectedEntries: RemoteEntry[], mode: RemoteClipboard['mode']) => {
     if (!connectedProfile || !connectedSessionId || selectedEntries.length === 0) return
@@ -185,101 +127,68 @@ export function useRemoteOperations({
     }
   }
 
-  const startArchiveExtraction = (entry: Pick<RemoteEntry, 'name' | 'path'>, sessionId: string, targetDirectory: string, wrapInDirectory: boolean) => {
-    if (activeArchiveExtraction) return
-    const profileId = sessionsRef.current.find((candidate) => candidate.id === sessionId)?.profileId
-    const requestId = window.crypto.randomUUID()
-    const extraction: ActiveArchiveExtraction = {
-      requestId,
-      sessionId,
-      name: entry.name,
-      path: entry.path,
-      targetDirectory,
-      wrapInDirectory,
-      progress: { requestId, sessionId, phase: 'preparing', completedCount: 0, totalCount: 0, currentPath: null },
-      conflict: null,
-      decisionPending: false,
-    }
+  const startArchiveExtraction = (
+    entry: Pick<RemoteEntry, 'name' | 'path'>,
+    sessionId: string,
+    targetDirectory: string,
+    wrapInDirectory: boolean,
+    strategy: OperationStrategy,
+  ) => {
     setArchiveDestinationDialog(null)
-    setArchiveSummary(null)
-    setActiveArchiveExtraction(extraction)
-    setBrowserContextMenu(null)
-    void (async () => {
-      let outputDirectory = targetDirectory
-      try {
-        const result = await window.remoteFiles.startRemoteArchiveExtraction({
-          requestId,
-          sessionId,
-          archivePath: entry.path,
-          targetDirectory,
-          wrapInDirectory,
-        })
-        outputDirectory = result.outputDirectory
-        setArchiveSummary(result)
-      } catch (error) {
-        showToast('error', `解压失败：${errorMessage(error)}`)
-      } finally {
-        setActiveArchiveExtraction((current) => current?.requestId === requestId ? null : current)
-        const sessionsToRefresh = sessionsRef.current.filter((candidate) => candidate.profileId === profileId
-          && candidate.kind === 'sftp' && candidate.status === 'connected'
-          && (candidate.currentPath === targetDirectory
-            || candidate.currentPath.startsWith(targetDirectory === '/' ? '/' : targetDirectory + '/')))
-        await Promise.all(sessionsToRefresh.map((candidate) => loadDirectory(candidate.id, candidate.currentPath)))
-      }
-    })()
+    void startRemoteOperation('extract', [], targetDirectory, strategy, {
+      archivePath: entry.path,
+      wrapInDirectory,
+      sessionId,
+    })
   }
 
   const extractRemoteArchive = (
     entry: Pick<RemoteEntry, 'name' | 'path'>,
     target: 'current-directory' | 'archive-directory' | 'choose-directory',
     activeDirectory: string,
+    strategy: OperationStrategy,
   ) => {
     const session = activeSession
-    if (!session || session.kind !== 'sftp' || session.status !== 'connected' || activeArchiveExtraction) return
+    if (!session || session.kind !== 'files' || session.status !== 'connected' || activeOperation || operationPreflight) return
     setBrowserContextMenu(null)
     if (target === 'choose-directory') {
-      setArchiveDestinationDialog({ sessionId: session.id, entry, directory: activeDirectory })
+      setArchiveDestinationDialog({ sessionId: session.id, entry, directory: activeDirectory, strategy })
       return
     }
-    startArchiveExtraction(entry, session.id, activeDirectory, target === 'archive-directory')
+    startArchiveExtraction(entry, session.id, activeDirectory, target === 'archive-directory', strategy)
   }
 
   const beginArchiveExtractionAt = (targetDirectory: string) => {
     const dialog = archiveDestinationDialog
     if (!dialog) return
-    startArchiveExtraction(dialog.entry, dialog.sessionId, targetDirectory, false)
+    startArchiveExtraction(dialog.entry, dialog.sessionId, targetDirectory, false, dialog.strategy)
   }
 
-  const decideRemoteArchiveConflict = async (decision: RemoteArchiveDecision) => {
-    const extraction = activeArchiveExtraction
-    const conflict = extraction?.conflict
-    if (!extraction || !conflict || extraction.decisionPending) return
-    setActiveArchiveExtraction((current) => current?.requestId === extraction.requestId
-      ? { ...current, decisionPending: true }
-      : current)
+  const confirmArchiveDependencyInstall = async (password: string) => {
+    const request = archiveInstallRequest
+    if (!request || archiveInstallBusy) return
+    setArchiveInstallBusy(true)
+    setArchiveInstallError(null)
     try {
-      const accepted = await window.remoteFiles.decideRemoteArchiveExtraction(extraction.requestId, conflict.conflictId, decision)
-      if (!accepted) throw new Error('解压冲突已失效，请重试')
-      setActiveArchiveExtraction((current) => current?.requestId === extraction.requestId && current.conflict?.conflictId === conflict.conflictId
-        ? { ...current, conflict: null, decisionPending: false }
-        : current)
+      await window.remoteFiles.installArchiveDependencies(request.sessionId, request.dependencies, password)
+      const preflight = await window.remoteFiles.preflightOperation(request.operationRequest)
+      if (preflight.missingDependencies?.length) throw new Error('依赖安装后服务器仍缺少所需工具')
+      setOperationPreflight(preflight)
+      setArchiveInstallRequest(null)
+      showToast('info', '依赖已安装，请确认服务器解压命令')
     } catch (error) {
-      showToast('error', `提交解压决策失败：${errorMessage(error)}`)
-      setActiveArchiveExtraction((current) => current?.requestId === extraction.requestId
-        ? { ...current, decisionPending: false }
-        : current)
+      setArchiveInstallError(errorMessage(error))
+    } finally {
+      setArchiveInstallBusy(false)
     }
   }
 
-  const cancelActiveArchiveExtraction = () => {
-    const extraction = activeArchiveExtraction
-    if (!extraction) return
-    void window.remoteFiles.cancelRemoteArchiveExtraction(extraction.requestId).then((cancelled) => {
-      if (!cancelled) showToast('info', '解压任务已结束')
-    }).catch((error) => showToast('error', `取消解压失败：${errorMessage(error)}`))
+  const cancelArchiveDependencyInstall = () => {
+    if (archiveInstallBusy) return
+    setArchiveInstallRequest(null)
+    setArchiveInstallError(null)
+    setOperationPreflight(null)
   }
-
-  const closeArchiveSummary = () => setArchiveSummary(null)
 
   const createArchiveDestinationDirectory = async (directory: string, name: string) => {
     const dialog = archiveDestinationDialog
@@ -305,23 +214,18 @@ export function useRemoteOperations({
     const { entries, sessionId, directory } = remoteEntryDeleteDialog
     setRemoteEntryDeleting(true)
     setRemoteEntryDeleteError(null)
-    const deleted: RemoteEntry[] = []
-    const failed: { entry: RemoteEntry; error: string }[] = []
     try {
-      for (const entry of entries) {
-        try {
-          await window.remoteFiles.deleteRemoteEntry(sessionId, entry.path)
-          deleted.push(entry)
-        } catch (error) {
-          failed.push({ entry, error: errorMessage(error) })
-        }
-      }
+      await window.remoteFiles.deleteRemoteEntries(sessionId, entries.map((entry) => entry.path))
+    } catch (error) {
+      setRemoteEntryDeleteError(errorMessage(error))
+      setRemoteEntryDeleting(false)
+      return
     } finally {
       setRemoteEntryDeleting(false)
     }
 
-    if (deleted.length > 0) {
-      const deletedPaths = new Set(deleted.map((entry) => entry.path))
+    {
+      const deletedPaths = new Set(entries.map((entry) => entry.path))
       updateSession(sessionId, (session) => ({
         ...session,
         entries: session.entries.filter((item) => !deletedPaths.has(item.path)),
@@ -329,184 +233,123 @@ export function useRemoteOperations({
       await loadDirectory(sessionId, directory)
     }
 
-    setRemoteEntryDeleteDialog(failed.length > 0
-      ? { entries: failed.map(({ entry }) => entry), sessionId, directory }
-      : null)
-    setRemoteEntryDeleteError(failed.length > 0
-      ? failed.map(({ entry, error }) => `${entry.name}: ${error}`).join('；')
-      : null)
-    if (deleted.length > 0) showToast('info', `已删除 ${deleted.length} 项`)
+    setRemoteEntryDeleteDialog(null)
+    setRemoteEntryDeleteError(null)
+    showToast('info', `已删除 ${entries.length} 项`)
   }
 
-  const showRemoteOperationResult = (operation: 'move' | 'copy', result: RemoteMoveResult | RemoteCopyResult) => {
-    const label = operation === 'copy' ? '复制' : '移动'
-    const completedCount = operation === 'copy'
-      ? (result as RemoteCopyResult).copiedCount
-      : (result as RemoteMoveResult).movedCount
-    const status = result.status === 'cancelled' ? '已取消' : '已完成'
-    const counts = `已${label} ${completedCount} 项，跳过 ${result.skippedCount} 项，失败 ${result.failedCount} 项`
-      + (result.cancelledCount > 0 ? `，未完成 ${result.cancelledCount} 项` : '')
-    setRemoteOperationSummary({ operation, result })
-    setRemoteOperationDetailsOpen(false)
-    showToast('info', `远程${label}${status}：${counts}`, result.failedCount > 0
-      ? { label: `查看${label}详情`, onClick: () => setRemoteOperationDetailsOpen(true) }
-      : undefined)
-  }
-
-  const beginRemoteCopy = (targetDirectory: string) => {
-    const session = activeSession
-    const clipboard = remoteClipboard
-    if (!session || session.kind !== 'sftp' || session.status !== 'connected'
-      || !clipboard || !canPasteRemote || activeRemoteCopy || activeRemoteMove) return
-    const requestId = window.crypto.randomUUID()
-    const sourcePaths = [...clipboard.sourcePaths]
+  const startRemoteOperation = async (
+    operation: RemoteOperationKind,
+    sourcePaths: string[],
+    targetDirectory: string,
+    strategy: OperationStrategy,
+    extra?: { archivePath?: string; wrapInDirectory?: boolean; sessionId?: string },
+  ) => {
+    const sessionId = extra?.sessionId ?? activeSession?.id
+    const session = sessionId ? sessionsRef.current.find((candidate) => candidate.id === sessionId) : null
+    if (!session || session.kind !== 'files' || session.status !== 'connected'
+      || activeOperation || operationPreflight || archiveInstallRequest) return
     setBrowserContextMenu(null)
-    setActiveRemoteCopy({ requestId, sessionId: session.id, targetDirectory, conflict: null, decisionPending: false })
-    void (async () => {
-      try {
-        const result = await window.remoteFiles.copyRemoteEntries({ requestId, sessionId: session.id, sourcePaths, targetDirectory })
-        showRemoteOperationResult('copy', result)
-      } catch (error) {
-        showToast('error', `复制失败：${errorMessage(error)}`)
-      } finally {
-        setActiveRemoteCopy((current) => current?.requestId === requestId ? null : current)
-        if (sessionsRef.current.some((candidate) => candidate.id === session.id
-          && candidate.status === 'connected' && candidate.currentPath === targetDirectory)) {
-          await loadDirectory(session.id, targetDirectory)
-        }
-      }
-    })()
-  }
-
-  const decideRemoteCopyConflict = async (decision: RemoteCopyDecision) => {
-    const copy = activeRemoteCopy
-    const conflict = copy?.conflict
-    if (!copy || !conflict || copy.decisionPending) return
-    setActiveRemoteCopy((current) => current?.requestId === copy.requestId
-      ? { ...current, decisionPending: true }
-      : current)
     try {
-      const accepted = await window.remoteFiles.decideRemoteCopy(copy.requestId, conflict.conflictId, decision)
-      if (!accepted) throw new Error('复制冲突已失效，请重试')
-      setActiveRemoteCopy((current) => current?.requestId === copy.requestId && current.conflict?.conflictId === conflict.conflictId
-        ? { ...current, conflict: null, decisionPending: false }
-        : current)
+      const operationRequest: OperationPreflightRequest = {
+        requestId: window.crypto.randomUUID(),
+        sessionId: session.id,
+        operation,
+        sourcePaths: [...sourcePaths],
+        targetDirectory,
+        strategy,
+        ...(extra?.archivePath ? { archivePath: extra.archivePath, wrapInDirectory: extra.wrapInDirectory } : {}),
+      }
+      const preflight = await window.remoteFiles.preflightOperation(operationRequest)
+      setOperationPreflight(preflight)
+      if (preflight.missingDependencies?.length) {
+        setArchiveInstallRequest({ sessionId: session.id, dependencies: preflight.missingDependencies, operationRequest })
+        setArchiveInstallError(null)
+      }
     } catch (error) {
-      showToast('error', `提交复制决策失败：${errorMessage(error)}`)
-      setActiveRemoteCopy((current) => current?.requestId === copy.requestId
-        ? { ...current, decisionPending: false }
-        : current)
+      const label = operation === 'copy' ? '复制' : operation === 'move' ? '移动' : '解压'
+      showToast('error', `${label}预检失败：${errorMessage(error)}`)
     }
   }
 
-  const beginRemoteMove = (sourcePaths: string[], targetDirectory: string, consumeCutClipboard = false) => {
-    const session = activeSession
-    if (!session || session.kind !== 'sftp' || session.status !== 'connected' || activeRemoteMove || activeRemoteCopy) return
-    const cutClipboard = consumeCutClipboard && remoteClipboard?.mode === 'cut' ? remoteClipboard : null
-    const requestId = window.crypto.randomUUID()
-    const profileId = session.profileId
-    const pathsToMove = [...sourcePaths]
-    setActiveRemoteMove({
-      requestId,
-      sessionId: session.id,
-      progress: { requestId, sessionId: session.id, completedCount: 0, totalCount: pathsToMove.length, currentPath: null },
-      conflict: null,
-      decisionPending: false,
-    })
-    void (async () => {
-      try {
-        const result = await window.remoteFiles.moveRemoteEntries({ requestId, sessionId: session.id, sourcePaths: pathsToMove, targetDirectory })
-        showRemoteOperationResult('move', result)
-        if (cutClipboard && cutClipboard.sourcePaths.length === pathsToMove.length
-          && cutClipboard.sourcePaths.every((path, index) => path === pathsToMove[index])) {
-          const completedPaths = new Set(result.results
-            .filter((item) => item.status === 'moved' && !item.message)
-            .map((item) => item.sourcePath))
-          const remainingPaths = pathsToMove.filter((path) => !completedPaths.has(path))
-          setRemoteClipboard((current) => current?.mode === 'cut'
-            && current.profile.id === cutClipboard.profile.id
-            && current.profile.host === cutClipboard.profile.host
-            && current.profile.port === cutClipboard.profile.port
-            && current.profile.username === cutClipboard.profile.username
-            && current.sourcePaths.length === cutClipboard.sourcePaths.length
-            && current.sourcePaths.every((path, index) => path === cutClipboard.sourcePaths[index])
-            ? remainingPaths.length > 0 ? { ...current, sourcePaths: current.sourcePaths.filter((path) => remainingPaths.includes(path)) } : null
-            : current)
-        }
-      } catch (error) {
-        showToast('error', `移动失败：${errorMessage(error)}`)
-      } finally {
-        setActiveRemoteMove((current) => current?.requestId === requestId ? null : current)
-        const affectedDirectories = new Set([
-          ...pathsToMove.map(getParentPath),
-          targetDirectory,
-          getParentPath(targetDirectory),
-        ])
-        const sessionsToRefresh = sessionsRef.current.filter((candidate) => candidate.profileId === profileId
-          && candidate.kind === 'sftp' && candidate.status === 'connected'
-          && affectedDirectories.has(candidate.currentPath))
-        await Promise.all(sessionsToRefresh.map((candidate) => loadDirectory(candidate.id, candidate.currentPath)))
-      }
-    })()
+  const beginRemoteCopy = (targetDirectory: string, strategy: OperationStrategy = 'confirm') => {
+    if (!remoteClipboard || remoteClipboard.mode !== 'copy' || !canPasteRemote) return
+    void startRemoteOperation('copy', remoteClipboard.sourcePaths, targetDirectory, strategy)
   }
 
-  const pasteRemoteEntries = (targetDirectory: string) => {
-    if (remoteClipboard?.mode === 'cut') beginRemoteMove(remoteClipboard.sourcePaths, targetDirectory, true)
-    else beginRemoteCopy(targetDirectory)
+  const beginRemoteMove = (sourcePaths: string[], targetDirectory: string, strategy: OperationStrategy = 'confirm') => {
+    void startRemoteOperation('move', sourcePaths, targetDirectory, strategy)
   }
 
-  const decideRemoteMoveConflict = async (decision: RemoteMoveDecision) => {
-    const move = activeRemoteMove
-    const conflict = move?.conflict
-    if (!move || !conflict || move.decisionPending) return
-    setActiveRemoteMove((current) => current?.requestId === move.requestId
-      ? { ...current, decisionPending: true }
-      : current)
+  const pasteRemoteEntries = (targetDirectory: string, strategy: OperationStrategy = 'confirm') => {
+    if (!remoteClipboard || !canPasteRemote) return
+    const operation = remoteClipboard.mode === 'cut' ? 'move' : 'copy'
+    void startRemoteOperation(operation, remoteClipboard.sourcePaths, targetDirectory, strategy)
+  }
+
+  const confirmRemoteOperation = async (strategy: OperationExecutionStrategy) => {
+    const preflight = operationPreflight
+    if (!preflight || operationBusy) return
+    setOperationBusy(true)
+    setActiveOperation({ preflightId: preflight.preflightId, sessionId: preflight.sessionId, operation: preflight.operation })
+    const label = preflight.operation === 'copy' ? '复制' : preflight.operation === 'move' ? '移动' : '解压'
     try {
-      const accepted = await window.remoteFiles.decideRemoteMove(move.requestId, conflict.conflictId, decision)
-      if (!accepted) throw new Error('移动冲突已失效，请重试')
-      setActiveRemoteMove((current) => current?.requestId === move.requestId && current.conflict?.conflictId === conflict.conflictId
-        ? { ...current, conflict: null, decisionPending: false }
-        : current)
+      const result = await window.remoteFiles.executeOperation({ preflightId: preflight.preflightId, strategy })
+      showToast('info', result.status === 'cancelled' ? `${label}已取消` : `${label}命令已完成`)
+      if (result.status === 'completed' && preflight.operation === 'move') {
+        setRemoteClipboard((current) => current?.mode === 'cut'
+          && current.sourcePaths.length === preflight.sourcePaths.length
+          && current.sourcePaths.every((path, index) => path === preflight.sourcePaths[index]) ? null : current)
+      }
     } catch (error) {
-      showToast('error', `提交移动决策失败：${errorMessage(error)}`)
-      setActiveRemoteMove((current) => current?.requestId === move.requestId
-        ? { ...current, decisionPending: false }
-        : current)
+      showToast('error', `${label}失败：${errorMessage(error)}`)
+    } finally {
+      setOperationBusy(false)
+      setActiveOperation(null)
+      setOperationPreflight(null)
+      const affectedDirectories = new Set([
+        ...preflight.sourcePaths.map(getParentPath),
+        preflight.targetDirectory,
+        ...(preflight.outputDirectory ? [preflight.outputDirectory] : []),
+      ])
+      const session = sessionsRef.current.find((candidate) => candidate.id === preflight.sessionId)
+      const refreshSessions = sessionsRef.current.filter((candidate) => candidate.profileId === session?.profileId
+        && candidate.kind === 'files' && candidate.status === 'connected'
+        && [...affectedDirectories].some((directory) => candidate.currentPath === directory
+          || candidate.currentPath.startsWith(directory === '/' ? '/' : directory + '/')))
+      await Promise.all(refreshSessions.map((candidate) => loadDirectory(candidate.id, candidate.currentPath)))
     }
   }
 
-  const cancelActiveRemoteMove = () => {
-    const move = activeRemoteMove
-    if (!move) return
-    void window.remoteFiles.cancelRemoteMove(move.requestId).then((cancelled) => {
-      if (!cancelled && activeRemoteMove?.requestId === move.requestId) showToast('info', '移动任务已结束')
-    }).catch((error) => showToast('error', `取消移动失败：${errorMessage(error)}`))
+  const cancelActiveOperation = () => {
+    if (activeOperation) {
+      void window.remoteFiles.cancelOperation(activeOperation.preflightId).catch((error) => showToast('error', `取消操作失败：${errorMessage(error)}`))
+      return
+    }
+    if (operationPreflight) setOperationPreflight(null)
   }
 
   return {
-    activeRemoteMove,
-    activeRemoteCopy,
+    operationPreflight,
+    activeOperation,
+    operationBusy,
     canPasteRemote,
     remoteClipboard,
     remoteEntryDeleteDialog,
     remoteEntryDeleteError,
     remoteEntryDeleting,
-    remoteOperationSummary,
-    remoteOperationDetailsOpen,
-    setRemoteOperationDetailsOpen,
     createDirectoryDialog,
     setCreateDirectoryDialog,
     creatingDirectory,
-    activeArchiveExtraction,
     archiveDestinationDialog,
-    archiveSummary,
+    archiveInstallRequest,
+    archiveInstallBusy,
+    archiveInstallError,
     submitCreateDirectory,
     extractRemoteArchive,
     beginArchiveExtractionAt,
-    decideRemoteArchiveConflict,
-    cancelActiveArchiveExtraction,
-    closeArchiveSummary,
+    confirmArchiveDependencyInstall,
+    cancelArchiveDependencyInstall,
     createArchiveDestinationDirectory,
     setArchiveDestinationDialog,
     requestRemoteEntriesDeletion,
@@ -517,8 +360,7 @@ export function useRemoteOperations({
     beginRemoteCopy,
     beginRemoteMove,
     pasteRemoteEntries,
-    decideRemoteCopyConflict,
-    decideRemoteMoveConflict,
-    cancelActiveRemoteMove,
+    confirmRemoteOperation,
+    cancelActiveOperation,
   }
 }

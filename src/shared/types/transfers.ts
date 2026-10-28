@@ -27,83 +27,90 @@ export interface TransferQueuedEvent {
   requestId: string
 }
 
-export interface RemoteMoveRequest {
-  requestId: string
-  sessionId: string
-  sourcePaths: string[]
-  targetDirectory: string
-}
+export type RemoteOperationKind = 'copy' | 'move' | 'extract'
+export type OperationExecutionStrategy = 'force' | 'skip' | 'update'
+export type OperationStrategy = OperationExecutionStrategy | 'confirm'
+export type ArchiveDependency = 'unzip' | 'gzip' | 'bzip2' | 'xz' | 'zstd'
 
-export type RemoteMoveDecision = 'replace' | 'skip' | 'rename' | 'replace-all' | 'skip-all' | 'rename-all' | 'cancel'
-
-export interface RemoteMoveConflict {
-  requestId: string
-  conflictId: string
-  sessionId: string
+export interface OperationConflict {
   sourcePath: string
   targetPath: string
-  sourceName: string
-  targetName: string
   sourceType: 'file' | 'directory'
-  targetType: 'file' | 'directory'
-  conflictType: 'file' | 'type-mismatch'
+  targetType: 'file' | 'directory' | 'symlink' | 'other'
 }
 
-export interface RemoteMoveProgress {
+export interface OperationPreflightRequest {
   requestId: string
   sessionId: string
-  completedCount: number
-  totalCount: number
-  currentPath: string | null
-}
-
-export type RemoteMoveEvent =
-  | { type: 'conflict'; conflict: RemoteMoveConflict }
-  | { type: 'progress'; progress: RemoteMoveProgress }
-
-export interface RemoteMoveItemResult {
-  sourcePath: string
-  sourceName: string
-  status: 'moved' | 'skipped' | 'failed' | 'cancelled'
-  message?: string
-}
-
-export interface RemoteMoveResult {
-  status: 'completed' | 'cancelled'
-  results: RemoteMoveItemResult[]
-  movedCount: number
-  skippedCount: number
-  failedCount: number
-  cancelledCount: number
-}
-
-export interface RemoteCopyRequest {
-  requestId: string
-  sessionId: string
+  operation: RemoteOperationKind
   sourcePaths: string[]
   targetDirectory: string
+  strategy: OperationStrategy
+  archivePath?: string
+  wrapInDirectory?: boolean
 }
 
-export type RemoteCopyDecision = RemoteMoveDecision
-export type RemoteCopyConflict = RemoteMoveConflict
-
-export interface RemoteCopyItemResult {
-  sourcePath: string
-  sourceName: string
-  status: 'copied' | 'skipped' | 'failed' | 'cancelled'
-  message?: string
+export interface OperationPreflight {
+  preflightId: string
+  sessionId: string
+  operation: RemoteOperationKind
+  sourcePaths: string[]
+  targetDirectory: string
+  strategy: OperationStrategy
+  conflicts: OperationConflict[]
+  commandPreviews: Record<OperationExecutionStrategy, string>
+  archivePath?: string
+  outputDirectory?: string
+  missingDependencies?: ArchiveDependency[]
 }
 
-export interface RemoteCopyResult {
+export interface OperationExecutionRequest {
+  preflightId: string
+  strategy: OperationExecutionStrategy
+}
+
+export interface OperationExecutionResult {
   status: 'completed' | 'cancelled'
-  results: RemoteCopyItemResult[]
-  copiedCount: number
-  skippedCount: number
-  failedCount: number
-  cancelledCount: number
+  operation: RemoteOperationKind
+  command: string
 }
 
-export type RemoteCopyEvent = { type: 'conflict'; conflict: RemoteCopyConflict }
+export type UploadSourceMode = 'files' | 'folder' | 'drop'
+
+export interface UploadPreflightRequest {
+  requestId: string
+  sessionId: string
+  remoteDirectory: string
+  mode: UploadSourceMode
+  entries?: DroppedUploadEntry[]
+  strategy: OperationStrategy
+}
+
+export interface UploadPreflightItem {
+  name: string
+  type: 'file' | 'directory'
+  size: number
+}
+
+export interface UploadPreflight {
+  preflightId: string
+  requestId: string
+  sessionId: string
+  profileId: string
+  remoteDirectory: string
+  remoteRoot: string
+  name: string
+  strategy: OperationStrategy
+  items: UploadPreflightItem[]
+  conflicts: OperationConflict[]
+  failures: TransferFailure[]
+  commandPreviews: Record<OperationExecutionStrategy, string>
+}
+
+export interface UploadExecutionRequest {
+  preflightId: string
+  strategy: OperationExecutionStrategy
+}
 
 export type TransferResult =
   | { status: 'completed' }

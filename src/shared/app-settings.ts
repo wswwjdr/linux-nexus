@@ -116,7 +116,7 @@ export function validateAppSettings(value: unknown): AppSettings {
     const connection = value.startupConnection
     if (!isRecord(connection) || !hasExactKeys(connection, ['profileId', 'kind'])
       || typeof connection.profileId !== 'string' || !connection.profileId
-      || (connection.kind !== 'sftp' && connection.kind !== 'terminal')) {
+      || (connection.kind !== 'files' && connection.kind !== 'terminal')) {
       throw new Error('启动连接设置无效')
     }
     startupConnection = { profileId: connection.profileId, kind: connection.kind as SessionKind }

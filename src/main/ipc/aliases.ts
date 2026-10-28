@@ -1,10 +1,13 @@
 import { ipcMain } from 'electron'
-import { deleteCommandAlias, listCommandAliasSnapshots, saveCommandAlias, synchronizeCommandAliases } from '../command-aliases'
+import { cancelCommandAliasPreflight, executeCommandAliasOperation, listCommandAliasSnapshots, preflightDeleteCommandAlias, saveCommandAlias, synchronizeCommandAliases } from '../command-aliases'
 
 export function registerAliasesIpc(): void {
   ipcMain.handle('aliases:list', () => listCommandAliasSnapshots())
   ipcMain.handle('aliases:sync', (_event, profileId: string) => synchronizeCommandAliases(profileId))
-  ipcMain.handle('aliases:save', (_event, profileId: string, name: string, command: string, overwrite: boolean) =>
-    saveCommandAlias(profileId, name, command, overwrite))
-  ipcMain.handle('aliases:delete', (_event, profileId: string, name: string) => deleteCommandAlias(profileId, name))
+  ipcMain.handle('aliases:save', (_event, profileId: string, name: string, command: string) =>
+    saveCommandAlias(profileId, name, command))
+  ipcMain.handle('aliases:delete-preflight', (_event, profileId: string, name: string, expectedCommand: string) =>
+    preflightDeleteCommandAlias(profileId, name, expectedCommand))
+  ipcMain.handle('aliases:execute', (_event, preflightId: string) => executeCommandAliasOperation(preflightId))
+  ipcMain.handle('aliases:preflight-cancel', (_event, preflightId: string) => cancelCommandAliasPreflight(preflightId))
 }

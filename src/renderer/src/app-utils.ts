@@ -61,7 +61,6 @@ export function errorMessage(error: unknown): string {
 export function connectFailureText(result: Exclude<ConnectResult, { ok: true }>): string {
   if (result.reason === 'auth-failed') return result.message
   if (result.reason === 'unreachable') return result.message
-  if (result.reason === 'sftp-unavailable') return '服务器未提供 SFTP：' + result.message
   if (result.reason === 'other') return result.message
   return ''
 }

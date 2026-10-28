@@ -104,7 +104,7 @@ test('suspends by session, preserves segmented history, and clears it when the s
   const session = {
     sessionId: 'session-1',
     profileId: 'profile-1',
-    kind: 'sftp',
+    kind: 'files',
     client,
   } as unknown as ActiveSession
   sessions.set(session.sessionId, session)

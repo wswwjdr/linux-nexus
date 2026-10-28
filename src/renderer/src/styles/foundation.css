@@ -80,9 +80,9 @@
   --shadow-toast: 0 8px 24px #26382e1a;
   --shadow-transfer: 0 4px 16px #37483d0d;
   --shadow-dialog: 0 18px 55px #15241d2c;
-  --shortcut-guide-sftp-accent: #55789f;
-  --shortcut-guide-sftp-header: #eaf1f8;
-  --shortcut-guide-sftp-surface: #f2f6fb;
+  --shortcut-guide-file-accent: #55789f;
+  --shortcut-guide-file-header: #eaf1f8;
+  --shortcut-guide-file-surface: #f2f6fb;
   --shortcut-guide-ssh-accent: #79639a;
   --shortcut-guide-ssh-header: #f0eaf7;
   --shortcut-guide-ssh-surface: #f7f3fb;

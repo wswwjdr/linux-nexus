@@ -5,23 +5,19 @@ import type {
   CommandAliasSnapshot,
   DroppedUploadEntry,
   LogPreviewPage,
-  RemoteMoveDecision,
-  RemoteMoveEvent,
-  RemoteMoveRequest,
-  RemoteMoveResult,
+  OperationExecutionRequest,
+  OperationExecutionResult,
+  OperationPreflight,
+  OperationPreflightRequest,
+  ArchiveDependency,
+  UploadPreflightRequest,
+  UploadPreflight,
+  UploadExecutionRequest,
   PreviewResult,
   PreviewType,
   PerformanceMonitorState,
   AppSettings,
   AppSettingsPatch,
-  RemoteCopyDecision,
-  RemoteCopyEvent,
-  RemoteCopyRequest,
-  RemoteCopyResult,
-  RemoteArchiveDecision,
-  RemoteArchiveEvent,
-  RemoteArchiveRequest,
-  RemoteArchiveResult,
   RemoteFilesApi,
   ContentSearchEvent,
   ContentSearchRequest,
@@ -56,10 +52,14 @@ const api: RemoteFilesApi = {
   updateAppSettings: (patch: AppSettingsPatch): Promise<AppSettings> => ipcRenderer.invoke('settings:update', patch),
   listCommandAliasSnapshots: (): Promise<CommandAliasSnapshot[]> => ipcRenderer.invoke('aliases:list'),
   syncCommandAliases: (profileId: string): Promise<CommandAliasOperationResult> => ipcRenderer.invoke('aliases:sync', profileId),
-  saveCommandAlias: (profileId: string, name: string, command: string, overwrite: boolean): Promise<CommandAliasOperationResult> =>
-    ipcRenderer.invoke('aliases:save', profileId, name, command, overwrite),
-  deleteCommandAlias: (profileId: string, name: string): Promise<CommandAliasOperationResult> =>
-    ipcRenderer.invoke('aliases:delete', profileId, name),
+  saveCommandAlias: (profileId: string, name: string, command: string): Promise<CommandAliasOperationResult> =>
+    ipcRenderer.invoke('aliases:save', profileId, name, command),
+  preflightDeleteCommandAlias: (profileId: string, name: string, expectedCommand: string): Promise<CommandAliasOperationResult> =>
+    ipcRenderer.invoke('aliases:delete-preflight', profileId, name, expectedCommand),
+  executeCommandAliasOperation: (preflightId: string): Promise<CommandAliasOperationResult> =>
+    ipcRenderer.invoke('aliases:execute', preflightId),
+  cancelCommandAliasPreflight: (preflightId: string): Promise<boolean> =>
+    ipcRenderer.invoke('aliases:preflight-cancel', preflightId),
   listDirectory: (sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('files:list', sessionId, remotePath),
   startNameSearch: (request: NameSearchRequest) => ipcRenderer.invoke('files:name-search', request),
@@ -68,44 +68,29 @@ const api: RemoteFilesApi = {
   cancelContentSearch: (requestId: string) => ipcRenderer.invoke('files:content-search-cancel', requestId),
   startScriptExecution: (request: ScriptExecutionRequest): Promise<void> => ipcRenderer.invoke('files:script-execution-start', request),
   cancelScriptExecution: (requestId: string): Promise<boolean> => ipcRenderer.invoke('files:script-execution-cancel', requestId),
-  uploadFiles: (requestId: string, sessionId: string, remoteDirectory: string) =>
-    ipcRenderer.invoke('files:upload-files', requestId, sessionId, remoteDirectory),
-  uploadFolder: (requestId: string, sessionId: string, remoteDirectory: string) =>
-    ipcRenderer.invoke('files:upload-folder', requestId, sessionId, remoteDirectory),
+  preflightUpload: (request: UploadPreflightRequest): Promise<UploadPreflight | null> => ipcRenderer.invoke('files:upload-preflight', request),
+  executeUpload: (request: UploadExecutionRequest) => ipcRenderer.invoke('files:upload-execute', request),
+  cancelUploadPreflight: (preflightId: string) => ipcRenderer.invoke('files:upload-preflight-cancel', preflightId),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
-  uploadDroppedEntries: (
-    requestId: string,
-    sessionId: string,
-    remoteDirectory: string,
-    entries: DroppedUploadEntry[],
-  ) => ipcRenderer.invoke('files:upload-dropped', requestId, sessionId, remoteDirectory, entries),
   downloadEntries: (requestId: string, sessionId: string, remotePaths: string[]) =>
     ipcRenderer.invoke('files:download', requestId, sessionId, remotePaths),
   cancelTransfer: (requestId: string) => ipcRenderer.invoke('files:transfer-cancel', requestId),
-  moveRemoteEntries: (request: RemoteMoveRequest): Promise<RemoteMoveResult> => ipcRenderer.invoke('files:move-start', request),
-  decideRemoteMove: (requestId: string, conflictId: string, decision: RemoteMoveDecision): Promise<boolean> =>
-    ipcRenderer.invoke('files:move-decision', requestId, conflictId, decision),
-  cancelRemoteMove: (requestId: string): Promise<boolean> => ipcRenderer.invoke('files:move-cancel', requestId),
-  copyRemoteEntries: (request: RemoteCopyRequest): Promise<RemoteCopyResult> => ipcRenderer.invoke('files:copy-start', request),
-  decideRemoteCopy: (requestId: string, conflictId: string, decision: RemoteCopyDecision): Promise<boolean> =>
-    ipcRenderer.invoke('files:copy-decision', requestId, conflictId, decision),
+  preflightOperation: (request: OperationPreflightRequest): Promise<OperationPreflight> => ipcRenderer.invoke('files:operation-preflight', request),
+  executeOperation: (request: OperationExecutionRequest): Promise<OperationExecutionResult> => ipcRenderer.invoke('files:operation-execute', request),
+  cancelOperation: (preflightId: string): Promise<boolean> => ipcRenderer.invoke('files:operation-cancel', preflightId),
+  installArchiveDependencies: (sessionId: string, dependencies: ArchiveDependency[], password: string): Promise<void> =>
+    ipcRenderer.invoke('files:archive-dependencies-install', sessionId, dependencies, password),
   createRemoteDirectory: (sessionId: string, remoteDirectory: string, name: string) =>
     ipcRenderer.invoke('files:create-directory', sessionId, remoteDirectory, name),
   copyRemotePath: (sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('files:path-copy', sessionId, remotePath),
-  deleteRemoteEntry: (sessionId: string, remotePath: string) =>
-    ipcRenderer.invoke('files:delete', sessionId, remotePath),
-  startRemoteArchiveExtraction: (request: RemoteArchiveRequest): Promise<RemoteArchiveResult> =>
-    ipcRenderer.invoke('files:extract-archive-start', request),
-  decideRemoteArchiveExtraction: (requestId: string, conflictId: string, decision: RemoteArchiveDecision): Promise<boolean> =>
-    ipcRenderer.invoke('files:extract-archive-decision', requestId, conflictId, decision),
-  cancelRemoteArchiveExtraction: (requestId: string): Promise<boolean> =>
-    ipcRenderer.invoke('files:extract-archive-cancel', requestId),
+  deleteRemoteEntries: (sessionId: string, remotePaths: string[]) =>
+    ipcRenderer.invoke('files:delete', sessionId, remotePaths),
   previewFile: (sessionId: string, remotePath: string, type: PreviewType): Promise<PreviewResult> =>
     ipcRenderer.invoke('files:preview', sessionId, remotePath, type),
   openExternalUrl: (url: string): Promise<void> => ipcRenderer.invoke('shell:open-external', url),
-  saveTextFile: (sessionId: string, remotePath: string, content: string, expectedRevision) =>
-    ipcRenderer.invoke('files:text-save', sessionId, remotePath, content, expectedRevision),
+  saveTextFile: (sessionId: string, remotePath: string, content: string, expectedRevision, forceOverwrite?: boolean) =>
+    ipcRenderer.invoke('files:text-save', sessionId, remotePath, content, expectedRevision, forceOverwrite),
   readLogPreview: (sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number): Promise<LogPreviewPage> =>
     ipcRenderer.invoke('files:preview-log', sessionId, remotePath, beforeOffset, snapshotSize),
   releasePreview: (token: string) => ipcRenderer.invoke('files:preview-release', token),
@@ -118,21 +103,6 @@ const api: RemoteFilesApi = {
     const listener = (_event: Electron.IpcRendererEvent, queuedEvent: TransferQueuedEvent) => callback(queuedEvent)
     ipcRenderer.on('files:transfer-queued', listener)
     return () => ipcRenderer.removeListener('files:transfer-queued', listener)
-  },
-  onRemoteMoveEvent: (callback: (event: RemoteMoveEvent) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, moveEvent: RemoteMoveEvent) => callback(moveEvent)
-    ipcRenderer.on('files:move-event', listener)
-    return () => ipcRenderer.removeListener('files:move-event', listener)
-  },
-  onRemoteCopyEvent: (callback: (event: RemoteCopyEvent) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, copyEvent: RemoteCopyEvent) => callback(copyEvent)
-    ipcRenderer.on('files:copy-event', listener)
-    return () => ipcRenderer.removeListener('files:copy-event', listener)
-  },
-  onRemoteArchiveEvent: (callback: (event: RemoteArchiveEvent) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, archiveEvent: RemoteArchiveEvent) => callback(archiveEvent)
-    ipcRenderer.on('files:extract-archive-event', listener)
-    return () => ipcRenderer.removeListener('files:extract-archive-event', listener)
   },
   onNameSearchEvent: (callback: (event: NameSearchEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, searchEvent: NameSearchEvent) => callback(searchEvent)

@@ -1,4 +1,4 @@
-import type { CommandAlias, CommandAliasSnapshot, FileTypeCategory, ServerProfile, ThemeMode } from '@shared/types'
+import type { CommandAlias, CommandAliasPreflight, CommandAliasSnapshot, FileTypeCategory, ServerProfile, ThemeMode } from '@shared/types'
 import type { FormEvent } from 'react'
 import type { FileViewMode, PendingAliasHostKey, PendingHostKey, PerformanceThresholdField, ProfileForm, SettingsFieldKey, SettingsForm } from '@/app-types'
 
@@ -18,8 +18,8 @@ export interface DialogLayerProps {
   aliasOperationBusy: boolean
   aliasName: string
   aliasCommand: string
-  aliasOverwriteConfirmation: { name: string; existingCommand: string; command: string } | null
-  aliasDeleteConfirmation: CommandAlias | null
+  aliasOverwriteConfirmation: CommandAliasPreflight | null
+  aliasDeleteConfirmation: CommandAliasPreflight | null
   onCloseProfile: () => void
   onCloseProfileDelete: () => void
   onConfirmProfileDelete: () => void

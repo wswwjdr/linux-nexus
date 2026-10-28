@@ -5,7 +5,7 @@ import ConfirmationDialog from '@/components/ConfirmationDialog'
 import { ContentSearchPane } from '@/features/search/ContentSearchPane'
 import { NameSearchPane } from '@/features/search/NameSearchPane'
 import type { SearchPaneHandle } from '@/features/search/SearchPaneShared'
-import type { SftpContextMenuContext, SftpMenuAction } from '@/features/files/sftp-menu'
+import type { FileContextMenuContext, FileMenuAction } from '@/features/files/file-menu'
 
 interface SearchDialogProps {
   sessionId: string
@@ -15,7 +15,7 @@ interface SearchDialogProps {
   previewOpen: boolean
   fileTypeExtensions: FileTypeExtensions
   onClose: () => void
-  onMenuAction: (action: SftpMenuAction, context: SftpContextMenuContext) => void
+  onMenuAction: (action: FileMenuAction, context: FileContextMenuContext) => void
 }
 
 type SearchTab = 'name' | 'content'

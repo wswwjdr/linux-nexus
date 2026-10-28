@@ -13,7 +13,7 @@ export type ConnectResult =
     }
   | {
       ok: false
-      reason: 'auth-failed' | 'unreachable' | 'sftp-unavailable' | 'other'
+      reason: 'auth-failed' | 'unreachable' | 'other'
       message: string
     }
 
@@ -23,7 +23,7 @@ export interface TrustHostKeyInput {
   previousFingerprint?: string
 }
 
-export type SessionKind = 'sftp' | 'terminal'
+export type SessionKind = 'files' | 'terminal'
 
 export interface TerminalOutputEvent {
   sessionId: string

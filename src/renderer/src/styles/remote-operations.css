@@ -1,30 +1,5 @@
-.remote-move-backdrop { z-index: 9; }
-.remote-move-conflict, .remote-move-summary { width: min(100%, 540px); max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
-.remote-move-conflict .confirmation-heading, .remote-move-summary .confirmation-heading { flex: 0 0 auto; }
-.remote-move-conflict .confirmation-details { max-height: min(180px, 24vh); overflow: auto; }
-.remote-move-item-icon { width: 17px; display: inline-flex; flex: 0 0 auto; align-items: center; color:var(--text-secondary); }
-.remote-move-conflict .confirmation-detail dd { display: flex; align-items: flex-start; gap: 5px; overflow-wrap: anywhere; }
-.remote-move-conflict-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-top: 14px; }
-.remote-move-conflict-actions > button { min-width: 0; min-height: 36px; justify-content: center; padding: 5px 8px; font-size: 11px; }
-.remote-move-conflict-actions .remote-move-cancel { grid-column: 1 / -1; }
-.remote-conflict-choice-form { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
-.remote-conflict-choice-list { min-width: 0; display: flex; flex-direction: column; gap: 7px; margin: 0; padding: 0; border: 0; }
-.remote-conflict-choice-list legend { margin-bottom: 5px; padding: 0; color:var(--text-primary); font-size: 11px; }
-.remote-conflict-choice, .remote-conflict-apply-all { min-height: 22px; display: flex; align-items: center; gap: 8px; color:var(--text-primary); font-size: 11px; cursor: pointer; }
-.remote-conflict-choice input, .remote-conflict-apply-all input { width: 14px; height: 14px; flex: 0 0 auto; margin: 0; accent-color:var(--blue); }
-.remote-conflict-apply-all { min-height: 34px; padding-top: 9px; border-top:1px solid var(--line); }
-.remote-conflict-choice-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
-.remote-conflict-choice-footer > button { min-width: 86px; }
-.remote-move-summary-counts { display: flex; flex-wrap: wrap; gap: 8px 17px; padding: 12px 1px; border-bottom:1px solid var(--line); color:var(--text-secondary); font-size: 11px; }
-.remote-move-summary-counts strong { color:var(--text-success); font-size: 14px; font-weight: 650; }
-.remote-move-result-list { min-height: 0; display: flex; flex-direction: column; gap: 6px; margin-top: 10px; overflow: auto; }
-.remote-move-result-item { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 8px 9px; border-left:2px solid var(--border-warning); color:var(--text-warning); background:var(--surface-warning); font-size: 10px; line-height: 1.45; }
-.remote-move-result-item strong, .remote-move-result-item span { overflow-wrap: anywhere; }
-.remote-move-result-item strong { color:var(--text-primary); font-size: 11px; }
-.remote-move-summary .modal-footer { flex: 0 0 auto; }
-.remote-move-summary .confirmation-icon.success { color:var(--text-success); background:var(--surface-success); }
 .remote-archive-backdrop { z-index: 10; }
-.remote-directory-picker, .remote-archive-summary { width: min(100%, 620px); max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+.remote-directory-picker { width: min(100%, 620px); max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
 .remote-directory-picker .modal-heading { flex: 0 0 auto; align-items: flex-start; }
 .remote-directory-picker .modal-heading h2 { margin: 0; }
 .remote-archive-subtitle { max-width: 500px; margin: 5px 0 0; color:var(--text-secondary); font-size: 11px; overflow-wrap: anywhere; }
@@ -47,11 +22,7 @@
 .remote-directory-current { min-width: 0; display: flex; align-items: center; gap: 7px; padding-top: 9px; color:var(--text-secondary); font-size: 10px; }
 .remote-directory-current svg { flex: 0 0 auto; color:var(--text-warning); }
 .remote-directory-current span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.remote-directory-picker .modal-footer, .remote-archive-summary .modal-footer { flex: 0 0 auto; }
-.remote-archive-summary .confirmation-heading { flex: 0 0 auto; }
-.remote-archive-output { max-height: 70px; margin: 9px 0 0; overflow: auto; color:var(--text-secondary); font: 11px/1.5 Consolas, 'Cascadia Mono', monospace; overflow-wrap: anywhere; }
-.remote-archive-summary .remote-move-result-item strong { display: flex; align-items: flex-start; gap: 5px; }
-.remote-archive-summary .remote-move-result-item strong svg { flex: 0 0 auto; margin-top: 1px; }
+.remote-directory-picker .modal-footer { flex: 0 0 auto; }
 @media (max-width: 560px) {
-  .remote-directory-picker, .remote-archive-summary { width: min(100%, calc(100vw - 24px)); }
+  .remote-directory-picker { width: min(100%, calc(100vw - 24px)); }
 }

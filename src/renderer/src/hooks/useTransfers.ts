@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { DroppedUploadEntry, RemoteEntry, TransferProgress, TransferResult } from '@shared/types'
+import type { DroppedUploadEntry, OperationExecutionStrategy, OperationStrategy, RemoteEntry, TransferProgress, TransferResult, UploadPreflight } from '@shared/types'
 import type { TransferJob } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { errorMessage } from '@/app-utils'
@@ -18,6 +18,8 @@ interface RunTransferOptions {
   refreshPath?: string
   initialTotal?: number
   deferTrayUntilProgress?: boolean
+  requestId?: string
+  sessionId?: string
 }
 
 export function useTransfers({
@@ -30,6 +32,8 @@ export function useTransfers({
   showToast,
 }: UseTransfersOptions) {
   const [transfers, setTransfers] = useState<Record<string, TransferJob>>({})
+  const [uploadPreflight, setUploadPreflight] = useState<UploadPreflight | null>(null)
+  const [uploadPreflightBusy, setUploadPreflightBusy] = useState(false)
   const completionTimers = useRef(new Map<string, number>())
   const sessionIdsRef = useRef(sessionIds)
   sessionIdsRef.current = sessionIds
@@ -115,11 +119,11 @@ export function useTransfers({
     name: string,
     direction: TransferJob['direction'],
     operation: (requestId: string) => Promise<TransferResult>,
-    { refreshPath, initialTotal = 0, deferTrayUntilProgress = false }: RunTransferOptions = {},
+    { refreshPath, initialTotal = 0, deferTrayUntilProgress = false, requestId: requestedId, sessionId: requestedSessionId }: RunTransferOptions = {},
   ) => {
-    if (!sessionId) return
-    const activeSessionId = sessionId
-    const requestId = crypto.randomUUID()
+    const activeSessionId = requestedSessionId ?? sessionId
+    if (!activeSessionId) return
+    const requestId = requestedId ?? crypto.randomUUID()
     setTransfers((current) => ({
       ...current,
       [requestId]: {
@@ -209,35 +213,57 @@ export function useTransfers({
     })
   }
 
-  const uploadFiles = () => {
+  const prepareUpload = async (mode: 'files' | 'folder' | 'drop', strategy: OperationStrategy, entries?: DroppedUploadEntry[]) => {
     if (!sessionId) return
     const activeSessionId = sessionId
     const remoteDirectory = currentPath
-    void runTransfer('上传文件', 'upload', (requestId) =>
-      window.remoteFiles.uploadFiles(requestId, activeSessionId, remoteDirectory),
-    { refreshPath: remoteDirectory, deferTrayUntilProgress: true })
+    try {
+      const preflight = await window.remoteFiles.preflightUpload({
+        requestId: crypto.randomUUID(),
+        sessionId: activeSessionId,
+        remoteDirectory,
+        mode,
+        strategy,
+        ...(entries ? { entries } : {}),
+      })
+      if (preflight) setUploadPreflight(preflight)
+    } catch (error) {
+      showToast('error', '上传预检失败：' + errorMessage(error))
+    }
   }
 
-  const uploadFolder = () => {
-    if (!sessionId) return
-    const activeSessionId = sessionId
-    const remoteDirectory = currentPath
-    void runTransfer('上传文件夹', 'upload', (requestId) =>
-      window.remoteFiles.uploadFolder(requestId, activeSessionId, remoteDirectory),
-    { refreshPath: remoteDirectory, deferTrayUntilProgress: true })
-  }
+  const uploadFiles = (strategy: OperationStrategy = 'confirm') => void prepareUpload('files', strategy)
+  const uploadFolder = (strategy: OperationStrategy = 'confirm') => void prepareUpload('folder', strategy)
 
-  const uploadDroppedEntries = (entries: DroppedUploadEntry[]) => {
+  const uploadDroppedEntries = (entries: DroppedUploadEntry[], strategy: OperationStrategy = 'confirm') => {
     if (!sessionId) return
     if (entries.length === 0) {
       showToast('info', '拖入内容中没有可上传的文件或文件夹')
       return
     }
-    const activeSessionId = sessionId
-    const remoteDirectory = currentPath
-    void runTransfer('拖放上传', 'upload', (requestId) =>
-      window.remoteFiles.uploadDroppedEntries(requestId, activeSessionId, remoteDirectory, entries),
-    { refreshPath: remoteDirectory, deferTrayUntilProgress: true })
+    void prepareUpload('drop', strategy, entries)
+  }
+
+  const confirmUploadPreflight = async (strategy: OperationExecutionStrategy) => {
+    const preflight = uploadPreflight
+    if (!preflight || uploadPreflightBusy) return
+    setUploadPreflightBusy(true)
+    setUploadPreflight(null)
+    await runTransfer(preflight.name, 'upload', () => window.remoteFiles.executeUpload({ preflightId: preflight.preflightId, strategy }), {
+      refreshPath: preflight.remoteDirectory,
+      initialTotal: preflight.items.reduce((sum, item) => sum + (item.type === 'file' ? item.size : 0), 0),
+      deferTrayUntilProgress: true,
+      requestId: preflight.requestId,
+      sessionId: preflight.sessionId,
+    })
+    setUploadPreflightBusy(false)
+  }
+
+  const cancelUploadPreflight = () => {
+    if (!uploadPreflight || uploadPreflightBusy) return
+    void window.remoteFiles.cancelUploadPreflight(uploadPreflight.preflightId)
+      .catch((error) => showToast('error', '取消上传预检失败：' + errorMessage(error)))
+    setUploadPreflight(null)
   }
 
   const download = (entries: RemoteEntry[]) => {
@@ -258,5 +284,17 @@ export function useTransfers({
     })
   }
 
-  return { transfers, cancelTransfer, uploadFiles, uploadFolder, uploadDroppedEntries, download, dismissTransfer }
+  return {
+    transfers,
+    uploadPreflight,
+    uploadPreflightBusy,
+    cancelUploadPreflight,
+    confirmUploadPreflight,
+    cancelTransfer,
+    uploadFiles,
+    uploadFolder,
+    uploadDroppedEntries,
+    download,
+    dismissTransfer,
+  }
 }

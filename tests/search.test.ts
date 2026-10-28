@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import test from 'node:test'
 import type { BrowserWindow } from 'electron'
-import type { Client, ClientChannel, SFTPWrapper } from 'ssh2'
+import type { Client, ClientChannel } from 'ssh2'
 import { buildContentSearchScript, cancelContentSearch, startContentSearch } from '../src/main/content-search.ts'
 import { buildNameSearchCommand, cancelNameSearch, startNameSearch } from '../src/main/name-search.ts'
 import { setMainWindow, sessions } from '../src/main/runtime.ts'
@@ -32,8 +32,7 @@ function setupSearch(requestId: string) {
   sessions.set(sessionId, {
     sessionId,
     client,
-    kind: 'sftp',
-    sftp: {} as SFTPWrapper,
+    kind: 'files',
     profileId,
   })
   setMainWindow({

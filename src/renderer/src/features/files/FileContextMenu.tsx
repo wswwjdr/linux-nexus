@@ -3,25 +3,25 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import type { FileTypeExtensions } from '@shared/types'
 import type { ContextMenuPosition } from '@/app-types'
 import {
-  resolveSftpContextMenu,
-  type SftpContextMenuContext,
-  type SftpMenuAction,
-  type SftpMenuActionNode,
-  type SftpMenuIcon,
-  type SftpMenuNode,
-} from './sftp-menu'
+  resolveFileContextMenu,
+  type FileContextMenuContext,
+  type FileMenuAction,
+  type FileMenuActionNode,
+  type FileMenuIcon,
+  type FileMenuNode,
+} from './file-menu'
 
-interface SftpContextMenuProps {
-  context: SftpContextMenuContext
+interface FileContextMenuProps {
+  context: FileContextMenuContext
   fileTypeExtensions: FileTypeExtensions
   position: ContextMenuPosition
   anchorRef: RefObject<HTMLElement | null>
-  onAction: (action: SftpMenuAction, context: SftpContextMenuContext) => void
+  onAction: (action: FileMenuAction, context: FileContextMenuContext) => void
   onClose: () => void
   label?: string
 }
 
-const icons: Record<SftpMenuIcon, LucideIcon> = {
+const icons: Record<FileMenuIcon, LucideIcon> = {
   'arrow-down': ArrowDown,
   'arrow-up': ArrowUp,
   'arrow-up-down': ArrowUpDown,
@@ -41,7 +41,7 @@ const icons: Record<SftpMenuIcon, LucideIcon> = {
   upload: Upload,
 }
 
-function menuLabel(context: SftpContextMenuContext): string {
+function menuLabel(context: FileContextMenuContext): string {
   if (context.kind === 'single-entry') return context.entry.name + '的操作'
   if (context.kind === 'multiple-entries') return context.entries.length + ' 个已选项目的操作'
   if (context.kind === 'search-result') return context.result.name + '的操作'
@@ -53,9 +53,9 @@ function MenuAction({
   className,
   onAction,
 }: {
-  node: SftpMenuActionNode
+  node: FileMenuActionNode
   className: string
-  onAction: (action: SftpMenuAction) => void
+  onAction: (action: FileMenuAction) => void
 }) {
   const Icon = node.icon ? icons[node.icon] : null
   const role = node.checked === undefined ? 'menuitem' : 'menuitemradio'
@@ -66,7 +66,7 @@ function MenuAction({
       role={role}
       aria-checked={node.checked}
       aria-label={node.disabledReason ? `${node.label}，${node.disabledReason}` : undefined}
-      title={node.disabledReason}
+      title={node.disabledReason ?? node.description ?? node.label}
       disabled={node.disabled}
       onClick={() => onAction(node.action)}
     >
@@ -76,14 +76,14 @@ function MenuAction({
   )
 }
 
-export default function SftpContextMenu({ context, fileTypeExtensions, position, anchorRef, onAction, onClose, label }: SftpContextMenuProps) {
+export default function FileContextMenu({ context, fileTypeExtensions, position, anchorRef, onAction, onClose, label }: FileContextMenuProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const openSubmenuTriggerRef = useRef<HTMLButtonElement>(null)
   const pendingSubmenuFocusRef = useRef<string | null>(null)
   const [menuPosition, setMenuPosition] = useState(position)
   const [openSubmenu, setOpenSubmenu] = useState<string | null>(null)
   const [submenuPosition, setSubmenuPosition] = useState<ContextMenuPosition>({ x: 0, y: 0 })
-  const nodes = useMemo(() => resolveSftpContextMenu(context, fileTypeExtensions), [context, fileTypeExtensions])
+  const nodes = useMemo(() => resolveFileContextMenu(context, fileTypeExtensions), [context, fileTypeExtensions])
 
   useLayoutEffect(() => {
     const root = rootRef.current
@@ -138,7 +138,7 @@ export default function SftpContextMenu({ context, fileTypeExtensions, position,
     }
   }, [openSubmenu])
 
-  const handleAction = (action: SftpMenuAction) => onAction(action, context)
+  const handleAction = (action: FileMenuAction) => onAction(action, context)
 
   const focusSubmenuTrigger = () => {
     openSubmenuTriggerRef.current?.focus()
@@ -184,35 +184,40 @@ export default function SftpContextMenu({ context, fileTypeExtensions, position,
     ) ?? [])
     if (!items.length) return
     event.preventDefault()
+    const focusItem = (item: HTMLElement) => {
+      item.focus()
+      if (!item.closest('[data-submenu-panel]')) setOpenSubmenu(null)
+    }
     if (event.key === 'Home') {
-      items[0].focus()
+      focusItem(items[0])
       return
     }
     if (event.key === 'End') {
-      items.at(-1)?.focus()
+      const lastItem = items.at(-1)
+      if (lastItem) focusItem(lastItem)
       return
     }
     const index = items.indexOf(activeItem)
     const step = event.key === 'ArrowDown' ? 1 : -1
-    items[(index + step + items.length) % items.length]?.focus()
+    focusItem(items[(index + step + items.length) % items.length])
   }
 
-  const renderNode = (node: SftpMenuNode, actionClassName = 'entry-context-action'): ReactElement => {
+  const renderNode = (node: FileMenuNode, actionClassName = 'entry-context-action'): ReactElement => {
     if (node.kind === 'separator') return <div className="context-menu-separator" role="separator" key={node.id} />
     if (node.kind === 'action') return <MenuAction node={node} className={actionClassName} onAction={handleAction} key={node.id} />
     const Icon = icons[node.icon]
-    const isOpen = openSubmenu === node.id
+    const isOpen = !node.disabled && openSubmenu === node.id
     return (
       <div
         className="context-submenu"
         data-submenu-id={node.id}
         key={node.id}
         onMouseEnter={(event) => {
+          if (node.disabled) return
           openSubmenuTriggerRef.current = event.currentTarget.querySelector<HTMLButtonElement>('.submenu-trigger')
           setOpenSubmenu(node.id)
         }}
-        onMouseLeave={() => setOpenSubmenu(null)}
-        onBlur={(event) => {
+        onMouseLeave={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpenSubmenu(null)
         }}
       >
@@ -222,22 +227,25 @@ export default function SftpContextMenu({ context, fileTypeExtensions, position,
           role="menuitem"
           aria-haspopup="menu"
           aria-expanded={isOpen}
+          aria-label={node.disabledReason ? `${node.label}，${node.disabledReason}` : undefined}
+          title={node.disabledReason ?? node.label}
+          disabled={node.disabled}
           data-submenu-trigger={node.id}
           onFocus={(event) => { openSubmenuTriggerRef.current = event.currentTarget }}
-          onClick={() => setOpenSubmenu(node.id)}
+          onClick={() => { if (!node.disabled) setOpenSubmenu(node.id) }}
         >
           <span className="submenu-trigger-label"><Icon size={16} /> {node.label}</span>
           <ChevronRight size={14} aria-hidden="true" />
         </button>
         {isOpen && (
           <div
-            className="sftp-context-submenu-panel"
+            className="file-context-submenu-panel"
             data-submenu-panel={node.id}
             role="menu"
             aria-label={node.label}
             style={{ position: 'fixed', left: submenuPosition.x, top: submenuPosition.y }}
           >
-            {node.children.map((child) => renderNode(child, 'sftp-context-submenu-item'))}
+            {node.children.map((child) => renderNode(child, 'file-context-submenu-item'))}
           </div>
         )}
       </div>

@@ -1,12 +1,11 @@
 import {
   Folder,
   LoaderCircle,
-  MoveRight,
   Upload,
   X,
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import type { DroppedUploadEntry, RemoteArchiveProgress, RemoteEntry, RemoteMoveProgress } from '@shared/types'
+import type { DroppedUploadEntry, RemoteEntry } from '@shared/types'
 import type { FileViewMode, SortColumn, SortDirection } from '@/app-types'
 import { formatDate, formatSize, getParentPath } from '@/app-utils'
 import FileEntryCollection from './FileEntryCollection'
@@ -23,9 +22,7 @@ interface FileBrowserProps {
   sort: { column: SortColumn; direction: SortDirection }
   sortedEntries: RemoteEntry[]
   selectedPaths: string[]
-  moveProgress: RemoteMoveProgress | null
-  copying: boolean
-  extractingArchive: { name: string; progress: RemoteArchiveProgress } | null
+  operationStatus: 'copy' | 'move' | 'extract' | null
   highlightedPath: string | null
   onViewModeChange: (mode: FileViewMode) => void
   onNavigate: (path: string) => Promise<boolean>
@@ -36,8 +33,7 @@ interface FileBrowserProps {
   onDeleteEntries: (entries: RemoteEntry[]) => void
   onDropUpload: (entries: DroppedUploadEntry[]) => void
   onDropMove: (sourcePaths: string[], targetDirectory: string) => void
-  onCancelMove: () => void
-  onCancelArchive: () => void
+  onCancelOperation: () => void
   onDropError: (error: unknown) => void
 }
 
@@ -50,9 +46,7 @@ export default function FileBrowser({
   sort,
   sortedEntries,
   selectedPaths,
-  moveProgress,
-  copying,
-  extractingArchive,
+  operationStatus,
   highlightedPath,
   onViewModeChange,
   onNavigate,
@@ -63,8 +57,7 @@ export default function FileBrowser({
   onDeleteEntries,
   onDropUpload,
   onDropMove,
-  onCancelMove,
-  onCancelArchive,
+  onCancelOperation,
   onDropError,
 }: FileBrowserProps) {
   const contentRef = useRef<HTMLDivElement>(null)
@@ -144,8 +137,7 @@ export default function FileBrowser({
   } = useFileDragAndDrop({
     sortedEntries,
     selectedPathsRef,
-    moveProgress,
-    copying,
+    operationActive: operationStatus !== null,
     onDropUpload,
     onDropMove,
     onDropError,
@@ -211,13 +203,15 @@ export default function FileBrowser({
   }
 
   const handleBackgroundContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const content = contentRef.current
+    if (!content || !content.contains(event.target as Node)) return
     if (!isSelectionBackground(event.target)) {
       event.preventDefault()
       return
     }
     event.preventDefault()
     changeSelectedPaths([])
-    onOpenDirectoryContextMenu(event.clientX, event.clientY, event.currentTarget)
+    onOpenDirectoryContextMenu(event.clientX, event.clientY, content)
   }
 
   const handleBrowserKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -252,7 +246,7 @@ export default function FileBrowser({
   }
 
   return (
-    <>
+    <div className="file-browser" onContextMenu={handleBackgroundContextMenu}>
       <FilePathBar
         currentPath={currentPath}
         breadcrumbs={breadcrumbs}
@@ -266,7 +260,6 @@ export default function FileBrowser({
         ref={contentRef}
         tabIndex={0}
         onPointerDown={handleSelectionPointerDown}
-        onContextMenu={handleBackgroundContextMenu}
         onKeyDown={handleBrowserKeyDown}
         onClick={(event) => {
           if ((event.target as Element).closest('[data-entry-path], button, a, input, select, textarea, th')) return
@@ -279,30 +272,11 @@ export default function FileBrowser({
         onDragLeave={handleDragLeave}
         onDrop={(event) => void handleDrop(event)}
       >
-        {moveProgress && (
-          <div className="remote-move-status" role="status">
-            <MoveRight size={15} />
-            <span>
-              正在移动 {moveProgress.completedCount}/{moveProgress.totalCount}
-              {moveProgress.currentPath ? `：${moveProgress.currentPath.split('/').at(-1)}` : ''}
-            </span>
-            <button type="button" className="icon-button" title="取消移动" aria-label="取消移动" onClick={onCancelMove}><X size={14} /></button>
-          </div>
-        )}
-        {copying && (
+        {operationStatus && (
           <div className="remote-copy-status" role="status">
             <LoaderCircle className="spin" size={15} />
-            <span>正在复制远端项目…</span>
-          </div>
-        )}
-        {extractingArchive && (
-          <div className="remote-archive-status" role="status">
-            <LoaderCircle className="spin" size={15} />
-            <span>正在解压：{extractingArchive.name} · {extractingArchive.progress.phase === 'preparing' ? '准备中' : extractingArchive.progress.phase === 'extracting' ? '展开中' : '合并中'}
-              {extractingArchive.progress.totalCount > 0 ? ` ${extractingArchive.progress.completedCount}/${extractingArchive.progress.totalCount}` : ''}
-              {extractingArchive.progress.currentPath ? ` · ${extractingArchive.progress.currentPath}` : ''}
-            </span>
-            <button type="button" className="icon-button" title="取消解压" aria-label="取消解压" onClick={onCancelArchive}><X size={14} /></button>
+            <span>正在{operationStatus === 'copy' ? '复制' : operationStatus === 'move' ? '移动' : '解压'}远端项目…</span>
+            <button type="button" className="icon-button" title="取消操作" aria-label="取消操作" onClick={onCancelOperation}><X size={14} /></button>
           </div>
         )}
         <FileEntryCollection
@@ -313,8 +287,7 @@ export default function FileBrowser({
           viewMode={viewMode}
           dropTargetPath={dropTargetPath}
           hoveredPath={hoveredEntry?.entry.path ?? null}
-          moveProgress={moveProgress}
-          copying={copying}
+          operationActive={operationStatus !== null}
           hoverCardRef={hoverCardRef}
           onToggleSort={onToggleSort}
           onEntryClick={handleEntryClick}
@@ -360,6 +333,6 @@ export default function FileBrowser({
           <div className="entry-hover-row"><span>权限</span><code>{hoveredEntry.entry.permissions}</code></div>
         </div>
       )}
-    </>
+    </div>
   )
 }

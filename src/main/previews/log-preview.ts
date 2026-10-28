@@ -1,28 +1,20 @@
-import type { SFTPWrapper } from 'ssh2'
 import type { LogPreviewPage } from '@shared/types'
-import { sessions } from '../runtime'
 import { readPreviewLimits } from '../state-store'
-import { fileType, normalizedRemotePath, sftpLstat } from '../sftp-utils'
+import { filesSession, normalizedRemotePath, remoteFileSize, remotePathType } from '../remote-fs'
+import { runRemoteCommand } from '../ssh-commands'
 
 const LOG_PREVIEW_PAGE_BYTES = 256 * 1024
 
-async function readSftpRange(sftp: SFTPWrapper, remotePath: string, startOffset: number, endOffset: number): Promise<Buffer> {
+async function readRemoteRange(client: ReturnType<typeof filesSession>['client'], remotePath: string, startOffset: number, endOffset: number): Promise<Buffer> {
   if (startOffset >= endOffset) return Buffer.alloc(0)
-  const stream = sftp.createReadStream(remotePath, { start: startOffset, end: endOffset - 1 })
-  const chunks: Buffer[] = []
-  let received = 0
-  try {
-    for await (const chunk of stream) {
-      const buffer = Buffer.from(chunk)
-      received += buffer.length
-      if (received > endOffset - startOffset) throw new Error('远程文件读取范围无效')
-      chunks.push(buffer)
-    }
-  } finally {
-    if (!stream.destroyed) stream.destroy()
-  }
-  if (received !== endOffset - startOffset) throw new Error('日志文件已变化，请重新打开预览')
-  return Buffer.concat(chunks, received)
+  const length = endOffset - startOffset
+  const { stdout } = await runRemoteCommand(client,
+    'dd if="$1" iflag=skip_bytes,count_bytes skip="$2" count="$3" status=none',
+    [remotePath, String(startOffset), String(length)],
+    { maxStdoutBytes: length },
+  )
+  if (stdout.length !== length) throw new Error('日志文件已变化，请重新打开预览')
+  return stdout
 }
 
 function utf8ContinuationLength(buffer: Buffer): number {
@@ -37,7 +29,7 @@ export async function readLogPreview(
   beforeOffset?: number,
   snapshotSize?: number,
 ): Promise<LogPreviewPage> {
-  if (typeof sessionId !== 'string' || !sessionId) throw new Error('SFTP 会话未连接')
+  if (typeof sessionId !== 'string' || !sessionId) throw new Error('文件会话未连接')
   if ((beforeOffset === undefined) !== (snapshotSize === undefined)) {
     throw new Error('日志预览位置无效')
   }
@@ -48,13 +40,11 @@ export async function readLogPreview(
     throw new Error('日志文件大小无效')
   }
 
-  const session = sessions.get(sessionId)
-  if (!session?.sftp) throw new Error('SFTP 会话未连接')
+  const session = filesSession(sessionId)
   const normalizedPath = normalizedRemotePath(remotePath)
-  const attrs = await sftpLstat(session.sftp, normalizedPath)
-  if (fileType(attrs.mode) !== 'file') throw new Error('只能预览普通文件')
+  if (await remotePathType(session.client, normalizedPath) !== 'file') throw new Error('只能预览普通文件')
 
-  const currentSize = attrs.size ?? 0
+  const currentSize = await remoteFileSize(session.client, normalizedPath)
   if (!Number.isSafeInteger(currentSize) || currentSize < 0) throw new Error('日志文件大小无效')
   const fileSize = snapshotSize ?? currentSize
   if (fileSize > currentSize) throw new Error('日志文件已变化，请重新打开预览')
@@ -68,7 +58,7 @@ export async function readLogPreview(
 
   const pageBytes = Math.min(LOG_PREVIEW_PAGE_BYTES, remainingBytes, endOffset)
   const candidateStart = endOffset - pageBytes
-  const range = await readSftpRange(session.sftp, normalizedPath, candidateStart, endOffset)
+  const range = await readRemoteRange(session.client, normalizedPath, candidateStart, endOffset)
   let skip = 0
   if (candidateStart > 0) {
     const firstLineBreak = range.indexOf(0x0a)

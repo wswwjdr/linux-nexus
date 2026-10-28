@@ -1,12 +1,12 @@
 import type { ComponentProps, RefObject } from 'react'
 import { Cloud, Copy, FolderOpen, LoaderCircle, Plus, Terminal, X } from 'lucide-react'
 import FileBrowser from '../files/FileBrowser'
-import SftpSessionWorkspace from '../files/SftpSessionWorkspace'
-import SftpContextMenu from '../files/SftpContextMenu'
+import FileSessionWorkspace from '../files/FileSessionWorkspace'
+import FileContextMenu from '../files/FileContextMenu'
 import ServerList from '../../components/ServerList'
 import TransferTray from '../../components/TransferTray'
 import TerminalPanel from '../../components/TerminalPanel'
-import type { FileTypeExtensions, RemoteEntry, RemoteMoveProgress, ServerProfile } from '@shared/types'
+import type { FileTypeExtensions, RemoteEntry, ServerProfile } from '@shared/types'
 import type {
   BrowserContextMenu,
   FileViewMode,
@@ -18,13 +18,12 @@ import type {
 } from '../../app-types'
 import type { useSessionOperations } from './useSessionOperations'
 import type { useRemoteOperations } from '../remote-files/useRemoteOperations'
-import type { ActiveArchiveExtraction } from '../remote-files/useRemoteOperations'
 import type { useProfileManagement } from '../../hooks/useProfileManagement'
 import type { ScriptCommandDialog } from '../files/useScriptExecution'
 import { errorMessage } from '../../app-utils'
 
 type FileBrowserProps = ComponentProps<typeof FileBrowser>
-type SftpWorkspaceProps = ComponentProps<typeof SftpSessionWorkspace>
+type FileWorkspaceProps = ComponentProps<typeof FileSessionWorkspace>
 type ServerListProps = ComponentProps<typeof ServerList>
 type TransferTrayProps = ComponentProps<typeof TransferTray>
 type TerminalPanelProps = ComponentProps<typeof TerminalPanel>
@@ -46,9 +45,7 @@ interface SessionWorkspaceState {
   breadcrumbs: Array<{ label: string; path: string }>
   sort: SessionTab['sort']
   sortedEntries: RemoteEntry[]
-  moveProgress: RemoteMoveProgress | null
-  copying: boolean
-  extractingArchive: ActiveArchiveExtraction | null
+  operationStatus: 'copy' | 'move' | 'extract' | null
   highlightedPath: string | null
   sessionContextMenu: SessionContextMenuState | null
   browserContextMenu: BrowserContextMenu | null
@@ -63,7 +60,7 @@ interface SessionWorkspaceActions {
   sessions: Pick<SessionOperations,
     'closeSession' | 'openSessionContextMenu' | 'handleSessionTabContextMenuKeyDown' | 'duplicateSession' | 'activateSession' | 'reconnectSession' | 'navigate'>
   remoteFiles: Pick<RemoteOperations,
-    'requestRemoteEntriesDeletion' | 'beginRemoteMove' | 'cancelActiveRemoteMove' | 'extractRemoteArchive' | 'cancelActiveArchiveExtraction'>
+    'requestRemoteEntriesDeletion' | 'beginRemoteMove' | 'cancelActiveOperation' | 'extractRemoteArchive'>
   browser: Pick<FileBrowserProps,
     'onOpenEntryContextMenu' | 'onOpenDirectoryContextMenu' | 'onDropUpload' | 'onDropError'>
   serverList: Pick<ServerListProps, 'onAdd' | 'onConnect' | 'onEdit' | 'onSetPinned' | 'onDelete'>
@@ -71,7 +68,7 @@ interface SessionWorkspaceActions {
     onReconnect: SessionOperations['reconnectSession']
     onError: TerminalPanelProps['onError']
   }
-  sftpWorkspace: Pick<SftpWorkspaceProps,
+  fileWorkspace: Pick<FileWorkspaceProps,
     'showToast' | 'onSearchOpenChange' | 'onWorkspaceOpenChange' | 'onBlockingChange'
     | 'onRegisterPreviewActions' | 'onCloseScriptCommand' | 'onUpdateScriptCommand'
     | 'onSubmitScriptCommand' | 'onCloseScriptExecution' | 'onStopScriptExecution'
@@ -96,8 +93,8 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
   const { state, actions, sessionContextMenuRef, contextMenuAnchorRef } = props
   const {
     sessions, profiles, offlineProfiles, activeSession, activeSessionId, connectedSessionId,
-    currentPath, entries, loading, viewMode, breadcrumbs, sort, sortedEntries, moveProgress,
-    copying, extractingArchive, highlightedPath, sessionContextMenu, browserContextMenu, searchOpenSessionIds,
+    currentPath, entries, loading, viewMode, breadcrumbs, sort, sortedEntries, operationStatus,
+    highlightedPath, sessionContextMenu, browserContextMenu, searchOpenSessionIds,
     scriptCommandDialogs, scriptExecutionDialogs,
     fileTypeExtensions, transfers,
   } = state
@@ -110,7 +107,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
     reconnectSession,
     navigate,
   } = actions.sessions
-  const { requestRemoteEntriesDeletion, beginRemoteMove, cancelActiveRemoteMove, extractRemoteArchive, cancelActiveArchiveExtraction } = actions.remoteFiles
+  const { requestRemoteEntriesDeletion, beginRemoteMove, cancelActiveOperation, extractRemoteArchive } = actions.remoteFiles
   const {
     onOpenEntryContextMenu,
     onOpenDirectoryContextMenu,
@@ -134,7 +131,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
     onStopScriptExecution,
     onMenuAction,
     onOpenExternalLink,
-  } = actions.sftpWorkspace
+  } = actions.fileWorkspace
   const { loadDirectory, setSessionChooserOpen, onCancelTransfer, onDismissTransfer, onCloseBrowserContextMenu } = actions
   const profileForSession = (session: SessionTab) => profiles.find((profile) => profile.id === session.profileId)
   const toggleSort = actions.toggleSort
@@ -142,7 +139,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
   const reportTerminalError = actions.terminal.onError
   const cancelTransferJob = actions.onCancelTransfer
   const dismissTransfer = actions.onDismissTransfer
-  const dispatchSftpMenuAction = onMenuAction
+  const dispatchFileMenuAction = onMenuAction
 
   return (
     <>
@@ -151,13 +148,13 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
             {sessions.map((session) => {
               const profile = profileForSession(session)
               const isActive = activeSessionId === session.id
-              const kindLabel = session.kind === 'sftp' ? 'SFTP' : 'SSH'
+              const kindLabel = session.kind === 'files' ? '文件管理' : 'SSH'
               const sameKindSessions = sessions.filter((candidate) =>
                 candidate.profileId === session.profileId && candidate.kind === session.kind)
               const duplicateIndex = sameKindSessions.findIndex((candidate) => candidate.id === session.id)
               const baseLabel = profile?.name ?? '服务器'
               const label = sameKindSessions.length > 1 ? `${baseLabel} (${duplicateIndex + 1})` : baseLabel
-              const title = `${label} · ${kindLabel}${session.kind === 'sftp' ? ' · ' + session.currentPath : ''}`
+              const title = `${label} · ${kindLabel}${session.kind === 'files' ? ' · ' + session.currentPath : ''}`
               return (
                 <div
                   className={'session-tab ' + (isActive ? 'active' : '')}
@@ -182,7 +179,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
                     onClick={() => activateSession(session.id)}
                     onKeyDown={(event) => handleSessionTabContextMenuKeyDown(event, session.id)}
                   >
-                    {session.kind === 'sftp' ? <FolderOpen size={14} /> : <Terminal size={14} />}
+                    {session.kind === 'files' ? <FolderOpen size={14} /> : <Terminal size={14} />}
                     <span className="session-tab-label">{label}</span>
                     <small>{kindLabel}</small>
                     {session.status === 'connecting' || session.status === 'awaiting-trust'
@@ -220,8 +217,8 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
         )}
 
         <div className="session-content">
-        {activeSession?.kind === 'sftp' && connectedSessionId ? (
-          <div className="sftp-session-panel" id={'session-panel-' + activeSession.id} role="tabpanel" aria-labelledby={'session-tab-' + activeSession.id}>
+        {activeSession?.kind === 'files' && connectedSessionId ? (
+          <div className="files-session-panel" id={'session-panel-' + activeSession.id} role="tabpanel" aria-labelledby={'session-tab-' + activeSession.id}>
             <FileBrowser
               currentPath={currentPath}
               entries={entries}
@@ -231,9 +228,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
               sort={sort}
               sortedEntries={sortedEntries}
               selectedPaths={activeSession.selectedPaths}
-              moveProgress={moveProgress}
-              copying={copying}
-              extractingArchive={extractingArchive?.sessionId === activeSession.id ? extractingArchive : null}
+              operationStatus={operationStatus}
               highlightedPath={highlightedPath}
               onViewModeChange={(mode) => patchSession(activeSession.id, { viewMode: mode })}
               onNavigate={navigate}
@@ -244,8 +239,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
               onDeleteEntries={requestRemoteEntriesDeletion}
               onDropUpload={uploadDroppedEntries}
               onDropMove={beginRemoteMove}
-              onCancelMove={cancelActiveRemoteMove}
-              onCancelArchive={cancelActiveArchiveExtraction}
+              onCancelOperation={cancelActiveOperation}
               onDropError={(error) => showToast('error', errorMessage(error))}
             />
           </div>
@@ -294,12 +288,12 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
           ))}
         </div>
 
-        {sessions.filter((session) => session.kind === 'sftp').map((session) => {
+        {sessions.filter((session) => session.kind === 'files').map((session) => {
           const profile = profiles.find((candidate) => candidate.id === session.profileId)
           if (!profile) return null
           const scriptCommandDialog = scriptCommandDialogs.get(session.id)
           return (
-            <SftpSessionWorkspace
+            <FileSessionWorkspace
               key={session.id}
               session={session}
               active={activeSessionId === session.id}
@@ -319,19 +313,19 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
               onSubmitScriptCommand={onSubmitScriptCommand}
               onCloseScriptExecution={onCloseScriptExecution}
               onStopScriptExecution={onStopScriptExecution}
-              onMenuAction={dispatchSftpMenuAction}
+              onMenuAction={dispatchFileMenuAction}
               onOpenExternalLink={onOpenExternalLink}
             />
           )
         })}
 
-        {browserContextMenu && activeSession?.kind === 'sftp' && (
-          <SftpContextMenu
+        {browserContextMenu && activeSession?.kind === 'files' && (
+          <FileContextMenu
             context={browserContextMenu}
             position={browserContextMenu}
             fileTypeExtensions={fileTypeExtensions}
             anchorRef={contextMenuAnchorRef}
-            onAction={(action, context) => dispatchSftpMenuAction(action, context, activeSession.id)}
+            onAction={(action, context) => dispatchFileMenuAction(action, context, activeSession.id)}
             onClose={onCloseBrowserContextMenu}
           />
         )}

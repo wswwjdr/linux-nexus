@@ -7,7 +7,7 @@ import PreviewDialog from '@/components/previews/PreviewDialog'
 import SearchDialog from '@/features/search/SearchDialog'
 import { usePreview } from '@/hooks/usePreview'
 import type { ScriptExecutionDialogState, SessionTab } from '@/app-types'
-import type { SftpContextMenuContext, SftpMenuAction } from './sftp-menu'
+import type { FileContextMenuContext, FileMenuAction } from './file-menu'
 import type { ToastNotice } from '@/GlobalToast'
 import ScriptSessionDialogs from './ScriptSessionDialogs'
 
@@ -16,7 +16,7 @@ export interface SessionPreviewActions {
   previewLogFile: (entry: Pick<RemoteEntry, 'name' | 'path'>) => Promise<void>
 }
 
-interface SftpSessionWorkspaceProps {
+interface FileSessionWorkspaceProps {
   session: SessionTab
   active: boolean
   searchOpen: boolean
@@ -33,11 +33,11 @@ interface SftpSessionWorkspaceProps {
   onSubmitScriptCommand: (sessionId: string, event: FormEvent<HTMLFormElement>) => void
   onCloseScriptExecution: (sessionId: string) => void
   onStopScriptExecution: (sessionId: string) => void
-  onMenuAction: (action: SftpMenuAction, context: SftpContextMenuContext, sessionId: string) => void
+  onMenuAction: (action: FileMenuAction, context: FileContextMenuContext, sessionId: string) => void
   onOpenExternalLink: (url: string) => void
 }
 
-export default function SftpSessionWorkspace({
+export default function FileSessionWorkspace({
   session,
   active,
   searchOpen,
@@ -56,7 +56,7 @@ export default function SftpSessionWorkspace({
   onStopScriptExecution,
   onMenuAction,
   onOpenExternalLink,
-}: SftpSessionWorkspaceProps) {
+}: FileSessionWorkspaceProps) {
   const preview = usePreview({
     sessionId: session.status === 'connected' ? session.id : null,
     fileTypeExtensions,
@@ -168,14 +168,18 @@ export default function SftpSessionWorkspace({
           eyebrow="保存远程文件"
           title={`覆盖 ${preview.textSaveConfirmation.name}？`}
           details={[{ label: '远程路径', value: preview.textSaveConfirmation.path }]}
-          description="确认后将以当前编辑内容覆盖服务器上的源文件。保存前会检查该文件是否已被其他人修改。"
+          description={preview.textSaveConflict
+            ? '服务器文件已被修改。你可以重新加载服务器内容，或继续覆盖服务器当前文件。'
+            : '保存前会在服务器计算 SHA-256；内容未变化时以临时文件写入并原子替换。'}
           tone="warning"
-          confirmLabel="覆盖并保存"
+          confirmLabel={preview.textSaveConflict ? '仍然覆盖' : '保存'}
+          secondaryActionLabel={preview.textSaveConflict ? '重新加载' : undefined}
           busyLabel="正在保存"
           error={preview.textSaveError}
           errorLabel="保存失败"
           busy={preview.textSaving}
-          onConfirm={() => void preview.confirmTextSave()}
+          onConfirm={() => void preview.confirmTextSave(preview.textSaveConflict)}
+          onSecondaryAction={() => void preview.reloadTextAfterConflict()}
           onCancel={preview.cancelTextSave}
         />
       )}

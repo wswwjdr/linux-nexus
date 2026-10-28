@@ -101,10 +101,10 @@ export function SettingsDialog(props: Pick<DialogLayerProps, "settingsForm" | "p
                             <button
                               type="button"
                               className="settings-view-option"
-                              aria-pressed={settingsForm.startupKind === 'sftp'}
-                              onClick={() => onUpdateStartupKind('sftp')}
+                              aria-pressed={settingsForm.startupKind === 'files'}
+                              onClick={() => onUpdateStartupKind('files')}
                             >
-                              <FolderOpen size={15} /> SFTP 文件管理
+                              <FolderOpen size={15} /> 文件管理
                             </button>
                             <button
                               type="button"

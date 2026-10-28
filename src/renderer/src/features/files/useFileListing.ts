@@ -73,7 +73,7 @@ export function useFileListing({ activeSession, viewModeDefault, patchSession }:
   }), [entries, sort])
 
   const toggleSort = (column: SortColumn) => {
-    if (!activeSession || activeSession.kind !== 'sftp') return
+    if (!activeSession || activeSession.kind !== 'files') return
     patchSession(activeSession.id, {
       sort: activeSession.sort.column === column
         ? { column, direction: activeSession.sort.direction === 'ascending' ? 'descending' : 'ascending' }

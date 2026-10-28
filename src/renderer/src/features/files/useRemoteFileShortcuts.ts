@@ -17,6 +17,7 @@ interface UseRemoteFileShortcutsOptions {
   copyRemoteSelection: (entries: RemoteEntry[]) => void
   cutRemoteSelection: (entries: RemoteEntry[]) => void
   pasteRemoteEntries: (targetDirectory: string) => void
+  openPasteStrategyMenu: () => void
 }
 
 export function useRemoteFileShortcuts({
@@ -34,6 +35,7 @@ export function useRemoteFileShortcuts({
   copyRemoteSelection,
   cutRemoteSelection,
   pasteRemoteEntries,
+  openPasteStrategyMenu,
 }: UseRemoteFileShortcutsOptions) {
   useEffect(() => {
     const openSearchShortcut = (event: KeyboardEvent) => {
@@ -42,7 +44,7 @@ export function useRemoteFileShortcuts({
         event.preventDefault()
         return
       }
-      if (activeSession?.kind !== 'sftp' || activeSession.status !== 'connected') return
+      if (activeSession?.kind !== 'files' || activeSession.status !== 'connected') return
       event.preventDefault()
       if (!searchOpenSessionIds.has(activeSession.id)) setSearchOpen(activeSession.id, true)
     }
@@ -55,7 +57,7 @@ export function useRemoteFileShortcuts({
       if (event.defaultPrevented || event.isComposing || modalOpen
         || (activeSessionId && workspaceOpenSessionIds.has(activeSessionId))
         || browserContextMenu || sessionContextMenu) return
-      if (!activeSession || activeSession.kind !== 'sftp' || activeSession.status !== 'connected') return
+      if (!activeSession || activeSession.kind !== 'files' || activeSession.status !== 'connected') return
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
 
       const target = event.target
@@ -76,7 +78,7 @@ export function useRemoteFileShortcuts({
 
       if (key === 'v' && canPasteRemote) {
         event.preventDefault()
-        pasteRemoteEntries(activeSession.currentPath)
+        openPasteStrategyMenu()
       }
     }
 
@@ -91,6 +93,7 @@ export function useRemoteFileShortcuts({
     cutRemoteSelection,
     modalOpen,
     pasteRemoteEntries,
+    openPasteStrategyMenu,
     sessionContextMenu,
     sortedEntries,
     workspaceOpenSessionIds,

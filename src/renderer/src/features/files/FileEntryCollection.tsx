@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, ArrowUpDown, File, Folder, type LucideIcon } from 'lucide-react'
 import type { DragEvent, FocusEvent, MouseEvent, RefObject } from 'react'
-import type { RemoteEntry, RemoteMoveProgress } from '@shared/types'
+import type { RemoteEntry } from '@shared/types'
 import type { FileViewMode, SortColumn, SortDirection } from '@/app-types'
 import { formatDate, formatSize } from '@/app-utils'
 
@@ -12,8 +12,7 @@ interface FileEntryCollectionProps {
   viewMode: FileViewMode
   dropTargetPath: string | null
   hoveredPath: string | null
-  moveProgress: RemoteMoveProgress | null
-  copying: boolean
+  operationActive: boolean
   hoverCardRef: RefObject<HTMLDivElement | null>
   onToggleSort: (column: SortColumn) => void
   onEntryClick: (path: string, event: MouseEvent<HTMLElement>) => void
@@ -62,8 +61,7 @@ export default function FileEntryCollection({
   viewMode,
   dropTargetPath,
   hoveredPath,
-  moveProgress,
-  copying,
+  operationActive,
   hoverCardRef,
   onToggleSort,
   onEntryClick,
@@ -95,7 +93,7 @@ export default function FileEntryCollection({
               className={'file-row ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selectedPaths.includes(entry.path) ? 'selected ' : '') + (dropTargetPath === entry.path ? 'drop-target' : '')}
               key={entry.path}
               data-entry-path={entry.path}
-              draggable={!moveProgress && !copying && (entry.type === 'file' || entry.type === 'directory')}
+              draggable={!operationActive && (entry.type === 'file' || entry.type === 'directory')}
               aria-selected={selectedPaths.includes(entry.path)}
               tabIndex={entry.path === highlightedPath ? 0 : -1}
               onClick={(event) => onEntryClick(entry.path, event)}
@@ -135,7 +133,7 @@ export default function FileEntryCollection({
           className={'file-tile ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selectedPaths.includes(entry.path) ? 'selected ' : '') + (dropTargetPath === entry.path ? 'drop-target' : '')}
           key={entry.path}
           data-entry-path={entry.path}
-          draggable={!moveProgress && !copying && (entry.type === 'file' || entry.type === 'directory')}
+          draggable={!operationActive && (entry.type === 'file' || entry.type === 'directory')}
           aria-label={entry.name}
           aria-describedby={hoveredPath === entry.path ? 'entry-hover-details' : undefined}
           tabIndex={entry.path === highlightedPath ? 0 : -1}

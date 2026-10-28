@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Cloud, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, RefreshCw, Search, Settings, Terminal, Upload } from 'lucide-react'
 import GlobalToast, { type ToastNotice } from './GlobalToast'
-import type { SessionPreviewActions } from './features/files/SftpSessionWorkspace'
+import type { SessionPreviewActions } from './features/files/FileSessionWorkspace'
 import { useScriptExecution } from './features/files/useScriptExecution'
-import { useSftpMenuActions } from './features/files/useSftpMenuActions'
+import { useFileMenuActions } from './features/files/useFileMenuActions'
 import SessionWorkspaceView from './features/sessions/SessionWorkspaceView'
 import DialogLayer from './components/DialogLayer'
 import ConfirmationDialog from './components/ConfirmationDialog'
-import { RemoteMoveConflictDialog, RemoteMoveSummaryDialog } from './components/RemoteMoveDialogs'
+import OperationConfirmDialog from './components/OperationConfirmDialog'
+import ArchiveDependencyInstallDialog from './components/ArchiveDependencyInstallDialog'
+import UploadConfirmDialog from './components/UploadConfirmDialog'
 import { RemoteArchiveDialogs } from './components/RemoteArchiveDialogs'
 import SessionChooser from './components/SessionChooser'
 import ShortcutGuideDialog from './components/ShortcutGuideDialog'
@@ -228,7 +230,7 @@ export default function App() {
     },
     onDefaultViewChange: (mode) => {
       setViewModeDefault(mode)
-      setSessions((current) => current.map((session) => session.kind === 'sftp' ? { ...session, viewMode: mode } : session))
+      setSessions((current) => current.map((session) => session.kind === 'files' ? { ...session, viewMode: mode } : session))
     },
     onFileTypeExtensionsChange: setFileTypeExtensions,
     onPerformanceThresholdsChange: setPerformanceThresholds,
@@ -340,6 +342,10 @@ export default function App() {
 
   const {
     transfers,
+    uploadPreflight,
+    uploadPreflightBusy,
+    cancelUploadPreflight,
+    confirmUploadPreflight,
     cancelTransfer: cancelTransferJob,
     uploadFiles,
     uploadFolder,
@@ -357,18 +363,17 @@ export default function App() {
   })
 
   const {
-    activeRemoteMove,
-    activeRemoteCopy,
-    activeArchiveExtraction,
+    operationPreflight,
+    activeOperation,
+    operationBusy,
     archiveDestinationDialog,
-    archiveSummary,
+    archiveInstallRequest,
+    archiveInstallBusy,
+    archiveInstallError,
     canPasteRemote,
     remoteEntryDeleteDialog,
     remoteEntryDeleteError,
     remoteEntryDeleting,
-    remoteOperationSummary,
-    remoteOperationDetailsOpen,
-    setRemoteOperationDetailsOpen,
     createDirectoryDialog,
     setCreateDirectoryDialog,
     creatingDirectory,
@@ -378,17 +383,14 @@ export default function App() {
     confirmRemoteEntryDeletion,
     copyRemoteSelection,
     cutRemoteSelection,
-    beginRemoteCopy,
     beginRemoteMove,
     pasteRemoteEntries,
-    decideRemoteCopyConflict,
-    decideRemoteMoveConflict,
-    cancelActiveRemoteMove,
+    confirmRemoteOperation,
+    cancelActiveOperation,
     extractRemoteArchive,
     beginArchiveExtractionAt,
-    decideRemoteArchiveConflict,
-    cancelActiveArchiveExtraction,
-    closeArchiveSummary,
+    confirmArchiveDependencyInstall,
+    cancelArchiveDependencyInstall,
     createArchiveDestinationDirectory,
     setArchiveDestinationDialog,
   } = useRemoteOperations({
@@ -452,7 +454,7 @@ export default function App() {
     setSearchOpen,
     showToast,
   })
-  const { openEntryContextMenu, openDirectoryContextMenu, dispatchSftpMenuAction } = useSftpMenuActions({
+  const { openEntryContextMenu, openDirectoryContextMenu, dispatchFileMenuAction } = useFileMenuActions({
     activeSession,
     connectedSessionId,
     currentPath,
@@ -480,9 +482,8 @@ export default function App() {
   const modalOpen = Boolean(
     profileDialog || profileDeleteDialog || createDirectoryDialog || settingsForm
       || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
-      || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || activeRemoteMove?.conflict
-      || activeRemoteCopy?.conflict || remoteOperationDetailsOpen || activeArchiveExtraction
-      || archiveDestinationDialog || archiveSummary
+      || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || operationPreflight || archiveInstallRequest || uploadPreflight
+      || archiveDestinationDialog
       || (activeSessionId && workspaceBlockingSessionIds.has(activeSessionId))
       || sessionChooserOpen || shortcutGuideOpen,
   )
@@ -499,29 +500,33 @@ export default function App() {
     sessionContextMenu,
     sortedEntries,
     canPasteRemote,
+    openPasteStrategyMenu: () => {
+      const anchor = document.querySelector<HTMLElement>('.file-browser-content') ?? document.body
+      openDirectoryContextMenu(Math.round(window.innerWidth / 2), Math.round(window.innerHeight / 2), anchor)
+    },
     copyRemoteSelection,
     cutRemoteSelection,
     pasteRemoteEntries,
   })
 
   const openSearch = () => {
-    if (activeSession?.kind === 'sftp' && activeSession.status === 'connected') setSearchOpen(activeSession.id, true)
+    if (activeSession?.kind === 'files' && activeSession.status === 'connected') setSearchOpen(activeSession.id, true)
   }
 
   const openTerminalForCurrentPath = () => {
-    if (!connectedProfile || activeSession?.kind !== 'sftp') return
+    if (!connectedProfile || activeSession?.kind !== 'files') return
     openSession(connectedProfile, 'terminal', currentPath)
   }
 
-  const openSftpForCurrentProfile = () => {
+  const openFileForCurrentProfile = () => {
     if (!activeSession || activeSession.kind !== 'terminal') return
     const existingSession = sessionsRef.current.find((session) =>
-      session.profileId === activeSession.profileId && session.kind === 'sftp')
+      session.profileId === activeSession.profileId && session.kind === 'files')
     if (existingSession) {
       activateSession(existingSession.id)
       return
     }
-    if (connectedProfile) openSession(connectedProfile, 'sftp')
+    if (connectedProfile) openSession(connectedProfile, 'files')
   }
 
   const reportTerminalError = useCallback((message: string) => {
@@ -596,7 +601,7 @@ export default function App() {
                 onRefresh={refreshPerformance}
               />
             )}
-            {activeSession?.kind === 'sftp' && connectedSessionId ? (
+            {activeSession?.kind === 'files' && connectedSessionId ? (
               <>
                 <button className="icon-button toolbar-button" title="搜索文件（Ctrl+F）" aria-label="搜索文件（Ctrl+F）" onClick={openSearch}>
                   <Search size={16} />
@@ -604,10 +609,10 @@ export default function App() {
                 <button className="icon-button toolbar-button" title="新建 SSH 终端" aria-label="新建 SSH 终端" onClick={openTerminalForCurrentPath}>
                   <Terminal size={16} />
                 </button>
-                <button className="text-button upload-button" title="上传文件到当前目录" aria-label="上传文件到当前目录" onClick={uploadFiles}>
+                <button className="text-button upload-button" title="上传文件到当前目录" aria-label="上传文件到当前目录" onClick={() => uploadFiles()}>
                   <Upload size={15} /> 上传文件
                 </button>
-                <button className="text-button upload-button" title="上传文件夹到当前目录" aria-label="上传文件夹到当前目录" onClick={uploadFolder}>
+                <button className="text-button upload-button" title="上传文件夹到当前目录" aria-label="上传文件夹到当前目录" onClick={() => uploadFolder()}>
                   <FolderUp size={15} /> 上传文件夹
                 </button>
                 <button className="icon-button toolbar-button" title="刷新目录" aria-label="刷新目录" disabled={loading} onClick={() => void loadDirectory(connectedSessionId, currentPath)}>
@@ -615,7 +620,7 @@ export default function App() {
                 </button>
               </>
             ) : activeSession?.kind === 'terminal' && connectedSessionId ? (
-              <button className="text-button" onClick={openSftpForCurrentProfile}><FolderOpen size={15} /> 文件管理</button>
+              <button className="text-button" onClick={openFileForCurrentProfile}><FolderOpen size={15} /> 文件管理</button>
             ) : activeSession?.status === 'disconnected' ? (
               <button className="text-button" onClick={() => reconnectSession(activeSession.id)}><RefreshCw size={14} /> 重连</button>
             ) : activeSession?.status === 'connecting' ? <LoaderCircle className="spin" size={17} /> : null}
@@ -637,11 +642,7 @@ export default function App() {
             breadcrumbs,
             sort,
             sortedEntries,
-            moveProgress: activeSession && activeRemoteMove?.sessionId === activeSession.id
-              ? activeRemoteMove.progress
-              : null,
-            copying: activeSession ? activeRemoteCopy?.sessionId === activeSession.id : false,
-            extractingArchive: activeArchiveExtraction,
+            operationStatus: activeOperation && activeSession?.id === activeOperation.sessionId ? activeOperation.operation : null,
             highlightedPath,
             sessionContextMenu,
             browserContextMenu,
@@ -664,9 +665,8 @@ export default function App() {
             remoteFiles: {
               requestRemoteEntriesDeletion,
               beginRemoteMove,
-              cancelActiveRemoteMove,
+              cancelActiveOperation,
               extractRemoteArchive,
-              cancelActiveArchiveExtraction,
             },
             browser: {
               onOpenEntryContextMenu: openEntryContextMenu,
@@ -685,7 +685,7 @@ export default function App() {
               onReconnect: reconnectSession,
               onError: reportTerminalError,
             },
-            sftpWorkspace: {
+            fileWorkspace: {
               showToast,
               onSearchOpenChange: setSearchOpen,
               onWorkspaceOpenChange: setWorkspaceOpen,
@@ -696,7 +696,7 @@ export default function App() {
               onSubmitScriptCommand: submitScriptCommand,
               onCloseScriptExecution: closeScriptExecutionDialog,
               onStopScriptExecution: stopScriptExecution,
-              onMenuAction: dispatchSftpMenuAction,
+              onMenuAction: dispatchFileMenuAction,
               onOpenExternalLink: (url) => {
                 void window.remoteFiles.openExternalUrl(url).catch((error) => showToast('error', '无法打开链接：' + errorMessage(error)))
               },
@@ -808,38 +808,33 @@ export default function App() {
         />
       )}
 
-      {activeRemoteMove?.conflict && (
-        <RemoteMoveConflictDialog
-          conflict={activeRemoteMove.conflict}
-          busy={activeRemoteMove.decisionPending}
-          onDecision={(decision) => void decideRemoteMoveConflict(decision)}
-        />
-      )}
-      {activeRemoteCopy?.conflict && (
-        <RemoteMoveConflictDialog
-          operation="copy"
-          conflict={activeRemoteCopy.conflict}
-          busy={activeRemoteCopy.decisionPending}
-          onDecision={(decision) => void decideRemoteCopyConflict(decision)}
-        />
-      )}
-      {remoteOperationDetailsOpen && remoteOperationSummary && (
-        <RemoteMoveSummaryDialog
-          operation={remoteOperationSummary.operation}
-          result={remoteOperationSummary.result}
-          onClose={() => setRemoteOperationDetailsOpen(false)}
-        />
-      )}
+      {operationPreflight && !archiveInstallRequest && <OperationConfirmDialog
+        preflight={operationPreflight}
+        busy={operationBusy}
+        onConfirm={(strategy) => void confirmRemoteOperation(strategy)}
+        onCancel={cancelActiveOperation}
+      />}
+
+      {archiveInstallRequest && <ArchiveDependencyInstallDialog
+        dependencies={archiveInstallRequest.dependencies}
+        busy={archiveInstallBusy}
+        error={archiveInstallError}
+        onInstall={(password) => void confirmArchiveDependencyInstall(password)}
+        onCancel={cancelArchiveDependencyInstall}
+      />}
+
+      {uploadPreflight && <UploadConfirmDialog
+        preflight={uploadPreflight}
+        busy={uploadPreflightBusy}
+        onConfirm={(strategy) => void confirmUploadPreflight(strategy)}
+        onCancel={cancelUploadPreflight}
+      />}
 
       <RemoteArchiveDialogs
         destination={archiveDestinationDialog}
-        extraction={activeArchiveExtraction}
-        summary={archiveSummary}
         onCloseDestination={() => setArchiveDestinationDialog(null)}
         onChooseDestination={beginArchiveExtractionAt}
         onCreateDirectory={createArchiveDestinationDirectory}
-        onConflictDecision={(decision) => void decideRemoteArchiveConflict(decision)}
-        onCloseSummary={closeArchiveSummary}
       />
 
       {sessionChooserOpen && (

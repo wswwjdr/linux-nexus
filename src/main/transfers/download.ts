@@ -1,14 +1,13 @@
 import { dialog } from 'electron'
 import { lstat as localLstat, mkdir } from 'node:fs/promises'
-import { dirname, posix } from 'node:path'
+import { basename, dirname, join, posix } from 'node:path'
 import type { TransferFailure, TransferResult } from '@shared/types'
-import { getMainWindow, messageFromError, sessions, type TransferItem } from '../runtime'
+import { getMainWindow, messageFromError, type TransferItem } from '../runtime'
 import { readAppSettings } from '../state-store'
-import { fileType, sftpLstat } from '../sftp-utils'
-import { transferFileBlocks } from './block-transfer'
+import { collectRemoteTree as collectRemoteTreeEntries, filesSession, remotePathType, remoteFileSize } from '../remote-fs'
+import { transferFileStream } from './stream-transfer'
 import {
   assertWindowsPath,
-  collectRemoteTree,
   findPathCollisions,
   localDestination,
   runTransferTasks,
@@ -57,8 +56,7 @@ async function downloadRemoteItems(
   destinationRoot: string,
   signal: AbortSignal,
 ): Promise<TransferResult> {
-  const session = sessions.get(sessionId)
-  if (!session?.sftp) throw new Error('SFTP 会话未连接')
+  const session = filesSession(sessionId)
   const blockedDirectories = new Map<string, string>()
   const collisionFailures: TransferFailure[] = []
   const collidingItems = new Set<TransferItem>()
@@ -120,7 +118,7 @@ async function downloadRemoteItems(
     const tasks = files.map((item) => ({
       path: item.remotePath!,
       size: item.size,
-      transfer: async (requestConcurrency: number, onProgress: (bytes: number) => void) => {
+      transfer: async (onProgress: (bytes: number) => void) => {
         signal.throwIfAborted()
         const parentFailure = failedParent(posix.dirname(item.relativePath), blockedDirectories)
         if (parentFailure) throw new Error('目标目录不可用：' + parentFailure)
@@ -136,7 +134,7 @@ async function downloadRemoteItems(
         if (attrs && !attrs.isFile()) throw new Error('目标文件夹与待下载文件重名')
         signal.throwIfAborted()
         await mkdir(dirname(destination), { recursive: true })
-        await transferFileBlocks('download', session.sftp!, item.remotePath!, destination, item.size, requestConcurrency, signal, onProgress)
+        await transferFileStream('download', session.client, item.remotePath!, destination, item.size, signal, onProgress)
       },
     }))
 
@@ -175,31 +173,35 @@ export async function downloadEntries(
   signal: AbortSignal,
 ): Promise<TransferResult> {
   signal.throwIfAborted()
-  const session = sessions.get(sessionId)
-  if (!session?.sftp) throw new Error('SFTP 会话未连接')
+  const session = filesSession(sessionId)
   const destination = await chooseDownloadDirectory(signal)
   if (!destination) return { status: 'not-started' }
 
   const items: TransferItem[] = []
   const failures: TransferFailure[] = []
+  const reservedNames = new Set<string>()
   for (const remotePath of remotePaths) {
     signal.throwIfAborted()
-    const name = posix.basename(remotePath)
+    const originalName = posix.basename(remotePath)
+    const name = await uniqueDownloadName(destination, originalName, reservedNames)
+    reservedNames.add(name.toLowerCase())
     try {
-      const attributes = await sftpLstat(session.sftp, remotePath)
-      signal.throwIfAborted()
-      const type = fileType(attributes.mode)
+      const type = await remotePathType(session.client, remotePath)
       if (type === 'file') {
-        items.push({ relativePath: name, type, size: attributes.size ?? 0, remotePath })
+        items.push({ relativePath: name, type, size: await remoteFileSize(session.client, remotePath), remotePath })
         continue
       }
       if (type === 'directory') {
-        const collected = await collectRemoteTree(session.sftp, remotePath, signal)
-        items.push(...collected.items.map((item) => ({
+        const collected = await collectRemoteTreeEntries(session.client, remotePath, signal)
+        items.push(...collected.filter((item) => item.type === 'file' || item.type === 'directory').map((item) => ({
           ...item,
+          type: item.type as 'file' | 'directory',
           relativePath: item.relativePath ? posix.join(name, item.relativePath) : name,
         })))
-        failures.push(...collected.failures)
+        failures.push(...collected.filter((item) => item.type === 'symlink' || item.type === 'other').map((item) => ({
+          path: item.remotePath,
+          message: item.type === 'symlink' ? '目录包含符号链接，无法下载' : '目录包含暂不支持的文件类型',
+        })))
         continue
       }
       failures.push({
@@ -223,4 +225,20 @@ export async function downloadEntries(
     destination,
     signal,
   )
+}
+
+export async function uniqueDownloadName(directory: string, originalName: string, reserved: Set<string>): Promise<string> {
+  const extensionIndex = originalName.lastIndexOf('.')
+  const stem = extensionIndex > 0 ? originalName.slice(0, extensionIndex) : originalName
+  const extension = extensionIndex > 0 ? originalName.slice(extensionIndex) : ''
+  for (let index = 0; ; index += 1) {
+    const candidate = index === 0 ? originalName : `${stem} (${index})${extension}`
+    if (reserved.has(candidate.toLowerCase())) continue
+    try {
+      await localLstat(join(directory, candidate))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return candidate
+      throw error
+    }
+  }
 }

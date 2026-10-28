@@ -1,9 +1,11 @@
 import { session } from 'electron'
 import { createReadStream as localCreateReadStream } from 'node:fs'
 import { stat as localStat } from 'node:fs/promises'
-import { Readable } from 'node:stream'
+import { PassThrough, Readable } from 'node:stream'
+import { once } from 'node:events'
 import { sessions } from './runtime'
 import { getPreviewAsset } from './previews/preview-assets'
+import { runRemoteCommand } from './ssh-commands'
 
 export function registerPreviewProtocol(): void {
   session.defaultSession.protocol.handle('remote-preview', async (request) => {
@@ -15,7 +17,7 @@ export function registerPreviewProtocol(): void {
     }
 
     const remoteSession = asset.kind === 'remote' ? sessions.get(asset.sessionId) : null
-    if (asset.kind === 'remote' && (!remoteSession || remoteSession.sftp !== asset.sftp)) {
+    if (asset.kind === 'remote' && (!remoteSession || remoteSession.kind !== 'files' || remoteSession.profileId !== asset.profileId)) {
       return new Response(null, { status: 503 })
     }
     const size = asset.kind === 'local' ? (await localStat(asset.filePath)).size : asset.size
@@ -59,13 +61,13 @@ export function registerPreviewProtocol(): void {
 
     const status = range ? 206 : 200
     if (request.method === 'HEAD') return new Response(null, { status, headers })
-    const readOptions = range
-      ? { start: range.start, end: range.end }
-      : asset.kind === 'remote' && size > 0 ? { start: 0, end: size - 1 } : undefined
-    const source = asset.kind === 'local'
-      ? localCreateReadStream(asset.filePath, readOptions)
-      : asset.sftp.createReadStream(asset.remotePath, readOptions)
-    const abortSource = () => source.destroy()
+    const readOptions = range ? { start: range.start, end: range.end } : undefined
+    const source = asset.kind === 'local' ? localCreateReadStream(asset.filePath, readOptions) : new PassThrough()
+    const controller = new AbortController()
+    const abortSource = () => {
+      controller.abort()
+      source.destroy()
+    }
     source.once('close', () => {
       request.signal.removeEventListener('abort', abortSource)
       if (asset.kind === 'remote') asset.activeStreams.delete(source)
@@ -75,6 +77,22 @@ export function registerPreviewProtocol(): void {
     }
     if (request.signal.aborted) abortSource()
     else request.signal.addEventListener('abort', abortSource, { once: true })
+    if (asset.kind === 'remote' && remoteSession) {
+      const start = range?.start ?? 0
+      const length = range ? range.end - range.start + 1 : size
+      void runRemoteCommand(remoteSession.client,
+        'dd if="$1" iflag=skip_bytes,count_bytes skip="$2" count="$3" status=none',
+        [asset.remotePath, String(start), String(length)],
+        {
+          signal: controller.signal,
+          collectStdout: false,
+          onStdout: async (chunk) => {
+            const writable = source as PassThrough
+            if (!writable.write(chunk)) await once(writable, 'drain')
+          },
+        },
+      ).then(() => (source as PassThrough).end(), (error: unknown) => (source as PassThrough).destroy(error instanceof Error ? error : new Error(String(error))))
+    }
     return new Response(Readable.toWeb(source) as unknown as BodyInit, { status, headers })
   })
 }

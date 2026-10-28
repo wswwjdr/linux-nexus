@@ -6,8 +6,13 @@ export interface TextFileRevision {
 }
 
 export interface TextFileSaveResult {
+  status: 'saved'
   revision: TextFileRevision
-  backupPath?: string
+}
+
+export interface TextFileSaveConflict {
+  status: 'conflict'
+  currentHash: string
 }
 
 export type PreviewResult =

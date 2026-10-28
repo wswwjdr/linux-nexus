@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   CommandAlias,
+  CommandAliasPreflight,
   CommandAliasOperationResult,
   CommandAliasSnapshot,
   ServerProfile,
@@ -16,12 +17,6 @@ interface UseCommandAliasesOptions {
   showToast: (kind: ToastNotice['kind'], message: string) => void
 }
 
-interface OverwriteConfirmation {
-  name: string
-  existingCommand: string
-  command: string
-}
-
 const emptySnapshot = (profileId: string): CommandAliasSnapshot => ({
   profileId,
   aliases: [],
@@ -35,8 +30,8 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
   const [operation, setOperation] = useState<'working' | null>(null)
   const [name, setName] = useState('')
   const [command, setCommand] = useState('')
-  const [overwriteConfirmation, setOverwriteConfirmation] = useState<OverwriteConfirmation | null>(null)
-  const [deleteConfirmation, setDeleteConfirmation] = useState<CommandAlias | null>(null)
+  const [overwriteConfirmation, setOverwriteConfirmation] = useState<CommandAliasPreflight | null>(null)
+  const [deleteConfirmation, setDeleteConfirmation] = useState<CommandAliasPreflight | null>(null)
   const [pendingHostKey, setPendingHostKey] = useState<PendingAliasHostKey | null>(null)
   const retryAfterTrustRef = useRef<(() => Promise<CommandAliasOperationResult>) | null>(null)
 
@@ -47,13 +42,17 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
 
   useEffect(() => {
     void refreshSnapshots().catch((error: unknown) => showToast('error', '读取命令别名失败：' + errorMessage(error)))
-  }, [profiles, refreshSnapshots, showToast])
+  }, [profiles, refreshSnapshots, showToast, overwriteConfirmation, deleteConfirmation])
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? null
   const snapshot = useMemo(
     () => selectedProfile ? snapshots[selectedProfile.id] ?? emptySnapshot(selectedProfile.id) : null,
     [selectedProfile, snapshots],
   )
+
+  const cancelPreflight = (preflight: CommandAliasPreflight | null) => {
+    if (preflight) void window.remoteFiles.cancelCommandAliasPreflight(preflight.preflightId)
+  }
 
   const prepareForSettings = useCallback((preferredProfileId: string | null) => {
     const nextProfileId = profiles.some((profile) => profile.id === preferredProfileId)
@@ -62,6 +61,8 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
     setSelectedProfileId(nextProfileId)
     setName('')
     setCommand('')
+    cancelPreflight(overwriteConfirmation)
+    cancelPreflight(deleteConfirmation)
     setOverwriteConfirmation(null)
     setDeleteConfirmation(null)
     void refreshSnapshots().catch((error: unknown) => showToast('error', '读取命令别名失败：' + errorMessage(error)))
@@ -71,6 +72,8 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
     setSelectedProfileId(profileId)
     setName('')
     setCommand('')
+    cancelPreflight(overwriteConfirmation)
+    cancelPreflight(deleteConfirmation)
     setOverwriteConfirmation(null)
     setDeleteConfirmation(null)
   }
@@ -88,8 +91,9 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
         : { profile, fingerprint: result.fingerprint })
       return true
     }
-    if (result.status === 'conflict') {
-      setOverwriteConfirmation({ name: result.name, existingCommand: result.existingCommand, command })
+    if (result.status === 'confirmation-required') {
+      if (result.preflight.operation === 'overwrite') setOverwriteConfirmation(result.preflight)
+      else setDeleteConfirmation(result.preflight)
       return false
     }
     setSnapshots((current) => ({ ...current, [profileId]: result.snapshot }))
@@ -131,7 +135,7 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
     const profileId = selectedProfileId
     const requestedName = name
     const requestedCommand = command
-    void runOperation(profileId, () => window.remoteFiles.saveCommandAlias(profileId, requestedName, requestedCommand, false))
+    void runOperation(profileId, () => window.remoteFiles.saveCommandAlias(profileId, requestedName, requestedCommand))
   }
 
   const confirmOverwrite = () => {
@@ -139,11 +143,14 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
     const profileId = selectedProfileId
     const pending = overwriteConfirmation
     setOverwriteConfirmation(null)
-    void runOperation(profileId, () => window.remoteFiles.saveCommandAlias(profileId, pending.name, pending.command, true))
+    void runOperation(profileId, () => window.remoteFiles.executeCommandAliasOperation(pending.preflightId))
   }
 
   const requestDelete = (alias: CommandAlias) => {
-    if (!operation && alias.removable) setDeleteConfirmation(alias)
+    if (!operation && alias.removable && selectedProfileId) {
+      const profileId = selectedProfileId
+      void runOperation(profileId, () => window.remoteFiles.preflightDeleteCommandAlias(profileId, alias.name, alias.command))
+    }
   }
 
   const confirmDelete = () => {
@@ -151,7 +158,7 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
     const profileId = selectedProfileId
     const pending = deleteConfirmation
     setDeleteConfirmation(null)
-    void runOperation(profileId, () => window.remoteFiles.deleteCommandAlias(profileId, pending.name))
+    void runOperation(profileId, () => window.remoteFiles.executeCommandAliasOperation(pending.preflightId))
   }
 
   const trustHostKey = async () => {
@@ -202,10 +209,16 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
     sync,
     add,
     confirmOverwrite,
-    cancelOverwrite: () => setOverwriteConfirmation(null),
+    cancelOverwrite: () => {
+      cancelPreflight(overwriteConfirmation)
+      setOverwriteConfirmation(null)
+    },
     requestDelete,
     confirmDelete,
-    cancelDelete: () => setDeleteConfirmation(null),
+    cancelDelete: () => {
+      cancelPreflight(deleteConfirmation)
+      setDeleteConfirmation(null)
+    },
     trustHostKey,
     dismissHostKey,
   }

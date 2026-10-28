@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { Client, type ClientChannel } from 'ssh2'
+import { Client } from 'ssh2'
 import type {
   CommandAlias,
+  CommandAliasPreflight,
   CommandAliasOperationResult,
   CommandAliasSnapshot,
   ServerProfile,
@@ -10,12 +11,23 @@ import { formatBashAliasDefinition, parseCommandAliasProtocol, validateCommandAl
 import { endpointKey, passwordFor, profileFromState, readState, writeState } from './state-store'
 import { messageFromError } from './runtime'
 import { shellQuote } from '@shared/shell'
+import { buildRemoteCommand, executeRemoteCommand, runRemoteCommand } from './ssh-commands'
 
 const SSH_KEEPALIVE_INTERVAL_MS = 15_000
 const SSH_KEEPALIVE_COUNT_MAX = 3
 const COMMAND_TIMEOUT_MS = 30_000
 const MAX_COMMAND_OUTPUT_BYTES = 4 * 1024 * 1024
 const operationLocks = new Map<string, Promise<void>>()
+const aliasPreflights = new Map<string, StoredAliasPreflight>()
+const ALIAS_PREFLIGHT_TTL_MS = 10 * 60_000
+
+interface StoredAliasPreflight extends CommandAliasPreflight {
+  expectedRevision: string
+  expectedDefinition: string
+  replacementDefinition: string
+  expiresAt: number
+  running: boolean
+}
 
 interface HostKeyRequired {
   status: 'host-key-required'
@@ -129,78 +141,9 @@ function withTemporaryConnection<T>(profileId: string, operation: (client: Clien
   })
 }
 
-function executeRemoteCommand(client: Client, command: string): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    let stream: ClientChannel | null = null
-    let exitCode: number | null = null
-    let settled = false
-    let outputBytes = 0
-    const stdout: Buffer[] = []
-    const stderr: Buffer[] = []
-    const timer = setTimeout(() => finish(new Error('服务器命令执行超时')), COMMAND_TIMEOUT_MS)
-    const cleanup = () => {
-      clearTimeout(timer)
-      stream?.removeListener('data', onStdoutData)
-      stream?.stderr.removeListener('data', onStderrData)
-      stream?.removeListener('error', onStreamError)
-      stream?.removeListener('exit', onExit)
-      stream?.removeListener('close', onClose)
-    }
-    const finish = (error?: Error, code?: number | null) => {
-      if (settled) return
-      settled = true
-      cleanup()
-      if (error) {
-        reject(error)
-        return
-      }
-      const finalCode = exitCode ?? code ?? null
-      if (finalCode !== 0) {
-        reject(new Error(Buffer.concat(stderr).toString('utf8').trim() || `远程命令失败（退出码 ${finalCode ?? '未知'}）`))
-        return
-      }
-      resolve(Buffer.concat(stdout))
-    }
-    const onStdoutData = (chunk: Buffer) => {
-      outputBytes += chunk.length
-      if (outputBytes > MAX_COMMAND_OUTPUT_BYTES) {
-        stream?.destroy()
-        finish(new Error('服务器返回的命令别名数据过大'))
-        return
-      }
-      stdout.push(Buffer.from(chunk))
-    }
-    const onStderrData = (chunk: Buffer) => stderr.push(Buffer.from(chunk))
-    const onStreamError = (error: Error) => finish(error)
-    const onExit = (code: number | null) => { exitCode = code }
-    const onClose = (code: number | null) => finish(undefined, code)
-
-    try {
-      client.exec(command, (error, commandStream) => {
-        if (error) {
-          finish(error)
-          return
-        }
-        stream = commandStream
-        if (settled) {
-          stream.destroy()
-          return
-        }
-        stream.on('data', onStdoutData)
-        stream.stderr.on('data', onStderrData)
-        stream.once('error', onStreamError)
-        stream.once('exit', onExit)
-        stream.once('close', onClose)
-      })
-    } catch (error) {
-      finish(error instanceof Error ? error : new Error(String(error)))
-    }
-  })
-}
-
 async function assertBashLoginShell(client: Client): Promise<void> {
-  const output = await executeRemoteCommand(client, 'getent passwd "$(id -un)" | cut -d: -f7')
-  const loginShell = output.toString('utf8').trim().split(/\r?\n/).at(-1)
+  const { stdout } = await runRemoteCommand(client, 'getent passwd "$(id -un)" | cut -d: -f7', [], { timeoutMs: COMMAND_TIMEOUT_MS })
+  const loginShell = stdout.toString('utf8').trim().split(/\r?\n/).at(-1)
   if (!loginShell || loginShell.split('/').at(-1) !== 'bash') {
     throw new Error('该服务器的登录 Shell 不是 Bash，命令别名功能暂不支持')
   }
@@ -228,7 +171,10 @@ async function readRemoteAliases(client: Client): Promise<CommandAlias[]> {
     'done',
     `printf '%s\\0' ${shellQuote(endMarker)}`,
   ].join('\n')
-  const output = await executeRemoteCommand(client, `bash -ic ${shellQuote(script)}`)
+  const { stdout: output } = await executeRemoteCommand(client, `bash -ic ${shellQuote(script)}`, {
+    timeoutMs: COMMAND_TIMEOUT_MS,
+    maxStdoutBytes: MAX_COMMAND_OUTPUT_BYTES,
+  })
   return parseCommandAliasProtocol(output, beginMarker, endMarker).map(({ definition, ...alias }) => {
     let removable = alias.removable
     let removalReason = removable ? '此别名不是应用支持的标准单行定义' : '未在 ~/.bashrc 中找到唯一且完全匹配的单行定义'
@@ -252,13 +198,28 @@ const modifyBashrcScript = `set -euo pipefail
 mode=$1
 expected=$2
 replacement=$3
+expected_revision=$4
+alias_name=$5
 alias_file=$HOME/.bashrc
 if [[ -L $alias_file ]]; then printf '%s\\n' '拒绝修改符号链接 ~/.bashrc' >&2; exit 41; fi
 if [[ -e $alias_file && ! -f $alias_file ]]; then printf '%s\\n' '~/.bashrc 不是普通文件' >&2; exit 41; fi
+if [[ $expected_revision == missing ]]; then
+  [[ ! -e $alias_file && ! -L $alias_file ]] || { printf '%s\\n' '~/.bashrc 已变化，请重新预检' >&2; exit 43; }
+else
+  [[ -f $alias_file && ! -L $alias_file ]] || { printf '%s\\n' '~/.bashrc 已变化，请重新预检' >&2; exit 43; }
+  actual_revision=$(sha256sum < "$alias_file" | cut -d ' ' -f1)
+  [[ $actual_revision == "$expected_revision" ]] || { printf '%s\\n' '~/.bashrc 已变化，请重新预检' >&2; exit 43; }
+fi
 exact_count=0
 if [[ $mode != append && -f $alias_file ]]; then
   while IFS= read -r alias_line || [[ -n $alias_line ]]; do
     if [[ $alias_line == "$expected" ]]; then exact_count=$((exact_count + 1)); fi
+  done < "$alias_file"
+fi
+if [[ $mode == append && -f $alias_file ]]; then
+  alias_prefix="alias $alias_name="
+  while IFS= read -r alias_line || [[ -n $alias_line ]]; do
+    [[ $alias_line != "$alias_prefix"* ]] || { printf '%s\\n' '服务器上已存在同名 alias，请重新同步' >&2; exit 44; }
   done < "$alias_file"
 fi
 if [[ $mode != append && $exact_count -ne 1 ]]; then
@@ -281,9 +242,40 @@ if [[ $mode == append ]]; then printf '%s\\n' "$replacement" >> "$temporary_file
 mv -- "$temporary_file" "$alias_file"
 trap - EXIT`
 
-async function modifyBashrc(client: Client, mode: 'append' | 'replace' | 'delete', expected: string, replacement = ''): Promise<void> {
-  const command = `bash -c ${shellQuote(modifyBashrcScript)} -- ${shellQuote(mode)} ${shellQuote(expected)} ${shellQuote(replacement)}`
-  await executeRemoteCommand(client, command)
+function modifyBashrcCommand(
+  mode: 'append' | 'replace' | 'delete',
+  expected: string,
+  replacement: string,
+  expectedRevision: string,
+  aliasName: string,
+): string {
+  return buildRemoteCommand(modifyBashrcScript, [mode, expected, replacement, expectedRevision, aliasName])
+}
+
+async function modifyBashrc(
+  client: Client,
+  mode: 'append' | 'replace' | 'delete',
+  expected: string,
+  replacement: string,
+  expectedRevision: string,
+  aliasName: string,
+): Promise<void> {
+  await executeRemoteCommand(client, modifyBashrcCommand(mode, expected, replacement, expectedRevision, aliasName), {
+    timeoutMs: COMMAND_TIMEOUT_MS,
+  })
+}
+
+async function bashrcRevision(client: Client): Promise<string> {
+  const { stdout } = await runRemoteCommand(client, [
+    'set -eu',
+    'alias_file=$HOME/.bashrc',
+    '[[ ! -L $alias_file ]] || { printf "%s\\n" "拒绝读取符号链接 ~/.bashrc" >&2; exit 41; }',
+    'if [[ -e $alias_file && ! -f $alias_file ]]; then printf "%s\\n" "~/.bashrc 不是普通文件" >&2; exit 41; fi',
+    'if [[ -f $alias_file ]]; then sha256sum < "$alias_file" | cut -d " " -f1; else printf missing; fi',
+  ].join('\n'))
+  const revision = stdout.toString('ascii').trim()
+  if (revision !== 'missing' && !/^[a-f0-9]{64}$/.test(revision)) throw new Error('服务器返回的 ~/.bashrc 版本无效')
+  return revision
 }
 
 function snapshotFromState(profileId: string): CommandAliasSnapshot {
@@ -333,8 +325,56 @@ export function synchronizeCommandAliases(profileId: string): Promise<CommandAli
   }))
 }
 
-export function saveCommandAlias(profileId: string, name: string, command: string, overwrite: boolean): Promise<CommandAliasOperationResult> {
-  if (typeof profileId !== 'string' || !profileId || typeof name !== 'string' || typeof command !== 'string' || typeof overwrite !== 'boolean') {
+function pruneAliasPreflights(): void {
+  const now = Date.now()
+  for (const [id, preflight] of aliasPreflights) {
+    if (preflight.expiresAt <= now) aliasPreflights.delete(id)
+  }
+}
+
+function storeAliasPreflight(
+  profileId: string,
+  operation: CommandAliasPreflight['operation'],
+  name: string,
+  existingCommand: string,
+  command: string | undefined,
+  revision: string,
+): CommandAliasOperationResult {
+  const expectedDefinition = formatBashAliasDefinition(name, existingCommand)
+  const replacementDefinition = command === undefined ? '' : formatBashAliasDefinition(name, command)
+  const mode = operation === 'overwrite' ? 'replace' : 'delete'
+  const preflight: StoredAliasPreflight = {
+    preflightId: randomUUID(),
+    profileId,
+    operation,
+    name,
+    existingCommand,
+    ...(command === undefined ? {} : { command }),
+    commandPreview: modifyBashrcCommand(mode, expectedDefinition, replacementDefinition, revision, name),
+    expectedRevision: revision,
+    expectedDefinition,
+    replacementDefinition,
+    expiresAt: Date.now() + ALIAS_PREFLIGHT_TTL_MS,
+    running: false,
+  }
+  aliasPreflights.set(preflight.preflightId, preflight)
+  const { expectedRevision: _revision, expectedDefinition: _expected, replacementDefinition: _replacement, expiresAt: _expiresAt, running: _running, ...publicPreflight } = preflight
+  return { status: 'confirmation-required', preflight: publicPreflight }
+}
+
+async function finishAliasModification(client: Client, profileId: string): Promise<CommandAliasOperationResult> {
+  try {
+    const aliases = await readRemoteAliases(client)
+    const snapshot = saveSnapshot(profileId, aliases, 'synced', new Date().toISOString())
+    return { status: 'completed', snapshot }
+  } catch (error) {
+    const snapshot = markSnapshotStale(profileId)
+    return { status: 'updated-sync-failed', message: messageFromError(error), snapshot }
+  }
+}
+
+export function saveCommandAlias(profileId: string, name: string, command: string): Promise<CommandAliasOperationResult> {
+  if (typeof profileId !== 'string' || !profileId || typeof name !== 'string' || typeof command !== 'string') {
     throw new Error('命令别名参数无效')
   }
   validateCommandAlias(name, command)
@@ -344,40 +384,57 @@ export function saveCommandAlias(profileId: string, name: string, command: strin
     await assertBashLoginShell(client)
     const currentAliases = await readRemoteAliases(client)
     const existing = currentAliases.find((alias) => alias.name === name)
-    if (existing && !overwrite) return { status: 'conflict', name, existingCommand: existing.command }
-    const expected = existing ? formatBashAliasDefinition(name, existing.command) : ''
-    await modifyBashrc(client, existing ? 'replace' : 'append', expected, replacement)
-    try {
-      const aliases = await readRemoteAliases(client)
-      const snapshot = saveSnapshot(profileId, aliases, 'synced', new Date().toISOString())
-      return { status: 'completed', snapshot }
-    } catch (error) {
-      const snapshot = markSnapshotStale(profileId)
-      return { status: 'updated-sync-failed', message: messageFromError(error), snapshot }
+    const revision = await bashrcRevision(client)
+    if (existing) {
+      if (!existing.removable) throw new Error(existing.removalReason ?? '此别名无法安全覆盖')
+      return storeAliasPreflight(profileId, 'overwrite', name, existing.command, command, revision)
     }
+    await modifyBashrc(client, 'append', '', replacement, revision, name)
+    return finishAliasModification(client, profileId)
   })
 }
 
-export function deleteCommandAlias(profileId: string, name: string): Promise<CommandAliasOperationResult> {
-  if (typeof profileId !== 'string' || !profileId || typeof name !== 'string' || !name) throw new Error('命令别名参数无效')
-  const cachedAlias = snapshotFromState(profileId).aliases.find((alias) => alias.name === name)
-  if (!cachedAlias) throw new Error('本地没有此别名，请先重新同步')
-  if (!cachedAlias.removable) throw new Error(cachedAlias.removalReason ?? '此别名无法安全删除')
-
+export function preflightDeleteCommandAlias(
+  profileId: string,
+  name: string,
+  expectedCommand: string,
+): Promise<CommandAliasOperationResult> {
+  if (typeof profileId !== 'string' || !profileId || typeof name !== 'string' || !name
+    || typeof expectedCommand !== 'string') throw new Error('命令别名参数无效')
   return withAliasOperation(profileId, async (client) => {
     await assertBashLoginShell(client)
     const currentAliases = await readRemoteAliases(client)
     const existing = currentAliases.find((alias) => alias.name === name)
-    if (!existing || existing.command !== cachedAlias.command) throw new Error('服务器上的别名已变化，请先重新同步')
-    const expected = formatBashAliasDefinition(name, existing.command)
-    await modifyBashrc(client, 'delete', expected)
-    try {
-      const aliases = await readRemoteAliases(client)
-      const snapshot = saveSnapshot(profileId, aliases, 'synced', new Date().toISOString())
-      return { status: 'completed', snapshot }
-    } catch (error) {
-      const snapshot = markSnapshotStale(profileId)
-      return { status: 'updated-sync-failed', message: messageFromError(error), snapshot }
-    }
+    if (!existing || existing.command !== expectedCommand) throw new Error('服务器上的别名已变化，请先重新同步')
+    if (!existing.removable) throw new Error(existing.removalReason ?? '此别名无法安全删除')
+    return storeAliasPreflight(profileId, 'delete', name, existing.command, undefined, await bashrcRevision(client))
   })
+}
+
+export function executeCommandAliasOperation(preflightId: string): Promise<CommandAliasOperationResult> {
+  if (typeof preflightId !== 'string' || !preflightId) throw new Error('命令别名预检编号无效')
+  pruneAliasPreflights()
+  const preflight = aliasPreflights.get(preflightId)
+  if (!preflight) throw new Error('命令别名预检已过期，请重新操作')
+  if (preflight.running) throw new Error('命令别名操作正在执行')
+  preflight.running = true
+  return withAliasOperation(preflight.profileId, async (client) => {
+    const mode = preflight.operation === 'overwrite' ? 'replace' : 'delete'
+    await modifyBashrc(client, mode, preflight.expectedDefinition, preflight.replacementDefinition,
+      preflight.expectedRevision, preflight.name)
+    return finishAliasModification(client, preflight.profileId)
+  }).then((result) => {
+    if (result.status === 'host-key-required') preflight.running = false
+    else aliasPreflights.delete(preflightId)
+    return result
+  }, (error: unknown) => {
+    aliasPreflights.delete(preflightId)
+    throw error
+  })
+}
+
+export function cancelCommandAliasPreflight(preflightId: string): boolean {
+  if (typeof preflightId !== 'string' || !preflightId) throw new Error('命令别名预检编号无效')
+  if (aliasPreflights.get(preflightId)?.running) return false
+  return aliasPreflights.delete(preflightId)
 }

@@ -14,7 +14,9 @@ interface ConfirmationDialogProps {
   error?: string | null
   errorLabel?: string
   busy?: boolean
+  secondaryActionLabel?: string
   onConfirm: () => void
+  onSecondaryAction?: () => void
   onCancel: () => void
 }
 
@@ -30,7 +32,9 @@ export default function ConfirmationDialog({
   error,
   errorLabel = '操作失败',
   busy = false,
+  secondaryActionLabel,
   onConfirm,
+  onSecondaryAction,
   onCancel,
 }: ConfirmationDialogProps) {
   const id = useId()
@@ -72,8 +76,9 @@ export default function ConfirmationDialog({
         <p id={id + '-description'} className="confirmation-description">{description}</p>
         {error && <div className="confirmation-error" role="alert">{errorLabel}：{error}</div>}
         <div className="modal-footer">
-          <button type="button" className="secondary-button" autoFocus disabled={busy} onClick={onCancel}>{cancelLabel}</button>
-          <button type="button" className={tone === 'danger' ? 'danger-button' : 'warning-button'} disabled={busy} onClick={onConfirm}>
+          <button type="button" className="secondary-button" autoFocus={busy} disabled={busy} onClick={onCancel}>{cancelLabel}</button>
+          {secondaryActionLabel && <button type="button" className="secondary-button" disabled={busy} onClick={onSecondaryAction}>{secondaryActionLabel}</button>}
+          <button type="button" className={tone === 'danger' ? 'danger-button' : 'warning-button'} autoFocus={!busy} disabled={busy} onClick={onConfirm}>
             {busy ? <LoaderCircle className="spin" size={15} /> : <Icon size={15} />}
             {busy ? busyLabel : confirmLabel}
           </button>

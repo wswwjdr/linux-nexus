@@ -10,9 +10,9 @@ import type {
   RemoteFilesApi,
 } from '../src/shared/types.ts'
 import { defaultFileTypeExtensions } from '../src/shared/app-settings.ts'
-import SftpSessionWorkspace, { type SessionPreviewActions } from '../src/renderer/src/features/files/SftpSessionWorkspace.tsx'
+import FileSessionWorkspace, { type SessionPreviewActions } from '../src/renderer/src/features/files/FileSessionWorkspace.tsx'
 import type { SessionTab } from '../src/renderer/src/app-types.ts'
-import type { SftpContextMenuContext, SftpMenuAction } from '../src/renderer/src/features/files/sftp-menu.ts'
+import type { FileContextMenuContext, FileMenuAction } from '../src/renderer/src/features/files/file-menu.ts'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })
 Object.defineProperties(globalThis, {
@@ -36,7 +36,7 @@ function session(id: string): SessionTab {
   return {
     id,
     profileId: 'profile-' + id,
-    kind: 'sftp',
+    kind: 'files',
     status: 'connected',
     currentPath: '/home/user',
     startPath: '/',
@@ -63,7 +63,7 @@ function setInputValue(input: HTMLInputElement | HTMLTextAreaElement, value: str
   })
 }
 
-test('SFTP workspaces retain independent search and preview state across session switches', async () => {
+test('file workspaces retain independent search and preview state across session switches', async () => {
   const { createRoot } = await import('react-dom/client')
   const nameListeners = new Set<(event: NameSearchEvent) => void>()
   const requests: NameSearchRequest[] = []
@@ -116,7 +116,7 @@ test('SFTP workspaces retain independent search and preview state across session
     if (blocking) blockingSessionIds.add(sessionId)
     else blockingSessionIds.delete(sessionId)
   }
-  const onMenuAction = (action: SftpMenuAction, context: SftpContextMenuContext, sessionId: string) => {
+  const onMenuAction = (action: FileMenuAction, context: FileContextMenuContext, sessionId: string) => {
     if (action.type !== 'preview') return
     const entry = context.kind === 'search-result' ? context.result
       : context.kind === 'single-entry' ? context.entry
@@ -124,7 +124,7 @@ test('SFTP workspaces retain independent search and preview state across session
     if (entry) void previewActions.get(sessionId)?.previewFile(entry, action.previewType)
   }
   const render = (activeSessionId: string | null) => createElement(Fragment, null,
-    createElement(SftpSessionWorkspace, {
+    createElement(FileSessionWorkspace, {
       session: first,
       active: activeSessionId === first.id,
       searchOpen: true,
@@ -137,7 +137,7 @@ test('SFTP workspaces retain independent search and preview state across session
       onMenuAction,
       onOpenExternalLink: noOp,
     }),
-    createElement(SftpSessionWorkspace, {
+    createElement(FileSessionWorkspace, {
       session: second,
       active: activeSessionId === second.id,
       searchOpen: true,

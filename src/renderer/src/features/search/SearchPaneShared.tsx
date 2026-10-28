@@ -13,9 +13,9 @@ import type {
   NameSearchResult,
   SearchResultTarget,
 } from '@shared/types'
-import SftpContextMenu from '@/features/files/SftpContextMenu'
+import FileContextMenu from '@/features/files/FileContextMenu'
 import { SearchHistory, SearchScopeControl, type SearchScopeConditions, isNormalizedAbsoluteRemotePath, readSearchHistory } from './SearchShared'
-import type { SftpContextMenuContext, SftpMenuAction } from '@/features/files/sftp-menu'
+import type { FileContextMenuContext, FileMenuAction } from '@/features/files/file-menu'
 import { errorMessage, formatSize } from '@/app-utils'
 
 export interface SearchPaneHandle {
@@ -30,7 +30,7 @@ export interface SearchPaneProps {
   fileTypeExtensions: FileTypeExtensions
   onRunningChange: (running: boolean) => void
   onMenuOpenChange: (open: boolean) => void
-  onMenuAction: (action: SftpMenuAction, context: SftpContextMenuContext) => void
+  onMenuAction: (action: FileMenuAction, context: FileContextMenuContext) => void
 }
 
 export interface ResultMenuState {
@@ -127,12 +127,12 @@ export function ResultMenu({
   menu: ResultMenuState | null
   anchorRef: RefObject<HTMLElement | null>
   fileTypeExtensions: FileTypeExtensions
-  onAction: (action: SftpMenuAction, context: SftpContextMenuContext) => void
+  onAction: (action: FileMenuAction, context: FileContextMenuContext) => void
   onClose: () => void
 }) {
   if (!menu) return null
   return (
-    <SftpContextMenu
+    <FileContextMenu
       context={{ kind: 'search-result', result: menu.result }}
       position={{ x: menu.x, y: menu.y }}
       anchorRef={anchorRef}

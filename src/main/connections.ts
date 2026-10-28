@@ -12,16 +12,10 @@ import { cancelTransfersForSession } from './transfers'
 import { getMainWindow, sessions, type ActiveSession } from './runtime'
 import { endpointKey, passwordFor, profileFromState, readState } from './state-store'
 import { clearPreviewAssetsForSession } from './previews'
-import { cancelRemoteMovesForSession } from './remote-moves'
-import { cancelRemoteArchiveExtractionsForSession } from './archives'
+import { cancelRemoteOperationsForSession } from './remote-operations'
 import { removePerformanceMonitorForSession } from './performance-monitor'
-import {
-  executeRemoteCommand,
-  fileType,
-  normalizedRemotePath,
-  sftpLstat,
-  sftpMkdir,
-} from './sftp-utils'
+import { runRemoteCommand } from './ssh-commands'
+import { listRemoteDirectory } from './remote-fs'
 
 const pendingConnections = new Map<string, { profileId: string; client: Client; cancel: () => void }>()
 const SSH_KEEPALIVE_INTERVAL_MS = 15_000
@@ -38,8 +32,7 @@ function failActiveSession(activeSession: ActiveSession, message: string): void 
   if (sessions.get(activeSession.sessionId) !== activeSession) return
   sessions.delete(activeSession.sessionId)
   removePerformanceMonitorForSession(activeSession.sessionId)
-  cancelRemoteMovesForSession(activeSession.sessionId)
-  cancelRemoteArchiveExtractionsForSession(activeSession.sessionId)
+  void cancelRemoteOperationsForSession(activeSession.sessionId)
   failScriptExecutionsForSession(activeSession.sessionId, message)
   failNameSearchesForSession(activeSession.sessionId, message)
   failContentSearchesForSession(activeSession.sessionId, message)
@@ -54,14 +47,13 @@ export function stopSession(sessionId: string): void {
   cancelNameSearchesForSession(sessionId)
   cancelContentSearchesForSession(sessionId)
   cancelScriptExecutionsForSession(sessionId)
-  cancelRemoteMovesForSession(sessionId)
-  const archiveCompletion = cancelRemoteArchiveExtractionsForSession(sessionId)
+  const remoteOperations = cancelRemoteOperationsForSession(sessionId)
   const transfers = cancelTransfersForSession(sessionId)
   clearPreviewAssetsForSession(sessionId)
   const activeSession = sessions.get(sessionId)
   if (!activeSession) return
   sessions.delete(sessionId)
-  void Promise.all([archiveCompletion, ...transfers.map((transfer) => transfer.settled)])
+  void Promise.all([remoteOperations, ...transfers.map((transfer) => transfer.settled)])
     .then(() => activeSession.client.end())
 }
 
@@ -120,12 +112,12 @@ export function connectProfile(
         finish({ ok: false, reason: 'other', message: '连接已取消' })
         return
       }
-      const activate = (sftp?: ActiveSession['sftp'], shell?: ActiveSession['shell']) => {
+      const activate = (shell?: ActiveSession['shell']) => {
         if (!isCurrentAttempt()) {
           finish({ ok: false, reason: 'other', message: '连接已取消' })
           return
         }
-        const activeSession: ActiveSession = { sessionId, client, kind, profileId, sftp, shell }
+        const activeSession: ActiveSession = { sessionId, client, kind, profileId, shell }
         sessions.set(sessionId, activeSession)
         if (shell) {
           const stdoutDecoder = new StringDecoder('utf8')
@@ -148,26 +140,23 @@ export function connectProfile(
             }
           })
           shell.on('error', (shellError: Error) => failActiveSession(activeSession, shellError.message))
-          if (startPath) shell.write('cd -- ' + shellQuote(normalizedRemotePath(startPath)) + '\n')
+          if (startPath) shell.write('cd -- ' + shellQuote(posix.resolve('/', startPath)) + '\n')
         }
-        finish({ ok: true, path: kind === 'sftp' ? '/' : startPath })
+        finish({ ok: true, path: kind === 'files' ? '/' : startPath })
       }
 
-      if (kind === 'sftp') {
-        client.sftp((error, sftp) => {
-          if (error) {
-            finish({ ok: false, reason: 'sftp-unavailable', message: error.message })
-            return
-          }
-          activate(sftp)
-        })
+      if (kind === 'files') {
+        void verifyFileSessionCapabilities(client).then(
+          () => activate(),
+          (error: unknown) => finish({ ok: false, reason: 'other', message: error instanceof Error ? error.message : String(error) }),
+        )
       } else {
         client.shell({ term: 'xterm-256color', cols, rows }, (error, shell) => {
           if (error) {
             finish({ ok: false, reason: 'other', message: error.message })
             return
           }
-          activate(undefined, shell)
+          activate(shell)
         })
       }
     })
@@ -236,10 +225,10 @@ export function connectProfile(
   })
 }
 
-function getSftpSession(sessionId: string): ActiveSession & { sftp: NonNullable<ActiveSession['sftp']> } {
+function getFilesSession(sessionId: string): ActiveSession {
   const activeSession = sessions.get(sessionId)
-  if (!activeSession?.sftp) throw new Error('SFTP 会话未连接')
-  return activeSession as ActiveSession & { sftp: NonNullable<ActiveSession['sftp']> }
+  if (!activeSession || activeSession.kind !== 'files') throw new Error('文件会话未连接')
+  return activeSession
 }
 
 export function writeTerminal(sessionId: string, data: string): void {
@@ -255,49 +244,13 @@ export function resizeTerminal(sessionId: string, cols: number, rows: number): v
 }
 
 export function listDirectory(sessionId: string, remotePath: string): Promise<RemoteEntry[]> {
-  const activeSession = getSftpSession(sessionId)
-  const normalizedPath = posix.resolve('/', remotePath || '/')
-
-  return new Promise((resolve, reject) => {
-    activeSession.sftp.readdir(normalizedPath, (error, entries) => {
-      if (error) {
-        reject(new Error(error.message))
-        return
-      }
-      const result = entries
-        .filter((entry) => entry.filename !== '.' && entry.filename !== '..')
-        .map((entry): RemoteEntry => {
-          const mode = entry.attrs.mode ?? 0
-          const kind = mode & 0o170000
-          const type: RemoteEntry['type'] = kind === 0o040000
-            ? 'directory'
-            : kind === 0o100000
-              ? 'file'
-              : kind === 0o120000
-                ? 'symlink'
-                : 'other'
-          return {
-            name: entry.filename,
-            path: posix.join(normalizedPath, entry.filename),
-            type,
-            size: entry.attrs.size ?? 0,
-            modifiedAt: entry.attrs.mtime ? new Date(entry.attrs.mtime * 1000).toISOString() : null,
-            permissions: (mode & 0o777).toString(8).padStart(3, '0'),
-          }
-        })
-        .sort((left, right) => {
-          if (left.type === 'directory' && right.type !== 'directory') return -1
-          if (left.type !== 'directory' && right.type === 'directory') return 1
-          return left.name.localeCompare(right.name, 'zh-CN', { numeric: true, sensitivity: 'base' })
-        })
-      resolve(result)
-    })
-  })
+  const activeSession = getFilesSession(sessionId)
+  return listRemoteDirectory(activeSession.client, remotePath)
 }
 
 export function copyRemotePath(sessionId: string, remotePath: string): void {
-  getSftpSession(sessionId)
-  clipboard.writeText(normalizedRemotePath(remotePath))
+  getFilesSession(sessionId)
+  clipboard.writeText(posix.resolve('/', remotePath))
 }
 
 export async function createRemoteDirectory(
@@ -305,27 +258,44 @@ export async function createRemoteDirectory(
   remoteDirectory: string,
   name: string,
 ): Promise<void> {
-  const activeSession = getSftpSession(sessionId)
+  const activeSession = getFilesSession(sessionId)
   if (typeof name !== 'string' || !name || name === '.' || name === '..' || name.includes('/') || name.includes('\0')) {
     throw new Error('名称无效：不能包含路径分隔符，也不能是 . 或 ..')
   }
-  const parentPath = normalizedRemotePath(remoteDirectory)
-  if (fileType((await sftpLstat(activeSession.sftp, parentPath)).mode) !== 'directory') {
-    throw new Error('当前路径不是文件夹')
-  }
+  const parentPath = posix.resolve('/', remoteDirectory)
   const targetPath = posix.join(parentPath, name)
-  await sftpMkdir(activeSession.sftp, targetPath)
+  await runRemoteCommand(activeSession.client, 'mkdir -- "$1"', [targetPath])
 }
 
-export async function deleteRemoteEntry(sessionId: string, remotePath: string): Promise<void> {
-  const activeSession = getSftpSession(sessionId)
-  const normalizedPath = normalizedRemotePath(remotePath)
-  if (normalizedPath === '/') throw new Error('不能删除服务器根目录')
-  const attributes = await sftpLstat(activeSession.sftp, normalizedPath)
-  const type = fileType(attributes.mode)
-  if (type !== 'file' && type !== 'directory') {
-    throw new Error('只能删除普通文件或文件夹')
-  }
-  await executeRemoteCommand(activeSession.client, 'rm -rf -- ' + shellQuote(normalizedPath))
+export async function deleteRemoteEntries(sessionId: string, remotePaths: string[]): Promise<void> {
+  const activeSession = getFilesSession(sessionId)
+  if (!Array.isArray(remotePaths) || remotePaths.length === 0) throw new Error('至少选择一个远程项目')
+  const paths = remotePaths.map((remotePath) => {
+    if (typeof remotePath !== 'string' || !remotePath || remotePath.includes('\0')) throw new Error('删除路径无效')
+    return posix.resolve('/', remotePath)
+  })
+  if (paths.includes('/')) throw new Error('不能删除服务器根目录')
+  if (new Set(paths).size !== paths.length) throw new Error('删除列表包含重复路径')
+  await runRemoteCommand(activeSession.client,
+    'set -eu; for path in "$@"; do [[ ! -L "$path" && ( -f "$path" || -d "$path" ) ]] || { printf "只能删除普通文件或文件夹: %s\\n" "$path" >&2; exit 1; }; done; rm -r -- "$@"',
+    paths,
+  )
+}
+
+async function verifyFileSessionCapabilities(client: Client): Promise<void> {
+  const script = [
+    'set -eu',
+    'for tool in bash cp mv rm mkdir find grep tar sha256sum dd tail mktemp stat; do',
+    '  command -v "$tool" >/dev/null || { printf "缺少服务器命令: %s\\n" "$tool" >&2; exit 1; }',
+    'done',
+    'find --version | grep -q "GNU find" || { printf "%s\\n" "需要 GNU findutils" >&2; exit 1; }',
+    'cp --version | grep -q "GNU coreutils" || { printf "%s\\n" "需要 GNU coreutils" >&2; exit 1; }',
+    '. /etc/os-release',
+    'case "$ID:$VERSION_ID" in',
+    '  ubuntu:*|debian:*|centos:8*|centos:9*|centos:10*|rhel:8*|rhel:9*|rhel:10*) ;;',
+    '  *) printf "不支持的服务器发行版: %s %s\\n" "$ID" "$VERSION_ID" >&2; exit 1 ;;',
+    'esac',
+  ].join('\n')
+  await runRemoteCommand(client, script)
 }
 

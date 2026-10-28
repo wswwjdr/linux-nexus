@@ -10,7 +10,7 @@ interface SessionChooserProps {
 
 export default function SessionChooser({ profiles, onClose, onCreate }: SessionChooserProps) {
   const [profileId, setProfileId] = useState(profiles[0]?.id ?? '')
-  const [kind, setKind] = useState<SessionKind>('sftp')
+  const [kind, setKind] = useState<SessionKind>('files')
 
   useEffect(() => {
     if (profiles.some((profile) => profile.id === profileId)) return
@@ -46,8 +46,8 @@ export default function SessionChooser({ profiles, onClose, onCreate }: SessionC
             </select>
             <span className="session-launcher-label">连接方式</span>
             <div className="session-kind-switch" role="group" aria-label="连接方式">
-              <button type="button" aria-pressed={kind === 'sftp'} onClick={() => setKind('sftp')}>
-                <FolderOpen size={16} /> SFTP 文件管理
+              <button type="button" aria-pressed={kind === 'files'} onClick={() => setKind('files')}>
+                <FolderOpen size={16} /> 文件管理
               </button>
               <button type="button" aria-pressed={kind === 'terminal'} onClick={() => setKind('terminal')}>
                 <Terminal size={16} /> SSH 终端

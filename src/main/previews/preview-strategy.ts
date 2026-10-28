@@ -1,4 +1,4 @@
-import type { SFTPWrapper } from 'ssh2'
+import type { Client } from 'ssh2'
 import type { PreviewResult } from '@shared/types'
 
 export type PreviewType = PreviewResult['type']
@@ -7,7 +7,7 @@ export interface PreviewRequest {
   type: PreviewType
   sessionId: string
   profileId: string
-  sftp: SFTPWrapper
+  client: Client
   remotePath: string
   name: string
   size: number

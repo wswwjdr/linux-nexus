@@ -30,6 +30,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
   const [textSaving, setTextSaving] = useState(false)
   const [textSaveConfirmation, setTextSaveConfirmation] = useState<{ name: string; path: string } | null>(null)
   const [textSaveError, setTextSaveError] = useState<string | null>(null)
+  const [textSaveConflict, setTextSaveConflict] = useState(false)
   const previewTokenRef = useRef<string | null>(null)
   const previewRequestRef = useRef(0)
   const textPreviewRef = useRef<TextPreviewContext | null>(null)
@@ -86,6 +87,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     setTextSaving(false)
     setTextSaveConfirmation(null)
     setTextSaveError(null)
+    setTextSaveConflict(false)
     if (token) window.setTimeout(() => void window.remoteFiles.releasePreview(token), 0)
   }, [])
 
@@ -206,6 +208,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     const context = textPreviewRef.current
     if (!context || textSaving || textDraftRef.current === context.originalContent) return
     setTextSaveError(null)
+    setTextSaveConflict(false)
     setTextSaveConfirmation({ name: context.name, path: context.path })
   }
 
@@ -213,9 +216,10 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     if (textSaving) return
     setTextSaveConfirmation(null)
     setTextSaveError(null)
+    setTextSaveConflict(false)
   }
 
-  const confirmTextSave = async () => {
+  const confirmTextSave = async (forceOverwrite = false) => {
     const context = textPreviewRef.current
     if (!context || textSaving || !textSaveConfirmation) return
     const content = textDraftRef.current
@@ -227,20 +231,46 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     setTextSaving(true)
     setTextSaveError(null)
     try {
-      const result = await window.remoteFiles.saveTextFile(context.sessionId, context.path, content, context.revision)
+      const result = await window.remoteFiles.saveTextFile(context.sessionId, context.path, content, context.revision, forceOverwrite)
       if (textPreviewRef.current !== context) return
+      if (result.status === 'conflict') {
+        setTextSaveConflict(true)
+        setTextSaveError('服务器文件哈希已变化。重新加载会丢弃本地草稿；仍然覆盖会替换服务器当前内容。')
+        return
+      }
       context.originalContent = content
       context.revision = result.revision
       setTextDirty(textDraftRef.current !== content)
       setTextSaveConfirmation(null)
-      showToast(
-        result.backupPath ? 'error' : 'info',
-        result.backupPath ? '文件已保存，但旧文件备份未清理：' + result.backupPath : '文件已保存',
-      )
+      setTextSaveConflict(false)
+      showToast('info', '文件已保存')
     } catch (error) {
       if (textPreviewRef.current === context) setTextSaveError(errorMessage(error))
     } finally {
       if (textPreviewRef.current === context) setTextSaving(false)
+    }
+  }
+
+  const reloadTextAfterConflict = async () => {
+    const context = textPreviewRef.current
+    if (!context || textSaving || !textSaveConflict) return
+    setTextSaving(true)
+    try {
+      const result = await window.remoteFiles.previewFile(context.sessionId, context.path, 'text')
+      if (result.type !== 'text' || textPreviewRef.current !== context) throw new Error('无法重新加载文本预览')
+      context.originalContent = result.content
+      context.revision = result.revision
+      textDraftRef.current = result.content
+      setTextDraft(result.content)
+      setTextDirty(false)
+      setTextSaveConfirmation(null)
+      setTextSaveConflict(false)
+      setTextSaveError(null)
+      showToast('info', '已重新加载服务器文件')
+    } catch (error) {
+      setTextSaveError(errorMessage(error))
+    } finally {
+      setTextSaving(false)
     }
   }
 
@@ -291,6 +321,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     textSaving,
     textSaveConfirmation,
     textSaveError,
+    textSaveConflict,
     imageViewportRef,
     previewImageRef,
     logViewportRef,
@@ -301,6 +332,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     updateTextDraft,
     requestTextSave,
     confirmTextSave,
+    reloadTextAfterConflict,
     cancelTextSave,
     onImageLoad,
     zoomImage,

@@ -1,4 +1,3 @@
-import type { SFTPWrapper } from 'ssh2'
 import type { Readable } from 'node:stream'
 import { unlink } from 'node:fs/promises'
 
@@ -8,7 +7,6 @@ export type PreviewAsset =
       kind: 'remote'
       sessionId: string
       profileId: string
-      sftp: SFTPWrapper
       remotePath: string
       size: number
       contentType: string
@@ -25,7 +23,6 @@ export function registerRemotePreviewAsset(
   token: string,
   sessionId: string,
   profileId: string,
-  sftp: SFTPWrapper,
   remotePath: string,
   size: number,
   contentType: string,
@@ -34,7 +31,6 @@ export function registerRemotePreviewAsset(
     kind: 'remote',
     sessionId,
     profileId,
-    sftp,
     remotePath,
     size,
     contentType,
