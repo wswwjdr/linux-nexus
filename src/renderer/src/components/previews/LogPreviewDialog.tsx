@@ -1,5 +1,5 @@
 import type { RefObject } from 'react'
-import { FileText, LoaderCircle, X } from 'lucide-react'
+import { LoaderCircle, X } from 'lucide-react'
 import type { LogPreviewDialog as LogPreviewDialogState } from '@/app-types'
 
 export interface LogPreviewDialogProps {
@@ -22,7 +22,6 @@ export default function LogPreviewDialog({
       <section className="modal preview-modal log-preview-modal" role="dialog" aria-labelledby="log-preview-title">
         <div className="modal-heading">
           <div>
-            <div className="modal-kicker"><FileText size={14} /> 倒序预览</div>
             <h2 id="log-preview-title">{logPreviewDialog.name}</h2>
           </div>
           <button className="icon-button modal-close" title="关闭预览" aria-label="关闭预览" onClick={onClosePreview}><X size={18} /></button>
