@@ -182,8 +182,8 @@ details[open] > .settings-disclosure-summary .settings-disclosure-chevron { tran
 .shortcut-key-plus { color:var(--muted); }
 .shortcut-keys kbd { min-width: 24px; min-height: 23px; display: inline-flex; align-items: center; justify-content: center; padding: 2px 5px; border:1px solid var(--line-strong); border-radius: 4px; color:var(--text-primary); background:var(--surface-raised); box-shadow: 0 1px 0 var(--line-strong); font-family: 'Cascadia Code', Consolas, monospace; font-size: 10px; font-weight: 600; line-height: 1; }
 
-.preview-modal { width: min(100%, 560px); max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
-.preview-modal .modal-heading { flex: 0 0 auto; margin-bottom: 14px; }
+.preview-modal { width: min(100%, 560px); max-height: calc(100vh - 48px); padding-top: 12px; display: flex; flex-direction: column; }
+.preview-modal .modal-heading { flex: 0 0 auto; margin-bottom: 10px; }
 .preview-modal .modal-heading h2 { max-width: min(78vw, 480px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .media-preview-modal { width: min(100%, 960px); }
 .text-preview-modal { height: min(680px, calc(100vh - 48px)); }
