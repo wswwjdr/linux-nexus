@@ -500,13 +500,9 @@ export default function App() {
     sessionContextMenu,
     sortedEntries,
     canPasteRemote,
-    openPasteStrategyMenu: () => {
-      const anchor = document.querySelector<HTMLElement>('.file-browser-content') ?? document.body
-      openDirectoryContextMenu(Math.round(window.innerWidth / 2), Math.round(window.innerHeight / 2), anchor)
-    },
     copyRemoteSelection,
     cutRemoteSelection,
-    pasteRemoteEntries,
+    pasteRemoteEntries: () => pasteRemoteEntries(currentPath, 'force'),
   })
 
   const openSearch = () => {

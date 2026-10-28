@@ -16,8 +16,7 @@ interface UseRemoteFileShortcutsOptions {
   canPasteRemote: boolean
   copyRemoteSelection: (entries: RemoteEntry[]) => void
   cutRemoteSelection: (entries: RemoteEntry[]) => void
-  pasteRemoteEntries: (targetDirectory: string) => void
-  openPasteStrategyMenu: () => void
+  pasteRemoteEntries: () => void
 }
 
 export function useRemoteFileShortcuts({
@@ -35,7 +34,6 @@ export function useRemoteFileShortcuts({
   copyRemoteSelection,
   cutRemoteSelection,
   pasteRemoteEntries,
-  openPasteStrategyMenu,
 }: UseRemoteFileShortcutsOptions) {
   useEffect(() => {
     const openSearchShortcut = (event: KeyboardEvent) => {
@@ -56,15 +54,17 @@ export function useRemoteFileShortcuts({
     const handleRemoteFileShortcut = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || modalOpen
         || (activeSessionId && workspaceOpenSessionIds.has(activeSessionId))
-        || browserContextMenu || sessionContextMenu) return
+        || sessionContextMenu) return
       if (!activeSession || activeSession.kind !== 'files' || activeSession.status !== 'connected') return
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
+
+      const key = event.key.toLowerCase()
+      if (browserContextMenu && key !== 'v') return
 
       const target = event.target
       if (target instanceof HTMLElement
         && (target.isContentEditable || target.closest('input, textarea, select, [contenteditable="true"]'))) return
 
-      const key = event.key.toLowerCase()
       if (key === 'c' || key === 'x') {
         const selectedPaths = new Set(activeSession.selectedPaths)
         const selectedEntries = sortedEntries.filter((entry) => selectedPaths.has(entry.path)
@@ -78,7 +78,7 @@ export function useRemoteFileShortcuts({
 
       if (key === 'v' && canPasteRemote) {
         event.preventDefault()
-        openPasteStrategyMenu()
+        pasteRemoteEntries()
       }
     }
 
@@ -93,7 +93,6 @@ export function useRemoteFileShortcuts({
     cutRemoteSelection,
     modalOpen,
     pasteRemoteEntries,
-    openPasteStrategyMenu,
     sessionContextMenu,
     sortedEntries,
     workspaceOpenSessionIds,
