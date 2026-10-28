@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronRight, ClipboardPaste, Copy, Eye, FileText, FolderOpen, FolderPlus, Pencil, Play, Scissors, Terminal, Trash2, Upload, type LucideIcon } from 'lucide-react'
+import { Archive, ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronRight, ClipboardPaste, Copy, Eye, FileText, FolderOpen, FolderPlus, Pencil, Play, Scissors, Terminal, Trash2, Upload, type LucideIcon } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from 'react'
 import type { FileTypeExtensions } from '@shared/types'
 import type { ContextMenuPosition } from '@/app-types'
@@ -25,6 +25,7 @@ const icons: Record<SftpMenuIcon, LucideIcon> = {
   'arrow-down': ArrowDown,
   'arrow-up': ArrowUp,
   'arrow-up-down': ArrowUpDown,
+  archive: Archive,
   check: Check,
   'clipboard-paste': ClipboardPaste,
   copy: Copy,
@@ -69,7 +70,8 @@ function MenuAction({
       disabled={node.disabled}
       onClick={() => onAction(node.action)}
     >
-      <span className="context-menu-action-icon">{Icon && <Icon size={16} />}</span>{node.label}
+      <span className="context-menu-action-icon">{Icon && <Icon size={16} />}</span>
+      <span className="context-menu-label">{node.label}</span>
     </button>
   )
 }

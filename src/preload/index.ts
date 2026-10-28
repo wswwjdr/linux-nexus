@@ -18,6 +18,10 @@ import type {
   RemoteCopyEvent,
   RemoteCopyRequest,
   RemoteCopyResult,
+  RemoteArchiveDecision,
+  RemoteArchiveEvent,
+  RemoteArchiveRequest,
+  RemoteArchiveResult,
   RemoteFilesApi,
   ContentSearchEvent,
   ContentSearchRequest,
@@ -91,6 +95,12 @@ const api: RemoteFilesApi = {
     ipcRenderer.invoke('files:path-copy', sessionId, remotePath),
   deleteRemoteEntry: (sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('files:delete', sessionId, remotePath),
+  startRemoteArchiveExtraction: (request: RemoteArchiveRequest): Promise<RemoteArchiveResult> =>
+    ipcRenderer.invoke('files:extract-archive-start', request),
+  decideRemoteArchiveExtraction: (requestId: string, conflictId: string, decision: RemoteArchiveDecision): Promise<boolean> =>
+    ipcRenderer.invoke('files:extract-archive-decision', requestId, conflictId, decision),
+  cancelRemoteArchiveExtraction: (requestId: string): Promise<boolean> =>
+    ipcRenderer.invoke('files:extract-archive-cancel', requestId),
   previewFile: (sessionId: string, remotePath: string, type: PreviewType): Promise<PreviewResult> =>
     ipcRenderer.invoke('files:preview', sessionId, remotePath, type),
   openExternalUrl: (url: string): Promise<void> => ipcRenderer.invoke('shell:open-external', url),
@@ -118,6 +128,11 @@ const api: RemoteFilesApi = {
     const listener = (_event: Electron.IpcRendererEvent, copyEvent: RemoteCopyEvent) => callback(copyEvent)
     ipcRenderer.on('files:copy-event', listener)
     return () => ipcRenderer.removeListener('files:copy-event', listener)
+  },
+  onRemoteArchiveEvent: (callback: (event: RemoteArchiveEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, archiveEvent: RemoteArchiveEvent) => callback(archiveEvent)
+    ipcRenderer.on('files:extract-archive-event', listener)
+    return () => ipcRenderer.removeListener('files:extract-archive-event', listener)
   },
   onNameSearchEvent: (callback: (event: NameSearchEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, searchEvent: NameSearchEvent) => callback(searchEvent)

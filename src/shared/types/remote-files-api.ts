@@ -7,6 +7,7 @@ import type { AppSettings, AppSettingsPatch } from './settings'
 import type { DroppedUploadEntry, TransferResult, RemoteMoveRequest, RemoteMoveDecision, RemoteMoveResult, RemoteCopyRequest, RemoteCopyDecision, RemoteCopyResult, TransferProgress, TransferQueuedEvent, RemoteMoveEvent, RemoteCopyEvent } from './transfers'
 import type { PreviewResult, TextFileRevision, TextFileSaveResult, LogPreviewPage } from './previews'
 import type { PreviewType } from '../file-type-registry'
+import type { RemoteArchiveDecision, RemoteArchiveEvent, RemoteArchiveRequest, RemoteArchiveResult } from '../archive'
 
 export interface RemoteFilesApi {
   listProfiles(): Promise<ServerProfile[]>
@@ -54,6 +55,9 @@ export interface RemoteFilesApi {
   createRemoteDirectory(sessionId: string, remoteDirectory: string, name: string): Promise<void>
   copyRemotePath(sessionId: string, remotePath: string): Promise<void>
   deleteRemoteEntry(sessionId: string, remotePath: string): Promise<void>
+  startRemoteArchiveExtraction(request: RemoteArchiveRequest): Promise<RemoteArchiveResult>
+  decideRemoteArchiveExtraction(requestId: string, conflictId: string, decision: RemoteArchiveDecision): Promise<boolean>
+  cancelRemoteArchiveExtraction(requestId: string): Promise<boolean>
   previewFile(sessionId: string, remotePath: string, type: PreviewType): Promise<PreviewResult>
   openExternalUrl(url: string): Promise<void>
   saveTextFile(
@@ -73,6 +77,7 @@ export interface RemoteFilesApi {
   onTransferQueued(callback: (event: TransferQueuedEvent) => void): () => void
   onRemoteMoveEvent(callback: (event: RemoteMoveEvent) => void): () => void
   onRemoteCopyEvent(callback: (event: RemoteCopyEvent) => void): () => void
+  onRemoteArchiveEvent(callback: (event: RemoteArchiveEvent) => void): () => void
   onNameSearchEvent(callback: (event: NameSearchEvent) => void): () => void
   onContentSearchEvent(callback: (event: ContentSearchEvent) => void): () => void
   onScriptExecutionEvent(callback: (event: ScriptExecutionEvent) => void): () => void

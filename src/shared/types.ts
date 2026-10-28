@@ -1,4 +1,5 @@
 export type { FileTypeCategory, FileTypeExtensions, PreviewType } from './file-type-registry'
+export type * from './archive'
 export type * from './types/profiles'
 export type * from './types/search'
 export type * from './types/script-executions'

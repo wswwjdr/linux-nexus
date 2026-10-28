@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { DroppedUploadEntry, RemoteEntry, TransferProgress, TransferResult } from '@shared/types'
 import type { TransferJob } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { errorMessage } from '@/app-utils'
 
 interface UseTransfersOptions {
+  activeSessionId: string | null
+  sessionIds: ReadonlySet<string>
   sessionId: string | null
   currentPath: string
   profileName: string
@@ -19,6 +21,8 @@ interface RunTransferOptions {
 }
 
 export function useTransfers({
+  activeSessionId,
+  sessionIds,
   sessionId,
   currentPath,
   profileName,
@@ -26,6 +30,52 @@ export function useTransfers({
   showToast,
 }: UseTransfersOptions) {
   const [transfers, setTransfers] = useState<Record<string, TransferJob>>({})
+  const completionTimers = useRef(new Map<string, number>())
+  const sessionIdsRef = useRef(sessionIds)
+  sessionIdsRef.current = sessionIds
+
+  useEffect(() => {
+    setTransfers((current) => {
+      const next = { ...current }
+      let changed = false
+      for (const [requestId, job] of Object.entries(current)) {
+        if (sessionIds.has(job.sessionId)) continue
+        delete next[requestId]
+        changed = true
+      }
+      return changed ? next : current
+    })
+  }, [sessionIds])
+
+  useEffect(() => {
+    for (const [requestId, timer] of completionTimers.current) {
+      const job = transfers[requestId]
+      if (job?.sessionId === activeSessionId && (job.state === 'complete' || job.state === 'cancelled')) continue
+      window.clearTimeout(timer)
+      completionTimers.current.delete(requestId)
+    }
+
+    if (!activeSessionId) return
+    for (const [requestId, job] of Object.entries(transfers)) {
+      if (job.sessionId !== activeSessionId
+        || (job.state !== 'complete' && job.state !== 'cancelled')
+        || completionTimers.current.has(requestId)) continue
+      const timer = window.setTimeout(() => {
+        completionTimers.current.delete(requestId)
+        setTransfers((current) => {
+          const next = { ...current }
+          delete next[requestId]
+          return next
+        })
+      }, 2800)
+      completionTimers.current.set(requestId, timer)
+    }
+  }, [activeSessionId, transfers])
+
+  useEffect(() => () => {
+    for (const timer of completionTimers.current.values()) window.clearTimeout(timer)
+    completionTimers.current.clear()
+  }, [])
 
   useEffect(() => {
     const unlistenQueued = window.remoteFiles.onTransferQueued(({ requestId }) => {
@@ -34,6 +84,7 @@ export function useTransfers({
         : current)
     })
     const unlistenProgress = window.remoteFiles.onTransferProgress((progress: TransferProgress) => {
+      if (!sessionIdsRef.current.has(progress.sessionId)) return
       setTransfers((current) => ({
         ...current,
         [progress.requestId]: {
@@ -95,39 +146,37 @@ export function useTransfers({
         })
         return
       }
-      setTransfers((current) => ({
-        ...current,
-        [requestId]: {
-          ...current[requestId],
-          sessionId: activeSessionId,
-          profileName,
-          transferred: result.status === 'completed'
-            ? current[requestId]?.total ?? initialTotal
-            : current[requestId]?.transferred ?? 0,
-          completedFiles: result.status === 'completed'
-            ? current[requestId]?.fileCount ?? current[requestId]?.completedFiles ?? 0
-            : current[requestId]?.completedFiles ?? 0,
-          activeFiles: [],
-          failures: result.status === 'completed-with-errors' ? result.failures : [],
-          failedFiles: result.status === 'completed-with-errors'
-            ? result.failures.length
-            : current[requestId]?.failedFiles ?? 0,
-          state: result.status === 'completed'
-            ? 'complete'
-            : result.status === 'completed-with-errors'
-              ? 'completed-with-errors'
-              : 'cancelled',
-        },
-      }))
-      if (result.status !== 'completed-with-errors') {
-        window.setTimeout(() => {
-          setTransfers((current) => {
-            const next = { ...current }
-            delete next[requestId]
-            return next
-          })
-        }, 2800)
-      }
+      setTransfers((current) => {
+        if (!sessionIdsRef.current.has(activeSessionId)) {
+          const next = { ...current }
+          delete next[requestId]
+          return next
+        }
+        return {
+          ...current,
+          [requestId]: {
+            ...current[requestId],
+            sessionId: activeSessionId,
+            profileName,
+            transferred: result.status === 'completed'
+              ? current[requestId]?.total ?? initialTotal
+              : current[requestId]?.transferred ?? 0,
+            completedFiles: result.status === 'completed'
+              ? current[requestId]?.fileCount ?? current[requestId]?.completedFiles ?? 0
+              : current[requestId]?.completedFiles ?? 0,
+            activeFiles: [],
+            failures: result.status === 'completed-with-errors' ? result.failures : [],
+            failedFiles: result.status === 'completed-with-errors'
+              ? result.failures.length
+              : current[requestId]?.failedFiles ?? 0,
+            state: result.status === 'completed'
+              ? 'complete'
+              : result.status === 'completed-with-errors'
+                ? 'completed-with-errors'
+                : 'cancelled',
+          },
+        }
+      })
       if (refreshPath !== undefined && direction === 'upload') await loadDirectory(activeSessionId, refreshPath)
     } catch (error) {
       setTransfers((current) => {
@@ -135,6 +184,7 @@ export function useTransfers({
         delete next[requestId]
         return next
       })
+      if (!sessionIdsRef.current.has(activeSessionId)) return
       if (refreshPath !== undefined && direction === 'upload') await loadDirectory(activeSessionId, refreshPath)
       showToast('error', (direction === 'upload' ? '上传' : '下载') + '失败：' + errorMessage(error))
     }

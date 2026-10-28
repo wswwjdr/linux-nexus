@@ -3,6 +3,7 @@ import test from 'node:test'
 import type { RemoteEntry, SearchResultTarget } from '../src/shared/types.ts'
 import { defaultFileTypeExtensions } from '../src/shared/app-settings.ts'
 import { resolveSftpContextMenu, type SftpContextMenuContext, type SftpMenuActionNode, type SftpMenuNode } from '../src/renderer/src/features/files/sftp-menu.ts'
+import { useSftpMenuActions } from '../src/renderer/src/features/files/useSftpMenuActions.ts'
 
 function entry(name: string, type: RemoteEntry['type'] = 'file'): RemoteEntry {
   return { name, path: '/home/user/' + name, type, size: 12, modifiedAt: null, permissions: 'rw-r--r--' }
@@ -106,4 +107,78 @@ test('search results share all applicable type actions and keep location navigat
   ])
   const target = resolveSftpContextMenu({ kind: 'search-result', result: result('run.sh') }, defaultFileTypeExtensions())
   assert.equal(target.at(-1)?.kind === 'action' ? target.at(-1)?.label : '', '打开所在目录')
+})
+
+test('supported archive files expose extraction while ordinary compressed streams do not', () => {
+  const archiveNodes = resolveSftpContextMenu(
+    { kind: 'single-entry', entry: entry('release.tar.gz'), canPaste: false },
+    defaultFileTypeExtensions(),
+  )
+  const archiveMenu = archiveNodes.find((node) => node.kind === 'submenu' && node.id === 'extract-archive')
+  assert.equal(archiveMenu?.kind, 'submenu')
+  if (archiveMenu?.kind === 'submenu') {
+    assert.deepEqual(archiveMenu.children.map(({ label }) => label), ['解压到当前路径', '解压到 release/', '解压到...'])
+    assert.deepEqual(actions(archiveMenu.children).map(({ action }) => action), [
+      { type: 'extract-archive', target: 'current-directory' },
+      { type: 'extract-archive', target: 'archive-directory' },
+      { type: 'extract-archive', target: 'choose-directory' },
+    ])
+  }
+  const searchArchiveMenu = resolveSftpContextMenu(
+    { kind: 'search-result', result: result('release.tar.gz') },
+    defaultFileTypeExtensions(),
+  ).find((node) => node.kind === 'submenu' && node.id === 'extract-archive')
+  assert.equal(searchArchiveMenu?.kind, 'submenu')
+  if (searchArchiveMenu?.kind === 'submenu') {
+    assert.deepEqual(searchArchiveMenu.children.map(({ label }) => label), ['解压到当前路径', '解压到 release/', '解压到...'])
+  }
+
+  const unsupportedNodes = resolveSftpContextMenu(
+    { kind: 'single-entry', entry: entry('release.rar'), canPaste: false },
+    defaultFileTypeExtensions(),
+  )
+  assert.equal(actions(unsupportedNodes).some(({ id }) => id === 'extract-archive'), false)
+})
+
+test('archive actions from search results always use the active browser directory', () => {
+  const calls: unknown[][] = []
+  const { dispatchSftpMenuAction } = useSftpMenuActions({
+    activeSession: null,
+    connectedSessionId: 'active-session',
+    currentPath: '/active/browser/path',
+    sort: { column: 'name', direction: 'asc' },
+    canPasteRemote: false,
+    setBrowserContextMenu: () => {},
+    setSessionContextMenu: () => {},
+    contextMenuAnchorRef: { current: null },
+    setSearchOpen: () => {},
+    previewActionsRef: { current: new Map() },
+    scriptExecution: { runScript: () => {}, requestScriptCommandEdit: () => {} },
+    transfers: { download: () => {}, uploadFiles: async () => {} },
+    remoteOperations: {
+      copyRemoteSelection: () => {},
+      cutRemoteSelection: () => {},
+      pasteRemoteEntries: () => {},
+      requestRemoteEntriesDeletion: () => {},
+      setCreateDirectoryDialog: () => {},
+      extractRemoteArchive: (...args) => calls.push(args),
+    },
+    locateSearchResult: async () => true,
+    patchSession: () => {},
+    showToast: () => {},
+  })
+  const searchContext: SftpContextMenuContext = {
+    kind: 'search-result',
+    result: { name: 'release.tar.gz', path: '/search/result/release.tar.gz', type: 'file' },
+  }
+
+  for (const target of ['current-directory', 'archive-directory', 'choose-directory'] as const) {
+    dispatchSftpMenuAction({ type: 'extract-archive', target }, searchContext, 'active-session')
+  }
+
+  assert.deepEqual(calls.map(([, target, activeDirectory]) => [target, activeDirectory]), [
+    ['current-directory', '/active/browser/path'],
+    ['archive-directory', '/active/browser/path'],
+    ['choose-directory', '/active/browser/path'],
+  ])
 })

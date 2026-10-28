@@ -2,12 +2,14 @@ import type { FileTypeExtensions, RemoteEntry, SearchResultTarget } from '@share
 import type { PreviewType } from '@shared/file-type-registry'
 import { classifyFileTypeCategories, fileTypeDefinition } from '@shared/file-type-registry'
 import { previewTypesForFile, previewTypeLabels } from '@shared/preview-file-type'
+import { archiveBaseName, archiveFormatForName } from '@shared/archive'
 import type { SortColumn, SortDirection } from '@/app-types'
 
 export type SftpMenuIcon =
   | 'arrow-down'
   | 'arrow-up'
   | 'arrow-up-down'
+  | 'archive'
   | 'check'
   | 'clipboard-paste'
   | 'copy'
@@ -25,6 +27,7 @@ export type SftpMenuIcon =
 export type SftpMenuAction =
   | { type: 'preview'; previewType: PreviewType }
   | { type: 'preview-log' }
+  | { type: 'extract-archive'; target: 'current-directory' | 'archive-directory' | 'choose-directory' }
   | { type: 'run-script' }
   | { type: 'adjust-script-command' }
   | { type: 'download' }
@@ -146,6 +149,30 @@ const scriptExecutionStrategy: SftpContextMenuStrategy = {
   },
 }
 
+const archiveExtractionStrategy: SftpContextMenuStrategy = {
+  id: 'archive-extraction',
+  group: 'specialized',
+  matches(context) {
+    const entry = fileForContext(context)
+    return Boolean(entry?.type === 'file' && archiveFormatForName(entry.name))
+  },
+  contribute(context) {
+    const entry = fileForContext(context)
+    if (!entry) return []
+    return [{
+      kind: 'submenu',
+      id: 'extract-archive',
+      label: '解压',
+      icon: 'archive',
+      children: [
+        action('extract-current-directory', '解压到当前路径', 'folder-open', { type: 'extract-archive', target: 'current-directory' }),
+        action('extract-archive-directory', `解压到 ${archiveBaseName(entry.name)}/`, 'folder-open', { type: 'extract-archive', target: 'archive-directory' }),
+        action('extract-choose-directory', '解压到...', 'folder-plus', { type: 'extract-archive', target: 'choose-directory' }),
+      ],
+    }]
+  },
+}
+
 const singleEntryStrategy: SftpContextMenuStrategy = {
   id: 'single-entry-common',
   group: 'common',
@@ -259,6 +286,7 @@ export const sftpContextMenuStrategies: readonly SftpContextMenuStrategy[] = [
   previewStrategy,
   reversePreviewStrategy,
   scriptExecutionStrategy,
+  archiveExtractionStrategy,
   singleEntryStrategy,
   multipleEntriesStrategy,
   directoryBackgroundStrategy,

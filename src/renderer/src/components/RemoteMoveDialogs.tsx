@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react'
 import { AlertTriangle, Check, File, Folder, LoaderCircle, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import type { RemoteCopyResult, RemoteMoveConflict, RemoteMoveDecision, RemoteMoveResult } from '@shared/types'
+import { RemoteConflictDialog } from './RemoteConflictDialog'
 
 const itemTypeLabel = (type: 'file' | 'directory') => type === 'directory' ? '文件夹' : '文件'
 
@@ -16,71 +17,35 @@ export function RemoteMoveConflictDialog({
   onDecision: (decision: RemoteMoveDecision) => void
   operation?: 'move' | 'copy'
 }) {
-  const titleId = useId()
   const mismatch = conflict.conflictType === 'type-mismatch'
-  const TargetIcon = conflict.targetType === 'directory' ? Folder : File
-
-  useEffect(() => {
-    const dismissOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      if (!busy) onDecision('cancel')
-    }
-    window.addEventListener('keydown', dismissOnEscape, true)
-    return () => window.removeEventListener('keydown', dismissOnEscape, true)
-  }, [busy, onDecision])
-
-  return createPortal((
-    <div className="modal-backdrop confirmation-backdrop remote-move-backdrop" role="presentation">
-      <section className="modal remote-move-conflict" role="alertdialog" aria-modal="true" aria-labelledby={titleId}>
-        <div className="confirmation-heading">
-          <div className="confirmation-icon warning"><AlertTriangle size={19} /></div>
-          <div className="confirmation-title-group">
-            <div className="modal-kicker warning">{operation === 'copy' ? '远程复制冲突' : '远程移动冲突'}</div>
-            <h2 id={titleId}>{mismatch ? '同名项目类型不同' : '目标文件已存在'}</h2>
-          </div>
-          <button className="icon-button modal-close" title={operation === 'copy' ? '取消复制' : '取消移动'} aria-label={operation === 'copy' ? '取消复制' : '取消移动'} disabled={busy} onClick={() => onDecision('cancel')}><X size={18} /></button>
-        </div>
-        <dl className="confirmation-details">
-          <div className="confirmation-detail">
-            <dt>来源</dt>
-            <dd><span className="remote-move-item-icon">{conflict.sourceType === 'directory' ? <Folder size={15} /> : <File size={14} />}</span>{conflict.sourcePath}</dd>
-          </div>
-          <div className="confirmation-detail">
-            <dt>目标</dt>
-            <dd><span className="remote-move-item-icon">{<TargetIcon size={15} />}</span>{conflict.targetPath}</dd>
-          </div>
-        </dl>
-        <p className="confirmation-description">
-          {mismatch
-            ? `来源是${itemTypeLabel(conflict.sourceType)}，目标是${itemTypeLabel(conflict.targetType)}。替换会先删除整个目标${itemTypeLabel(conflict.targetType)}及其内容，此操作无法撤销。`
-            : operation === 'copy' ? '覆盖会替换目标文件的现有内容，此操作无法撤销。' : '覆盖会永久删除目标文件的现有内容，此操作无法撤销。'}
-        </p>
-        <div className="remote-move-conflict-actions">
-          {mismatch ? (
-            <>
-              <button type="button" className="danger-button" disabled={busy} onClick={() => onDecision('replace')}>
-                {busy ? <LoaderCircle className="spin" size={15} /> : <AlertTriangle size={15} />}{operation === 'copy' ? '删除目标并复制' : '删除目标并替换'}
-              </button>
-              <button type="button" className="secondary-button" disabled={busy} onClick={() => onDecision('skip')}>跳过此项</button>
-              <button type="button" className="secondary-button remote-move-cancel" disabled={busy} onClick={() => onDecision('cancel')}>取消{operation === 'copy' ? '复制' : '移动'}</button>
-            </>
-          ) : (
-            <>
-              <button type="button" className="danger-button" disabled={busy} onClick={() => onDecision('replace')}>
-                {busy ? <LoaderCircle className="spin" size={15} /> : <AlertTriangle size={15} />}覆盖此文件
-              </button>
-              <button type="button" className="secondary-button" disabled={busy} onClick={() => onDecision('skip')}>跳过此文件</button>
-              <button type="button" className="warning-button" disabled={busy} onClick={() => onDecision('replace-all')}>后续均覆盖</button>
-              <button type="button" className="secondary-button" disabled={busy} onClick={() => onDecision('skip-all')}>后续均跳过</button>
-              <button type="button" className="secondary-button remote-move-cancel" disabled={busy} onClick={() => onDecision('cancel')}>取消{operation === 'copy' ? '复制' : '移动'}</button>
-            </>
-          )}
-        </div>
-      </section>
-    </div>
-  ), document.body)
+  const label = operation === 'copy' ? '复制' : '移动'
+  return <RemoteConflictDialog
+    heading={`远程${label}冲突`}
+    title={mismatch ? '同名项目类型不同' : '目标文件已存在'}
+    sourceLabel="来源"
+    sourcePath={conflict.sourcePath}
+    targetPath={conflict.targetPath}
+    sourceType={conflict.sourceType}
+    targetType={conflict.targetType}
+    description={mismatch
+      ? `来源是${itemTypeLabel(conflict.sourceType)}，目标是${itemTypeLabel(conflict.targetType)}。替换会先删除整个目标${itemTypeLabel(conflict.targetType)}及其内容，此操作无法撤销。`
+      : operation === 'copy' ? '覆盖会替换目标文件的现有内容，此操作无法撤销。' : '覆盖会永久删除目标文件的现有内容，此操作无法撤销。'}
+    actions={mismatch
+      ? [
+          { decision: 'replace', label: operation === 'copy' ? '删除目标并复制' : '删除目标并替换', tone: 'danger' },
+          { decision: 'skip', label: '跳过此项' },
+          { decision: 'cancel', label: `取消${label}` },
+        ]
+      : [
+          { decision: 'replace', label: '覆盖此文件', tone: 'danger' },
+          { decision: 'skip', label: '跳过此文件' },
+          { decision: 'replace-all', label: '后续均覆盖', tone: 'warning' },
+          { decision: 'skip-all', label: '后续均跳过' },
+          { decision: 'cancel', label: `取消${label}` },
+        ]}
+    busy={busy}
+    onDecision={(decision) => onDecision(decision as RemoteMoveDecision)}
+  />
 }
 
 export function RemoteMoveSummaryDialog({

@@ -2,6 +2,7 @@ import { AlertTriangle, ArrowDownToLine, Check, Upload, X } from 'lucide-react'
 import type { TransferJob } from '@/app-types'
 
 interface TransferTrayProps {
+  sessionId: string | null
   transfers: Record<string, TransferJob>
   onCancel: (requestId: string) => void
   onDismiss: (requestId: string) => void
@@ -15,8 +16,8 @@ function percentage(transferred: number, total: number): number {
   return total > 0 ? Math.min(100, Math.round(transferred * 100 / total)) : 0
 }
 
-export default function TransferTray({ transfers, onCancel, onDismiss }: TransferTrayProps) {
-  const jobs = Object.entries(transfers).filter(([, job]) => job.state !== 'starting')
+export default function TransferTray({ sessionId, transfers, onCancel, onDismiss }: TransferTrayProps) {
+  const jobs = Object.entries(transfers).filter(([, job]) => job.sessionId === sessionId && job.state !== 'starting')
   if (jobs.length === 0) return null
 
   return (

@@ -29,7 +29,7 @@ interface UseSftpMenuActionsOptions {
   scriptExecution: Pick<ScriptExecution, 'runScript' | 'requestScriptCommandEdit'>
   transfers: Pick<TransferOperations, 'download' | 'uploadFiles'>
   remoteOperations: Pick<RemoteOperations,
-    'copyRemoteSelection' | 'cutRemoteSelection' | 'pasteRemoteEntries' | 'requestRemoteEntriesDeletion' | 'setCreateDirectoryDialog'>
+    'copyRemoteSelection' | 'cutRemoteSelection' | 'pasteRemoteEntries' | 'requestRemoteEntriesDeletion' | 'setCreateDirectoryDialog' | 'extractRemoteArchive'>
   locateSearchResult: SessionOperations['locateSearchResult']
   patchSession: (sessionId: string, patch: Partial<SessionTab>) => void
   showToast: (kind: ToastNotice['kind'], message: string, action?: ToastNotice['action']) => void
@@ -105,6 +105,9 @@ export function useSftpMenuActions({
         break
       case 'preview-log':
         if (entry) void previewActionsRef.current.get(sessionId)?.previewLogFile(entry)
+        break
+      case 'extract-archive':
+        if (entry) remoteOperations.extractRemoteArchive(entry, action.target, currentPath)
         break
       case 'run-script':
         if (entry) scriptExecution.runScript(entry, sessionId)

@@ -6,7 +6,7 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import type { DroppedUploadEntry, RemoteEntry, RemoteMoveProgress } from '@shared/types'
+import type { DroppedUploadEntry, RemoteArchiveProgress, RemoteEntry, RemoteMoveProgress } from '@shared/types'
 import type { FileViewMode, SortColumn, SortDirection } from '@/app-types'
 import { formatDate, formatSize, getParentPath } from '@/app-utils'
 import FileEntryCollection from './FileEntryCollection'
@@ -25,6 +25,7 @@ interface FileBrowserProps {
   selectedPaths: string[]
   moveProgress: RemoteMoveProgress | null
   copying: boolean
+  extractingArchive: { name: string; progress: RemoteArchiveProgress } | null
   highlightedPath: string | null
   onViewModeChange: (mode: FileViewMode) => void
   onNavigate: (path: string) => Promise<boolean>
@@ -36,6 +37,7 @@ interface FileBrowserProps {
   onDropUpload: (entries: DroppedUploadEntry[]) => void
   onDropMove: (sourcePaths: string[], targetDirectory: string) => void
   onCancelMove: () => void
+  onCancelArchive: () => void
   onDropError: (error: unknown) => void
 }
 
@@ -50,6 +52,7 @@ export default function FileBrowser({
   selectedPaths,
   moveProgress,
   copying,
+  extractingArchive,
   highlightedPath,
   onViewModeChange,
   onNavigate,
@@ -61,6 +64,7 @@ export default function FileBrowser({
   onDropUpload,
   onDropMove,
   onCancelMove,
+  onCancelArchive,
   onDropError,
 }: FileBrowserProps) {
   const contentRef = useRef<HTMLDivElement>(null)
@@ -289,6 +293,16 @@ export default function FileBrowser({
           <div className="remote-copy-status" role="status">
             <LoaderCircle className="spin" size={15} />
             <span>正在复制远端项目…</span>
+          </div>
+        )}
+        {extractingArchive && (
+          <div className="remote-archive-status" role="status">
+            <LoaderCircle className="spin" size={15} />
+            <span>正在解压：{extractingArchive.name} · {extractingArchive.progress.phase === 'preparing' ? '准备中' : extractingArchive.progress.phase === 'extracting' ? '展开中' : '合并中'}
+              {extractingArchive.progress.totalCount > 0 ? ` ${extractingArchive.progress.completedCount}/${extractingArchive.progress.totalCount}` : ''}
+              {extractingArchive.progress.currentPath ? ` · ${extractingArchive.progress.currentPath}` : ''}
+            </span>
+            <button type="button" className="icon-button" title="取消解压" aria-label="取消解压" onClick={onCancelArchive}><X size={14} /></button>
           </div>
         )}
         <FileEntryCollection

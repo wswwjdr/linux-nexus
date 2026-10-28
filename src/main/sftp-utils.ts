@@ -65,14 +65,22 @@ export function sftpUnlink(sftp: SFTPWrapper, remotePath: string): Promise<void>
   })
 }
 
+export function sftpWriteFile(sftp: SFTPWrapper, remotePath: string, data: Buffer | string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    sftp.writeFile(remotePath, data, (error) => error ? reject(error) : resolve())
+  })
+}
+
 export function sftpRmdir(sftp: SFTPWrapper, remotePath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     sftp.rmdir(remotePath, (error) => error ? reject(error) : resolve())
   })
 }
 
-export async function sftpRemoveTree(sftp: SFTPWrapper, remotePath: string): Promise<void> {
+export async function sftpRemoveTree(sftp: SFTPWrapper, remotePath: string, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw new Error('远端删除已取消')
   const attributes = await sftpLstat(sftp, remotePath)
+  if (signal?.aborted) throw new Error('远端删除已取消')
   if (fileType(attributes.mode) !== 'directory') {
     await sftpUnlink(sftp, remotePath)
     return
@@ -80,8 +88,9 @@ export async function sftpRemoveTree(sftp: SFTPWrapper, remotePath: string): Pro
   for (const entry of await sftpReaddir(sftp, remotePath)) {
     if (entry.filename === '.' || entry.filename === '..') continue
     if (entry.filename.includes('/') || entry.filename.includes('\0')) throw new Error('服务器返回了无效的文件名')
-    await sftpRemoveTree(sftp, posix.join(remotePath, entry.filename))
+    await sftpRemoveTree(sftp, posix.join(remotePath, entry.filename), signal)
   }
+  if (signal?.aborted) throw new Error('远端删除已取消')
   await sftpRmdir(sftp, remotePath)
 }
 
@@ -92,16 +101,27 @@ export function normalizedRemotePath(remotePath: string): string {
   return posix.resolve('/', remotePath)
 }
 
-export function executeRemoteCommand(client: Client, command: string): Promise<void> {
+export function executeRemoteCommand(
+  client: Client,
+  command: string,
+  signal?: AbortSignal,
+  onCancel?: () => Promise<void>,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     let stream: ClientChannel | null = null
     let exitCode: number | null = null
     let settled = false
+    let cancellationRequested = false
+    let cancellationStarted = false
+    let cancellationPromise: Promise<void> | null = null
+    let cancellationError: Error | null = null
+    let onAbort = () => {}
     const stderr: Buffer[] = []
     const cleanup = () => {
       client.removeListener('error', onClientError)
       client.removeListener('end', onClientEnd)
       client.removeListener('close', onClientClose)
+      signal?.removeEventListener('abort', onAbort)
       stream?.stderr.removeListener('data', onStderrData)
       stream?.stderr.removeListener('error', onStreamError)
       stream?.removeListener('error', onStreamError)
@@ -115,12 +135,25 @@ export function executeRemoteCommand(client: Client, command: string): Promise<v
       if (reason) reject(reason)
       else resolve()
     }
+    const finishCancelled = (fallbackError?: Error) => {
+      void (cancellationPromise ?? Promise.resolve()).then(() => {
+        finish(cancellationError ?? fallbackError ?? new Error('远程命令已取消'))
+      })
+    }
+    const finishWithError = (error: Error) => {
+      if (signal?.aborted && onCancel) finishCancelled(error)
+      else finish(error)
+    }
     const onClientError = (clientError: Error) => finish(new Error('SSH 连接失败：' + clientError.message))
     const onClientEnd = () => finish(new Error('SSH 连接已结束'))
     const onClientClose = () => finish(new Error('SSH 连接已关闭'))
     const onStderrData = (chunk: Buffer) => stderr.push(Buffer.from(chunk))
-    const onStreamError = (streamError: Error) => finish(streamError)
+    const onStreamError = (streamError: Error) => finishWithError(streamError)
     const onExit = (code: number | null) => {
+      if (signal?.aborted) {
+        finishCancelled()
+        return
+      }
       exitCode = typeof code === 'number' ? code : null
       if (exitCode === 0) {
         finish()
@@ -130,6 +163,10 @@ export function executeRemoteCommand(client: Client, command: string): Promise<v
       finish(new Error(detail || '远程命令失败（退出码 ' + (exitCode ?? '未知') + '）'))
     }
     const onStreamClose = () => {
+      if (signal?.aborted) {
+        finishCancelled()
+        return
+      }
       if (exitCode === 0) {
         finish()
         return
@@ -137,6 +174,32 @@ export function executeRemoteCommand(client: Client, command: string): Promise<v
       const detail = Buffer.concat(stderr).toString('utf8').trim()
       finish(new Error(detail || '远程命令失败（退出码 ' + (exitCode ?? '未知') + '）'))
     }
+
+    onAbort = () => {
+      if (!stream) {
+        cancellationRequested = true
+        if (!onCancel) finish(new Error('远程命令已取消'))
+        return
+      }
+      if (!onCancel) {
+        stream.close()
+        return
+      }
+      if (cancellationStarted) return
+      cancellationStarted = true
+      cancellationPromise = Promise.resolve().then(onCancel).catch((cancelError: unknown) => {
+        cancellationError = cancelError instanceof Error ? cancelError : new Error(String(cancelError))
+        if (!stream) return
+        try { stream.signal('TERM') } catch {}
+        stream.close()
+      })
+    }
+
+    if (signal?.aborted) {
+      reject(new Error('远程命令已取消'))
+      return
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
 
     client.on('error', onClientError)
     client.once('end', onClientEnd)
@@ -157,6 +220,7 @@ export function executeRemoteCommand(client: Client, command: string): Promise<v
         stream.once('error', onStreamError)
         stream.once('exit', onExit)
         stream.once('close', onStreamClose)
+        if (cancellationRequested) onAbort()
       })
     } catch (error) {
       finish(error instanceof Error ? error : new Error(String(error)))

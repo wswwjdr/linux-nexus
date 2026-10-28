@@ -8,6 +8,7 @@ import SessionWorkspaceView from './features/sessions/SessionWorkspaceView'
 import DialogLayer from './components/DialogLayer'
 import ConfirmationDialog from './components/ConfirmationDialog'
 import { RemoteMoveConflictDialog, RemoteMoveSummaryDialog } from './components/RemoteMoveDialogs'
+import { RemoteArchiveDialogs } from './components/RemoteArchiveDialogs'
 import SessionChooser from './components/SessionChooser'
 import ShortcutGuideDialog from './components/ShortcutGuideDialog'
 import PerformanceMonitor from './components/PerformanceMonitor'
@@ -80,6 +81,7 @@ export default function App() {
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
     [sessions, activeSessionId],
   )
+  const sessionIds = useMemo(() => new Set(sessions.map((session) => session.id)), [sessions])
   const {
     scriptCommandDialogs,
     scriptExecutionDialogs,
@@ -345,6 +347,8 @@ export default function App() {
     download,
     dismissTransfer,
   } = useTransfers({
+    activeSessionId,
+    sessionIds,
     sessionId: connectedSessionId,
     currentPath,
     profileName: connectedProfile?.name ?? '',
@@ -355,6 +359,9 @@ export default function App() {
   const {
     activeRemoteMove,
     activeRemoteCopy,
+    activeArchiveExtraction,
+    archiveDestinationDialog,
+    archiveSummary,
     canPasteRemote,
     remoteEntryDeleteDialog,
     remoteEntryDeleteError,
@@ -377,6 +384,13 @@ export default function App() {
     decideRemoteCopyConflict,
     decideRemoteMoveConflict,
     cancelActiveRemoteMove,
+    extractRemoteArchive,
+    beginArchiveExtractionAt,
+    decideRemoteArchiveConflict,
+    cancelActiveArchiveExtraction,
+    closeArchiveSummary,
+    createArchiveDestinationDirectory,
+    setArchiveDestinationDialog,
   } = useRemoteOperations({
     activeSession,
     connectedProfile,
@@ -457,6 +471,7 @@ export default function App() {
       pasteRemoteEntries,
       requestRemoteEntriesDeletion,
       setCreateDirectoryDialog,
+      extractRemoteArchive,
     },
     locateSearchResult,
     patchSession,
@@ -466,7 +481,8 @@ export default function App() {
     profileDialog || profileDeleteDialog || createDirectoryDialog || settingsForm
       || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
       || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || activeRemoteMove?.conflict
-      || activeRemoteCopy?.conflict || remoteOperationDetailsOpen
+      || activeRemoteCopy?.conflict || remoteOperationDetailsOpen || activeArchiveExtraction
+      || archiveDestinationDialog || archiveSummary
       || (activeSessionId && workspaceBlockingSessionIds.has(activeSessionId))
       || sessionChooserOpen || shortcutGuideOpen,
   )
@@ -625,6 +641,7 @@ export default function App() {
               ? activeRemoteMove.progress
               : null,
             copying: activeSession ? activeRemoteCopy?.sessionId === activeSession.id : false,
+            extractingArchive: activeArchiveExtraction,
             highlightedPath,
             sessionContextMenu,
             browserContextMenu,
@@ -648,6 +665,8 @@ export default function App() {
               requestRemoteEntriesDeletion,
               beginRemoteMove,
               cancelActiveRemoteMove,
+              extractRemoteArchive,
+              cancelActiveArchiveExtraction,
             },
             browser: {
               onOpenEntryContextMenu: openEntryContextMenu,
@@ -811,6 +830,17 @@ export default function App() {
           onClose={() => setRemoteOperationDetailsOpen(false)}
         />
       )}
+
+      <RemoteArchiveDialogs
+        destination={archiveDestinationDialog}
+        extraction={activeArchiveExtraction}
+        summary={archiveSummary}
+        onCloseDestination={() => setArchiveDestinationDialog(null)}
+        onChooseDestination={beginArchiveExtractionAt}
+        onCreateDirectory={createArchiveDestinationDirectory}
+        onConflictDecision={(decision) => void decideRemoteArchiveConflict(decision)}
+        onCloseSummary={closeArchiveSummary}
+      />
 
       {sessionChooserOpen && (
         <SessionChooser

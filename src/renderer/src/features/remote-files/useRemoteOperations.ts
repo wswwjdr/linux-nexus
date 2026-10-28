@@ -5,6 +5,11 @@ import type {
   RemoteCopyEvent,
   RemoteCopyResult,
   RemoteEntry,
+  RemoteArchiveConflict,
+  RemoteArchiveDecision,
+  RemoteArchiveEvent,
+  RemoteArchiveProgress,
+  RemoteArchiveResult,
   RemoteMoveConflict,
   RemoteMoveDecision,
   RemoteMoveProgress,
@@ -47,6 +52,24 @@ interface RemoteEntryDeleteDialog {
   directory: string
 }
 
+export interface ActiveArchiveExtraction {
+  requestId: string
+  sessionId: string
+  name: string
+  path: string
+  targetDirectory: string
+  wrapInDirectory: boolean
+  progress: RemoteArchiveProgress
+  conflict: RemoteArchiveConflict | null
+  decisionPending: boolean
+}
+
+export interface ArchiveDestinationDialogState {
+  sessionId: string
+  entry: Pick<RemoteEntry, 'name' | 'path'>
+  directory: string
+}
+
 interface UseRemoteOperationsOptions {
   activeSession: SessionTab | null
   connectedProfile: ServerProfile | null
@@ -82,6 +105,21 @@ export function useRemoteOperations({
   const [remoteOperationDetailsOpen, setRemoteOperationDetailsOpen] = useState(false)
   const [createDirectoryDialog, setCreateDirectoryDialog] = useState<{ name: string } | null>(null)
   const [creatingDirectory, setCreatingDirectory] = useState(false)
+  const [activeArchiveExtraction, setActiveArchiveExtraction] = useState<ActiveArchiveExtraction | null>(null)
+  const [archiveDestinationDialog, setArchiveDestinationDialog] = useState<ArchiveDestinationDialogState | null>(null)
+  const [archiveSummary, setArchiveSummary] = useState<RemoteArchiveResult | null>(null)
+
+  useEffect(() => window.remoteFiles.onRemoteArchiveEvent((event: RemoteArchiveEvent) => {
+    if (event.type === 'conflict') {
+      setActiveArchiveExtraction((current) => current?.requestId === event.conflict.requestId
+        ? { ...current, conflict: event.conflict, decisionPending: false }
+        : current)
+      return
+    }
+    setActiveArchiveExtraction((current) => current?.requestId === event.progress.requestId
+      ? { ...current, progress: event.progress }
+      : current)
+  }), [])
 
   useEffect(() => window.remoteFiles.onRemoteMoveEvent((event) => {
     if (event.type === 'conflict') {
@@ -145,6 +183,108 @@ export function useRemoteOperations({
     } finally {
       setCreatingDirectory(false)
     }
+  }
+
+  const startArchiveExtraction = (entry: Pick<RemoteEntry, 'name' | 'path'>, sessionId: string, targetDirectory: string, wrapInDirectory: boolean) => {
+    if (activeArchiveExtraction) return
+    const profileId = sessionsRef.current.find((candidate) => candidate.id === sessionId)?.profileId
+    const requestId = window.crypto.randomUUID()
+    const extraction: ActiveArchiveExtraction = {
+      requestId,
+      sessionId,
+      name: entry.name,
+      path: entry.path,
+      targetDirectory,
+      wrapInDirectory,
+      progress: { requestId, sessionId, phase: 'preparing', completedCount: 0, totalCount: 0, currentPath: null },
+      conflict: null,
+      decisionPending: false,
+    }
+    setArchiveDestinationDialog(null)
+    setArchiveSummary(null)
+    setActiveArchiveExtraction(extraction)
+    setBrowserContextMenu(null)
+    void (async () => {
+      let outputDirectory = targetDirectory
+      try {
+        const result = await window.remoteFiles.startRemoteArchiveExtraction({
+          requestId,
+          sessionId,
+          archivePath: entry.path,
+          targetDirectory,
+          wrapInDirectory,
+        })
+        outputDirectory = result.outputDirectory
+        setArchiveSummary(result)
+      } catch (error) {
+        showToast('error', `解压失败：${errorMessage(error)}`)
+      } finally {
+        setActiveArchiveExtraction((current) => current?.requestId === requestId ? null : current)
+        const sessionsToRefresh = sessionsRef.current.filter((candidate) => candidate.profileId === profileId
+          && candidate.kind === 'sftp' && candidate.status === 'connected'
+          && (candidate.currentPath === targetDirectory
+            || candidate.currentPath.startsWith(targetDirectory === '/' ? '/' : targetDirectory + '/')))
+        await Promise.all(sessionsToRefresh.map((candidate) => loadDirectory(candidate.id, candidate.currentPath)))
+      }
+    })()
+  }
+
+  const extractRemoteArchive = (
+    entry: Pick<RemoteEntry, 'name' | 'path'>,
+    target: 'current-directory' | 'archive-directory' | 'choose-directory',
+    activeDirectory: string,
+  ) => {
+    const session = activeSession
+    if (!session || session.kind !== 'sftp' || session.status !== 'connected' || activeArchiveExtraction) return
+    setBrowserContextMenu(null)
+    if (target === 'choose-directory') {
+      setArchiveDestinationDialog({ sessionId: session.id, entry, directory: activeDirectory })
+      return
+    }
+    startArchiveExtraction(entry, session.id, activeDirectory, target === 'archive-directory')
+  }
+
+  const beginArchiveExtractionAt = (targetDirectory: string) => {
+    const dialog = archiveDestinationDialog
+    if (!dialog) return
+    startArchiveExtraction(dialog.entry, dialog.sessionId, targetDirectory, false)
+  }
+
+  const decideRemoteArchiveConflict = async (decision: RemoteArchiveDecision) => {
+    const extraction = activeArchiveExtraction
+    const conflict = extraction?.conflict
+    if (!extraction || !conflict || extraction.decisionPending) return
+    setActiveArchiveExtraction((current) => current?.requestId === extraction.requestId
+      ? { ...current, decisionPending: true }
+      : current)
+    try {
+      const accepted = await window.remoteFiles.decideRemoteArchiveExtraction(extraction.requestId, conflict.conflictId, decision)
+      if (!accepted) throw new Error('解压冲突已失效，请重试')
+      setActiveArchiveExtraction((current) => current?.requestId === extraction.requestId && current.conflict?.conflictId === conflict.conflictId
+        ? { ...current, conflict: null, decisionPending: false }
+        : current)
+    } catch (error) {
+      showToast('error', `提交解压决策失败：${errorMessage(error)}`)
+      setActiveArchiveExtraction((current) => current?.requestId === extraction.requestId
+        ? { ...current, decisionPending: false }
+        : current)
+    }
+  }
+
+  const cancelActiveArchiveExtraction = () => {
+    const extraction = activeArchiveExtraction
+    if (!extraction) return
+    void window.remoteFiles.cancelRemoteArchiveExtraction(extraction.requestId).then((cancelled) => {
+      if (!cancelled) showToast('info', '解压任务已结束')
+    }).catch((error) => showToast('error', `取消解压失败：${errorMessage(error)}`))
+  }
+
+  const closeArchiveSummary = () => setArchiveSummary(null)
+
+  const createArchiveDestinationDirectory = async (directory: string, name: string) => {
+    const dialog = archiveDestinationDialog
+    if (!dialog) return
+    await window.remoteFiles.createRemoteDirectory(dialog.sessionId, directory, name)
   }
 
   const requestRemoteEntriesDeletion = (entries: RemoteEntry[]) => {
@@ -358,7 +498,17 @@ export function useRemoteOperations({
     createDirectoryDialog,
     setCreateDirectoryDialog,
     creatingDirectory,
+    activeArchiveExtraction,
+    archiveDestinationDialog,
+    archiveSummary,
     submitCreateDirectory,
+    extractRemoteArchive,
+    beginArchiveExtractionAt,
+    decideRemoteArchiveConflict,
+    cancelActiveArchiveExtraction,
+    closeArchiveSummary,
+    createArchiveDestinationDirectory,
+    setArchiveDestinationDialog,
     requestRemoteEntriesDeletion,
     cancelRemoteEntryDeletion,
     confirmRemoteEntryDeletion,

@@ -18,6 +18,7 @@ import type {
 } from '../../app-types'
 import type { useSessionOperations } from './useSessionOperations'
 import type { useRemoteOperations } from '../remote-files/useRemoteOperations'
+import type { ActiveArchiveExtraction } from '../remote-files/useRemoteOperations'
 import type { useProfileManagement } from '../../hooks/useProfileManagement'
 import type { ScriptCommandDialog } from '../files/useScriptExecution'
 import { errorMessage } from '../../app-utils'
@@ -47,6 +48,7 @@ interface SessionWorkspaceState {
   sortedEntries: RemoteEntry[]
   moveProgress: RemoteMoveProgress | null
   copying: boolean
+  extractingArchive: ActiveArchiveExtraction | null
   highlightedPath: string | null
   sessionContextMenu: SessionContextMenuState | null
   browserContextMenu: BrowserContextMenu | null
@@ -61,7 +63,7 @@ interface SessionWorkspaceActions {
   sessions: Pick<SessionOperations,
     'closeSession' | 'openSessionContextMenu' | 'handleSessionTabContextMenuKeyDown' | 'duplicateSession' | 'activateSession' | 'reconnectSession' | 'navigate'>
   remoteFiles: Pick<RemoteOperations,
-    'requestRemoteEntriesDeletion' | 'beginRemoteMove' | 'cancelActiveRemoteMove'>
+    'requestRemoteEntriesDeletion' | 'beginRemoteMove' | 'cancelActiveRemoteMove' | 'extractRemoteArchive' | 'cancelActiveArchiveExtraction'>
   browser: Pick<FileBrowserProps,
     'onOpenEntryContextMenu' | 'onOpenDirectoryContextMenu' | 'onDropUpload' | 'onDropError'>
   serverList: Pick<ServerListProps, 'onAdd' | 'onConnect' | 'onEdit' | 'onSetPinned' | 'onDelete'>
@@ -95,7 +97,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
   const {
     sessions, profiles, offlineProfiles, activeSession, activeSessionId, connectedSessionId,
     currentPath, entries, loading, viewMode, breadcrumbs, sort, sortedEntries, moveProgress,
-    copying, highlightedPath, sessionContextMenu, browserContextMenu, searchOpenSessionIds,
+    copying, extractingArchive, highlightedPath, sessionContextMenu, browserContextMenu, searchOpenSessionIds,
     scriptCommandDialogs, scriptExecutionDialogs,
     fileTypeExtensions, transfers,
   } = state
@@ -108,7 +110,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
     reconnectSession,
     navigate,
   } = actions.sessions
-  const { requestRemoteEntriesDeletion, beginRemoteMove, cancelActiveRemoteMove } = actions.remoteFiles
+  const { requestRemoteEntriesDeletion, beginRemoteMove, cancelActiveRemoteMove, extractRemoteArchive, cancelActiveArchiveExtraction } = actions.remoteFiles
   const {
     onOpenEntryContextMenu,
     onOpenDirectoryContextMenu,
@@ -231,6 +233,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
               selectedPaths={activeSession.selectedPaths}
               moveProgress={moveProgress}
               copying={copying}
+              extractingArchive={extractingArchive?.sessionId === activeSession.id ? extractingArchive : null}
               highlightedPath={highlightedPath}
               onViewModeChange={(mode) => patchSession(activeSession.id, { viewMode: mode })}
               onNavigate={navigate}
@@ -242,6 +245,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
               onDropUpload={uploadDroppedEntries}
               onDropMove={beginRemoteMove}
               onCancelMove={cancelActiveRemoteMove}
+              onCancelArchive={cancelActiveArchiveExtraction}
               onDropError={(error) => showToast('error', errorMessage(error))}
             />
           </div>
@@ -335,6 +339,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
         </div>
 
         <TransferTray
+          sessionId={activeSessionId}
           transfers={transfers}
           onCancel={cancelTransferJob}
           onDismiss={dismissTransfer}

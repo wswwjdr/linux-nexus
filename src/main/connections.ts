@@ -13,6 +13,7 @@ import { getMainWindow, sessions, type ActiveSession } from './runtime'
 import { endpointKey, passwordFor, profileFromState, readState } from './state-store'
 import { clearPreviewAssetsForSession } from './previews'
 import { cancelRemoteMovesForSession } from './remote-moves'
+import { cancelRemoteArchiveExtractionsForSession } from './archives'
 import { removePerformanceMonitorForSession } from './performance-monitor'
 import {
   executeRemoteCommand,
@@ -38,6 +39,7 @@ function failActiveSession(activeSession: ActiveSession, message: string): void 
   sessions.delete(activeSession.sessionId)
   removePerformanceMonitorForSession(activeSession.sessionId)
   cancelRemoteMovesForSession(activeSession.sessionId)
+  cancelRemoteArchiveExtractionsForSession(activeSession.sessionId)
   failScriptExecutionsForSession(activeSession.sessionId, message)
   failNameSearchesForSession(activeSession.sessionId, message)
   failContentSearchesForSession(activeSession.sessionId, message)
@@ -53,16 +55,14 @@ export function stopSession(sessionId: string): void {
   cancelContentSearchesForSession(sessionId)
   cancelScriptExecutionsForSession(sessionId)
   cancelRemoteMovesForSession(sessionId)
+  const archiveCompletion = cancelRemoteArchiveExtractionsForSession(sessionId)
   const transfers = cancelTransfersForSession(sessionId)
   clearPreviewAssetsForSession(sessionId)
   const activeSession = sessions.get(sessionId)
   if (!activeSession) return
   sessions.delete(sessionId)
-  if (transfers.length === 0) {
-    activeSession.client.end()
-  } else {
-    void Promise.all(transfers.map((transfer) => transfer.settled)).then(() => activeSession.client.end())
-  }
+  void Promise.all([archiveCompletion, ...transfers.map((transfer) => transfer.settled)])
+    .then(() => activeSession.client.end())
 }
 
 export function stopSessionsForProfile(profileId: string): void {

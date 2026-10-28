@@ -7,6 +7,28 @@ import { cancelNameSearch, startNameSearch } from '../name-search'
 import { cancelContentSearch, startContentSearch } from '../content-search'
 import { cancelScriptExecution, startScriptExecution } from '../script-execution-runtime'
 import { sessions } from '../runtime'
+import { cancelRemoteArchiveExtraction, startRemoteArchiveExtraction } from '../archives'
+import type { RemoteArchiveDecision, RemoteArchiveRequest } from '@shared/types'
+
+const pendingArchiveDecisions = new Map<string, {
+  conflictId: string
+  senderId: number
+  resolve: (decision: RemoteArchiveDecision) => void
+}>()
+const activeArchiveOwners = new Map<string, number>()
+
+function parseArchiveRequest(value: unknown): RemoteArchiveRequest {
+  if (!value || typeof value !== 'object') throw new Error('解压请求无效')
+  const request = value as Partial<RemoteArchiveRequest>
+  if (typeof request.requestId !== 'string' || !request.requestId || request.requestId.length > 128
+    || typeof request.sessionId !== 'string' || !request.sessionId
+    || typeof request.archivePath !== 'string' || !request.archivePath
+    || typeof request.targetDirectory !== 'string'
+    || typeof request.wrapInDirectory !== 'boolean') {
+    throw new Error('解压请求参数无效')
+  }
+  return request as RemoteArchiveRequest
+}
 
 export function registerFilesIpc(): void {
   ipcMain.handle('files:list', (_event, sessionId: string, remotePath: string) =>
@@ -55,6 +77,66 @@ export function registerFilesIpc(): void {
     createRemoteDirectory(sessionId, remoteDirectory, name))
   ipcMain.handle('files:path-copy', (_event, sessionId: string, remotePath: string) => copyRemotePath(sessionId, remotePath))
   ipcMain.handle('files:delete', (_event, sessionId: string, remotePath: string) => deleteRemoteEntry(sessionId, remotePath))
+  ipcMain.handle('files:extract-archive-start', (event, value: unknown) => {
+    const request = parseArchiveRequest(value)
+    const session = sessions.get(request.sessionId)
+    if (!session?.sftp) throw new Error('SFTP 会话未连接')
+    const sender = event.sender
+    if (activeArchiveOwners.has(request.requestId)) throw new Error('解压请求编号已在使用')
+    activeArchiveOwners.set(request.requestId, sender.id)
+    const onSenderDestroyed = () => cancelRemoteArchiveExtraction(request.requestId)
+    let run: ReturnType<typeof startRemoteArchiveExtraction>
+    try {
+      run = startRemoteArchiveExtraction(session.client, session.sftp, request, {
+        onEvent: (archiveEvent) => {
+          if (archiveEvent.type === 'progress' && !sender.isDestroyed()) sender.send('files:extract-archive-event', archiveEvent)
+        },
+        askConflict: (conflict, signal) => new Promise((resolve) => {
+          if (signal.aborted || sender.isDestroyed()) {
+            resolve('cancel')
+            return
+          }
+          if (pendingArchiveDecisions.has(request.requestId)) throw new Error('解压任务同时出现多个冲突')
+          const finish = (decision: RemoteArchiveDecision) => {
+            signal.removeEventListener('abort', onAbort)
+            if (pendingArchiveDecisions.get(request.requestId)?.conflictId === conflict.conflictId) {
+              pendingArchiveDecisions.delete(request.requestId)
+            }
+            resolve(decision)
+          }
+          const onAbort = () => finish('cancel')
+          pendingArchiveDecisions.set(request.requestId, {
+            conflictId: conflict.conflictId,
+            senderId: sender.id,
+            resolve: finish,
+          })
+          signal.addEventListener('abort', onAbort, { once: true })
+          if (!sender.isDestroyed()) sender.send('files:extract-archive-event', { type: 'conflict', conflict })
+        }),
+      })
+    } catch (error) {
+      activeArchiveOwners.delete(request.requestId)
+      throw error
+    }
+    sender.once('destroyed', onSenderDestroyed)
+    return run.finally(() => {
+      sender.removeListener('destroyed', onSenderDestroyed)
+      activeArchiveOwners.delete(request.requestId)
+      pendingArchiveDecisions.get(request.requestId)?.resolve('cancel')
+    })
+  })
+  ipcMain.handle('files:extract-archive-decision', (event, requestId: unknown, conflictId: unknown, decision: unknown) => {
+    if (typeof requestId !== 'string' || typeof conflictId !== 'string'
+      || !['replace', 'skip', 'rename', 'replace-all', 'skip-all', 'rename-all', 'cancel'].includes(String(decision))) return false
+    const pending = pendingArchiveDecisions.get(requestId)
+    if (!pending || pending.senderId !== event.sender.id || pending.conflictId !== conflictId) return false
+    pending.resolve(decision as RemoteArchiveDecision)
+    return true
+  })
+  ipcMain.handle('files:extract-archive-cancel', (event, requestId: unknown) => {
+    if (typeof requestId !== 'string' || activeArchiveOwners.get(requestId) !== event.sender.id) return false
+    return cancelRemoteArchiveExtraction(requestId)
+  })
   ipcMain.handle('files:preview', (_event, sessionId: string, remotePath: string, type: Parameters<typeof previewFile>[2]) =>
     previewFile(sessionId, remotePath, type))
   ipcMain.handle('files:text-save', (_event, sessionId: string, remotePath: string, content: string, expectedRevision: unknown) =>
