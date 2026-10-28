@@ -180,6 +180,26 @@ test('file conflicts support replace-all and skip-all policies', async () => {
   assert.equal(skipped.result.movedCount, 0)
 })
 
+test('file conflicts support numbered renaming and apply rename-all to later files', async () => {
+  const sftp = makeSftp({
+    '/home': { type: 'directory' }, '/home/target': { type: 'directory' },
+    '/home/a.tar.gz': { type: 'file', content: 'new a' }, '/home/b.txt': { type: 'file', content: 'new b' },
+    '/home/target/a.tar.gz': { type: 'file', content: 'old a' },
+    '/home/target/a.tar (2).gz': { type: 'file', content: 'existing numbered' },
+    '/home/target/b.txt': { type: 'file', content: 'old b' },
+  })
+
+  const { result, conflicts } = await runMove(sftp, request(['/home/a.tar.gz', '/home/b.txt']), ['rename-all'])
+
+  assert.equal(conflicts.length, 1)
+  assert.equal(result.movedCount, 2)
+  assert.equal(result.failedCount, 0)
+  await assertMissing(sftp, '/home/a.tar.gz')
+  await assertMissing(sftp, '/home/b.txt')
+  await new Promise<void>((resolve, reject) => sftp.lstat('/home/target/a.tar (3).gz', (error) => error ? reject(error) : resolve()))
+  await new Promise<void>((resolve, reject) => sftp.lstat('/home/target/b (2).txt', (error) => error ? reject(error) : resolve()))
+})
+
 test('individual file conflicts can be replaced or skipped independently', async () => {
   const sftp = makeSftp({
     '/home': { type: 'directory' }, '/home/target': { type: 'directory' },
@@ -199,7 +219,7 @@ test('individual file conflicts can be replaced or skipped independently', async
   assert.deepEqual(result.results.map((item) => item.status), ['moved', 'skipped'])
 })
 
-test('type-mismatch replacement deletes the complete target directory; skip preserves it', async () => {
+test('type mismatch rejects target replacement and still permits skipping', async () => {
   const replacementSftp = makeSftp({
     '/home': { type: 'directory' }, '/home/target': { type: 'directory' },
     '/home/item': { type: 'file', content: 'source' },
@@ -207,7 +227,10 @@ test('type-mismatch replacement deletes the complete target directory; skip pres
   })
   const replaced = await runMove(replacementSftp, request(['/home/item']), ['replace'])
   assert.equal(replaced.conflicts[0].conflictType, 'type-mismatch')
-  assert.equal(replaced.result.movedCount, 1)
+  assert.equal(replaced.result.movedCount, 0)
+  assert.equal(replaced.result.failedCount, 1)
+  await new Promise<void>((resolve, reject) => replacementSftp.lstat('/home/item', (error) => error ? reject(error) : resolve()))
+  await new Promise<void>((resolve, reject) => replacementSftp.lstat('/home/target/item/old.txt', (error) => error ? reject(error) : resolve()))
 
   const skipSftp = makeSftp({
     '/home': { type: 'directory' }, '/home/target': { type: 'directory' },
@@ -218,14 +241,30 @@ test('type-mismatch replacement deletes the complete target directory; skip pres
   assert.equal(skipped.result.skippedCount, 1)
   await new Promise<void>((resolve, reject) => skipSftp.lstat('/home/target/item/old.txt', (error) => error ? reject(error) : resolve()))
 
-  const directoryReplacementSftp = makeSftp({
+})
+
+test('type mismatches rename the source item without deleting the target', async () => {
+  const fileToDirectory = makeSftp({
     '/home': { type: 'directory' }, '/home/target': { type: 'directory' },
-    '/home/item': { type: 'directory' }, '/home/item/source.txt': { type: 'file', content: 'source' },
-    '/home/target/item': { type: 'file', content: 'old target' },
+    '/home/item': { type: 'file', content: 'source file' },
+    '/home/target/item': { type: 'directory' }, '/home/target/item/keep.txt': { type: 'file', content: 'keep' },
   })
-  const directoryReplaced = await runMove(directoryReplacementSftp, request(['/home/item']), ['replace'])
-  assert.equal(directoryReplaced.conflicts[0].conflictType, 'type-mismatch')
-  await new Promise<void>((resolve, reject) => directoryReplacementSftp.lstat('/home/target/item/source.txt', (error) => error ? reject(error) : resolve()))
+  const movedFile = await runMove(fileToDirectory, request(['/home/item']), ['rename'])
+  assert.equal(movedFile.conflicts[0].conflictType, 'type-mismatch')
+  assert.equal(movedFile.result.movedCount, 1)
+  await new Promise<void>((resolve, reject) => fileToDirectory.lstat('/home/target/item/keep.txt', (error) => error ? reject(error) : resolve()))
+  await new Promise<void>((resolve, reject) => fileToDirectory.lstat('/home/target/item (2)', (error) => error ? reject(error) : resolve()))
+
+  const directoryToFile = makeSftp({
+    '/home': { type: 'directory' }, '/home/target': { type: 'directory' },
+    '/home/item': { type: 'directory' }, '/home/item/child.txt': { type: 'file', content: 'source child' },
+    '/home/target/item': { type: 'file', content: 'target file' },
+  })
+  const movedDirectory = await runMove(directoryToFile, request(['/home/item']), ['rename'])
+  assert.equal(movedDirectory.conflicts[0].conflictType, 'type-mismatch')
+  assert.equal(movedDirectory.result.movedCount, 1)
+  await new Promise<void>((resolve, reject) => directoryToFile.lstat('/home/target/item', (error) => error ? reject(error) : resolve()))
+  await new Promise<void>((resolve, reject) => directoryToFile.lstat('/home/target/item (2)/child.txt', (error) => error ? reject(error) : resolve()))
 })
 
 test('cancellation preserves completed moves and leaves later sources untouched', async () => {

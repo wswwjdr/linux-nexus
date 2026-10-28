@@ -29,6 +29,7 @@ export function RemoteConflictDialog({
   choices,
   defaultChoice = 'replace',
   applyToAllLabel,
+  cancelLabel = '取消操作',
   onConfirmChoice,
   busy,
   onDecision,
@@ -45,6 +46,7 @@ export function RemoteConflictDialog({
   choices?: RemoteConflictDialogChoice[]
   defaultChoice?: RemoteConflictDialogChoice['decision']
   applyToAllLabel?: string
+  cancelLabel?: string
   onConfirmChoice?: (decision: RemoteConflictDialogChoice['decision'], applyToAll: boolean) => void
   busy: boolean
   onDecision: (decision: RemoteConflictDecision) => void
@@ -107,13 +109,13 @@ export function RemoteConflictDialog({
                 </label>
               ))}
             </fieldset>
-            <label className="remote-conflict-apply-all">
+            {applyToAllLabel && <label className="remote-conflict-apply-all">
               <input type="checkbox" checked={applyToAll} disabled={busy} onChange={(event) => setApplyToAll(event.currentTarget.checked)} />
               {applyToAllLabel}
-            </label>
+            </label>}
             <div className="remote-conflict-choice-footer">
               <button type="submit" className="primary-button" disabled={busy}>确定</button>
-              <button type="button" className="secondary-button" disabled={busy} onClick={() => onDecision('cancel')}>取消解压</button>
+              <button type="button" className="secondary-button" disabled={busy} onClick={() => onDecision('cancel')}>{cancelLabel}</button>
             </div>
           </form>
         ) : (

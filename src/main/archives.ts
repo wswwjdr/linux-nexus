@@ -25,6 +25,7 @@ import {
   sftpRename,
   sftpUnlink,
   sftpWriteFile,
+  uniqueRemotePath,
 } from './sftp-utils'
 
 interface ArchiveExtractionCallbacks {
@@ -273,23 +274,6 @@ function archiveType(mode?: number): RemoteArchiveConflict['targetType'] {
   return kind === 'file' || kind === 'directory' ? kind : kind
 }
 
-function duplicateName(name: string, type: 'file' | 'directory', index: number): string {
-  if (type === 'directory') return `${name} (${index})`
-  const extensionIndex = name.lastIndexOf('.')
-  const stem = extensionIndex > 0 ? name.slice(0, extensionIndex) : name
-  const extension = extensionIndex > 0 ? name.slice(extensionIndex) : ''
-  return `${stem} (${index})${extension}`
-}
-
-async function uniquePath(sftp: SFTPWrapper, targetPath: string, type: 'file' | 'directory'): Promise<string> {
-  const parent = posix.dirname(targetPath)
-  const name = posix.basename(targetPath)
-  for (let index = 2; ; index += 1) {
-    const candidate = posix.join(parent, duplicateName(name, type, index))
-    if (!await remoteAttributesOrNull(sftp, candidate)) return candidate
-  }
-}
-
 async function countTree(sftp: SFTPWrapper, remotePath: string): Promise<number> {
   const type = fileType((await sftpLstat(sftp, remotePath)).mode)
   if (type === 'file') return 1
@@ -475,7 +459,7 @@ async function extractArchive(
           complete(subtreeCount, 'skipped')
           state.results.push({ path: memberPath, status: 'skipped' })
         } else if (decision === 'rename' || decision === 'rename-all') {
-          const renamedPath = await uniquePath(sftp, targetPath, sourceType)
+          const renamedPath = await uniqueRemotePath(sftp, targetPath, sourceType)
           await sftpRename(sftp, sourcePath, renamedPath)
           complete(subtreeCount, 'extracted')
         } else if (decision === 'replace' || decision === 'replace-all') {
@@ -526,7 +510,7 @@ async function extractArchive(
             await sftpMkdir(sftp, outputDirectory)
           }
         } else if (decision === 'rename') {
-          outputDirectory = await uniquePath(sftp, outputDirectory, 'directory')
+          outputDirectory = await uniqueRemotePath(sftp, outputDirectory, 'directory')
           await sftpMkdir(sftp, outputDirectory)
         } else {
           throw new Error('解压目录类型冲突决策无效')

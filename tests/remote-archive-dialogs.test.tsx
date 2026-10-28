@@ -3,8 +3,9 @@ import test from 'node:test'
 import { act, createElement, type ComponentType } from 'react'
 import type { Root } from 'react-dom/client'
 import { JSDOM } from 'jsdom'
-import type { RemoteArchiveDecision, RemoteArchiveEvent, RemoteFilesApi, RemoteEntry } from '../src/shared/types.ts'
+import type { RemoteArchiveDecision, RemoteArchiveEvent, RemoteFilesApi, RemoteEntry, RemoteMoveConflict, RemoteMoveDecision } from '../src/shared/types.ts'
 import type { RemoteArchiveDialogsProps } from '../src/renderer/src/components/RemoteArchiveDialogs.tsx'
+import { RemoteMoveConflictDialog } from '../src/renderer/src/components/RemoteMoveDialogs.tsx'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })
 Object.defineProperties(globalThis, {
@@ -22,7 +23,7 @@ function directory(name: string, path: string): RemoteEntry {
   return { name, path, type: 'directory', size: 0, modifiedAt: null, permissions: 'rwxr-xr-x' }
 }
 
-async function mount(Component: ComponentType<RemoteArchiveDialogsProps>, props: RemoteArchiveDialogsProps) {
+async function mount<P extends object>(Component: ComponentType<P>, props: P) {
   const { createRoot } = await import('react-dom/client')
   const host = document.createElement('div')
   document.body.append(host)
@@ -185,5 +186,68 @@ test('archive file conflicts use a default overwrite choice and apply the select
     assert.ok(document.body.textContent?.includes('保留双方并重命名'))
   } finally {
     view.unmount()
+  }
+})
+
+test('copy and move conflicts use batch radio choices while type mismatches stay individual', async () => {
+  const decisions: RemoteMoveDecision[] = []
+  const conflict: RemoteMoveConflict = {
+    requestId: 'move-task',
+    conflictId: 'move-file-conflict',
+    sessionId: 'session',
+    sourcePath: '/home/source.txt',
+    targetPath: '/home/target/source.txt',
+    sourceName: 'source.txt',
+    targetName: 'source.txt',
+    sourceType: 'file',
+    targetType: 'file',
+    conflictType: 'file',
+  }
+  const view = await mount(RemoteMoveConflictDialog, {
+    conflict,
+    busy: false,
+    operation: 'copy',
+    onDecision: (decision) => decisions.push(decision),
+  })
+
+  try {
+    const choices = Array.from(document.querySelectorAll<HTMLInputElement>('.remote-conflict-choice input[type="radio"]'))
+    assert.equal(choices.length, 3)
+    assert.equal(choices.find((input) => input.value === 'replace')?.checked, true)
+    assert.ok(document.body.textContent?.includes('覆盖会替换目标文件内容'))
+    assert.ok(document.body.textContent?.includes('包括文件夹内部的文件'))
+    assert.ok(document.body.textContent?.includes('名称 (2).扩展名'))
+    const applyToAll = document.querySelector<HTMLInputElement>('.remote-conflict-apply-all input')!
+    assert.equal(applyToAll.checked, false)
+    await clickAndSettle(choices.find((input) => input.value === 'rename')!)
+    await clickAndSettle(applyToAll)
+    await clickAndSettle(document.querySelector<HTMLButtonElement>('.remote-conflict-choice-footer .primary-button')!)
+    assert.deepEqual(decisions, ['rename-all'])
+
+    const typeConflict = { ...conflict, conflictId: 'move-type-conflict', sourceType: 'directory' as const, targetType: 'file' as const, conflictType: 'type-mismatch' as const }
+    view.unmount()
+    const mismatchView = await mount(RemoteMoveConflictDialog, {
+      conflict: typeConflict,
+      busy: false,
+      operation: 'move',
+      onDecision: (decision) => decisions.push(decision),
+    })
+    try {
+      const mismatchChoices = Array.from(document.querySelectorAll<HTMLInputElement>('.remote-conflict-choice input[type="radio"]'))
+      assert.equal(mismatchChoices.length, 2)
+      assert.equal(mismatchChoices.find((input) => input.value === 'rename')?.checked, true)
+      assert.ok(document.body.textContent?.includes('自动重命名来源项'))
+      assert.ok(document.body.textContent?.includes('文件夹名 (2)'))
+      assert.ok(document.body.textContent?.includes('移动会保留现有目标'))
+      assert.equal(document.querySelector('.remote-conflict-apply-all'), null)
+      assert.equal(Array.from(document.querySelectorAll<HTMLButtonElement>('.remote-conflict-choice-footer button'))
+        .some((button) => button.textContent?.includes('替换')), false)
+      await clickAndSettle(document.querySelector<HTMLButtonElement>('.remote-conflict-choice-footer .primary-button')!)
+      assert.deepEqual(decisions, ['rename-all', 'rename'])
+    } finally {
+      mismatchView.unmount()
+    }
+  } finally {
+    if (document.body.querySelector('.remote-move-conflict')) view.unmount()
   }
 })

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import type { RemoteMoveConflict, RemoteMoveDecision, RemoteMoveEvent, RemoteMoveItemResult, RemoteMoveRequest, RemoteMoveResult } from '@shared/types'
 import type { SFTPWrapper } from 'ssh2'
-import { fileType, normalizedRemotePath, remoteAttributesOrNull, sftpLstat, sftpReaddir, sftpRemoveTree, sftpRename, sftpRmdir } from './sftp-utils.ts'
+import { fileType, normalizedRemotePath, remoteAttributesOrNull, sftpLstat, sftpReaddir, sftpRemoveTree, sftpRename, sftpRmdir, uniqueRemotePath } from './sftp-utils.ts'
 
 interface MoveOutcome {
   movedCount: number
@@ -114,7 +114,7 @@ export async function executeRemoteMove(
   let skippedCount = 0
   let failedCount = 0
   let cancelledCount = 0
-  let filePolicy: 'replace' | 'skip' | null = null
+  let filePolicy: 'replace' | 'skip' | 'rename' | null = null
   const totalCount = request.sourcePaths.length
 
   const moveNode = async (sourcePath: string, targetPath: string): Promise<MoveOutcome> => {
@@ -202,13 +202,25 @@ export async function executeRemoteMove(
       } else if (decision === 'skip-all') {
         filePolicy = 'skip'
         decision = 'skip'
+      } else if (decision === 'rename-all') {
+        filePolicy = 'rename'
+        decision = 'rename'
       }
-    } else if (decision === 'replace-all' || decision === 'skip-all') {
+    } else if (decision === 'replace-all' || decision === 'skip-all' || decision === 'rename-all') {
       throw new Error('异类型冲突不支持批量决策')
+    } else if (decision === 'replace') {
+      throw new Error('文件与文件夹类型不匹配时不允许覆盖目标')
     }
 
     if (decision === 'skip') {
       outcome.skippedCount += 1
+      return outcome
+    }
+    if (decision === 'rename') {
+      const renamedPath = await uniqueRemotePath(sftp, targetPath, sourceType as 'file' | 'directory')
+      assertNotAborted(signal)
+      await renameSource(sftp, sourcePath, renamedPath)
+      outcome.movedCount += 1
       return outcome
     }
     if (decision !== 'replace') throw new Error('移动冲突决策无效')

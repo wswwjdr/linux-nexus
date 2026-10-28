@@ -55,6 +55,7 @@ function ArchiveConflictDialog({
     choices={mismatch ? undefined : choices}
     defaultChoice="replace"
     applyToAllLabel={mismatch ? undefined : '应用到全部文件'}
+    cancelLabel="取消解压"
     onConfirmChoice={mismatch ? undefined : (decision, applyToAll) => {
       if (!applyToAll) {
         onDecision(decision)

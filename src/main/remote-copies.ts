@@ -8,7 +8,7 @@ import type {
   RemoteCopyResult,
 } from '@shared/types'
 import type { SFTPWrapper } from 'ssh2'
-import { fileType, normalizedRemotePath, remoteAttributesOrNull, sftpLstat, sftpMkdir, sftpReaddir, sftpRemoveTree } from './sftp-utils.ts'
+import { fileType, normalizedRemotePath, remoteAttributesOrNull, sftpLstat, sftpMkdir, sftpReaddir, sftpRemoveTree, uniqueRemotePath } from './sftp-utils.ts'
 import { MAX_TRANSFER_REQUESTS, TRANSFER_CHUNK_SIZE } from './transfers/block-transfer.ts'
 
 interface CopyCallbacks {
@@ -129,29 +129,6 @@ async function copyRemoteFile(sftp: SFTPWrapper, sourcePath: string, targetPath:
   if (closeErrors.length > 0) throw closeErrors[0]
 }
 
-function duplicateName(name: string, type: 'file' | 'directory', index: number): string {
-  if (type === 'directory') return `${name} - 副本${index > 1 ? ` (${index})` : ''}`
-  const extensionIndex = name.lastIndexOf('.')
-  const stem = extensionIndex > 0 ? name.slice(0, extensionIndex) : name
-  const extension = extensionIndex > 0 ? name.slice(extensionIndex) : ''
-  return `${stem} - 副本${index > 1 ? ` (${index})` : ''}${extension}`
-}
-
-async function uniqueCopyPath(
-  sftp: SFTPWrapper,
-  sourcePath: string,
-  targetDirectory: string,
-  type: 'file' | 'directory',
-): Promise<string> {
-  const sourceName = posix.basename(sourcePath)
-  let index = 1
-  while (true) {
-    const targetPath = posix.join(targetDirectory, duplicateName(sourceName, type, index))
-    if (!await remoteAttributesOrNull(sftp, targetPath)) return targetPath
-    index += 1
-  }
-}
-
 function makeConflict(
   request: RemoteCopyRequest,
   sourcePath: string,
@@ -190,7 +167,7 @@ export async function executeRemoteCopy(
     let skippedCount = 0
     let failedCount = 0
     let cancelledCount = 0
-    let filePolicy: 'replace' | 'skip' | null = null
+    let filePolicy: 'replace' | 'skip' | 'rename' | null = null
 
     async function copyNode(sourcePath: string, targetPath: string): Promise<CopyOutcome> {
       const outcome = emptyOutcome()
@@ -236,12 +213,28 @@ export async function executeRemoteCopy(
           filePolicy = 'replace'
         } else if (decision === 'skip-all') {
           filePolicy = 'skip'
+        } else if (decision === 'rename-all') {
+          filePolicy = 'rename'
         }
-      } else if (decision === 'replace-all' || decision === 'skip-all') {
+      } else if (decision === 'replace-all' || decision === 'skip-all' || decision === 'rename-all') {
         throw new Error('复制冲突决策无效')
+      } else if (decision === 'replace') {
+        throw new Error('文件与文件夹类型不匹配时不允许覆盖目标')
       }
       if (decision === 'skip' || decision === 'skip-all') {
         outcome.skippedCount += 1
+        return outcome
+      }
+      if (decision === 'rename' || decision === 'rename-all') {
+        const renamedPath = await uniqueRemotePath(sftp, targetPath, sourceKind)
+        if (sourceKind === 'file') {
+          await copyRemoteFile(sftp, sourcePath, renamedPath, sourceAttributes.size ?? 0)
+          outcome.copiedCount += 1
+          return outcome
+        }
+        await sftpMkdir(sftp, renamedPath)
+        outcome.copiedCount += 1
+        await copyDirectoryChildren(sourcePath, renamedPath, outcome)
         return outcome
       }
       if (decision !== 'replace' && decision !== 'replace-all') throw new Error('复制冲突决策无效')
@@ -287,7 +280,7 @@ export async function executeRemoteCopy(
           throw new Error('不能将文件夹复制到自身或其子文件夹中')
         }
         const targetPath = posix.dirname(sourcePath) === request.targetDirectory
-          ? await uniqueCopyPath(sftp, sourcePath, request.targetDirectory, sourceKind)
+          ? await uniqueRemotePath(sftp, sourcePath, sourceKind)
           : posix.join(request.targetDirectory, sourceName)
         mergeOutcome(outcome, await copyNode(sourcePath, targetPath))
       } catch (error) {

@@ -96,7 +96,7 @@ export function registerRemoteOperationsIpc(): void {
   })
   ipcMain.handle('files:move-decision', (event, requestId: unknown, conflictId: unknown, decision: unknown) => {
     if (typeof requestId !== 'string' || typeof conflictId !== 'string'
-      || !['replace', 'skip', 'replace-all', 'skip-all', 'cancel'].includes(String(decision))) return false
+      || !['replace', 'skip', 'rename', 'replace-all', 'skip-all', 'rename-all', 'cancel'].includes(String(decision))) return false
     const pending = pendingMoveDecisions.get(requestId)
     if (!pending || pending.senderId !== event.sender.id || pending.conflictId !== conflictId) return false
     pending.resolve(decision as RemoteMoveDecision)
@@ -154,7 +154,7 @@ export function registerRemoteOperationsIpc(): void {
   })
   ipcMain.handle('files:copy-decision', (event, requestId: unknown, conflictId: unknown, decision: unknown) => {
     if (typeof requestId !== 'string' || typeof conflictId !== 'string'
-      || !['replace', 'skip', 'replace-all', 'skip-all', 'cancel'].includes(String(decision))) return false
+      || !['replace', 'skip', 'rename', 'replace-all', 'skip-all', 'rename-all', 'cancel'].includes(String(decision))) return false
     const pending = pendingCopyDecisions.get(requestId)
     if (!pending || pending.senderId !== event.sender.id || pending.conflictId !== conflictId) return false
     pending.resolve(decision as RemoteCopyDecision)

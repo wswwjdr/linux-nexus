@@ -34,7 +34,7 @@ export interface RemoteMoveRequest {
   targetDirectory: string
 }
 
-export type RemoteMoveDecision = 'replace' | 'skip' | 'replace-all' | 'skip-all' | 'cancel'
+export type RemoteMoveDecision = 'replace' | 'skip' | 'rename' | 'replace-all' | 'skip-all' | 'rename-all' | 'cancel'
 
 export interface RemoteMoveConflict {
   requestId: string

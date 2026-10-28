@@ -47,6 +47,23 @@ export async function remoteAttributesOrNull(sftp: SFTPWrapper, remotePath: stri
   }
 }
 
+export function duplicateRemoteName(name: string, type: 'file' | 'directory', index: number): string {
+  if (type === 'directory') return `${name} (${index})`
+  const extensionIndex = name.lastIndexOf('.')
+  const stem = extensionIndex > 0 ? name.slice(0, extensionIndex) : name
+  const extension = extensionIndex > 0 ? name.slice(extensionIndex) : ''
+  return `${stem} (${index})${extension}`
+}
+
+export async function uniqueRemotePath(sftp: SFTPWrapper, targetPath: string, type: 'file' | 'directory'): Promise<string> {
+  const parent = posix.dirname(targetPath)
+  const name = posix.basename(targetPath)
+  for (let index = 2; ; index += 1) {
+    const candidate = posix.join(parent, duplicateRemoteName(name, type, index))
+    if (!await remoteAttributesOrNull(sftp, candidate)) return candidate
+  }
+}
+
 export function sftpMkdir(sftp: SFTPWrapper, remotePath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     sftp.mkdir(remotePath, (error) => error ? reject(error) : resolve())

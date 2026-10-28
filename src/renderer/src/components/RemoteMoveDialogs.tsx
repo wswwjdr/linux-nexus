@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from 'react'
 import { AlertTriangle, Check, File, Folder, LoaderCircle, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import type { RemoteCopyResult, RemoteMoveConflict, RemoteMoveDecision, RemoteMoveResult } from '@shared/types'
-import { RemoteConflictDialog } from './RemoteConflictDialog'
+import { RemoteConflictDialog, type RemoteConflictDialogChoice } from './RemoteConflictDialog'
 
 const itemTypeLabel = (type: 'file' | 'directory') => type === 'directory' ? '文件夹' : '文件'
 
@@ -19,7 +19,27 @@ export function RemoteMoveConflictDialog({
 }) {
   const mismatch = conflict.conflictType === 'type-mismatch'
   const label = operation === 'copy' ? '复制' : '移动'
+  const renamedSourceExample = conflict.sourceType === 'directory' ? '文件夹名 (2)' : '文件名 (2).扩展名'
+  const mismatchDescription = operation === 'copy'
+    ? `复制会保留现有目标，并在目标目录中创建“${renamedSourceExample}”。`
+    : `移动会保留现有目标，并将来源移至目标目录，名称改为“${renamedSourceExample}”。`
+  const choices: RemoteConflictDialogChoice[] = mismatch
+    ? [
+        { decision: 'rename', label: '自动重命名来源项' },
+        { decision: 'skip', label: '跳过此项' },
+      ]
+    : [
+        { decision: 'skip', label: '跳过此文件' },
+        { decision: 'replace', label: '覆盖此文件' },
+        { decision: 'rename', label: '自动重命名' },
+      ]
+  const batchDecisions: Record<RemoteConflictDialogChoice['decision'], RemoteMoveDecision> = {
+    replace: 'replace-all',
+    skip: 'skip-all',
+    rename: 'rename-all',
+  }
   return <RemoteConflictDialog
+    key={conflict.conflictId}
     heading={`远程${label}冲突`}
     title={mismatch ? '同名项目类型不同' : '目标文件已存在'}
     sourceLabel="来源"
@@ -28,21 +48,16 @@ export function RemoteMoveConflictDialog({
     sourceType={conflict.sourceType}
     targetType={conflict.targetType}
     description={mismatch
-      ? `来源是${itemTypeLabel(conflict.sourceType)}，目标是${itemTypeLabel(conflict.targetType)}。替换会先删除整个目标${itemTypeLabel(conflict.targetType)}及其内容，此操作无法撤销。`
-      : operation === 'copy' ? '覆盖会替换目标文件的现有内容，此操作无法撤销。' : '覆盖会永久删除目标文件的现有内容，此操作无法撤销。'}
-    actions={mismatch
-      ? [
-          { decision: 'replace', label: operation === 'copy' ? '删除目标并复制' : '删除目标并替换', tone: 'danger' },
-          { decision: 'skip', label: '跳过此项' },
-          { decision: 'cancel', label: `取消${label}` },
-        ]
-      : [
-          { decision: 'replace', label: '覆盖此文件', tone: 'danger' },
-          { decision: 'skip', label: '跳过此文件' },
-          { decision: 'replace-all', label: '后续均覆盖', tone: 'warning' },
-          { decision: 'skip-all', label: '后续均跳过' },
-          { decision: 'cancel', label: `取消${label}` },
-        ]}
+      ? `来源是${itemTypeLabel(conflict.sourceType)}，目标是${itemTypeLabel(conflict.targetType)}。${mismatchDescription}此类冲突需单独处理，不应用批量设置。`
+      : '可覆盖、跳过或自动重命名此文件（名称 (2).扩展名）。覆盖会替换目标文件内容。“应用到全部文件”会将所选动作应用于本次操作当前及后续所有普通文件冲突，包括文件夹内部的文件。'}
+    actions={[]}
+    choices={choices}
+    defaultChoice={mismatch ? 'rename' : 'replace'}
+    applyToAllLabel={mismatch ? undefined : '应用到全部文件'}
+    cancelLabel={`取消${label}`}
+    onConfirmChoice={(decision, applyToAll) => {
+      onDecision(applyToAll && !mismatch ? batchDecisions[decision] : decision)
+    }}
     busy={busy}
     onDecision={(decision) => onDecision(decision as RemoteMoveDecision)}
   />
