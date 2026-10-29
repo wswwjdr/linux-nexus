@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain } from './trusted-ipc'
 import type { TrustHostKeyInput } from '@shared/types'
 import { endpointKey, profileFromState, readState, writeState } from '../state-store'
 

@@ -14,7 +14,7 @@ import { endpointKey, passwordFor, profileFromState, readState } from './state-s
 import { clearPreviewAssetsForSession } from './previews'
 import { cancelRemoteOperationsForSession } from './remote-operations'
 import { removePerformanceMonitorForSession } from './performance-monitor'
-import { runRemoteCommand } from './ssh-commands'
+import { cancelClientTasks, runRemoteCommand } from './ssh-commands'
 import { listRemoteDirectory } from './remote-fs'
 
 const pendingConnections = new Map<string, { profileId: string; client: Client; cancel: () => void }>()
@@ -38,10 +38,11 @@ function failActiveSession(activeSession: ActiveSession, message: string): void 
   failContentSearchesForSession(activeSession.sessionId, message)
   cancelTransfersForSession(activeSession.sessionId)
   clearPreviewAssetsForSession(activeSession.sessionId)
+  void cancelClientTasks(activeSession.client)
   sendConnectionClosed(activeSession.sessionId, activeSession.profileId, message)
 }
 
-export function stopSession(sessionId: string): void {
+export function stopSession(sessionId: string): Promise<void> {
   removePerformanceMonitorForSession(sessionId)
   pendingConnections.get(sessionId)?.cancel()
   cancelNameSearchesForSession(sessionId)
@@ -51,10 +52,11 @@ export function stopSession(sessionId: string): void {
   const transfers = cancelTransfersForSession(sessionId)
   clearPreviewAssetsForSession(sessionId)
   const activeSession = sessions.get(sessionId)
-  if (!activeSession) return
+  if (!activeSession) return Promise.resolve()
+  const commands = cancelClientTasks(activeSession.client)
   sessions.delete(sessionId)
-  void Promise.all([remoteOperations, ...transfers.map((transfer) => transfer.settled)])
-    .then(() => activeSession.client.end())
+  return Promise.all([commands, remoteOperations, ...transfers.map((transfer) => transfer.settled)])
+    .then(() => { activeSession.client.end() })
 }
 
 export function stopSessionsForProfile(profileId: string): void {
@@ -70,9 +72,9 @@ export function stopSessionsForProfile(profileId: string): void {
   }
 }
 
-export function stopAllSessions(): void {
-  for (const sessionId of pendingConnections.keys()) stopSession(sessionId)
-  for (const sessionId of sessions.keys()) stopSession(sessionId)
+export async function stopAllSessions(): Promise<void> {
+  const ids = new Set([...pendingConnections.keys(), ...sessions.keys()])
+  await Promise.all([...ids].map(stopSession))
 }
 
 export function connectProfile(
@@ -83,6 +85,7 @@ export function connectProfile(
   rows: number,
   startPath: string,
 ): Promise<ConnectResult> {
+  if (pendingConnections.has(sessionId) || sessions.has(sessionId)) throw new Error('会话编号已在使用')
   const state = readState()
   const profile = profileFromState(state, profileId)
   const password = passwordFor(state, profileId)

@@ -12,8 +12,12 @@ class SearchChannel extends EventEmitter {
   stderr = new EventEmitter()
   closeCalls = 0
 
+  signal(): void { this.close() }
+  destroy(): void { this.close() }
   close(): void {
     this.closeCalls += 1
+    this.emit('exit', 143)
+    this.emit('close')
   }
 }
 
@@ -23,12 +27,12 @@ function setupSearch(requestId: string) {
   const commands: string[] = []
   const sessionId = 'session-' + requestId
   const profileId = 'profile-' + requestId
-  const client = {
+  const client = Object.assign(new EventEmitter(), {
     exec: (command: string, callback: (error: Error | undefined, stream: ClientChannel) => void) => {
       commands.push(command)
       callback(undefined, channel as unknown as ClientChannel)
     },
-  } as unknown as Client
+  }) as unknown as Client
   sessions.set(sessionId, {
     sessionId,
     client,

@@ -1,4 +1,5 @@
-import { ipcMain, safeStorage } from 'electron'
+import { safeStorage } from 'electron'
+import { ipcMain } from './trusted-ipc'
 import { randomUUID } from 'node:crypto'
 import type { SaveProfileInput, ServerProfile } from '@shared/types'
 import { connectionIdentityChanged } from '@shared/command-aliases'

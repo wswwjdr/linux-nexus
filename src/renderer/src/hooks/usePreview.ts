@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type SyntheticEvent, type WheelEvent } from 'react'
-import type { FileTypeExtensions, RemoteEntry, TextLineEnding } from '@shared/types'
+import type { FileTypeExtensions, RemoteEntry, TextEncoding, TextFileVersion, TextLineEnding } from '@shared/types'
 import type { PreviewType } from '@shared/file-type-registry'
 import { previewTypesForFile } from '@shared/preview-file-type'
 import type { ImagePreviewSize, LogPreviewDialog, PreviewDialog } from '@/app-types'
@@ -18,6 +18,9 @@ interface TextPreviewContext {
   name: string
   originalContent: string
   lineEnding: TextLineEnding
+  encoding: TextEncoding
+  bom: boolean
+  version: TextFileVersion
 }
 
 export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePreviewOptions) {
@@ -26,6 +29,9 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
   const [imageZoom, setImageZoom] = useState(1)
   const [imagePreviewSize, setImagePreviewSize] = useState<ImagePreviewSize | null>(null)
   const [textDraft, setTextDraft] = useState('')
+  const [textEncoding, setTextEncoding] = useState<TextEncoding>('utf8')
+  const [textConflict, setTextConflict] = useState(false)
+  const [textReloading, setTextReloading] = useState(false)
   const [textDirty, setTextDirty] = useState(false)
   const [textSaving, setTextSaving] = useState(false)
   const [textSaveConfirmation, setTextSaveConfirmation] = useState<{ name: string; path: string } | null>(null)
@@ -84,8 +90,10 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     setTextDraft('')
     setTextDirty(false)
     setTextSaving(false)
+    setTextReloading(false)
     setTextSaveConfirmation(null)
     setTextSaveError(null)
+    setTextConflict(false)
     if (token) window.setTimeout(() => void window.remoteFiles.releasePreview(token), 0)
   }, [])
 
@@ -112,7 +120,9 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
           name: result.name,
           originalContent: result.content,
           lineEnding: result.lineEnding,
+          encoding: result.encoding, bom: result.bom, version: result.version,
         }
+        setTextEncoding(result.encoding)
         textDraftRef.current = result.content
         setTextDraft(result.content)
       } else if ('token' in result) {
@@ -196,16 +206,17 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
 
   const updateTextDraft = (content: string) => {
     const context = textPreviewRef.current
-    if (!context || textSaving) return
+    if (!context || textSaving || textReloading) return
     textDraftRef.current = content
     setTextDraft(content)
-    setTextDirty(content !== context.originalContent)
+    setTextDirty(content !== context.originalContent || textEncoding !== context.encoding)
   }
 
   const requestTextSave = () => {
     const context = textPreviewRef.current
-    if (!context || textSaving || textDraftRef.current === context.originalContent) return
+    if (!context || textSaving || textDraftRef.current === context.originalContent && textEncoding === context.encoding) return
     setTextSaveError(null)
+    setTextConflict(false)
     setTextSaveConfirmation({ name: context.name, path: context.path })
   }
 
@@ -219,7 +230,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     const context = textPreviewRef.current
     if (!context || textSaving || !textSaveConfirmation) return
     const content = textDraftRef.current
-    if (content === context.originalContent) {
+    if (content === context.originalContent && textEncoding === context.encoding) {
       setTextSaveConfirmation(null)
       return
     }
@@ -227,7 +238,17 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     setTextSaving(true)
     setTextSaveError(null)
     try {
-      await window.remoteFiles.saveTextFile(context.sessionId, context.path, content, context.lineEnding)
+      const result = await window.remoteFiles.saveTextFile(context.sessionId, context.path, content, context.lineEnding, {
+        version: context.version, encoding: textEncoding, bom: textEncoding === 'utf8' && context.bom, force: textConflict,
+      })
+      if (result.status === 'conflict') {
+        setTextConflict(true)
+        setTextSaveError('服务器文件已变化。可取消后重新加载，或明确选择强制覆盖。当前草稿已保留。')
+        return
+      }
+      context.version = result.version
+      context.encoding = textEncoding
+      context.bom = textEncoding === 'utf8' && context.bom
       if (textPreviewRef.current !== context) return
       context.originalContent = content
       setTextDirty(textDraftRef.current !== content)
@@ -278,6 +299,33 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
   }
 
   return {
+    textEncoding,
+    textReloading,
+    textConflict,
+    convertTextToUtf8: () => {
+      setTextEncoding('utf8')
+      const context = textPreviewRef.current
+      if (context) setTextDirty(textDraftRef.current !== context.originalContent || context.encoding !== 'utf8')
+    },
+    reopenText: async (encoding: TextEncoding) => {
+      const context = textPreviewRef.current
+      if (!context || textSaving || textReloading) return
+      if (textDirty && !window.confirm('重新加载将放弃当前草稿，是否继续？')) return
+      const requestId = ++previewRequestRef.current
+      setTextReloading(true)
+      try {
+        const result = await window.remoteFiles.previewFile(context.sessionId, context.path, 'text', encoding)
+        if (previewRequestRef.current !== requestId || textPreviewRef.current !== context || result.type !== 'text') return
+        textPreviewRef.current = { ...context, originalContent: result.content, lineEnding: result.lineEnding, encoding: result.encoding, bom: result.bom, version: result.version }
+        textDraftRef.current = result.content
+        setTextDraft(result.content)
+        setTextEncoding(result.encoding)
+        setTextDirty(false)
+        setTextConflict(false)
+        setPreviewDialog({ kind: 'ready', result })
+      } catch (error) { showToast('error', '重新读取失败：' + errorMessage(error)) }
+      finally { if (previewRequestRef.current === requestId) setTextReloading(false) }
+    },
     previewDialog,
     logPreviewDialog,
     imageZoom,

@@ -16,8 +16,8 @@ function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
 }
 
 export function normalizeStoredCommandAliases(value: unknown, profileIds: ReadonlySet<string>): Record<string, CommandAliasSnapshot> {
-  const aliases = value ?? {}
-  if (!isRecord(aliases)) throw new Error('命令别名数据结构无效')
+  if (!isRecord(value)) throw new Error('命令别名数据结构无效')
+  const aliases = value
   for (const [profileId, candidate] of Object.entries(aliases)) {
     if (!profileIds.has(profileId) || !isRecord(candidate)
       || !hasExactKeys(candidate, ['profileId', 'aliases', 'syncedAt', 'status'])

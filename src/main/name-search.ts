@@ -1,5 +1,5 @@
 import { posix } from 'node:path'
-import type { ClientChannel } from 'ssh2'
+import { executeRemoteCommand, RemoteCommandError, RemoteTerminationError } from './ssh-commands'
 import type {
   NameSearchEvent,
   NameSearchProgress,
@@ -13,7 +13,7 @@ import { normalizedRemotePath } from './remote-fs'
 
 interface NameSearchTask {
   request: NameSearchRequest
-  stream: ClientChannel | null
+  controller: AbortController
   pending: Buffer
   results: NameSearchResult[]
   matchedFiles: number
@@ -23,16 +23,9 @@ interface NameSearchTask {
   hasReadErrors: boolean
   finished: boolean
   cancelled: boolean
-  exitCode: number | null
   progressTimer: ReturnType<typeof setTimeout> | null
   flushTimer: ReturnType<typeof setTimeout> | null
-  listeners: {
-    data?: (chunk: Buffer) => void
-    stderr?: (chunk: Buffer) => void
-    error?: (error: Error) => void
-    exit?: (code: number | null) => void
-    close?: () => void
-  }
+
 }
 
 const activeSearches = new Map<string, NameSearchTask>()
@@ -129,13 +122,7 @@ function finishSearch(task: NameSearchTask, status: SearchRunStatus, message?: s
   emitProgress(task, true)
   sendEvent({ type: 'finished', status, ...(message ? { message } : {}), ...progress(task) })
   activeSearches.delete(task.request.requestId)
-  const stream = task.stream
-  if (!stream) return
-  if (task.listeners.data) stream.removeListener('data', task.listeners.data)
-  if (task.listeners.stderr) stream.stderr.removeListener('data', task.listeners.stderr)
-  if (task.listeners.error) stream.removeListener('error', task.listeners.error)
-  if (task.listeners.exit) stream.removeListener('exit', task.listeners.exit)
-  if (task.listeners.close) stream.removeListener('close', task.listeners.close)
+
 }
 
 function markReadError(task: NameSearchTask): void {
@@ -170,7 +157,7 @@ export function startNameSearch(input: NameSearchRequest): void {
 
   const task: NameSearchTask = {
     request,
-    stream: null,
+    controller: new AbortController(),
     pending: Buffer.alloc(0),
     results: [],
     matchedFiles: 0,
@@ -180,80 +167,44 @@ export function startNameSearch(input: NameSearchRequest): void {
     hasReadErrors: false,
     finished: false,
     cancelled: false,
-    exitCode: null,
     progressTimer: null,
     flushTimer: null,
-    listeners: {},
   }
   activeSearches.set(request.requestId, task)
   emitProgress(task, true)
 
-  try {
-    session.client.exec(buildNameSearchCommand(request), (error, stream) => {
-      if (error) {
-        finishSearch(task, task.cancelled ? 'cancelled' : 'failed', error.message || '无法启动文件名搜索')
-        return
+
+  void executeRemoteCommand(session.client, buildNameSearchCommand(request), {
+    signal: task.controller.signal, collectStdout: false, keepStdinOpen: true, timeoutMs: 86_400_000,
+    maxStdoutBytes: 32 * 1024 * 1024,
+    onStdout: (chunk) => {
+      task.pending = Buffer.concat([task.pending, chunk])
+      if (task.pending.length > 1024 * 1024) throw new Error('搜索记录超过大小限制')
+      let delimiter = task.pending.indexOf(0)
+      while (delimiter >= 0) {
+        if (!delimiter) throw new Error('远端文件名搜索返回了空路径')
+        queueResult(task, task.pending.subarray(0, delimiter).toString('utf8'))
+        task.pending = task.pending.subarray(delimiter + 1)
+        delimiter = task.pending.indexOf(0)
       }
-      task.stream = stream
-      if (task.finished) {
-        stream.close()
-        return
-      }
-      task.listeners.data = (chunk) => {
-        task.pending = task.pending.length ? Buffer.concat([task.pending, Buffer.from(chunk)]) : Buffer.from(chunk)
-        let delimiter = task.pending.indexOf(0)
-        while (delimiter >= 0) {
-          if (delimiter === 0) {
-            stream.close()
-            finishSearch(task, 'failed', '远端文件名搜索返回了空路径')
-            return
-          }
-          queueResult(task, task.pending.subarray(0, delimiter).toString('utf8'))
-          task.pending = task.pending.subarray(delimiter + 1)
-          delimiter = task.pending.indexOf(0)
-        }
-      }
-      task.listeners.stderr = (chunk) => {
-        if (Buffer.from(chunk).length) markReadError(task)
-      }
-      task.listeners.error = (streamError) => {
-        if (task.cancelled) finishSearch(task, 'cancelled')
-        else finishSearch(task, 'failed', '文件名搜索连接失败：' + streamError.message)
-      }
-      task.listeners.exit = (code) => {
-        task.exitCode = typeof code === 'number' ? code : null
-      }
-      task.listeners.close = () => {
-        if (task.finished) return
-        if (task.cancelled) {
-          finishSearch(task, 'cancelled')
-          return
-        }
-        if (task.pending.length) {
-          finishSearch(task, 'failed', '远端文件名搜索结果格式无效')
-          return
-        }
-        if (task.exitCode === 0 || (task.exitCode === 1 && task.hasReadErrors)) finishSearch(task, 'completed')
-        else if (task.exitCode === null) finishSearch(task, 'failed', 'SSH 连接中断，文件名搜索已停止')
-        else finishSearch(task, 'failed', '远端文件名搜索未能完整结束（退出码 ' + task.exitCode + '）')
-      }
-      stream.on('data', task.listeners.data)
-      stream.stderr.on('data', task.listeners.stderr)
-      stream.once('error', task.listeners.error)
-      stream.once('exit', task.listeners.exit)
-      stream.once('close', task.listeners.close)
-    })
-  } catch (error) {
-    finishSearch(task, 'failed', error instanceof Error ? error.message : String(error))
-  }
+    },
+    onStderr: () => markReadError(task),
+    onComplete: (error) => {
+      if (task.finished) return
+      if (error instanceof RemoteTerminationError && task.cancelled) finishSearch(task, 'cancelled', error.message)
+      else if (task.pending.length) finishSearch(task, 'failed', '远端文件名搜索结果格式无效')
+      else if (!error || (error instanceof RemoteCommandError && error.exitCode === 1 && task.hasReadErrors)) finishSearch(task, 'completed')
+      else { task.incomplete = true; finishSearch(task, 'failed', error.message) }
+    },
+  }).catch(() => undefined)
+
 }
 
 export function cancelNameSearch(requestId: string): boolean {
   const task = activeSearches.get(requestId)
   if (!task) return false
   task.cancelled = true
-  task.stream?.close()
-  finishSearch(task, 'cancelled')
+  task.controller.abort()
   return true
 }
 
@@ -265,6 +216,6 @@ export function cancelNameSearchesForSession(sessionId: string): void {
 
 export function failNameSearchesForSession(sessionId: string, message: string): void {
   for (const task of activeSearches.values()) {
-    if (task.request.sessionId === sessionId) finishSearch(task, 'failed', message)
+    if (task.request.sessionId === sessionId) { finishSearch(task, 'failed', message); task.controller.abort() }
   }
 }

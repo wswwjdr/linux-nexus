@@ -42,7 +42,7 @@ export interface RemoteTreeEntry {
 }
 
 function nulFields(buffer: Buffer): string[] {
-  const fields = buffer.toString('utf8').split('\0')
+  const fields = new TextDecoder('utf-8', { fatal: true }).decode(buffer).split('\0')
   if (fields.at(-1) === '') fields.pop()
   return fields
 }
@@ -80,29 +80,54 @@ export async function listRemoteDirectory(client: ActiveSession['client'], remot
   })
 }
 
-export async function collectRemoteTree(
-  client: ActiveSession['client'],
-  remoteRoot: string,
-  signal?: AbortSignal,
-): Promise<RemoteTreeEntry[]> {
+export async function* iterateRemoteTree(client: ActiveSession['client'], remoteRoot: string, signal?: AbortSignal): AsyncGenerator<RemoteTreeEntry> {
   const root = normalizedRemotePath(remoteRoot)
-  const { stdout } = await runRemoteCommand(client,
-    'find -- "$1" -mindepth 0 -printf \'%P\\0%y\\0%s\\0\'',
-    [root],
-    { signal },
-  )
-  const fields = nulFields(stdout)
-  if (fields.length % 3 !== 0) throw new Error('服务器返回的文件树格式无效')
-  const entries: RemoteTreeEntry[] = []
-  for (let offset = 0; offset < fields.length; offset += 3) {
-    const [relativePath, kind, rawSize] = fields.slice(offset, offset + 3)
-    entries.push({
-      relativePath,
-      type: remoteType(kind),
-      size: Number(rawSize),
-      remotePath: relativePath ? posix.join(root, relativePath) : root,
-    })
+  const controller = new AbortController()
+  const abort = () => controller.abort()
+  signal?.addEventListener('abort', abort, { once: true })
+  if (signal?.aborted) controller.abort()
+  let pending = Buffer.alloc(0), fields: string[] = []
+  const queue: RemoteTreeEntry[] = []
+  let wake: (() => void) | undefined, drain: (() => void) | undefined
+  let done = false, failure: Error | undefined
+  const task = runRemoteCommand(client, `find -- "$1" -mindepth 0 -printf '%P\\0%y\\0%s\\0'`, [root], {
+    signal: controller.signal, timeoutMs: 86_400_000, collectStdout: false, maxStdoutBytes: 128 * 1024 * 1024,
+    onStdout: async chunk => {
+      pending = Buffer.concat([pending, chunk])
+      if (pending.length > 1024 * 1024) throw new Error('文件树记录超过大小限制')
+      let delimiter = pending.indexOf(0)
+      while (delimiter >= 0) {
+        fields.push(new TextDecoder('utf-8', { fatal: true }).decode(pending.subarray(0, delimiter)))
+        pending = pending.subarray(delimiter + 1)
+        if (fields.length === 3) {
+          const [relativePath, kind, rawSize] = fields
+          const size = Number(rawSize)
+          if (!Number.isSafeInteger(size) || size < 0 || !['d', 'f', 'l', 'b', 'c', 'p', 's'].includes(kind)
+            || (relativePath && relativePath.split('/').some(part => !part || part === '.' || part === '..'))) throw new Error('服务器文件树格式无效')
+          queue.push({ relativePath, type: remoteType(kind), size, remotePath: relativePath ? posix.join(root, relativePath) : root })
+          fields = []
+        }
+        delimiter = pending.indexOf(0)
+      }
+      wake?.(); wake = undefined
+      if (queue.length >= 256) await new Promise<void>(resolve => { const release = () => { controller.signal.removeEventListener('abort', release); resolve() }; drain = release; controller.signal.addEventListener('abort', release, { once: true }); if (controller.signal.aborted) release() })
+    },
+  }).catch(error => { failure = error instanceof Error ? error : new Error(String(error)) }).finally(() => { done = true; wake?.() })
+  try {
+    while (!done || queue.length) {
+      if (!queue.length) { await new Promise<void>(resolve => { wake = resolve }); continue }
+      yield queue.shift()!
+      if (queue.length < 128) { drain?.(); drain = undefined }
+    }
+    if (failure) throw failure
+    if (pending.length || fields.length) throw new Error('服务器文件树响应不完整')
+  } finally {
+    controller.abort(); drain?.(); signal?.removeEventListener('abort', abort); await task
   }
+}
+export async function collectRemoteTree(client: ActiveSession['client'], remoteRoot: string, signal?: AbortSignal): Promise<RemoteTreeEntry[]> {
+  const entries: RemoteTreeEntry[] = []
+  for await (const entry of iterateRemoteTree(client, remoteRoot, signal)) entries.push(entry)
   return entries
 }
 

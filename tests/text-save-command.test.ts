@@ -4,8 +4,8 @@ import { buildTextSaveCommand } from '../src/main/previews/strategies/text-previ
 
 test('rechecks the saved SHA-256 immediately before atomically replacing a text file', () => {
   const command = buildTextSaveCommand()
-  const streamInput = command.indexOf('cat > "$temporary"')
-  const hashCheck = command.indexOf('current_hash=$(sha256sum -- "$destination")')
+  const streamInput = command.indexOf('head -c')
+  const hashCheck = command.indexOf('current_hash=$(sha256sum < "$destination")')
   const replace = command.indexOf('mv -fT -- "$temporary" "$destination"')
 
   assert.ok(streamInput >= 0 && streamInput < hashCheck)

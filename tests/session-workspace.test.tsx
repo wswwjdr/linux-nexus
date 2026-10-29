@@ -91,7 +91,7 @@ test('file workspaces retain independent search and preview state across session
         type: 'text',
         name: 'notes.txt',
         content: 'initial text',
-        revision: { contentHash: 'hash', lineEnding: '\n' },
+        lineEnding: '\n', encoding: 'utf8', bom: false, version: { hash: 'a'.repeat(64), identity: 'fixture' },
       }
     },
     readLogPreview: async () => ({ name: 'app.log', content: 'tail target', startOffset: 100, fileSize: 111, limitBytes: 1000, hasEarlier: true }),

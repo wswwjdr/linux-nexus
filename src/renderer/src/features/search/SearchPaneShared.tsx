@@ -106,7 +106,7 @@ export function statusLabel(status: SearchStatus): string {
   return status === 'running' ? '正在搜索'
     : status === 'cancelling' ? '正在取消'
       : status === 'completed' ? '搜索完成'
-        : status === 'cancelled' ? '搜索已取消'
+        : status === 'cancelled' ? '搜索已取消（远端进程状态未确认）'
           : status === 'failed' ? '搜索失败'
             : '等待开始'
 }

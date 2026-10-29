@@ -41,6 +41,16 @@ npm run dist:win
 - [远端脚本执行](docs/脚本执行.md)
 - [应用设置](docs/应用设置.md)
 
+## 验证
+
+```powershell
+npm run typecheck
+npm test
+npm run build
+```
+
+平台验证状态和剩余实机项目见[验收记录](docs/验收记录.md)。下载目标需要支持硬链接；在线编辑元数据保全需要服务器的 acl、attr 工具。
+
 ## 界面截图
 
 ### 首页

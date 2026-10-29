@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain } from './trusted-ipc'
 import type { OperationExecutionRequest } from '@shared/types'
 import { cancelRemoteOperation, executeRemoteOperation } from '../remote-operations'
 

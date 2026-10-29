@@ -8,11 +8,13 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "test": "node --import tsx --test tests/*.test.ts tests/*.test.tsx",
-    "dist:win": "npm run build && electron-builder --win nsis --x64"
+    "dist:win": "npm run build && electron-builder --win nsis --x64",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "iconv-lite": "^0.7.3",
     "lucide-react": "^0.555.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
@@ -26,7 +28,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/ssh2": "^1.15.6",
     "@vitejs/plugin-react": "^5.1.4",
-    "electron": "^44.7.0",
+    "electron": "^44.10.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "jsdom": "^30.1.3",

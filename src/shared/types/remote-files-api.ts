@@ -5,7 +5,7 @@ import type { ConnectResult, TrustHostKeyInput, SessionKind, TerminalOutputEvent
 import type { PerformanceMonitorState } from './performance'
 import type { AppSettings, AppSettingsPatch } from './settings'
 import type { DroppedUploadEntry, TransferResult, OperationExecutionRequest, OperationExecutionResult, UploadSelectionRequest, UploadSelection, UploadExecutionRequest, TransferProgress, TransferQueuedEvent } from './transfers'
-import type { PreviewResult, TextLineEnding, LogPreviewPage } from './previews'
+import type { PreviewResult, TextLineEnding, LogPreviewPage, TextEncoding, TextSaveOptions, TextSaveResult } from './previews'
 import type { PreviewType } from '../file-type-registry'
 import type { RemoteEntryProperties } from './file-properties'
 
@@ -50,14 +50,15 @@ export interface RemoteFilesApi {
   renameRemoteEntry(sessionId: string, remotePath: string, name: string): Promise<string>
   copyRemotePath(sessionId: string, remotePath: string): Promise<void>
   deleteRemoteEntries(sessionId: string, remotePaths: string[]): Promise<void>
-  previewFile(sessionId: string, remotePath: string, type: PreviewType): Promise<PreviewResult>
+  previewFile(sessionId: string, remotePath: string, type: PreviewType, encoding?: TextEncoding): Promise<PreviewResult>
   openExternalUrl(url: string): Promise<void>
   saveTextFile(
     sessionId: string,
     remotePath: string,
     content: string,
     lineEnding: TextLineEnding,
-  ): Promise<void>
+    options: TextSaveOptions,
+  ): Promise<TextSaveResult>
   readLogPreview(
     sessionId: string,
     remotePath: string,

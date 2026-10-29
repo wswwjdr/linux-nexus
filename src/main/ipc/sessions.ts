@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain } from './trusted-ipc'
 import type { SessionKind } from '@shared/types'
 import { connectProfile, resizeTerminal, stopSession, writeTerminal } from '../connections'
 import { sessions } from '../runtime'

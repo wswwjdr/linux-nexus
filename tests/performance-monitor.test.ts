@@ -28,6 +28,8 @@ class FakeChannel extends EventEmitter {
   readonly stderr = new EventEmitter()
   closed = false
 
+  end(): void {}
+  signal(): void { this.close() }
   close(): void {
     if (this.closed) return
     this.closed = true

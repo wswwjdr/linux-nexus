@@ -1,5 +1,5 @@
 import type { Client } from 'ssh2'
-import type { PreviewResult } from '@shared/types'
+import type { PreviewResult, TextEncoding } from '@shared/types'
 
 export type PreviewType = PreviewResult['type']
 
@@ -13,6 +13,7 @@ export interface PreviewRequest {
   size: number
   limitBytes: number
   limitMiB: number
+  encoding?: TextEncoding
 }
 
 export interface PreviewStrategy<TResult extends PreviewResult = PreviewResult> {

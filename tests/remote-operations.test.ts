@@ -87,7 +87,7 @@ for (const operation of ['copy', 'move'] as const) {
         assert.equal(remote.commands.length, 1)
         assert.ok(remote.commands[0].includes(shellQuote(source)))
         const utility = operation === 'copy' ? 'cp -R --preserve=mode,timestamps' : 'mv'
-        assert.ok(remote.commands[0].includes(`${utility} -${strategy === 'force' ? 'f' : 'n'} -- "$@"`))
+        assert.ok(remote.commands[0].includes(`${utility} -${strategy === 'force' ? 'f' : 'n'} --target-directory="$target" -- "$@"`))
         assert.ok(!remote.commands[0].includes('find --'))
         assert.ok(!remote.commands[0].includes('mktemp'))
       } finally { sessions.delete('session-1') }
@@ -200,8 +200,8 @@ test('same-directory moves keep sources in place and mixed copies still obey cro
 
 test('same-directory copy reports a missing source instead of creating an empty duplicate', filesystemTest, async () => {
   await withFilesystem(async ({ directory, run }) => {
-    await assert.rejects(run(['missing.txt']), /来源可能已不存在/)
-    await assert.rejects(run(['missing.txt'], { operation: 'move' }), /移动来源已不存在/)
+    await assert.rejects(run(['missing.txt']), /来源不是普通文件或目录/)
+    await assert.rejects(run(['missing.txt'], { operation: 'move' }), /来源不是普通文件或目录/)
     assert.deepEqual(await readdir(directory), [])
   })
 })
@@ -359,3 +359,18 @@ test('rejects duplicate request IDs and cancels the active command through SSH',
     assert.equal(cancelRemoteOperation('request-1'), false)
   } finally { sessions.delete('session-1') }
 })
+
+
+for (const operation of ['copy', 'move'] as const) {
+  test(`${operation} refuses missing and file targets without changing unrelated data`, filesystemTest, async () => {
+    await withFilesystem(async ({ directory, run }) => {
+      await writeFile(join(directory, 'source.txt'), 'source')
+      await writeFile(join(directory, 'target'), 'unrelated')
+      await assert.rejects(run(['source.txt'], { target: 'target', operation }))
+      assert.equal(await readFile(join(directory, 'target'), 'utf8'), 'unrelated')
+      await assert.rejects(run(['source.txt'], { target: 'absent', operation }))
+      assert.equal(await readFile(join(directory, 'source.txt'), 'utf8'), 'source')
+      assert.equal(existsSync(join(directory, 'absent')), false)
+    })
+  })
+}

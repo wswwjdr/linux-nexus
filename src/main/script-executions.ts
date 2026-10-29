@@ -1,26 +1,9 @@
 import { posix } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
-import type { Client, ClientChannel } from 'ssh2'
+import type { Client } from 'ssh2'
 import type { ScriptExecutionEvent, ScriptExecutionRequest } from '../shared/types.ts'
+import { executeRemoteCommand, RemoteCommandError, RemoteTerminationError } from './ssh-commands'
 import { shellQuote } from '../shared/shell.ts'
-
-interface ScriptExecutionTask {
-  request: ScriptExecutionRequest
-  client: Client
-  stream: ClientChannel | null
-  finished: boolean
-  exitCode: number | null
-  stdoutDecoder: StringDecoder
-  stderrDecoder: StringDecoder
-  clientError: (error: Error) => void
-  clientEnd: () => void
-  clientClose: () => void
-  stdoutData: (chunk: Buffer) => void
-  stderrData: (chunk: Buffer) => void
-  streamError: (error: Error) => void
-  exit: (code: number | null) => void
-  close: () => void
-}
 
 interface ScriptExecutionSession {
   client: Client
@@ -57,167 +40,50 @@ export function parseScriptExecutionRequest(value: unknown): ScriptExecutionRequ
 }
 
 export class ScriptExecutionManager {
-  private readonly tasks = new Map<string, ScriptExecutionTask>()
-  private readonly getSession: SessionLookup
-  private readonly sendEvent: EventSink
-
-  constructor(
-    getSession: SessionLookup,
-    sendEvent: EventSink,
-  ) {
-    this.getSession = getSession
-    this.sendEvent = sendEvent
-  }
-
+  private readonly tasks = new Map<string, { request: ScriptExecutionRequest; controller: AbortController; fail?: string }>()
+  constructor(private readonly getSession: SessionLookup, private readonly sendEvent: EventSink) {}
   start(value: unknown): void {
     const request = parseScriptExecutionRequest(value)
     if (this.tasks.has(request.requestId)) throw new Error('脚本执行请求编号已在使用')
     const session = this.getSession(request.sessionId)
     if (!session || session.kind !== 'files') throw new Error('文件会话未连接')
-
-    const task: ScriptExecutionTask = {
-      request,
-      client: session.client,
-      stream: null,
-      finished: false,
-      exitCode: null,
-      stdoutDecoder: new StringDecoder('utf8'),
-      stderrDecoder: new StringDecoder('utf8'),
-      clientError: () => undefined,
-      clientEnd: () => undefined,
-      clientClose: () => undefined,
-      stdoutData: () => undefined,
-      stderrData: () => undefined,
-      streamError: () => undefined,
-      exit: () => undefined,
-      close: () => undefined,
-    }
-    task.clientError = (error) => this.finish(task, {
-      type: 'failed', requestId: request.requestId, sessionId: request.sessionId, message: 'SSH 连接失败：' + error.message,
-    }, true)
-    task.clientEnd = () => this.finish(task, {
-      type: 'failed', requestId: request.requestId, sessionId: request.sessionId, message: 'SSH 连接已结束，脚本执行中断',
-    }, true)
-    task.clientClose = () => this.finish(task, {
-      type: 'failed', requestId: request.requestId, sessionId: request.sessionId, message: 'SSH 连接已关闭，脚本执行中断',
-    }, true)
-    task.stdoutData = (chunk) => this.sendOutput(task, 'stdout', task.stdoutDecoder.write(chunk))
-    task.stderrData = (chunk) => this.sendOutput(task, 'stderr', task.stderrDecoder.write(chunk))
-    task.streamError = (error) => this.finish(task, {
-      type: 'failed', requestId: request.requestId, sessionId: request.sessionId, message: '脚本执行通道失败：' + error.message,
-    }, true)
-    task.exit = (code) => { task.exitCode = typeof code === 'number' ? code : null }
-    task.close = () => {
-      if (task.exitCode === 0) {
-        this.finish(task, { type: 'completed', requestId: request.requestId, sessionId: request.sessionId, exitCode: 0 })
-      } else {
-        const exitCode = task.exitCode
-        this.finish(task, {
-          type: 'failed',
-          requestId: request.requestId,
-          sessionId: request.sessionId,
-          exitCode,
-          message: exitCode === null ? '脚本执行通道关闭时未收到退出码' : '脚本执行失败，退出码 ' + exitCode,
-        })
-      }
-    }
-
+    const task = { request, controller: new AbortController(), fail: undefined as string | undefined }
     this.tasks.set(request.requestId, task)
-    session.client.on('error', task.clientError)
-    session.client.on('end', task.clientEnd)
-    session.client.on('close', task.clientClose)
-    try {
-      session.client.exec(buildScriptExecutionCommand(request.scriptPath, request.command), (error, stream) => {
-        if (error) {
-          this.finish(task, {
-            type: 'failed', requestId: request.requestId, sessionId: request.sessionId, message: '无法启动脚本：' + error.message,
-          })
-          return
-        }
-        task.stream = stream
-        if (task.finished) {
-          this.terminate(stream)
-          return
-        }
-        stream.on('data', task.stdoutData)
-        stream.stderr.on('data', task.stderrData)
-        stream.once('error', task.streamError)
-        stream.stderr.once('error', task.streamError)
-        stream.once('exit', task.exit)
-        stream.once('close', task.close)
-      })
-    } catch (error) {
-      this.finish(task, {
-        type: 'failed',
-        requestId: request.requestId,
-        sessionId: request.sessionId,
-        message: '无法启动脚本：' + (error instanceof Error ? error.message : String(error)),
-      })
+    const decoders = { stdout: new StringDecoder('utf8'), stderr: new StringDecoder('utf8') }
+    let retainedBytes = 0
+    const output = (stream: 'stdout' | 'stderr', chunk: Buffer) => {
+      retainedBytes += chunk.length
+      if (retainedBytes > 8 * 1024 * 1024) throw new Error('脚本输出达到 8 MiB 上限，已停止读取；远端状态未知')
+      const data = decoders[stream].write(chunk)
+      if (data) this.sendEvent({ type: 'output', requestId: request.requestId, sessionId: request.sessionId, stream, data })
     }
+    void executeRemoteCommand(session.client, buildScriptExecutionCommand(request.scriptPath, request.command), {
+      signal: task.controller.signal, collectStdout: false, keepStdinOpen: true, timeoutMs: 86_400_000,
+      onStdout: chunk => output('stdout', chunk), onStderr: chunk => output('stderr', chunk),
+      onComplete: error => {
+        this.tasks.delete(request.requestId)
+        for (const stream of ['stdout', 'stderr'] as const) {
+          const data = decoders[stream].end()
+          if (data) this.sendEvent({ type: 'output', requestId: request.requestId, sessionId: request.sessionId, stream, data })
+        }
+        const common = { requestId: request.requestId, sessionId: request.sessionId }
+        if (task.fail) this.sendEvent({ type: 'failed', ...common, message: task.fail })
+        else if (error instanceof RemoteTerminationError && error.reason === 'cancelled') this.sendEvent({ type: 'cancelled', ...common, message: error.message })
+        else if (error) this.sendEvent({ type: 'failed', ...common, exitCode: error instanceof RemoteCommandError ? error.exitCode : null, message: error.message })
+        else this.sendEvent({ type: 'completed', ...common, exitCode: 0 })
+      },
+    }).catch(() => undefined)
   }
-
   cancel(requestId: string): boolean {
     const task = this.tasks.get(requestId)
-    if (!task) return false
-    this.finish(task, { type: 'cancelled', requestId: task.request.requestId, sessionId: task.request.sessionId }, true)
+    if (!task || task.controller.signal.aborted) return false
+    task.controller.abort()
     return true
   }
-
   cancelForSession(sessionId: string): void {
-    for (const task of [...this.tasks.values()]) {
-      if (task.request.sessionId === sessionId) this.cancel(task.request.requestId)
-    }
+    for (const task of this.tasks.values()) if (task.request.sessionId === sessionId) this.cancel(task.request.requestId)
   }
-
   failForSession(sessionId: string, message: string): void {
-    for (const task of [...this.tasks.values()]) {
-      if (task.request.sessionId !== sessionId) continue
-      this.finish(task, {
-        type: 'failed',
-        requestId: task.request.requestId,
-        sessionId,
-        message: 'SSH 连接中断：' + message,
-      }, true)
-    }
-  }
-
-  private sendOutput(task: ScriptExecutionTask, stream: 'stdout' | 'stderr', data: string): void {
-    if (data) {
-      this.sendEvent({ type: 'output', requestId: task.request.requestId, sessionId: task.request.sessionId, stream, data })
-    }
-  }
-
-  private finish(task: ScriptExecutionTask, event: Exclude<ScriptExecutionEvent, { type: 'output' }>, terminate = false): void {
-    if (task.finished) return
-    task.finished = true
-    this.tasks.delete(task.request.requestId)
-    const stream = task.stream
-    task.client.removeListener('error', task.clientError)
-    task.client.removeListener('end', task.clientEnd)
-    task.client.removeListener('close', task.clientClose)
-    stream?.removeListener('data', task.stdoutData)
-    stream?.stderr.removeListener('data', task.stderrData)
-    stream?.stderr.removeListener('error', task.streamError)
-    stream?.removeListener('error', task.streamError)
-    stream?.removeListener('exit', task.exit)
-    stream?.removeListener('close', task.close)
-    this.sendOutput(task, 'stdout', task.stdoutDecoder.end())
-    this.sendOutput(task, 'stderr', task.stderrDecoder.end())
-    this.sendEvent(event)
-    if (terminate && stream) this.terminate(stream)
-  }
-
-  private terminate(stream: ClientChannel): void {
-    try {
-      stream.signal('TERM')
-    } catch {
-      // The peer may already have closed the channel.
-    }
-    try {
-      stream.close()
-    } catch {
-      // The peer may already have closed the channel.
-    }
+    for (const task of this.tasks.values()) if (task.request.sessionId === sessionId) { task.fail = 'SSH 连接中断：' + message; task.controller.abort() }
   }
 }
-

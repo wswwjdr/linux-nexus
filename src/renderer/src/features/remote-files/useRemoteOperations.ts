@@ -287,7 +287,7 @@ export function useRemoteOperations({
     const label = operation === 'copy' ? '复制' : operation === 'move' ? '移动' : '解压'
     try {
       const result = await window.remoteFiles.executeOperation(request)
-      showToast('info', result.status === 'cancelled' ? `${label}已取消` : `${label}已完成`)
+      showToast('info', result.status === 'cancelled' ? `${label}已取消，已完成部分不会回滚，远端进程状态未确认` : `${label}已完成`)
       if (result.status === 'completed' && operation === 'move' && strategy === 'force') {
         setRemoteClipboard((current) => current === clipboardAtStart && current?.mode === 'cut'
           && current.profile.id === session.profileId

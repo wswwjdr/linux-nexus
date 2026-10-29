@@ -1,7 +1,8 @@
 import { createReadStream } from 'node:fs'
-import { open, rename, stat as localStat, unlink } from 'node:fs/promises'
+import { open, link, stat as localStat, unlink } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { commitRecord, receiveStagedFile } from '../staged-write'
+import { createHash, randomUUID } from 'node:crypto'
 import type { Client } from 'ssh2'
 import type { OperationExecutionStrategy } from '@shared/types'
 import { runRemoteCommand } from '../ssh-commands'
@@ -40,10 +41,13 @@ export async function transferFileStream(
     if (!uploadOptions) throw new Error('上传参数缺失')
     const source = createReadStream(sourcePath, { highWaterMark: TRANSFER_CHUNK_SIZE })
     let uploaded = 0
+    let reported = 0
+    const hash = createHash('sha256')
     const chunks = async function* () {
       for await (const value of source) {
         const chunk = Buffer.from(value)
         uploaded += chunk.length
+        hash.update(chunk)
         if (uploaded > size) throw new Error('本机文件在上传期间发生变化')
         yield chunk
       }
@@ -51,6 +55,8 @@ export async function transferFileStream(
       if (uploaded !== size || attributes.size !== size || attributes.mtimeMs !== uploadOptions.modifiedAtMs) {
         throw new Error('本机文件在上传期间发生变化')
       }
+      signal.throwIfAborted()
+      yield commitRecord(hash.digest('hex'))
     }
     const moveFlag = uploadMoveFlag(uploadOptions.strategy)
     try {
@@ -64,16 +70,16 @@ export async function transferFileStream(
         'trap \'exit 129\' HUP',
         'trap \'exit 130\' INT',
         'trap \'exit 143\' TERM',
-        'cat > "$temporary"',
+        receiveStagedFile('$3'),
         'touch -d "@$2" -- "$temporary"',
         `mv ${moveFlag} -- "$temporary" "$destination"`,
         '[[ ! -e "$temporary" ]] || rm -f -- "$temporary"',
         'trap - EXIT HUP INT TERM',
-      ].join('\n'), [destinationPath, String(uploadOptions.modifiedAtMs / 1000)], {
-        signal,
+      ].join('\n'), [destinationPath, String(uploadOptions.modifiedAtMs / 1000), String(size)], {
+        signal, timeoutMs: 86_400_000,
         stdin: chunks(),
         collectStdout: false,
-        onStdin: (chunk) => onProgress(chunk.length),
+        onStdin: (chunk) => { const bytes = Math.min(chunk.length, size - reported); reported += bytes; onProgress(bytes) },
       })
     } finally {
       source.destroy()
@@ -91,7 +97,7 @@ export async function transferFileStream(
       'dd if="$1" iflag=skip_bytes,count_bytes skip=0 count="$2" status=none',
       [sourcePath, String(size)],
       {
-        signal,
+        signal, timeoutMs: 86_400_000,
         collectStdout: false,
         onStdout: async (chunk) => {
           received += chunk.length
@@ -104,7 +110,23 @@ export async function transferFileStream(
     await file.sync()
     await file.close()
     fileOpen = false
-    await rename(temporaryPath, destinationPath)
+    const original = basename(destinationPath)
+    const dot = original.lastIndexOf('.')
+    const stem = dot > 0 ? original.slice(0, dot) : original
+    const extension = dot > 0 ? original.slice(dot) : ''
+    for (let index = 0; ; index += 1) {
+      signal.throwIfAborted()
+      const candidate = index === 0 ? destinationPath : join(dirname(destinationPath), `${stem} (${index})${extension}`)
+      try {
+        // A hard link publishes the complete file without replacing any existing name.
+        // Unsupported filesystems fail explicitly; there is no clobbering fallback.
+        await link(temporaryPath, candidate)
+        break
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      }
+    }
+    await unlink(temporaryPath)
     completed = true
   } finally {
     if (fileOpen) await file.close()

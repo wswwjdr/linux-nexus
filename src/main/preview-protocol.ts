@@ -2,7 +2,7 @@ import { session } from 'electron'
 import { createReadStream as localCreateReadStream } from 'node:fs'
 import { stat as localStat } from 'node:fs/promises'
 import { PassThrough, Readable } from 'node:stream'
-import { once } from 'node:events'
+import { waitForDrain } from './stream-utils'
 import { sessions } from './runtime'
 import { getPreviewAsset } from './previews/preview-assets'
 import { runRemoteCommand } from './ssh-commands'
@@ -69,6 +69,7 @@ export function registerPreviewProtocol(): void {
       source.destroy()
     }
     source.once('close', () => {
+      controller.abort()
       request.signal.removeEventListener('abort', abortSource)
       if (asset.kind === 'remote') asset.activeStreams.delete(source)
     })
@@ -88,7 +89,7 @@ export function registerPreviewProtocol(): void {
           collectStdout: false,
           onStdout: async (chunk) => {
             const writable = source as PassThrough
-            if (!writable.write(chunk)) await once(writable, 'drain')
+            if (!writable.write(chunk)) await waitForDrain(writable, controller.signal)
           },
         },
       ).then(() => (source as PassThrough).end(), (error: unknown) => (source as PassThrough).destroy(error instanceof Error ? error : new Error(String(error))))

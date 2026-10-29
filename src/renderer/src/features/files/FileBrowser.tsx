@@ -270,6 +270,7 @@ export default function FileBrowser({
         onDrop={(event) => void handleDrop(event)}
       >
         <FileEntryCollection
+          viewportRef={contentRef}
           selectedPaths={selectedPaths}
           highlightedPath={highlightedPath}
           sort={sort}

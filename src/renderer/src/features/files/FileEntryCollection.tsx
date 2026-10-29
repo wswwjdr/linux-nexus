@@ -2,9 +2,11 @@ import { ArrowDown, ArrowUp, ArrowUpDown, File, Folder, type LucideIcon } from '
 import type { DragEvent, FocusEvent, MouseEvent, RefObject } from 'react'
 import type { RemoteEntry } from '@shared/types'
 import type { FileViewMode, SortColumn, SortDirection } from '@/app-types'
+import { useVirtualRows } from '@/hooks/useVirtualRows'
 import { formatDate, formatSize } from '@/app-utils'
 
 interface FileEntryCollectionProps {
+  viewportRef: RefObject<HTMLDivElement | null>
   selectedPaths: string[]
   highlightedPath: string | null
   sort: { column: SortColumn; direction: SortDirection }
@@ -53,6 +55,7 @@ function SortHeader({
 }
 
 export default function FileEntryCollection({
+  viewportRef,
   selectedPaths,
   highlightedPath,
   sort,
@@ -74,6 +77,9 @@ export default function FileEntryCollection({
   onTileMouseLeave,
   onTileBlur,
 }: FileEntryCollectionProps) {
+  const virtual = useVirtualRows(viewportRef, sortedEntries.length, viewMode === 'details' ? 48 : 120, viewMode !== 'details', sortedEntries.findIndex(entry => entry.path === highlightedPath))
+  const visibleEntries = sortedEntries.slice(virtual.first, virtual.last)
+  const selected = new Set(selectedPaths)
   if (viewMode === 'details') {
     return (
       <table className="file-table">
@@ -86,13 +92,14 @@ export default function FileEntryCollection({
           </tr>
         </thead>
         <tbody>
-          {sortedEntries.map((entry) => (
+          {virtual.before > 0 && <tr aria-hidden="true"><td colSpan={4} style={{ height: virtual.before, padding: 0, border: 0 }} /></tr>}
+          {visibleEntries.map((entry) => (
             <tr
-              className={'file-row ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selectedPaths.includes(entry.path) ? 'selected ' : '') + (dropTargetPath === entry.path ? 'drop-target' : '')}
+              className={'file-row ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selected.has(entry.path) ? 'selected ' : '') + (dropTargetPath === entry.path ? 'drop-target' : '')}
               key={entry.path}
               data-entry-path={entry.path}
               draggable={!operationActive && (entry.type === 'file' || entry.type === 'directory')}
-              aria-selected={selectedPaths.includes(entry.path)}
+              aria-selected={selected.has(entry.path)}
               tabIndex={entry.path === highlightedPath ? 0 : -1}
               onClick={(event) => onEntryClick(entry.path, event)}
               onContextMenu={(event) => onEntryContextMenu(event, entry)}
@@ -105,7 +112,7 @@ export default function FileEntryCollection({
                 <button
                   className={'entry-name ' + (entry.type === 'directory' ? 'directory-entry' : '')}
                   title={entry.name}
-                  aria-pressed={selectedPaths.includes(entry.path)}
+                  aria-pressed={selected.has(entry.path)}
                   onDoubleClick={() => onOpenDirectory(entry)}
                 >
                   <span className={'entry-icon ' + (entry.type === 'directory' ? 'folder-icon' : '')}>
@@ -119,16 +126,17 @@ export default function FileEntryCollection({
               <td className="permission-col"><code>{entry.permissions}</code></td>
             </tr>
           ))}
+          {virtual.after > 0 && <tr aria-hidden="true"><td colSpan={4} style={{ height: virtual.after, padding: 0, border: 0 }} /></tr>}
         </tbody>
       </table>
     )
   }
 
   return (
-    <div className="file-icon-grid">
-      {sortedEntries.map((entry) => (
+    <div className="file-icon-grid" style={{ gridTemplateColumns: `repeat(${virtual.columns}, minmax(0, 1fr))`, paddingTop: 16 + virtual.before, paddingBottom: 16 + virtual.after }}>
+      {visibleEntries.map((entry) => (
         <article
-          className={'file-tile ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selectedPaths.includes(entry.path) ? 'selected ' : '') + (dropTargetPath === entry.path ? 'drop-target' : '')}
+          className={'file-tile ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selected.has(entry.path) ? 'selected ' : '') + (dropTargetPath === entry.path ? 'drop-target' : '')}
           key={entry.path}
           data-entry-path={entry.path}
           draggable={!operationActive && (entry.type === 'file' || entry.type === 'directory')}
@@ -148,7 +156,7 @@ export default function FileEntryCollection({
           <button
             className={'file-tile-main ' + (entry.type === 'directory' ? 'directory-entry' : '')}
             aria-label={entry.name}
-            aria-pressed={selectedPaths.includes(entry.path)}
+            aria-pressed={selected.has(entry.path)}
             onDoubleClick={() => onOpenDirectory(entry)}
           >
             <span className={'tile-glyph ' + (entry.type === 'directory' ? 'folder-glyph' : '')}>

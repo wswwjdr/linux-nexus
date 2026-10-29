@@ -1,5 +1,5 @@
-import { ipcMain } from 'electron'
-import type { ContentSearchRequest, NameSearchRequest, OperationExecutionStrategy, ScriptExecutionRequest, UploadExecutionRequest } from '@shared/types'
+import { ipcMain } from './trusted-ipc'
+import type { TextEncoding, TextSaveOptions, ContentSearchRequest, NameSearchRequest, OperationExecutionStrategy, ScriptExecutionRequest, UploadExecutionRequest } from '@shared/types'
 import { copyRemotePath, createRemoteDirectory, deleteRemoteEntries, listDirectory } from '../connections'
 import { cancelTransfer, downloadEntries, executeSelectedUpload, selectUploadSources, uploadSelectionContext, cancelUploadSelection, validateDownloadPaths, withTransferLock } from '../transfers'
 import { previewFile, readLogPreview, releasePreview, saveTextFile } from '../previews'
@@ -64,10 +64,10 @@ export function registerFilesIpc(): void {
     }
     return deleteRemoteEntries(sessionId, remotePaths as string[])
   })
-  ipcMain.handle('files:preview', (_event, sessionId: string, remotePath: string, type: Parameters<typeof previewFile>[2]) =>
-    previewFile(sessionId, remotePath, type))
-  ipcMain.handle('files:text-save', (_event, sessionId: string, remotePath: string, content: string, lineEnding: unknown) =>
-    saveTextFile(sessionId, remotePath, content, lineEnding))
+  ipcMain.handle('files:preview', (_event, sessionId: string, remotePath: string, type: Parameters<typeof previewFile>[2], encoding?: TextEncoding) =>
+    previewFile(sessionId, remotePath, type, encoding))
+  ipcMain.handle('files:text-save', (_event, sessionId: string, remotePath: string, content: string, lineEnding: unknown, options: TextSaveOptions) =>
+    saveTextFile(sessionId, remotePath, content, lineEnding, options))
   ipcMain.handle('files:preview-log', (_event, sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number) =>
     readLogPreview(sessionId, remotePath, beforeOffset, snapshotSize))
   ipcMain.handle('files:preview-release', (_event, token: string) => releasePreview(token))

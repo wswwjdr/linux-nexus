@@ -1,6 +1,6 @@
 import { posix } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
-import type { ClientChannel } from 'ssh2'
+import { executeRemoteCommand, RemoteCommandError, RemoteTerminationError } from './ssh-commands'
 import type {
   ContentSearchEvent,
   ContentSearchLineMatch,
@@ -18,11 +18,10 @@ export { buildContentSearchScript } from './content-search/script'
 
 interface ContentSearchTask {
   request: ContentSearchRequest
-  stream: ClientChannel | null
+  controller: AbortController
   finished: boolean
   cancelled: boolean
   remoteDone: boolean
-  exitCode: number | null
   processedFiles: number
   processedBytes: number
   matchedFiles: number
@@ -45,13 +44,7 @@ interface ContentSearchTask {
   pending: Buffer
   stderrDecoder: StringDecoder
   stderrRemainder: string
-  listeners: {
-    data?: (chunk: Buffer) => void
-    stderr?: (chunk: Buffer) => void
-    error?: (error: Error) => void
-    exit?: (code: number | null) => void
-    close?: () => void
-  }
+
 }
 
 const activeSearches = new Map<string, ContentSearchTask>()
@@ -158,13 +151,7 @@ function finishSearch(task: ContentSearchTask, status: SearchRunStatus, message?
   emitProgress(task, true)
   sendEvent({ type: 'finished', status, ...(message ? { message } : {}), ...progress(task) })
   activeSearches.delete(task.request.requestId)
-  const stream = task.stream
-  if (!stream) return
-  if (task.listeners.data) stream.removeListener('data', task.listeners.data)
-  if (task.listeners.error) stream.removeListener('error', task.listeners.error)
-  if (task.listeners.exit) stream.removeListener('exit', task.listeners.exit)
-  if (task.listeners.close) stream.removeListener('close', task.listeners.close)
-  if (task.listeners.stderr) stream.stderr.removeListener('data', task.listeners.stderr)
+
 }
 
 function addStderr(task: ContentSearchTask, chunk: Buffer, flush = false): void {
@@ -293,11 +280,10 @@ export function startContentSearch(input: ContentSearchRequest): void {
 
   const task: ContentSearchTask = {
     request,
-    stream: null,
+    controller: new AbortController(),
     finished: false,
     cancelled: false,
     remoteDone: false,
-    exitCode: null,
     processedFiles: 0,
     processedBytes: 0,
     matchedFiles: 0,
@@ -320,7 +306,6 @@ export function startContentSearch(input: ContentSearchRequest): void {
     pending: Buffer.alloc(0),
     stderrDecoder: new StringDecoder('utf8'),
     stderrRemainder: '',
-    listeners: {},
   }
   activeSearches.set(request.requestId, task)
   emitProgress(task, true)
@@ -328,68 +313,41 @@ export function startContentSearch(input: ContentSearchRequest): void {
     + ' ' + [request.rootPath, request.query, request.ignoreCase ? '1' : '0', String(request.maxFileSizeMiB * 1024 * 1024)]
       .map(shellQuote).join(' ')
 
-  try {
-    session.client.exec(command, (error, stream) => {
-      if (error) {
-        finishSearch(task, task.cancelled ? 'cancelled' : 'failed', error.message || '无法启动文本内容搜索')
-        return
+
+  void executeRemoteCommand(session.client, command, {
+    signal: task.controller.signal, collectStdout: false, keepStdinOpen: true, timeoutMs: 86_400_000,
+    maxStdoutBytes: 32 * 1024 * 1024,
+    onStdout: (chunk) => {
+      task.pending = Buffer.concat([task.pending, chunk])
+      if (task.pending.length > 2 * 1024 * 1024) throw new Error('搜索记录超过大小限制')
+      let delimiter = task.pending.indexOf(0)
+      while (delimiter >= 0 && !task.finished) {
+        const field = task.pending.subarray(0, delimiter).toString('utf8')
+        task.pending = task.pending.subarray(delimiter + 1)
+        processField(task, field)
+        delimiter = task.pending.indexOf(0)
       }
-      task.stream = stream
-      if (task.finished) {
-        stream.close()
-        return
-      }
-      task.listeners.data = (chunk) => {
-        task.pending = task.pending.length ? Buffer.concat([task.pending, Buffer.from(chunk)]) : Buffer.from(chunk)
-        let delimiter = task.pending.indexOf(0)
-        while (delimiter >= 0) {
-          const field = task.pending.subarray(0, delimiter).toString('utf8')
-          task.pending = task.pending.subarray(delimiter + 1)
-          try {
-            processField(task, field)
-          } catch (parseError) {
-            stream.close()
-            finishSearch(task, 'failed', parseError instanceof Error ? parseError.message : String(parseError))
-            return
-          }
-          if (task.finished) return
-          delimiter = task.pending.indexOf(0)
-        }
-      }
-      task.listeners.stderr = (chunk) => addStderr(task, Buffer.from(chunk))
-      task.listeners.error = (streamError) => {
-        if (task.cancelled) finishSearch(task, 'cancelled')
-        else finishSearch(task, 'failed', '文本内容搜索连接失败：' + streamError.message)
-      }
-      task.listeners.exit = (code) => {
-        task.exitCode = typeof code === 'number' ? code : null
-      }
-      task.listeners.close = () => {
-        if (task.finished) return
-        addStderr(task, Buffer.alloc(0), true)
-        if (task.cancelled) finishSearch(task, 'cancelled')
-        else if (task.remoteDone && (task.exitCode === 0 || (task.exitCode === 1 && task.incomplete))) finishSearch(task, 'completed')
-        else finishSearch(task, 'failed', task.remoteDone
-          ? '远端文本内容搜索未能完整结束（退出码 ' + (task.exitCode ?? '未知') + '）'
-          : 'SSH 连接中断，文本内容搜索已停止')
-      }
-      stream.on('data', task.listeners.data)
-      stream.stderr.on('data', task.listeners.stderr)
-      stream.once('error', task.listeners.error)
-      stream.once('exit', task.listeners.exit)
-      stream.once('close', task.listeners.close)
-    })
-  } catch (error) {
-    finishSearch(task, 'failed', error instanceof Error ? error.message : String(error))
-  }
+    },
+    onStderr: (chunk) => {
+      if (task.stderrRemainder.length + chunk.length > 256 * 1024) throw new Error('搜索错误输出超过大小限制')
+      addStderr(task, chunk)
+    },
+    onComplete: (error) => {
+      if (task.finished) return
+      addStderr(task, Buffer.alloc(0), true)
+      if (error instanceof RemoteTerminationError && task.cancelled) finishSearch(task, 'cancelled', error.message)
+      else if (task.remoteDone && !task.pending.length && (!error || (error instanceof RemoteCommandError && error.exitCode === 1 && task.incomplete))) finishSearch(task, 'completed')
+      else { task.incomplete = true; finishSearch(task, 'failed', error?.message ?? '远端内容搜索结果不完整') }
+    },
+  }).catch(() => undefined)
+
 }
 
 export function cancelContentSearch(requestId: string): boolean {
   const task = activeSearches.get(requestId)
   if (!task) return false
   task.cancelled = true
-  task.stream?.close()
-  finishSearch(task, 'cancelled')
+  task.controller.abort()
   return true
 }
 
@@ -401,6 +359,6 @@ export function cancelContentSearchesForSession(sessionId: string): void {
 
 export function failContentSearchesForSession(sessionId: string, message: string): void {
   for (const task of activeSearches.values()) {
-    if (task.request.sessionId === sessionId) finishSearch(task, 'failed', message)
+    if (task.request.sessionId === sessionId) { finishSearch(task, 'failed', message); task.controller.abort() }
   }
 }

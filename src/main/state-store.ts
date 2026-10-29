@@ -32,9 +32,8 @@ function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
 }
 
 function validateStoredState(value: unknown, verifyPasswordCiphertexts = false): StoredState {
-  const legacyKeys = ['profiles', 'passwords', 'hostKeys']
-  const keys = [...legacyKeys, 'commandAliases']
-  if (!isRecord(value) || !(hasExactKeys(value, keys) || hasExactKeys(value, legacyKeys)) || !Array.isArray(value.profiles)
+  const keys = ['profiles', 'passwords', 'hostKeys', 'commandAliases']
+  if (!isRecord(value) || !hasExactKeys(value, keys) || !Array.isArray(value.profiles)
     || !isRecord(value.passwords) || !isRecord(value.hostKeys)) {
     throw new Error('服务器配置结构无效')
   }
@@ -147,13 +146,6 @@ export function writeAppSettings(settings: unknown): AppSettings {
 export function readPreviewLimits(): PreviewLimits {
   const { startupConnection: _startupConnection, transferFileConcurrency: _transferFileConcurrency, fileTypeExtensions: _fileTypeExtensions, ...limits } = readAppSettings()
   return limits
-}
-
-export function writePreviewLimits(limits: unknown): PreviewLimits {
-  const appSettings = validateAppSettings({ ...readAppSettings(), ...(limits as Record<string, unknown>) })
-  const { startupConnection: _startupConnection, transferFileConcurrency: _transferFileConcurrency, fileTypeExtensions: _fileTypeExtensions, ...validatedLimits } = appSettings
-  atomicWriteJson(settingsFile, appSettings)
-  return validatedLimits
 }
 
 export function endpointKey(profile: ServerProfile): string {

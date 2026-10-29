@@ -263,7 +263,7 @@ test('pending commands block repeated submissions, expose cancellation and keep 
     assert.deepEqual(view.cancelled, [view.requests[0].requestId])
     assert.equal(view.operations.activeOperation, null)
     assert.ok(view.operations.remoteClipboard)
-    assert.ok(view.notices.some(({ message }) => message === '移动已取消'))
+    assert.ok(view.notices.some(({ message }) => message.startsWith('移动已取消') && message.includes('远端进程状态未确认')))
     assert.ok(view.refreshed.includes('source'))
   } finally { view.unmount() }
 })
@@ -288,7 +288,7 @@ for (const operation of ['copy', 'move', 'extract'] as const) {
         assert.equal(view.operations.activeOperation, null)
         assert.ok(view.notices.some(({ kind, message }) => outcome === 'failed'
           ? kind === 'error' && message === `${label}失败：Permission denied`
-          : message === `${label}${outcome === 'completed' ? '已完成' : '已取消'}`))
+          : outcome === 'completed' ? message === `${label}已完成` : message.startsWith(`${label}已取消`) && message.includes('远端进程状态未确认')))
       } finally {
         await run(() => view.releaseRefresh())
         view.unmount()

@@ -43,12 +43,13 @@ test('dialogs fit window and session bounds with reachable actions at small wind
     IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true },
   })
   const preview = (result: PreviewResult) => fixture(result.type, <PreviewDialog
+    textEncoding="utf8" textReloading={false} onReopenText={noop} onConvertTextToUtf8={noop}
     previewDialog={{ kind: 'ready', result }} textDraft={longText} textDirty textSaving={false} textSaveConfirmation={null}
     imageZoom={1} imagePreviewSize={{ width: 1600, height: 1200 }} imageViewportRef={createRef()} previewImageRef={createRef()}
     onClosePreview={noop} onUpdateTextDraft={noop} onRequestTextSave={noop} onOpenExternalLink={noop} onPreviewImageLoad={noop} onZoomPreviewImage={noop}
   />)
   const fixtures = [
-    preview({ type: 'text', name: '说明文档.txt', content: longText, lineEnding: '\n' }),
+    preview({ type: 'text', name: '说明文档.txt', content: longText, lineEnding: '\n', encoding: 'utf8', bom: false, version: { hash: 'a'.repeat(64), identity: 'fixture' } }),
     preview({ type: 'markdown', name: '说明文档.md', content: longText }),
     preview({ type: 'pdf', name: '说明文档.pdf', url: 'about:blank', token: 'test' }),
     preview({ type: 'image', name: '图片.png', url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1200"/>', token: 'test' }),

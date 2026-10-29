@@ -1,4 +1,5 @@
-import { ipcMain, shell } from 'electron'
+import { shell } from 'electron'
+import { ipcMain } from './trusted-ipc'
 import type { AppSettingsPatch } from '@shared/types'
 import { applyAppSettingsPatch } from '@shared/app-settings'
 import { validateExternalUrl } from '@shared/external-url'

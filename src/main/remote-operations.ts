@@ -114,6 +114,8 @@ function operationCommandParts(
       script: [
         'set -eu',
         'target=$1; shift',
+        '[[ -d "$target" ]] || { printf "%s\\n" "目标不是可用目录" >&2; exit 1; }',
+        'for source in "$@"; do [[ ! -L "$source" && ( -f "$source" || -d "$source" ) ]] || { printf "来源不是普通文件或目录: %s\\n" "$source" >&2; exit 1; }; done',
         ...(intent.operation === 'copy' ? [copyInPlaceScript] : []),
         'pending=()',
         'for source in "$@"; do',
@@ -128,8 +130,8 @@ function operationCommandParts(
         '  fi',
         'done',
         'if (( ${#pending[@]} )); then',
-        '  set -- "${pending[@]}" "$target"',
-        `  ${utility}${optionText ? ' ' + optionText : ''} -- "$@"`,
+        '  set -- "${pending[@]}"',
+        `  ${utility}${optionText ? ' ' + optionText : ''} --target-directory="$target" -- "$@"`,
         'fi',
       ].join('\n'),
       args: [intent.targetDirectory, ...intent.sourcePaths],
@@ -164,7 +166,7 @@ export function executeRemoteOperation(value: OperationExecutionRequest): Promis
   const session = filesSession(intent.sessionId)
   const command = buildOperationCommand(intent, value.strategy)
   const controller = new AbortController()
-  const promise = executeRemoteCommand(session.client, command, { signal: controller.signal, collectStdout: false })
+  const promise = executeRemoteCommand(session.client, command, { signal: controller.signal, timeoutMs: 86_400_000, collectStdout: false })
     .then((): OperationExecutionResult => ({ status: 'completed', requestId: value.requestId, operation: intent.operation, command }))
     .catch((error: unknown): OperationExecutionResult => {
       if (controller.signal.aborted) return { status: 'cancelled', requestId: value.requestId, operation: intent.operation, command }

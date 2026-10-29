@@ -1,4 +1,4 @@
-import type { ClientChannel } from 'ssh2'
+import { executeRemoteCommand } from './ssh-commands'
 import { DEFAULT_APP_SETTINGS } from '../shared/app-settings.ts'
 import type { PerformanceMonitorState, PerformanceSnapshot } from '../shared/types.ts'
 import { createPerformanceSnapshot, parsePerformanceReport } from '../shared/performance.ts'
@@ -21,7 +21,7 @@ interface SessionPerformanceMonitor {
   sessionId: string
   session: ActiveSession
   timer: NodeJS.Timeout | null
-  stream: ClientChannel | null
+  controller: AbortController | null
   previousCpuTicks: number[] | null
   inFlight: boolean
   sampleRequested: boolean
@@ -63,93 +63,16 @@ function pruneHistory(monitor: SessionPerformanceMonitor, now: number): void {
   })
 }
 
-function readRemoteReport(monitor: SessionPerformanceMonitor, generation: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let stream: ClientChannel | null = null
-    let settled = false
-    let exitCode: number | null = null
-    let stdoutBytes = 0
-    let stderrBytes = 0
-    const stdout: Buffer[] = []
-    const stderr: Buffer[] = []
-    const cleanup = () => {
-      clearTimeout(timeout)
-      monitor.session.client.removeListener('error', onClientError)
-      monitor.session.client.removeListener('end', onClientEnd)
-      monitor.session.client.removeListener('close', onClientClose)
-      stream?.removeListener('data', onData)
-      stream?.stderr.removeListener('data', onStderr)
-      stream?.removeListener('error', onStreamError)
-      stream?.removeListener('exit', onExit)
-      stream?.removeListener('close', onClose)
-      if (monitor.stream === stream) monitor.stream = null
-    }
-    const finish = (error?: Error) => {
-      if (settled) return
-      settled = true
-      cleanup()
-      if (error) reject(error)
-      else resolve(Buffer.concat(stdout).toString('utf8'))
-    }
-    const onClientError = (error: Error) => finish(new Error('SSH 连接失败：' + error.message))
-    const onClientEnd = () => finish(new Error('SSH 连接已结束'))
-    const onClientClose = () => finish(new Error('SSH 连接已关闭'))
-    const onData = (chunk: Buffer) => {
-      const data = Buffer.from(chunk)
-      stdoutBytes += data.length
-      if (stdoutBytes > MAX_STDOUT_BYTES) {
-        stream?.close()
-        finish(new Error('远端性能数据超过大小限制'))
-        return
-      }
-      stdout.push(data)
-    }
-    const onStderr = (chunk: Buffer) => {
-      if (stderrBytes >= MAX_STDERR_BYTES) return
-      const data = Buffer.from(chunk).subarray(0, MAX_STDERR_BYTES - stderrBytes)
-      stderrBytes += data.length
-      stderr.push(data)
-    }
-    const onStreamError = (error: Error) => finish(error)
-    const onExit = (code: number | null) => { exitCode = typeof code === 'number' ? code : null }
-    const onClose = () => {
-      if (exitCode === 0) finish()
-      else {
-        const detail = Buffer.concat(stderr).toString('utf8').trim()
-        finish(new Error(detail || '远端性能采集命令失败（退出码 ' + (exitCode ?? '未知') + '）'))
-      }
-    }
-    const timeout = setTimeout(() => {
-      stream?.close()
-      finish(new Error('远端性能采集超时'))
-    }, COMMAND_TIMEOUT_MS)
-
-    monitor.session.client.on('error', onClientError)
-    monitor.session.client.once('end', onClientEnd)
-    monitor.session.client.once('close', onClientClose)
-    try {
-      monitor.session.client.exec(PERFORMANCE_COMMAND, (error, commandStream) => {
-        if (error) {
-          finish(error)
-          return
-        }
-        stream = commandStream
-        monitor.stream = commandStream
-        if (settled || !current(monitor) || monitor.generation !== generation) {
-          commandStream.close()
-          finish(new Error('性能采集已停止'))
-          return
-        }
-        commandStream.on('data', onData)
-        commandStream.stderr.on('data', onStderr)
-        commandStream.once('error', onStreamError)
-        commandStream.once('exit', onExit)
-        commandStream.once('close', onClose)
-      })
-    } catch (error) {
-      finish(error instanceof Error ? error : new Error(String(error)))
-    }
-  })
+async function readRemoteReport(monitor: SessionPerformanceMonitor, generation: number): Promise<string> {
+  const controller = new AbortController()
+  monitor.controller = controller
+  try {
+    if (!current(monitor) || monitor.generation !== generation) throw new Error('性能采集已停止')
+    const result = await executeRemoteCommand(monitor.session.client, PERFORMANCE_COMMAND, {
+      signal: controller.signal, timeoutMs: COMMAND_TIMEOUT_MS, maxStdoutBytes: MAX_STDOUT_BYTES, maxStderrBytes: MAX_STDERR_BYTES,
+    })
+    return result.stdout.toString('utf8')
+  } finally { if (monitor.controller === controller) monitor.controller = null }
 }
 
 function scheduleNextSample(monitor: SessionPerformanceMonitor, sampleStartedAt: number): void {
@@ -221,7 +144,7 @@ function createMonitor(sessionId: string, session: ActiveSession): SessionPerfor
     sessionId,
     session,
     timer: null,
-    stream: null,
+    controller: null,
     previousCpuTicks: null,
     inFlight: false,
     sampleRequested: false,
@@ -290,8 +213,8 @@ export function deactivatePerformanceMonitor(sessionId: string): void {
   monitor.segmentOpen = false
   if (monitor.timer) clearTimeout(monitor.timer)
   monitor.timer = null
-  monitor.stream?.close()
-  monitor.stream = null
+  monitor.controller?.abort()
+  monitor.controller = null
   monitor.state.status = 'inactive'
   monitor.state.message = null
   publish(monitor)
@@ -305,8 +228,8 @@ export function removePerformanceMonitorForSession(sessionId: string): void {
   monitor.sampleRequested = false
   if (monitor.timer) clearTimeout(monitor.timer)
   monitor.timer = null
-  monitor.stream?.close()
-  monitor.stream = null
+  monitor.controller?.abort()
+  monitor.controller = null
   monitors.delete(sessionId)
   nextVersion += 1
 }

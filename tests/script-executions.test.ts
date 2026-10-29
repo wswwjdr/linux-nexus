@@ -12,11 +12,11 @@ class FakeChannel extends EventEmitter {
 
   signal(name: string): void {
     this.signals.push(name)
+    this.close()
   }
 
-  close(): void {
-    this.closeCalls += 1
-  }
+  destroy(): void { if (!this.closeCalls) this.close() }
+  close(): void { this.closeCalls += 1; this.emit('exit', 143); this.emit('close') }
 }
 
 class FakeClient extends EventEmitter {
@@ -90,7 +90,7 @@ test('reports nonzero exit codes and cancels a running channel only once', () =>
   channel.emit('close')
   assert.deepEqual(events.at(-1), {
     type: 'failed', requestId: request.requestId, sessionId: request.sessionId,
-    exitCode: 127, message: '脚本执行失败，退出码 127',
+    exitCode: 127, message: 'not found\n',
   })
 
   const cancelled = createHarness()

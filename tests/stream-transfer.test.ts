@@ -68,9 +68,10 @@ test('uploads bytes through SSH stdin to a temporary file before the selected mv
         modifiedAtMs: attributes.mtimeMs,
       })
     assert.ok(command.includes('mktemp --'))
-    assert.ok(command.includes('cat > "$temporary"'))
+    assert.ok(command.includes('head -c'))
     assert.ok(command.includes('mv -nT -- "$temporary" "$destination"'))
-    assert.deepEqual(Buffer.concat(channel!.input), payload)
+    assert.deepEqual(Buffer.concat(channel!.input).subarray(0, payload.length), payload)
+    assert.match(Buffer.concat(channel!.input).subarray(payload.length).toString(), /^LINUX_NEXUS_COMMIT:[a-f0-9]{64}\n$/)
     assert.equal(progress.reduce((sum, value) => sum + value, 0), payload.length)
   } finally {
     await rm(directory, { recursive: true, force: true })
@@ -97,4 +98,17 @@ test('downloads an SSH stdout stream into a local temporary file and atomically 
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
+})
+
+
+test('concurrent download commits preserve existing files and publish distinct complete names', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nexus-download-race-'))
+  try {
+    const destination = join(directory, 'file.txt')
+    await writeFile(destination, 'original')
+    const client = clientFor((_command, channel) => { channel.onEnd = completed => completed.complete(Buffer.from('new')) })
+    await Promise.all(Array.from({ length: 4 }, () => transferFileStream('download', client, '/file', destination, 3, new AbortController().signal, () => {})))
+    assert.equal(await readFile(destination, 'utf8'), 'original')
+    for (let i = 1; i <= 4; i++) assert.equal(await readFile(join(directory, `file (${i}).txt`), 'utf8'), 'new')
+  } finally { await rm(directory, { recursive: true, force: true }) }
 })

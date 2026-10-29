@@ -1,7 +1,11 @@
 export type TextLineEnding = '\n' | '\r\n' | '\r' | null
+export type TextEncoding = 'utf8' | 'gbk'
+export interface TextFileVersion { hash: string; identity: string }
+export interface TextSaveOptions { version: TextFileVersion; encoding: TextEncoding; bom: boolean; force: boolean }
+export type TextSaveResult = { status: 'saved'; version: TextFileVersion } | { status: 'conflict' }
 
 export type PreviewResult =
-  | { type: 'text'; name: string; content: string; lineEnding: TextLineEnding }
+  | { type: 'text'; name: string; content: string; lineEnding: TextLineEnding; encoding: TextEncoding; bom: boolean; version: TextFileVersion }
   | { type: 'markdown'; name: string; content: string }
   | { type: 'pdf'; name: string; url: string; token: string }
   | { type: 'image'; name: string; url: string; token: string }

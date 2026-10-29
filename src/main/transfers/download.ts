@@ -4,7 +4,7 @@ import { basename, dirname, join, posix } from 'node:path'
 import type { TransferFailure, TransferResult } from '@shared/types'
 import { getMainWindow, messageFromError, type TransferItem } from '../runtime'
 import { readAppSettings } from '../state-store'
-import { collectRemoteTree as collectRemoteTreeEntries, filesSession, remotePathType, remoteFileSize } from '../remote-fs'
+import { iterateRemoteTree, filesSession, remotePathType, remoteFileSize } from '../remote-fs'
 import { transferFileStream } from './stream-transfer'
 import {
   assertWindowsPath,
@@ -183,25 +183,29 @@ export async function downloadEntries(
   for (const remotePath of remotePaths) {
     signal.throwIfAborted()
     const originalName = posix.basename(remotePath)
-    const name = await uniqueDownloadName(destination, originalName, reservedNames)
-    reservedNames.add(name.toLowerCase())
     try {
+      assertWindowsPath(originalName)
+      let name = await uniqueDownloadName(destination, originalName, reservedNames)
+      reservedNames.add(name.toLowerCase())
       const type = await remotePathType(session.client, remotePath)
       if (type === 'file') {
         items.push({ relativePath: name, type, size: await remoteFileSize(session.client, remotePath), remotePath })
         continue
       }
       if (type === 'directory') {
-        const collected = await collectRemoteTreeEntries(session.client, remotePath, signal)
-        items.push(...collected.filter((item) => item.type === 'file' || item.type === 'directory').map((item) => ({
-          ...item,
-          type: item.type as 'file' | 'directory',
-          relativePath: item.relativePath ? posix.join(name, item.relativePath) : name,
-        })))
-        failures.push(...collected.filter((item) => item.type === 'symlink' || item.type === 'other').map((item) => ({
-          path: item.remotePath,
-          message: item.type === 'symlink' ? '目录包含符号链接，无法下载' : '目录包含暂不支持的文件类型',
-        })))
+        // Reserve a directory name exclusively, including between different server queues.
+        for (;;) {
+          try { await mkdir(join(destination, name)); break }
+          catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+            name = await uniqueDownloadName(destination, originalName, reservedNames)
+            reservedNames.add(name.toLowerCase())
+          }
+        }
+        for await (const item of iterateRemoteTree(session.client, remotePath, signal)) {
+          if (item.type === 'file' || item.type === 'directory') items.push({ ...item, type: item.type, relativePath: item.relativePath ? posix.join(name, item.relativePath) : name })
+          else failures.push({ path: item.remotePath, message: item.type === 'symlink' ? '目录包含符号链接，无法下载' : '目录包含暂不支持的文件类型' })
+        }
         continue
       }
       failures.push({

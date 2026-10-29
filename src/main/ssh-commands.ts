@@ -1,246 +1,196 @@
 import type { Client, ClientChannel } from 'ssh2'
 import { shellQuote } from '../shared/shell.ts'
 
-const TERMINATION_GRACE_MS = 2_000
-
+interface ClientTasks {
+  controllers: Set<AbortController>
+  failures: Set<(error: Error) => void>
+  idle: Set<() => void>
+  onError: (error: Error) => void
+  onEnd: () => void
+  onClose: () => void
+}
+const tasks = new WeakMap<Client, ClientTasks>()
+export function cancelClientTasks(client: Client): Promise<void> {
+  const owner = tasks.get(client)
+  if (!owner) return Promise.resolve()
+  const idle = new Promise<void>(resolve => owner.idle.add(resolve))
+  for (const controller of [...owner.controllers]) controller.abort()
+  return idle
+}
+function ownTask(client: Client, controller: AbortController, fail: (error: Error) => void): () => void {
+  let owned = tasks.get(client)
+  if (!owned) {
+    const failures = new Set<(error: Error) => void>()
+    const notify = (error: Error) => { for (const failure of [...failures]) failure(error) }
+    owned = {
+      controllers: new Set(), failures, idle: new Set(),
+      onError: error => notify(new Error('SSH 连接失败：' + error.message)),
+      onEnd: () => notify(new Error('SSH 连接已结束；远端状态未知')),
+      onClose: () => notify(new Error('SSH 连接已关闭；远端状态未知')),
+    }
+    tasks.set(client, owned)
+    client.on('error', owned.onError)
+    client.on('end', owned.onEnd)
+    client.on('close', owned.onClose)
+  }
+  const owner = owned
+  owner.controllers.add(controller)
+  owner.failures.add(fail)
+  return () => {
+    owner.controllers.delete(controller)
+    owner.failures.delete(fail)
+    if (owner.controllers.size === 0) {
+      client.removeListener('error', owner.onError)
+      client.removeListener('end', owner.onEnd)
+      client.removeListener('close', owner.onClose)
+      tasks.delete(client)
+      for (const idle of owner.idle) idle()
+    }
+  }
+}
 export interface RemoteCommandOptions {
   signal?: AbortSignal
   stdin?: AsyncIterable<Uint8Array> | Iterable<Uint8Array>
   onStdin?: (chunk: Buffer) => void
   onStdout?: (chunk: Buffer) => void | Promise<void>
+  onStderr?: (chunk: Buffer) => void
+  onComplete?: (error: Error | undefined, result?: RemoteCommandResult) => void
   collectStdout?: boolean
   maxStdoutBytes?: number
+  maxStderrBytes?: number
   timeoutMs?: number
+  keepStdinOpen?: boolean
 }
-
-export interface RemoteCommandResult {
-  stdout: Buffer
-  stderr: string
-  exitCode: number | null
-}
-
+export interface RemoteCommandResult { stdout: Buffer; stderr: string; exitCode: number | null }
 export class RemoteCommandError extends Error {
   constructor(readonly exitCode: number | null, readonly stderr: string) {
-    super(stderr || `远程命令失败（退出码 ${exitCode ?? '未知'}）`)
+    super(stderr || (exitCode === null ? 'SSH 连接中断，未收到命令退出码；远端状态未知' : `远程命令失败（退出码 ${exitCode}）`))
   }
 }
-
+export class RemoteTerminationError extends Error {
+  constructor(readonly reason: 'cancelled' | 'timeout', readonly remoteState: 'exited' | 'unknown') {
+    super((reason === 'timeout' ? '远程命令执行超时' : '远程命令已取消') + (remoteState === 'unknown' ? '；远端状态未知，可能仍在运行' : '；命令通道已结束，子进程状态未确认'))
+    this.name = reason === 'cancelled' ? 'AbortError' : 'TimeoutError'
+  }
+}
 export function buildRemoteCommand(script: string, args: readonly string[] = []): string {
   return `bash -c ${shellQuote(script)} --${args.length ? ' ' + args.map(shellQuote).join(' ') : ''}`
 }
-
-export function executeRemoteCommand(
-  client: Client,
-  command: string,
-  options: RemoteCommandOptions = {},
-): Promise<RemoteCommandResult> {
+export function executeRemoteCommand(client: Client, command: string, options: RemoteCommandOptions = {}): Promise<RemoteCommandResult> {
   return new Promise((resolve, reject) => {
+    const controller = new AbortController()
+    let releaseOwner = () => {}
+    const abortParent = () => controller.abort()
+    options.signal?.addEventListener('abort', abortParent, { once: true })
     let stream: ClientChannel | null = null
-    let exitCode: number | null = null
     let settled = false
-    let abortedBeforeOpen = false
-    let terminationReason: 'cancelled' | 'timeout' | null = null
-    let terminationSignalSent = false
-    let streamingOutput = false
-    let outputBytes = 0
-    let pendingOutput: Promise<void> = Promise.resolve()
-    let timeout: NodeJS.Timeout | undefined
-    let terminationTimer: NodeJS.Timeout | undefined
-    let onAbort = () => {}
-    const stdout: Buffer[] = []
-    const stderr: Buffer[] = []
-    const cleanup = () => {
-      if (timeout) clearTimeout(timeout)
-      if (terminationTimer) clearTimeout(terminationTimer)
-      options.signal?.removeEventListener('abort', onAbort)
-      client.removeListener('error', onClientError)
-      client.removeListener('end', onClientEnd)
-      client.removeListener('close', onClientClose)
-      stream?.removeListener('data', onStdoutData)
-      stream?.stderr.removeListener('data', onStderrData)
-      stream?.removeListener('error', onStreamError)
-      stream?.stderr.removeListener('error', onStreamError)
-      stream?.removeListener('exit', onExit)
-      stream?.removeListener('close', onClose)
-    }
-    const terminationError = () => new Error(
-      terminationReason === 'timeout' ? '远程命令执行超时' : '远程命令已取消',
-    )
-    const requestTermination = (reason: 'cancelled' | 'timeout') => {
-      terminationReason ??= reason
-      abortedBeforeOpen = true
-      if (!stream) return
-      if (!terminationSignalSent) {
-        terminationSignalSent = true
-        try { stream.signal('TERM') } catch { /* channel may already be closed */ }
-      }
-      if (terminationTimer) return
-      terminationTimer = setTimeout(() => {
-        if (settled) return
-        stream?.close()
-        finish(terminationError())
-      }, TERMINATION_GRACE_MS)
-    }
+    let reason: 'cancelled' | 'timeout' | null = null
+    let exitCode: number | null = null
+    let outputBytes = 0, errorBytes = 0
+    let truncated = false
+    const stdout: Buffer[] = [], stderr: Buffer[] = []
+    let pending: Promise<void> | null = null
+    let cancelInputWait: (() => void) | undefined
+    let timer: NodeJS.Timeout | undefined, grace: NodeJS.Timeout | undefined
+    const asError = (value: unknown) => value instanceof Error ? value : new Error(String(value))
     const finish = (error?: Error) => {
       if (settled) return
       settled = true
-      cleanup()
-      if (error) {
-        reject(error)
-        return
-      }
-      const result = {
-        stdout: options.collectStdout === false ? Buffer.alloc(0) : Buffer.concat(stdout, outputBytes),
-        stderr: Buffer.concat(stderr).toString('utf8'),
-        exitCode,
-      }
-      if (exitCode !== 0) {
-        reject(new RemoteCommandError(exitCode, result.stderr))
-        return
-      }
-      resolve(result)
+      cancelInputWait?.()
+      clearTimeout(timer); clearTimeout(grace)
+      releaseOwner()
+      options.signal?.removeEventListener('abort', abortParent)
+      controller.signal.removeEventListener('abort', cancel)
+      stream?.removeListener('data', onData); stream?.stderr.removeListener('data', onStderr)
+      stream?.removeListener('error', onError); stream?.stderr.removeListener('error', onError)
+      stream?.removeListener('exit', onExit); stream?.removeListener('close', onClose)
+      const result = { stdout: options.collectStdout === false ? Buffer.alloc(0) : Buffer.concat(stdout), stderr: Buffer.concat(stderr).toString('utf8') + (truncated ? '\n[stderr 已截断]' : ''), exitCode }
+      error ??= exitCode === 0 ? undefined : new RemoteCommandError(exitCode, result.stderr)
+      options.onComplete?.(error, result)
+      if (error) reject(error); else resolve(result)
     }
-    const onClientError = (error: Error) => finish(new Error('SSH 连接失败：' + error.message))
-    const onClientEnd = () => finish(new Error('SSH 连接已结束'))
-    const onClientClose = () => finish(new Error('SSH 连接已关闭'))
-    const onStdoutData = (chunk: Buffer) => {
-      const buffer = Buffer.from(chunk)
-      outputBytes += buffer.length
-      if (options.maxStdoutBytes !== undefined && outputBytes > options.maxStdoutBytes) {
-        stream?.close()
-        finish(new Error('服务器命令输出超过允许大小'))
-        return
+    const stop = (why: 'cancelled' | 'timeout') => {
+      reason ??= why
+      if (!stream) { finish(new RemoteTerminationError(reason, 'unknown')); return }
+      if (grace) return
+      // Arm before sending: peers and test transports may acknowledge synchronously.
+      grace = setTimeout(() => { stream?.close(); finish(new RemoteTerminationError(reason!, 'unknown')) }, 2000)
+      try { stream.signal('TERM') } catch { /* The peer may already have closed. */ }
+    }
+    const cancel = () => stop('cancelled')
+    const onError = (error: Error) => {
+      if (settled) return
+      finish(error)
+      try { stream?.signal('TERM') } catch { /* The peer may already have closed. */ }
+      stream?.close()
+    }
+    const onData = (chunk: Buffer) => {
+      const bytes = Buffer.from(chunk)
+      outputBytes += bytes.length
+      if (outputBytes > (options.maxStdoutBytes ?? (options.collectStdout === false ? Infinity : 64 * 1024 * 1024))) {
+        onError(new Error('服务器命令输出超过允许大小；远端状态未知')); return
       }
-      if (options.collectStdout !== false) stdout.push(buffer)
-      if (options.onStdout) {
-        stream?.pause()
-        streamingOutput = true
-        try {
-          pendingOutput = Promise.resolve(options.onStdout(buffer))
-        } catch (error) {
-          stream?.close()
-          finish(error instanceof Error ? error : new Error(String(error)))
-          return
+      if (options.collectStdout !== false) stdout.push(bytes)
+      try {
+        const output = options.onStdout?.(bytes)
+        if (output) {
+          stream!.pause()
+          pending = (pending ?? Promise.resolve()).then(() => output)
+          void pending.then(() => { if (!settled) stream!.resume() }, error => onError(asError(error)))
         }
-        void pendingOutput.then(() => {
-          if (!settled && streamingOutput) {
-            streamingOutput = false
-            stream?.resume()
-          }
-        }, (error: unknown) => {
-          stream?.close()
-          finish(error instanceof Error ? error : new Error(String(error)))
-        })
-      }
+      } catch (error) { onError(asError(error)) }
     }
-    const onStderrData = (chunk: Buffer) => stderr.push(Buffer.from(chunk))
-    const onStreamError = (error: Error) => finish(error)
+    const onStderr = (chunk: Buffer) => {
+      try { options.onStderr?.(chunk) } catch (error) { onError(asError(error)); return }
+      const remaining = (options.maxStderrBytes ?? 256 * 1024) - errorBytes
+      if (chunk.length > remaining) truncated = true
+      if (remaining > 0) { const bytes = Buffer.from(chunk.subarray(0, remaining)); stderr.push(bytes); errorBytes += bytes.length }
+    }
     const onExit = (code: number | null) => { exitCode = typeof code === 'number' ? code : null }
     const onClose = (code: number | null) => {
-      void pendingOutput.then(() => {
-        if (terminationReason) {
-          finish(terminationError())
-          return
-        }
+      const complete = () => {
         if (exitCode === null && typeof code === 'number') exitCode = code
-        finish()
-      }, (error: unknown) => finish(error instanceof Error ? error : new Error(String(error))))
+        finish(reason ? new RemoteTerminationError(reason, exitCode === null ? 'unknown' : 'exited') : undefined)
+      }
+      if (pending) void pending.then(complete, error => finish(asError(error))); else complete()
     }
-
-    onAbort = () => {
-      requestTermination('cancelled')
-    }
-    if (options.signal?.aborted) {
-      reject(new Error('远程命令已取消'))
-      return
-    }
-    options.signal?.addEventListener('abort', onAbort, { once: true })
-    if (options.timeoutMs !== undefined) {
-      timeout = setTimeout(() => requestTermination('timeout'), options.timeoutMs)
-    }
-    client.on('error', onClientError)
-    client.once('end', onClientEnd)
-    client.once('close', onClientClose)
-
+    releaseOwner = ownTask(client, controller, finish)
+    controller.signal.addEventListener('abort', cancel, { once: true })
+    if (options.signal?.aborted) { cancel(); return }
+    timer = setTimeout(() => stop('timeout'), options.timeoutMs ?? 30_000)
     try {
-      client.exec(command, (error, commandStream) => {
-        if (error) {
-          finish(error)
-          return
-        }
-        stream = commandStream
-        if (settled) {
-          stream.destroy()
-          return
-        }
-        stream.on('data', onStdoutData)
-        stream.stderr.on('data', onStderrData)
-        stream.once('error', onStreamError)
-        stream.stderr.once('error', onStreamError)
-        stream.once('exit', onExit)
-        stream.once('close', onClose)
-        if (terminationReason) {
-          requestTermination(terminationReason)
-          return
-        }
-        if (abortedBeforeOpen) {
-          onAbort()
-          return
-        }
-        if (options.stdin) {
-          void (async () => {
-            try {
-              for await (const chunk of options.stdin!) {
-                if (settled || options.signal?.aborted) break
-                const buffer = Buffer.from(chunk)
-                if (!stream!.write(buffer)) {
-                  await new Promise<void>((ready, failed) => {
-                    const channel = stream!
-                    const cleanupDrain = () => {
-                      channel.removeListener('drain', onDrain)
-                      channel.removeListener('close', onChannelClose)
-                      channel.removeListener('error', onChannelError)
-                      options.signal?.removeEventListener('abort', onSignalAbort)
-                    }
-                    const onDrain = () => { cleanupDrain(); ready() }
-                    const onChannelClose = () => { cleanupDrain(); failed(new Error('SSH 命令通道已关闭')) }
-                    const onChannelError = (error: Error) => { cleanupDrain(); failed(error) }
-                    const onSignalAbort = () => { cleanupDrain(); failed(new Error('远程命令已取消')) }
-                    channel.once('drain', onDrain)
-                    channel.once('close', onChannelClose)
-                    channel.once('error', onChannelError)
-                    options.signal?.addEventListener('abort', onSignalAbort, { once: true })
-                    if (settled || channel.destroyed || options.signal?.aborted) onSignalAbort()
-                  })
-                }
-                options.onStdin?.(buffer)
-              }
-              if (!settled) stream!.end()
-            } catch (stdinError) {
-              if (terminationReason || options.signal?.aborted) {
-                requestTermination('cancelled')
-                return
-              }
-              try { stream?.signal('TERM') } catch { /* channel may already be closed */ }
-              stream?.close()
-              finish(stdinError instanceof Error ? stdinError : new Error(String(stdinError)))
+      client.exec(command, (error, channel) => {
+        if (error) { finish(error); return }
+        stream = channel
+        if (settled) { try { channel.signal('TERM') } catch {} channel.destroy(); return }
+        channel.on('data', onData); channel.stderr.on('data', onStderr)
+        channel.once('error', onError); channel.stderr.once('error', onError)
+        channel.once('exit', onExit); channel.once('close', onClose)
+        if (options.stdin) void (async () => {
+          try {
+            for await (const value of options.stdin!) {
+              if (settled || controller.signal.aborted) return
+              const bytes = Buffer.from(value)
+              if (!channel.write(bytes)) await new Promise<void>((ready, failed) => {
+                const cleanup = () => { cancelInputWait = undefined; channel.removeListener('drain', drain); channel.removeListener('close', closed); channel.removeListener('error', failedStream); controller.signal.removeEventListener('abort', aborted) }
+                const drain = () => { cleanup(); ready() }
+                const closed = () => { cleanup(); failed(new Error('SSH 命令通道已关闭')) }
+                const failedStream = (error: Error) => { cleanup(); failed(error) }
+                const aborted = () => { cleanup(); failed(new RemoteTerminationError('cancelled', 'unknown')) }
+                cancelInputWait = aborted
+                channel.once('drain', drain); channel.once('close', closed); channel.once('error', failedStream); controller.signal.addEventListener('abort', aborted, { once: true })
+                if (settled || controller.signal.aborted) aborted()
+              })
+              options.onStdin?.(bytes)
             }
-          })()
-        } else {
-          stream.end()
-        }
+            if (!settled) channel.end()
+          } catch (error) { onError(asError(error)) }
+        })()
+        else if (!options.keepStdinOpen) channel.end()
       })
-    } catch (error) {
-      finish(error instanceof Error ? error : new Error(String(error)))
-    }
+    } catch (error) { finish(asError(error)) }
   })
 }
-
-export async function runRemoteCommand(
-  client: Client,
-  script: string,
-  args: readonly string[] = [],
-  options: RemoteCommandOptions = {},
-): Promise<RemoteCommandResult> {
+export function runRemoteCommand(client: Client, script: string, args: readonly string[] = [], options: RemoteCommandOptions = {}): Promise<RemoteCommandResult> {
   return executeRemoteCommand(client, buildRemoteCommand(script, args), options)
 }

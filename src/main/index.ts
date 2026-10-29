@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, Menu, protocol } from 'electron'
 import { mkdir, rm } from 'node:fs/promises'
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, rmdirSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { stopAllSessions } from './connections'
 import { registerIpc } from './ipc'
@@ -35,23 +35,8 @@ if (!hasSingleInstanceLock) {
   app.on('second-instance', focusMainWindow)
 }
 
-function migratePreviousApplicationData(dataDirectory: string): void {
-  if (!app.isPackaged) return
-  const previousDataDirectory = join(app.getPath('appData'), 'Linux Nexus')
-  if (!existsSync(previousDataDirectory)) return
-
-  for (const name of ['servers.json', 'settings.json', 'session', 'temp', 'logs', 'crash-dumps']) {
-    const source = join(previousDataDirectory, name)
-    const destination = join(dataDirectory, name)
-    if (existsSync(source) && !existsSync(destination)) renameSync(source, destination)
-  }
-
-  if (readdirSync(previousDataDirectory).length === 0) rmdirSync(previousDataDirectory)
-}
-
 function configureApplicationData(dataDirectory: string): void {
   mkdirSync(dataDirectory, { recursive: true })
-  migratePreviousApplicationData(dataDirectory)
   const sessionDirectory = join(dataDirectory, 'session')
   const temporaryDirectory = join(dataDirectory, 'temp')
   const logsDirectory = join(dataDirectory, 'logs')
@@ -99,6 +84,14 @@ function createWindow(): void {
   })
   window.setMenu(null)
   setMainWindow(window)
+  window.webContents.on('will-navigate', event => event.preventDefault())
+  window.webContents.on('will-redirect', event => event.preventDefault())
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(details.isMainFrame && details.requestingUrl === window.webContents.getURL() && contents === window.webContents && ['clipboard-read', 'clipboard-sanitized-write'].includes(permission))
+  })
+  window.webContents.session.setPermissionCheckHandler((contents, permission, _origin, details) =>
+    details.isMainFrame && details.requestingUrl === window.webContents.getURL() && contents === window.webContents && ['clipboard-read', 'clipboard-sanitized-write'].includes(permission))
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -110,7 +103,6 @@ function createWindow(): void {
     stopAllPerformanceMonitors()
     setMainWindow(null)
     clearPreviewAssets()
-    void rm(join(app.getPath('temp'), 'linux-nexus-preview'), { recursive: true, force: true })
   })
 
   if (focusWindowWhenCreated) {
@@ -158,16 +150,22 @@ app.whenReady().then(async () => {
   app.exit(1)
 })
 
-app.on('before-quit', () => {
-  clearPreviewAssets()
-  stopAllSessions()
-})
-
-app.on('will-quit', () => {
-  if (hasSingleInstanceLock) {
-    rmSync(join(app.getPath('temp'), 'linux-nexus-preview'), { recursive: true, force: true })
-    rmSync(join(app.getPath('temp'), 'linux-nexus-downloads'), { recursive: true, force: true })
-  }
+let quitting = false
+app.on('before-quit', event => {
+  if (!hasSingleInstanceLock || quitting) return
+  event.preventDefault()
+  quitting = true
+  void (async () => {
+    await stopAllSessions()
+    clearPreviewAssets()
+    for (const name of ['linux-nexus-preview', 'linux-nexus-downloads']) {
+      await rm(join(app.getPath('temp'), name), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+    }
+    app.quit()
+  })().catch(error => {
+    dialog.showErrorBox('退出清理失败', messageFromError(error))
+    app.exit(1)
+  })
 })
 
 app.on('window-all-closed', () => {

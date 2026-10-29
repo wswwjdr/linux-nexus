@@ -12,6 +12,8 @@ import type {
   UploadExecutionRequest,
   PreviewResult,
   PreviewType,
+  TextEncoding,
+  TextSaveOptions,
   PerformanceMonitorState,
   AppSettings,
   AppSettingsPatch,
@@ -82,11 +84,11 @@ const api: RemoteFilesApi = {
     ipcRenderer.invoke('files:path-copy', sessionId, remotePath),
   deleteRemoteEntries: (sessionId: string, remotePaths: string[]) =>
     ipcRenderer.invoke('files:delete', sessionId, remotePaths),
-  previewFile: (sessionId: string, remotePath: string, type: PreviewType): Promise<PreviewResult> =>
-    ipcRenderer.invoke('files:preview', sessionId, remotePath, type),
+  previewFile: (sessionId: string, remotePath: string, type: PreviewType, encoding?: TextEncoding): Promise<PreviewResult> =>
+    ipcRenderer.invoke('files:preview', sessionId, remotePath, type, encoding),
   openExternalUrl: (url: string): Promise<void> => ipcRenderer.invoke('shell:open-external', url),
-  saveTextFile: (sessionId: string, remotePath: string, content: string, lineEnding) =>
-    ipcRenderer.invoke('files:text-save', sessionId, remotePath, content, lineEnding),
+  saveTextFile: (sessionId: string, remotePath: string, content: string, lineEnding, options: TextSaveOptions) =>
+    ipcRenderer.invoke('files:text-save', sessionId, remotePath, content, lineEnding, options),
   readLogPreview: (sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number): Promise<LogPreviewPage> =>
     ipcRenderer.invoke('files:preview-log', sessionId, remotePath, beforeOffset, snapshotSize),
   releasePreview: (token: string) => ipcRenderer.invoke('files:preview-release', token),

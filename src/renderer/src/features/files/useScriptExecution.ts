@@ -48,7 +48,7 @@ export function useScriptExecution({
         return { ...current, output: [...current.output, { stream: event.stream, data: event.data }] }
       }
       if (event.type === 'completed') return { ...current, status: 'completed', message: '退出码 0' }
-      if (event.type === 'cancelled') return { ...current, status: 'cancelled', message: null }
+      if (event.type === 'cancelled') return { ...current, status: 'cancelled', message: event.message }
       return { ...current, status: 'failed', message: event.message }
     })
   }), [])

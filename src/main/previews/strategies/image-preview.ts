@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { mkdir, unlink } from 'node:fs/promises'
 import { extname, join } from 'node:path'
-import { once } from 'node:events'
+import { waitForDrain } from '../../stream-utils'
 import { finished } from 'node:stream/promises'
 import type { PreviewResult } from '@shared/types'
 import { previewMimeType } from '@shared/preview-mime-type'
@@ -31,7 +31,7 @@ export const imagePreviewStrategy: PreviewStrategy<ImagePreviewResult> = {
         onStdout: async (chunk) => {
           received += chunk.length
           if (received > limitBytes) throw previewSizeError(limitMiB)
-          if (!output.write(chunk)) await once(output, 'drain')
+          if (!output.write(chunk)) await waitForDrain(output)
         },
       })
       output.end()

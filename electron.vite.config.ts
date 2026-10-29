@@ -21,7 +21,13 @@ export default defineConfig({
   },
   renderer: {
     base: './',
-    plugins: [react()],
+    plugins: [react(), {
+      name: 'application-csp',
+      transformIndexHtml(_html, context) {
+        const scripts = context.server ? "'self' 'unsafe-inline'" : "'self'"
+        return [{ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: `default-src 'none'; script-src ${scripts}; style-src 'self' 'unsafe-inline'; img-src 'self' remote-preview: data:; media-src remote-preview:; frame-src remote-preview:; object-src remote-preview:; connect-src 'self' ${context.server ? 'ws: http://localhost:* http://127.0.0.1:*' : ''}; font-src 'self' data:; base-uri 'none'; form-action 'none'` }, injectTo: 'head-prepend' }]
+      },
+    }],
     resolve: {
       alias: {
         '@': resolve('src/renderer/src'),

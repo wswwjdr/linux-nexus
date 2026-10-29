@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import test from 'node:test'
 import type { Client, ClientChannel } from 'ssh2'
-import { buildRemoteCommand, executeRemoteCommand, RemoteCommandError, runRemoteCommand } from '../src/main/ssh-commands.ts'
+import { buildRemoteCommand, executeRemoteCommand, RemoteCommandError, cancelClientTasks, runRemoteCommand } from '../src/main/ssh-commands.ts'
 import { shellQuote } from '../src/shared/shell.ts'
 
 class MockChannel extends EventEmitter {
@@ -145,4 +145,75 @@ test('terminates a command when its timeout expires', async () => {
 
   await assert.rejects(executeRemoteCommand(client, 'sleep 60', { timeoutMs: 5 }), /超时/)
   assert.deepEqual(channel?.signals, ['TERM'])
+})
+
+
+test('timeouts before channel open settle and destroy a late channel without starting stdin', async () => {
+  const client = new EventEmitter() as Client & EventEmitter
+  let callback!: (error: undefined, channel: ClientChannel) => void
+  client.exec = (_command: string, next: typeof callback) => { callback = next; return client }
+  await assert.rejects(executeRemoteCommand(client, 'true', { timeoutMs: 5 }), /超时.*远端状态未知/)
+  const channel = new MockChannel()
+  callback(undefined, channel as unknown as ClientChannel)
+  assert.equal(channel.destroyed, true)
+  assert.equal(client.listenerCount('error'), 0)
+})
+
+test('bounds stderr and exposes truncation without changing the exit status', async () => {
+  const client = mockClient(() => {
+    const channel = new MockChannel()
+    channel.onEnd = current => current.complete(Buffer.alloc(0), Buffer.alloc(1024, 65), 1)
+    return channel
+  })
+  await assert.rejects(executeRemoteCommand(client, 'true', { maxStderrBytes: 16 }), error => {
+    assert.ok(error instanceof RemoteCommandError)
+    assert.equal(error.stderr, 'A'.repeat(16) + '\n[stderr 已截断]')
+    return true
+  })
+})
+
+
+test('sixteen concurrent commands share one connection observer and all fail on disconnect', async () => {
+  const client = mockClient(() => new MockChannel())
+  const commands = Array.from({ length: 16 }, () => executeRemoteCommand(client, 'sleep 1'))
+  assert.equal(client.listenerCount('error'), 1)
+  assert.equal(client.listenerCount('close'), 1)
+  client.emit('close')
+  const results = await Promise.allSettled(commands)
+  assert.ok(results.every(result => result.status === 'rejected'))
+  assert.equal(client.listenerCount('error'), 0)
+})
+
+test('cancellation without an exit acknowledgement reports unknown state and releases ownership', async () => {
+  const client = mockClient(() => {
+    const channel = new MockChannel()
+    channel.signal = () => {}
+    channel.close = () => {}
+    return channel
+  })
+  const controller = new AbortController()
+  const command = executeRemoteCommand(client, 'ignored TERM', { signal: controller.signal })
+  controller.abort()
+  await assert.rejects(command, /远端状态未知/)
+  assert.equal(client.listenerCount('close'), 0)
+})
+
+
+test('connection shutdown waits for command acknowledgement before reporting idle', async () => {
+  let channel!: MockChannel
+  const client = mockClient(() => {
+    channel = new MockChannel()
+    channel.signal = () => {}
+    return channel
+  })
+  const command = executeRemoteCommand(client, 'sleep 1').catch(error => error)
+  let idle = false
+  const shutdown = cancelClientTasks(client).then(() => { idle = true })
+  await Promise.resolve()
+  assert.equal(idle, false)
+  channel.emit('exit', 143)
+  channel.emit('close', 143)
+  await shutdown
+  assert.equal(idle, true)
+  assert.match((await command).message, /命令通道已结束/)
 })

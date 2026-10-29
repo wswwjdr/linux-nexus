@@ -1,3 +1,4 @@
+import { useVirtualRows } from '@/hooks/useVirtualRows'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent, type RefObject } from 'react'
 import { AlertTriangle, File, LoaderCircle, Search } from 'lucide-react'
 import type {
@@ -33,7 +34,9 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
   const historyKey = CONTENT_HISTORY_KEY + profileId
   const [conditions, setConditions] = useState(() => initialContentConditions(currentPath))
   const [history, setHistory] = useState(() => readSearchHistory(historyKey, isContentConditions))
+  const resultsViewportRef = useRef<HTMLDivElement>(null)
   const [results, setResults] = useState<ContentSearchResult[]>([])
+  const virtual = useVirtualRows(resultsViewportRef, results.length, 220)
   const [menu, setMenu] = useState<ResultMenuState | null>(null)
   const [progress, setProgress] = useState<ContentSearchProgress>(emptyContentProgress)
   const [status, setStatus] = useState<SearchStatus>('idle')
@@ -274,10 +277,12 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
           </div>
           {progress.currentPath && <div className="search-progress-path" title={progress.currentPath}>{progress.currentPath}</div>}
         </div>
-        <div className="search-results-list content-search-results-list" aria-live="off" onScroll={() => setMenu(null)}>
-          {results.map((result) => (
+        <div ref={resultsViewportRef} className="search-results-list content-search-results-list" aria-live="off" onScroll={() => setMenu(null)}>
+          {virtual.before > 0 && <div aria-hidden="true" style={{ height: virtual.before, flexShrink: 0 }} />}
+          {results.slice(virtual.first, virtual.last).map((result) => (
             <button
               className="search-result content-search-result"
+              style={{ height: 213, minHeight: 213, flexShrink: 0, overflow: 'auto' }}
               key={result.path}
               type="button"
               aria-haspopup="menu"
@@ -302,6 +307,7 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
               </span>
             </button>
           ))}
+          {virtual.after > 0 && <div aria-hidden="true" style={{ height: virtual.after, flexShrink: 0 }} />}
           {results.length === 0 && (
             <div className="search-results-empty">
               {running ? <LoaderCircle className="spin" size={20} /> : <Search size={20} />}

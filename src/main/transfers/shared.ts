@@ -138,7 +138,7 @@ export async function collectLocalTree(localRoot: string, signal: AbortSignal): 
 }
 
 export function assertWindowsPath(relativePath: string): void {
-  for (const name of relativePath.split(/[\/\\]/)) {
+  for (const name of relativePath.split('/')) {
     if (!name) continue
     if (/[<>:"/\\|?*\u0000-\u001f]/.test(name) || /[. ]$/.test(name) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(name)) {
       throw new Error('Windows 不支持此文件名，无法下载：' + name)
@@ -202,7 +202,8 @@ export function cancelTransfersForSession(sessionId: string) {
 
 export function localDestination(destinationRoot: string, relativePath: string): string {
   const root = resolve(destinationRoot)
-  const destination = relativePath ? resolve(root, ...relativePath.split(/[\\/]/)) : root
+  assertWindowsPath(relativePath)
+  const destination = relativePath ? resolve(root, ...relativePath.split('/')) : root
   const fromRoot = relative(root, destination)
   if (fromRoot === '..' || fromRoot.startsWith('..' + sep) || isAbsolute(fromRoot)) {
     throw new Error('下载路径无效：' + relativePath)

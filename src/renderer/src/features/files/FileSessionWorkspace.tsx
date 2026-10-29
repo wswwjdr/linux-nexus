@@ -161,6 +161,10 @@ export default function FileSessionWorkspace({
 
       <PreviewDialog
         previewDialog={preview.previewDialog}
+        textReloading={preview.textReloading}
+        textEncoding={preview.textEncoding}
+        onReopenText={(encoding) => void preview.reopenText(encoding)}
+        onConvertTextToUtf8={preview.convertTextToUtf8}
         textDraft={preview.textDraft}
         textDirty={preview.textDirty}
         textSaving={preview.textSaving}
@@ -220,7 +224,7 @@ export default function FileSessionWorkspace({
           details={[{ label: '远程路径', value: preview.textSaveConfirmation.path }]}
           description="保存将用当前编辑的内容替换服务器上的文件。"
           tone="warning"
-          confirmLabel="保存修改"
+          confirmLabel={preview.textConflict ? "强制覆盖服务器文件" : "保存修改"}
           busyLabel="正在保存"
           error={preview.textSaveError}
           errorLabel="保存失败"

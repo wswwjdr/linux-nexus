@@ -1,5 +1,5 @@
 import { posix } from 'node:path'
-import type { PreviewLimits, PreviewResult } from '@shared/types'
+import type { PreviewLimits, PreviewResult, TextEncoding } from '@shared/types'
 import { previewTypes, previewTypesForFile } from '@shared/preview-file-type'
 import { readAppSettings } from '../state-store'
 import { filesSession, normalizedRemotePath, remotePathType, remoteFileSize } from '../remote-fs'
@@ -39,7 +39,8 @@ function previewStrategyFor(type: PreviewType): PreviewStrategy {
   return strategy
 }
 
-export async function previewFile(sessionId: string, remotePath: string, type: PreviewType): Promise<PreviewResult> {
+export async function previewFile(sessionId: string, remotePath: string, type: PreviewType, encoding?: TextEncoding): Promise<PreviewResult> {
+  if (encoding !== undefined && encoding !== 'utf8' && encoding !== 'gbk') throw new Error('文本编码无效')
   const session = filesSession(sessionId)
   if (!previewTypes.includes(type)) throw new Error('预览类型无效')
   const normalizedPath = normalizedRemotePath(remotePath)
@@ -65,5 +66,6 @@ export async function previewFile(sessionId: string, remotePath: string, type: P
     size,
     limitBytes,
     limitMiB,
+    encoding,
   })
 }

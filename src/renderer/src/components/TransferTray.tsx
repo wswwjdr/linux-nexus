@@ -34,7 +34,7 @@ export default function TransferTray({ sessionId, transfers, onCancel, onDismiss
           : hasErrors
             ? `${label}结束 · ${job.completedFiles} 个文件成功 · ${job.failures.length} 项失败`
             : job.state === 'cancelled'
-              ? '已取消'
+              ? '已取消 · 远端状态未确认'
               : job.state === 'queued'
                 ? '排队中'
                 : job.state === 'cancelling'

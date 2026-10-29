@@ -47,8 +47,8 @@ test('counts only whole-line matches for safe deletion', () => {
   assert.equal(countExactLines(`${definition}\n${definition}\n`, definition), 2)
 })
 
-test('treats legacy server state as having no alias snapshots', () => {
-  assert.deepEqual(normalizeStoredCommandAliases(undefined, new Set(['server-1'])), {})
+test('rejects missing alias snapshots instead of accepting legacy state', () => {
+  assert.throws(() => normalizeStoredCommandAliases(undefined, new Set(['server-1'])))
   assert.throws(() => normalizeStoredCommandAliases({ removed: {
     profileId: 'removed', aliases: [], syncedAt: null, status: 'unsynced',
   } }, new Set(['server-1'])))
