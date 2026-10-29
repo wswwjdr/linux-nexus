@@ -483,6 +483,9 @@ export default function App() {
     sessionContextMenu,
     sortedEntries,
     canPasteRemote,
+    onSelectedPathsChange: (selectedPaths) => {
+      if (activeSession) patchSession(activeSession.id, { selectedPaths })
+    },
     copyRemoteSelection,
     cutRemoteSelection,
     pasteRemoteEntries: () => pasteRemoteEntries(currentPath, 'force'),

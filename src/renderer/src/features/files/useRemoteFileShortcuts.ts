@@ -11,6 +11,7 @@ interface UseRemoteFileShortcutsOptions {
   sessionContextMenu: SessionContextMenuState | null
   sortedEntries: RemoteEntry[]
   canPasteRemote: boolean
+  onSelectedPathsChange: (paths: string[]) => void
   copyRemoteSelection: (entries: RemoteEntry[]) => void
   cutRemoteSelection: (entries: RemoteEntry[]) => void
   pasteRemoteEntries: () => void
@@ -25,6 +26,7 @@ export function useRemoteFileShortcuts({
   sessionContextMenu,
   sortedEntries,
   canPasteRemote,
+  onSelectedPathsChange,
   copyRemoteSelection,
   cutRemoteSelection,
   pasteRemoteEntries,
@@ -43,6 +45,12 @@ export function useRemoteFileShortcuts({
       const target = event.target
       if (target instanceof HTMLElement
         && (target.isContentEditable || target.closest('input, textarea, select, [contenteditable="true"]'))) return
+
+      if (key === 'a') {
+        event.preventDefault()
+        onSelectedPathsChange(sortedEntries.map((entry) => entry.path))
+        return
+      }
 
       if (key === 'c' || key === 'x') {
         const selectedPaths = new Set(activeSession.selectedPaths)
@@ -71,6 +79,7 @@ export function useRemoteFileShortcuts({
     copyRemoteSelection,
     cutRemoteSelection,
     modalOpen,
+    onSelectedPathsChange,
     pasteRemoteEntries,
     sessionContextMenu,
     sortedEntries,

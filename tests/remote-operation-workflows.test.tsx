@@ -84,6 +84,9 @@ async function mountWorkflow({ hold = false, failure = '', holdRefresh = false }
       modalOpen: false,
       workspaceOpenSessionIds: new Set(), browserContextMenu: null, sessionContextMenu: null,
       sortedEntries: sources, canPasteRemote: operations.canPasteRemote,
+      onSelectedPathsChange: (selectedPaths) => {
+        sessionsRef.current[0] = { ...sessionsRef.current[0], selectedPaths }
+      },
       copyRemoteSelection: operations.copyRemoteSelection, cutRemoteSelection: operations.cutRemoteSelection,
       pasteRemoteEntries: () => operations.pasteRemoteEntries(activeSession.currentPath, 'force'),
     })

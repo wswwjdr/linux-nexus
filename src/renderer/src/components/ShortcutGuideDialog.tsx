@@ -22,6 +22,7 @@ const shortcutGroups: ShortcutGroup[] = [
       { bindings: [['Ctrl', 'F']], action: '文本或倒序预览中打开内容搜索' },
       { bindings: [['Enter'], ['Shift', 'Enter']], action: '文本搜索框中定位下一处 / 上一处' },
       { bindings: [['F3'], ['Shift', 'F3']], action: '文本预览中定位下一处 / 上一处' },
+      { bindings: [['Ctrl', 'A']], action: '全选当前目录中的条目' },
       { bindings: [['Ctrl', 'C']], action: '复制选中的文件或文件夹' },
       { bindings: [['Ctrl', 'X']], action: '剪切选中的文件或文件夹' },
       { bindings: [['Ctrl', 'V']], action: '粘贴到当前目录，覆盖同名文件' },
