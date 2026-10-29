@@ -261,7 +261,7 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
         {(progress.skippedLargeFiles > 0 || progress.skippedBinaryFiles > 0 || progress.readErrors > 0) && (
           <div className="search-incomplete-notice search-content-notices">
             {progress.skippedLargeFiles > 0 && <span><AlertTriangle size={14} /> 已跳过 {progress.skippedLargeFiles.toLocaleString()} 个超出大小上限的文件</span>}
-            {progress.skippedBinaryFiles > 0 && <span><AlertTriangle size={14} /> 已忽略 {progress.skippedBinaryFiles.toLocaleString()} 个二进制匹配文件</span>}
+            {progress.skippedBinaryFiles > 0 && <span><AlertTriangle size={14} /> 已跳过 {progress.skippedBinaryFiles.toLocaleString()} 个包含匹配内容的二进制文件</span>}
             {progress.readErrors > 0 && <span><AlertTriangle size={14} /> {progress.readErrors.toLocaleString()} 个路径读取失败，结果可能不完整</span>}
           </div>
         )}

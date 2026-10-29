@@ -251,7 +251,7 @@ export function SettingsDialog(props: Pick<DialogLayerProps, "settingsForm" | "p
                             ><Trash2 size={14} /></button>
                           </div>
                         )) : (
-                          <div className="command-alias-empty">{aliasSnapshot?.status === 'synced' ? '服务器当前没有 alias' : '尚未同步服务器别名'}</div>
+                          <div className="command-alias-empty">{aliasSnapshot?.status === 'synced' ? '服务器当前没有命令别名' : '尚未同步服务器别名'}</div>
                         )}
                       </div>
                       <div className="command-alias-add-row">
@@ -263,7 +263,7 @@ export function SettingsDialog(props: Pick<DialogLayerProps, "settingsForm" | "p
                           <span>实际命令</span>
                           <input autoCapitalize="none" autoComplete="off" disabled={aliasOperationBusy || !aliasProfileId} value={aliasCommand} onChange={(event) => onUpdateAliasCommand(event.target.value)} placeholder="例如 ls -alF" />
                         </label>
-                        <button type="button" className="primary-button command-alias-add" disabled={aliasOperationBusy || !aliasProfileId || aliasSnapshot?.status !== 'synced'} onClick={onAddAlias} title="新增 alias 命令" aria-label="新增 alias 命令"><Plus size={15} />新增</button>
+                        <button type="button" className="primary-button command-alias-add" disabled={aliasOperationBusy || !aliasProfileId || aliasSnapshot?.status !== 'synced'} onClick={onAddAlias} title="新增命令别名" aria-label="新增命令别名"><Plus size={15} />新增</button>
                       </div>
                       <p className="command-alias-note">仅支持 Bash。新增和删除会修改服务器的 ~/.bashrc，并在新开的终端中生效。</p>
                     </details>

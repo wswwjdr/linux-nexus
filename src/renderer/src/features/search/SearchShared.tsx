@@ -47,7 +47,7 @@ export function SearchScopeControl({ scope, rootPath, currentPath, disabled, onS
             autoComplete="off"
             spellCheck={false}
           />
-          {!validCustomPath && <span className="search-field-error">请输入规范化的绝对路径</span>}
+          {!validCustomPath && <span className="search-field-error">请输入以 / 开头的完整路径，例如 /home/user，不要包含 .、.. 或多余的 /</span>}
         </label>
       ) : (
         <div className="search-scope-path" title={rootPath}>{rootPath}</div>

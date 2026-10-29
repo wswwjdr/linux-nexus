@@ -68,7 +68,7 @@ test('renders disabled commands accessibly and supports Home, End and arrow navi
   assert.equal(document.activeElement, buttons[0])
   const pasteTrigger = menu.host.querySelector<HTMLButtonElement>('[data-submenu-trigger="paste-strategy"]')!
   assert.equal(pasteTrigger.disabled, true)
-  assert.match(pasteTrigger.getAttribute('aria-label') ?? '', /剪贴板为空/)
+  assert.match(pasteTrigger.getAttribute('aria-label') ?? '', /当前无法粘贴/)
   act(() => pasteTrigger.click())
   assert.equal(menu.host.querySelector('[data-submenu-panel="paste-strategy"]'), null)
 

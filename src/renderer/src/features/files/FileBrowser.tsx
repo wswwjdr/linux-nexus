@@ -275,7 +275,7 @@ export default function FileBrowser({
         {operationStatus && (
           <div className="remote-copy-status" role="status">
             <LoaderCircle className="spin" size={15} />
-            <span>正在{operationStatus === 'copy' ? '复制' : operationStatus === 'move' ? '移动' : '解压'}远端项目…</span>
+            <span>正在{operationStatus === 'copy' ? '复制' : operationStatus === 'move' ? '移动' : '解压'}…</span>
             <button type="button" className="icon-button" title="取消操作" aria-label="取消操作" onClick={onCancelOperation}><X size={14} /></button>
           </div>
         )}

@@ -134,7 +134,7 @@ export default function SearchDialog({ sessionId, profileId, currentPath, visibl
       </section>
       {confirmClose && (
         <ConfirmationDialog
-          title={anyRunning ? '搜索仍在进行' : '搜索已完成'}
+          title={anyRunning ? '搜索仍在进行' : '关闭搜索窗口？'}
           description={anyRunning ? '取消正在运行的搜索并关闭窗口吗？' : '关闭搜索窗口吗？'}
           tone="warning"
           confirmLabel={anyRunning ? '取消搜索并关闭' : '关闭搜索'}

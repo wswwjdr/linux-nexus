@@ -85,7 +85,7 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
     }
     setSnapshots((current) => ({ ...current, [profileId]: result.snapshot }))
     if (result.status === 'updated-sync-failed') {
-      showToast('error', '服务器已修改，但重新同步失败：' + result.message)
+      showToast('error', '命令别名已修改，但刷新别名列表失败，请重新同步：' + result.message)
     } else {
       setName('')
       setCommand('')

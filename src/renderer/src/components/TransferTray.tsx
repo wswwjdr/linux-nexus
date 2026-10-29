@@ -28,10 +28,11 @@ export default function TransferTray({ sessionId, transfers, onCancel, onDismiss
         const terminal = complete || hasErrors
         const percent = terminal ? 100 : percentage(job.transferred, job.total)
         const finishedFiles = job.completedFiles + job.failedFiles
+        const label = job.direction === 'upload' ? '上传' : '下载'
         const status = complete
-          ? `完成 · ${job.completedFiles} 个文件成功`
+          ? `${label}已完成 · ${job.completedFiles} 个文件`
           : hasErrors
-            ? `完成 · ${job.completedFiles} 个文件成功 · ${job.failures.length} 项失败`
+            ? `${label}结束 · ${job.completedFiles} 个文件成功 · ${job.failures.length} 项失败`
             : job.state === 'cancelled'
               ? '已取消'
               : job.state === 'queued'

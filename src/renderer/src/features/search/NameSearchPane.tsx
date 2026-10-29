@@ -171,7 +171,7 @@ export const NameSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(func
               disabled={running}
               maxLength={MAX_QUERY_LENGTH}
               onChange={(event) => update('query', event.target.value)}
-              placeholder="输入完整文件名"
+              placeholder="输入要查找的文件名"
               autoComplete="off"
               spellCheck={false}
             />
@@ -247,7 +247,7 @@ export const NameSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(func
         <div className="search-progress-panel" aria-live="polite">
           <div className="search-progress-track"><div className={'search-progress-fill' + (running ? ' indeterminate' : '')} style={running ? undefined : { width: status === 'completed' ? '100%' : '0%' }} /></div>
           <div className="search-progress-summary">
-            <span>{running ? '远端 find 正在扫描文件' : conditions.matchMode === 'exact' ? 'find 精确文件名匹配' : 'find 名称包含匹配'}</span>
+            <span>{running ? '正在查找文件' : conditions.matchMode === 'exact' ? '精确匹配文件名' : '匹配文件名中的文字'}</span>
             <span>{conditions.ignoreCase ? '忽略大小写' : '区分大小写'}</span>
           </div>
         </div>

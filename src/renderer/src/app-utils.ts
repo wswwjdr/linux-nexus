@@ -55,7 +55,8 @@ export function getParentPath(remotePath: string): string {
 }
 
 export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : '操作失败，请重试'
+  if (!(error instanceof Error)) return '操作失败，请重试'
+  return error.message.replace(/^Error invoking remote method '[^'\r\n]+': (?:Error: )?/, '')
 }
 
 export function connectFailureText(result: Exclude<ConnectResult, { ok: true }>): string {

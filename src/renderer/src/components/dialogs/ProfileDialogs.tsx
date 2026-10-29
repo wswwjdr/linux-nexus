@@ -33,7 +33,7 @@ export function ProfileDialogs(props: Pick<DialogLayerProps, "profileDialog" | "
                     </div>
                     <label className="field">
                       <span>用户名</span>
-                      <input required value={profileDialog.form.username} onChange={(event) => onUpdateProfile({ username: event.target.value })} placeholder="Ubuntu 用户名" autoCapitalize="none" />
+                      <input required value={profileDialog.form.username} onChange={(event) => onUpdateProfile({ username: event.target.value })} placeholder="服务器登录用户名" autoCapitalize="none" />
                     </label>
                     <label className="field">
                       <span>SSH 密码</span>

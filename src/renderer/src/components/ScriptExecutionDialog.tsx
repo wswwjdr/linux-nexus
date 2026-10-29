@@ -79,7 +79,7 @@ export default function ScriptExecutionDialog({ active, execution, onClose, onSt
           onScroll={updateFollowState}
         >{execution.output.length
           ? execution.output.map((chunk, index) => <span className={chunk.stream === 'stderr' ? 'stderr' : undefined} key={index}>{chunk.data}</span>)
-          : <span className="script-execution-empty">等待脚本输出…</span>}</pre>
+          : <span className="script-execution-empty">{isRunning ? '等待脚本输出…' : '脚本没有输出'}</span>}</pre>
 
         <div className="modal-footer script-execution-footer">
           {isRunning && (

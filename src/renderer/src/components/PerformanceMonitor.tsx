@@ -86,9 +86,9 @@ export default function PerformanceMonitor({ state, thresholds, open, onOpenChan
     : performanceSeverity(snapshot, thresholds)
   const summaryLabel = state?.status === 'error'
     ? '性能指标不可用'
-    : severity === 'critical' ? '服务器负载严重'
-      : severity === 'warning' ? '服务器负载偏高'
-        : snapshot ? '服务器状态正常' : '正在采集服务器性能指标'
+    : severity === 'critical' ? '服务器性能指标严重超限'
+      : severity === 'warning' ? '服务器性能指标偏高'
+        : snapshot ? '服务器性能指标正常' : '正在采集服务器性能指标'
 
   useEffect(() => {
     if (!open) return

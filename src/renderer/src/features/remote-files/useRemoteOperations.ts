@@ -89,7 +89,7 @@ export function useRemoteOperations({
       sourcePaths: selectedEntries.map((entry) => entry.path),
     })
     setBrowserContextMenu(null)
-    showToast('info', `已${mode === 'copy' ? '复制' : '剪切'} ${selectedEntries.length} 项，可粘贴到目标目录`)
+    showToast('info', `已选择 ${selectedEntries.length} 项用于${mode === 'copy' ? '复制' : '移动'}，请在目标目录粘贴`)
   }
 
   const copyRemoteSelection = (selectedEntries: RemoteEntry[]) => setRemoteSelectionClipboard(selectedEntries, 'copy')
@@ -107,7 +107,7 @@ export function useRemoteOperations({
       setCreateDirectoryDialog(null)
       if (await loadDirectory(sessionId, directory)) showToast('info', '文件夹已创建')
     } catch (error) {
-      showToast('error', `创建失败：${errorMessage(error)}`)
+      showToast('error', `创建文件夹失败：${errorMessage(error)}`)
     } finally {
       setCreatingDirectory(false)
     }
@@ -226,7 +226,7 @@ export function useRemoteOperations({
     const label = operation === 'copy' ? '复制' : operation === 'move' ? '移动' : '解压'
     try {
       const result = await window.remoteFiles.executeOperation(request)
-      showToast('info', result.status === 'cancelled' ? `${label}已取消` : `${label}命令已完成`)
+      showToast('info', result.status === 'cancelled' ? `${label}已取消` : `${label}已完成`)
       if (result.status === 'completed' && operation === 'move' && strategy === 'force') {
         setRemoteClipboard((current) => current === clipboardAtStart && current?.mode === 'cut'
           && current.profile.id === session.profileId

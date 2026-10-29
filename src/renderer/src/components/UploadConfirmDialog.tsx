@@ -4,9 +4,9 @@ import { createPortal } from 'react-dom'
 import type { OperationExecutionStrategy, UploadSelection } from '@shared/types'
 
 const strategyLabels: Record<OperationExecutionStrategy, string> = {
-  force: '强制覆盖 (-f)',
-  skip: '跳过已有目标 (-n)',
-  update: '仅处理源项目较新 (-u)',
+  force: '覆盖同名文件',
+  skip: '跳过同名文件',
+  update: '仅更新较旧文件',
 }
 
 export default function UploadConfirmDialog({
@@ -43,16 +43,16 @@ export default function UploadConfirmDialog({
         </div>
         {needsConflictChoice && <fieldset className="operation-conflict-policy" disabled={busy}>
           <legend>遇到同名目标时选择处理方式</legend>
-          <label><input type="radio" name={titleId + '-policy'} checked={confirmedStrategy === 'force'} onChange={() => setConfirmedStrategy('force')} />全部覆盖</label>
-          <label><input type="radio" name={titleId + '-policy'} checked={confirmedStrategy === 'skip'} onChange={() => setConfirmedStrategy('skip')} />全部跳过</label>
+          <label><input type="radio" name={titleId + '-policy'} checked={confirmedStrategy === 'force'} onChange={() => setConfirmedStrategy('force')} />覆盖同名文件</label>
+          <label><input type="radio" name={titleId + '-policy'} checked={confirmedStrategy === 'skip'} onChange={() => setConfirmedStrategy('skip')} />跳过同名文件</label>
         </fieldset>}
-        {!needsConflictChoice && <p className="operation-strategy-label">策略：{strategyLabels[strategy]}</p>}
+        {!needsConflictChoice && <p className="operation-strategy-label">同名文件处理方式：{strategyLabels[strategy]}</p>}
         {selection.failures.length > 0 && <div className="operation-conflict-list" aria-label="无法上传的项目">
           {selection.failures.slice(0, 6).map((failure) => <div key={failure.path}><span>{failure.path}</span><span>{failure.message}</span></div>)}
           {selection.failures.length > 6 && <p>另有 {selection.failures.length - 6} 项无法上传</p>}
         </div>}
         <details className="operation-command-preview">
-          <summary>执行命令</summary>
+          <summary>查看执行命令</summary>
           <code>{selection.commandPreviews[strategy]}</code>
         </details>
         <div className="modal-footer">

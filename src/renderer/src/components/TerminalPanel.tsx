@@ -3,6 +3,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import { Clipboard, Copy } from 'lucide-react'
 import type { TerminalOutputEvent } from '@shared/types'
+import { errorMessage } from '@/app-utils'
 import '@xterm/xterm/css/xterm.css'
 
 interface TerminalPanelProps {
@@ -65,7 +66,7 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
     const selection = terminal?.getSelection()
     if (!terminal || !selection) return
     void navigator.clipboard.writeText(selection).catch((error: unknown) => {
-      onError(error instanceof Error ? error.message : String(error))
+      onError(errorMessage(error))
     })
     setContextMenu(null)
     terminal.focus()
@@ -82,7 +83,7 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
     } catch (error) {
       setContextMenu(null)
       terminal.focus()
-      onError(error instanceof Error ? error.message : String(error))
+      onError(errorMessage(error))
     }
   }
 
@@ -126,7 +127,7 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
     const input = terminal.onData((data) => {
       if (!connectedRef.current) return
       void window.remoteFiles.writeTerminal(sessionId, data).catch((error: unknown) => {
-        if (connectedRef.current) onError(error instanceof Error ? error.message : String(error))
+        if (connectedRef.current) onError(errorMessage(error))
       })
     })
     const removeOutput = window.remoteFiles.onTerminalOutput((output: TerminalOutputEvent) => {
@@ -137,7 +138,7 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
       if (event.key.toLowerCase() === 'c') {
         if (terminal.hasSelection()) {
           void navigator.clipboard.writeText(terminal.getSelection()).catch((error: unknown) => {
-            onError(error instanceof Error ? error.message : String(error))
+            onError(errorMessage(error))
           })
         }
         return false
@@ -164,7 +165,7 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
       const terminal = terminalRef.current
       if (!terminal) return
       void window.remoteFiles.resizeTerminal(sessionId, terminal.cols, terminal.rows).catch((error: unknown) => {
-        onError(error instanceof Error ? error.message : String(error))
+        onError(errorMessage(error))
       })
     }
     resize()

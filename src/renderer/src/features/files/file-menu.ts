@@ -81,9 +81,9 @@ const action = (
 ): FileMenuActionNode => ({ kind: 'action', id, label, icon, action: menuAction, ...options })
 
 const executionStrategies: Array<{ strategy: OperationExecutionStrategy; label: string; description: string }> = [
-  { strategy: 'force', label: '强制覆盖 (-f)', description: '使用服务器命令的强制覆盖选项；权限和目录结构限制仍然生效。' },
-  { strategy: 'skip', label: '跳过已有目标 (-n)', description: '目标中存在同名项目时保留目标并跳过该项。' },
-  { strategy: 'update', label: '仅源项目较新时处理 (-u)', description: '目标不存在，或来源的修改时间晚于目标时才处理。' },
+  { strategy: 'force', label: '覆盖同名文件', description: '遇到同名文件时覆盖；权限和目录结构限制仍然生效。' },
+  { strategy: 'skip', label: '跳过同名文件', description: '保留目标目录中的同名文件，继续处理其他文件。' },
+  { strategy: 'update', label: '仅更新较旧文件', description: '目标不存在，或来源的修改时间晚于目标时才处理。' },
 ]
 
 const pasteStrategies: Array<{ strategy: PasteStrategy; label: string; description: string }> = executionStrategies
@@ -91,7 +91,7 @@ const pasteStrategies: Array<{ strategy: PasteStrategy; label: string; descripti
 
 const uploadStrategies: Array<{ strategy: OperationStrategy; label: string; description: string }> = [
   ...executionStrategies,
-  { strategy: 'confirm', label: '确认后处理', description: '确认操作后，选择遇到同名项目时覆盖或跳过。' },
+  { strategy: 'confirm', label: '确认后上传', description: '上传前确认内容，并选择覆盖或跳过同名文件。' },
 ]
 
 function pasteStrategyMenu(disabled: boolean): FileMenuNode {
@@ -101,13 +101,13 @@ function pasteStrategyMenu(disabled: boolean): FileMenuNode {
     label: '粘贴',
     icon: 'clipboard-paste',
     disabled,
-    disabledReason: disabled ? '剪贴板为空' : undefined,
+    disabledReason: disabled ? '当前无法粘贴' : undefined,
     children: pasteStrategies.map(({ strategy, label, description }) => action(
       'paste-' + strategy,
       label,
       undefined,
       { type: 'paste', strategy },
-      { disabled, disabledReason: disabled ? '剪贴板为空' : undefined, description },
+      { disabled, disabledReason: disabled ? '当前无法粘贴' : undefined, description },
     )),
   }
 }

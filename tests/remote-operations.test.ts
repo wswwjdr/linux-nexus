@@ -132,6 +132,58 @@ test('rejects invalid requests before opening an SSH channel', () => {
   } finally { sessions.delete('session-1') }
 })
 
+const backslashArchive = "/home/临时 测试/QuickLook-3.7.3 'test'.zip"
+const backslashWarning = `warning:  ${backslashArchive} appears to use backslashes as path separators\n`
+
+for (const strategy of ['force', 'skip', 'update'] as const) {
+  test(`ZIP ${strategy} treats a lone backslash warning as ordinary completion`, async () => {
+    const remote = mockClient((_command, _index, channel) => {
+      channel.onEnd = (current) => {
+        current.stderr.emit('data', Buffer.from(backslashWarning))
+        current.complete(Buffer.alloc(0), 1)
+      }
+    })
+    attachSession(remote.client)
+    try {
+      const result = await executeRemoteOperation({
+        ...copyRequest(strategy), operation: 'extract', sourcePaths: [],
+        archivePath: backslashArchive, wrapInDirectory: false,
+      })
+      assert.deepEqual(result, {
+        status: 'completed', requestId: 'request-1', operation: 'extract', command: remote.commands[0],
+      })
+      assert.equal(remote.commands.length, 1)
+      assert.ok(remote.commands[0].includes('"$output" 1>&2'))
+    } finally { sessions.delete('session-1') }
+  })
+}
+
+for (const [label, operation, archivePath, exitCode, stderr] of [
+  ['additional warning', 'extract', backslashArchive, 1, backslashWarning + 'skipping: encrypted.txt  incorrect password\n'],
+  ['unsupported compression', 'extract', backslashArchive, 1, 'skipping: file.bin  unsupported compression method 99\n'],
+  ['write failure', 'extract', backslashArchive, 50, backslashWarning + 'write error (disk full?)\n'],
+  ['severe exit code', 'extract', backslashArchive, 2, backslashWarning],
+  ['different archive', 'extract', '/home/other.zip', 1, backslashWarning],
+  ['tar failure', 'extract', '/home/a.tar', 1, backslashWarning],
+  ['copy failure', 'copy', undefined, 1, backslashWarning],
+] as const) {
+  test(`does not suppress ${label} as ZIP compatibility`, async () => {
+    const remote = mockClient((_command, _index, channel) => {
+      channel.onEnd = (current) => {
+        current.stderr.emit('data', Buffer.from(stderr))
+        current.complete(Buffer.alloc(0), exitCode)
+      }
+    })
+    attachSession(remote.client)
+    try {
+      await assert.rejects(executeRemoteOperation({
+        ...copyRequest(), operation,
+        ...(operation === 'extract' ? { sourcePaths: [], archivePath, wrapInDirectory: false } : {}),
+      }), { message: stderr })
+    } finally { sessions.delete('session-1') }
+  })
+}
+
 for (const [operation, error] of [
   ['move', 'mv: cannot move: Directory not empty'],
   ['extract', 'unzip: command not found'],

@@ -121,7 +121,7 @@ test('supported archive files expose extraction while ordinary compressed stream
   if (archiveMenu?.kind === 'submenu') {
     const labels = archiveMenu.children.filter((node) => node.kind === 'action').map(({ label }) => label)
     assert.equal(archiveMenu.children.filter((node) => node.kind === 'separator').length, 2)
-    assert.ok(labels.includes('release/ · 强制覆盖 (-f)'))
+    assert.ok(labels.includes('release/ · 覆盖同名文件'))
     assert.equal(labels.length, 9)
     assert.ok(!labels.some((label) => label.includes('确认后处理')))
     assert.deepEqual(actions(archiveMenu.children).map(({ action }) => action), [

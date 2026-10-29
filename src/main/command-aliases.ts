@@ -200,11 +200,11 @@ fi
 if [[ $mode == append && -f $alias_file ]]; then
   alias_prefix="alias $alias_name="
   while IFS= read -r alias_line || [[ -n $alias_line ]]; do
-  [[ $alias_line != "$alias_prefix"* ]] || { printf '%s\\n' '服务器上已存在同名 alias' >&2; exit 44; }
+  [[ $alias_line != "$alias_prefix"* ]] || { printf '%s\\n' '服务器上已存在同名命令别名' >&2; exit 44; }
   done < "$alias_file"
 fi
 if [[ $mode != append && $exact_count -ne 1 ]]; then
-  printf '%s\\n' '只找到零处或多处完全匹配的 alias 定义，服务器文件未修改' >&2
+  printf '%s\\n' '未找到唯一匹配的别名定义，服务器文件未修改，请重新同步后重试' >&2
   exit 42
 fi
 temporary_file=$(mktemp "\${HOME}/.bashrc.linux-nexus.XXXXXX")

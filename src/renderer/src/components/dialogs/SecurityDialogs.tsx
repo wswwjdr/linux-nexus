@@ -41,7 +41,7 @@ export function SecurityDialogs(props: Pick<DialogLayerProps, "pendingHostKey" |
                   { label: '当前命令', value: aliasOverwriteConfirmation.existingCommand },
                   { label: '新命令', value: aliasOverwriteConfirmation.command ?? '' },
                 ]}
-                description="确认后会由服务器命令替换 ~/.bashrc 中唯一且完全匹配的定义。"
+                description="将替换服务器 ~/.bashrc 中的此别名，新命令会在新开的终端中生效。"
                 tone="warning"
                 confirmLabel="覆盖别名"
                 busyLabel="正在写入"
@@ -57,7 +57,7 @@ export function SecurityDialogs(props: Pick<DialogLayerProps, "pendingHostKey" |
                 details={[
                   { label: '实际命令', value: aliasDeleteConfirmation.existingCommand },
                 ]}
-                description="将从 ~/.bashrc 删除唯一且完全匹配的定义。此更改会在新开的终端中生效。"
+                description="将从服务器的 ~/.bashrc 中删除此别名。此更改会在新开的终端中生效。"
                 tone="danger"
                 confirmLabel="删除别名"
                 busyLabel="正在删除"

@@ -246,3 +246,13 @@ test('extraction errors are shown and do not prevent refreshing the destination'
     assert.equal(view.operations.activeOperation, null)
   } finally { view.unmount() }
 })
+
+test('completed extraction shows the normal success message and refreshes the destination', async () => {
+  const view = await mountWorkflow()
+  try {
+    await run(() => view.operations.extractRemoteArchive({ name: 'a.zip', path: '/a.zip' }, 'current-directory', '/target', 'force'))
+    assert.deepEqual(view.notices, [{ kind: 'info', message: '解压已完成' }])
+    assert.ok(view.refreshed.includes('active') && view.refreshed.includes('nested'))
+    assert.equal(view.operations.activeOperation, null)
+  } finally { view.unmount() }
+})

@@ -19,6 +19,12 @@ export interface RemoteCommandResult {
   exitCode: number | null
 }
 
+export class RemoteCommandError extends Error {
+  constructor(readonly exitCode: number | null, readonly stderr: string) {
+    super(stderr || `远程命令失败（退出码 ${exitCode ?? '未知'}）`)
+  }
+}
+
 export function buildRemoteCommand(script: string, args: readonly string[] = []): string {
   return `bash -c ${shellQuote(script)} --${args.length ? ' ' + args.map(shellQuote).join(' ') : ''}`
 }
@@ -89,7 +95,7 @@ export function executeRemoteCommand(
         exitCode,
       }
       if (exitCode !== 0) {
-        reject(new Error(result.stderr || `远程命令失败（退出码 ${exitCode ?? '未知'}）`))
+        reject(new RemoteCommandError(exitCode, result.stderr))
         return
       }
       resolve(result)

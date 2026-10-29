@@ -5,7 +5,7 @@ import type {
   OperationExecutionStrategy,
 } from '@shared/types'
 import { archiveBaseName, archiveFormatForName, type RemoteArchiveFormat } from '@shared/archive'
-import { buildRemoteCommand, executeRemoteCommand } from './ssh-commands'
+import { buildRemoteCommand, executeRemoteCommand, RemoteCommandError } from './ssh-commands'
 import { filesSession, normalizedRemotePath } from './remote-fs'
 
 interface ActiveOperation {
@@ -57,7 +57,8 @@ function archiveUnpackCommand(format: RemoteArchiveFormat, strategy: OperationEx
       : '--keep-newer-files'
   if (format === 'zip') {
     const option = strategy === 'force' ? '-o' : strategy === 'skip' ? '-n' : '-u'
-    return `unzip -qq ${option} -- "$archive" -d "$output"`
+    // Include stdout diagnostics so warnings cannot hide skipped files or other errors.
+    return `unzip -qq ${option} -- "$archive" -d "$output" 1>&2`
   }
   if (format === 'tar-gz') return `tar --no-same-owner --no-same-permissions ${policy} -xzf "$archive" -C "$output"`
   if (format === 'tar-bz2') return `tar --no-same-owner --no-same-permissions ${policy} -xjf "$archive" -C "$output"`
@@ -113,6 +114,15 @@ export function executeRemoteOperation(value: OperationExecutionRequest): Promis
     .then((): OperationExecutionResult => ({ status: 'completed', requestId: value.requestId, operation: intent.operation, command }))
     .catch((error: unknown): OperationExecutionResult => {
       if (controller.signal.aborted) return { status: 'cancelled', requestId: value.requestId, operation: intent.operation, command }
+      // UnZip exit 1 can also mean skipped files; accept only this exact compatibility warning.
+      if (intent.operation === 'extract' && archiveFormatForName(intent.archivePath!) === 'zip'
+        && error instanceof RemoteCommandError && error.exitCode === 1
+        && error.stderr.trim().replace(/^warning:[ \t]+/, 'warning: ')
+          === `warning: ${intent.archivePath} appears to use backslashes as path separators`) {
+        return {
+          status: 'completed', requestId: value.requestId, operation: intent.operation, command,
+        }
+      }
       throw error
     })
     .finally(() => activeOperations.delete(value.requestId))

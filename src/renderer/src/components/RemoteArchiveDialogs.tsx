@@ -3,6 +3,7 @@ import { Check, ChevronRight, Folder, FolderPlus, LoaderCircle, X } from 'lucide
 import { createPortal } from 'react-dom'
 import type { RemoteEntry } from '@shared/types'
 import type { ArchiveDestinationDialogState } from '../features/remote-files/useRemoteOperations'
+import { errorMessage } from '@/app-utils'
 
 function pathParts(path: string): Array<{ label: string; path: string }> {
   const segments = path.split('/').filter(Boolean)
@@ -43,7 +44,7 @@ function RemoteDirectoryPicker({
     void window.remoteFiles.listDirectory(state.sessionId, directory).then((result) => {
       if (active) setEntries(result.filter((entry) => entry.type === 'directory').sort((a, b) => a.name.localeCompare(b.name)))
     }).catch((reason: unknown) => {
-      if (active) setLoadError(reason instanceof Error ? reason.message : String(reason))
+      if (active) setLoadError('读取目录失败：' + errorMessage(reason))
     }).finally(() => {
       if (active) setLoading(false)
     })
@@ -65,7 +66,7 @@ function RemoteDirectoryPicker({
     event.preventDefault()
     const name = newFolderName.trim()
     if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\0')) {
-      setError('请输入有效的文件夹名称')
+      setError('文件夹名称不能为空，不能是 . 或 ..，也不能包含 / 或空字符')
       return
     }
     setCreating(true)
@@ -82,7 +83,7 @@ function RemoteDirectoryPicker({
         permissions: '',
       }].sort((a, b) => a.name.localeCompare(b.name)))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      setError('创建文件夹失败：' + errorMessage(reason))
     } finally {
       setCreating(false)
     }

@@ -22,9 +22,9 @@ const shortcutGroups: ShortcutGroup[] = [
       { bindings: [['Ctrl', 'F']], action: '打开文件搜索' },
       { bindings: [['Ctrl', 'C']], action: '复制选中的文件或文件夹' },
       { bindings: [['Ctrl', 'X']], action: '剪切选中的文件或文件夹' },
-      { bindings: [['Ctrl', 'V']], action: '强制覆盖到当前目录' },
+      { bindings: [['Ctrl', 'V']], action: '粘贴到当前目录，覆盖同名文件' },
       { bindings: [['Delete']], action: '删除当前选择的文件或文件夹' },
-      { bindings: [['Up'], ['Down'], ['Left'], ['Right']], action: '上/下键移动菜单焦点；左/右键切换排序子菜单' },
+      { bindings: [['Up'], ['Down'], ['Left'], ['Right']], action: '上/下键移动菜单焦点；左/右键展开或收起子菜单' },
     ],
   },
   {

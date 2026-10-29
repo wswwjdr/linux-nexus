@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import test from 'node:test'
 import type { Client, ClientChannel } from 'ssh2'
-import { buildRemoteCommand, executeRemoteCommand, runRemoteCommand } from '../src/main/ssh-commands.ts'
+import { buildRemoteCommand, executeRemoteCommand, RemoteCommandError, runRemoteCommand } from '../src/main/ssh-commands.ts'
 import { shellQuote } from '../src/shared/shell.ts'
 
 class MockChannel extends EventEmitter {
@@ -112,7 +112,13 @@ test('preserves server stderr exactly when a command fails', async () => {
     return channel
   })
 
-  await assert.rejects(runRemoteCommand(client, 'rm', ['/protected']), { message: 'permission denied\nraw' })
+  await assert.rejects(runRemoteCommand(client, 'rm', ['/protected']), (error: unknown) => {
+    assert.ok(error instanceof RemoteCommandError)
+    assert.equal(error.exitCode, 1)
+    assert.equal(error.stderr, 'permission denied\nraw')
+    assert.equal(error.message, error.stderr)
+    return true
+  })
 })
 
 test('sends TERM and settles when an SSH command is cancelled', async () => {
