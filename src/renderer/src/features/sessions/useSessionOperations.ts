@@ -197,6 +197,19 @@ export function useSessionOperations({
     if (source && profile) openSession(profile, source.kind, source.startPath, source)
   }
 
+  const reorderSession = (sessionId: string, targetId: string, placement: 'before' | 'after') => {
+    if (sessionId === targetId) return
+    const current = sessionsRef.current
+    const source = current.find((session) => session.id === sessionId)
+    // A tab may close while a drag is in progress.
+    if (!source || !current.some((session) => session.id === targetId)) return
+    const next = current.filter((session) => session.id !== sessionId)
+    const targetIndex = next.findIndex((session) => session.id === targetId)
+    next.splice(targetIndex + (placement === 'after' ? 1 : 0), 0, source)
+    sessionsRef.current = next
+    setSessions(next)
+  }
+
   const openSessionContextMenu = (sessionId: string, x: number, y: number) => {
     const menuWidth = 204
     const menuHeight = 48
@@ -327,6 +340,7 @@ export function useSessionOperations({
     openSession,
     createChosenSession,
     duplicateSession,
+    reorderSession,
     openSessionContextMenu,
     handleSessionTabContextMenuKeyDown,
     reconnectSession,

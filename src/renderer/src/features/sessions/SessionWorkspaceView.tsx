@@ -1,5 +1,5 @@
 import type { ComponentProps, RefObject } from 'react'
-import { Cloud, Copy, FolderOpen, LoaderCircle, Plus, Terminal, X } from 'lucide-react'
+import { Cloud, Copy, LoaderCircle } from 'lucide-react'
 import FileBrowser from '../files/FileBrowser'
 import FileSessionWorkspace from '../files/FileSessionWorkspace'
 import FileContextMenu from '../files/FileContextMenu'
@@ -17,6 +17,7 @@ import type {
   TransferJob,
 } from '../../app-types'
 import type { useSessionOperations } from './useSessionOperations'
+import SessionTabBar from './SessionTabBar'
 import type { useRemoteOperations } from '../remote-files/useRemoteOperations'
 import type { useProfileManagement } from '../../hooks/useProfileManagement'
 import type { ScriptCommandDialog } from '../files/useScriptExecution'
@@ -58,7 +59,7 @@ interface SessionWorkspaceState {
 
 interface SessionWorkspaceActions {
   sessions: Pick<SessionOperations,
-    'closeSession' | 'openSessionContextMenu' | 'handleSessionTabContextMenuKeyDown' | 'duplicateSession' | 'activateSession' | 'reconnectSession' | 'navigate'>
+    'closeSession' | 'openSessionContextMenu' | 'handleSessionTabContextMenuKeyDown' | 'duplicateSession' | 'reorderSession' | 'activateSession' | 'reconnectSession' | 'navigate'>
   remoteFiles: Pick<RemoteOperations,
     'requestRemoteEntriesDeletion' | 'beginRemoteMove' | 'cancelActiveOperation' | 'extractRemoteArchive'>
   browser: Pick<FileBrowserProps,
@@ -99,11 +100,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
     fileTypeExtensions, transfers,
   } = state
   const {
-    closeSession,
-    openSessionContextMenu,
-    handleSessionTabContextMenuKeyDown,
     duplicateSession,
-    activateSession,
     reconnectSession,
     navigate,
   } = actions.sessions
@@ -133,7 +130,6 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
     onOpenExternalLink,
   } = actions.fileWorkspace
   const { loadDirectory, setSessionChooserOpen, onCancelTransfer, onDismissTransfer, onCloseBrowserContextMenu } = actions
-  const profileForSession = (session: SessionTab) => profiles.find((profile) => profile.id === session.profileId)
   const toggleSort = actions.toggleSort
   const patchSession = actions.patchSession
   const reportTerminalError = actions.terminal.onError
@@ -143,63 +139,13 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
 
   return (
     <>
-        <nav className="session-tabbar" role="tablist" aria-label="会话标签">
-          <div className="session-tab-list">
-            {sessions.map((session) => {
-              const profile = profileForSession(session)
-              const isActive = activeSessionId === session.id
-              const kindLabel = session.kind === 'files' ? '文件管理' : 'SSH'
-              const sameKindSessions = sessions.filter((candidate) =>
-                candidate.profileId === session.profileId && candidate.kind === session.kind)
-              const duplicateIndex = sameKindSessions.findIndex((candidate) => candidate.id === session.id)
-              const baseLabel = profile?.name ?? '服务器'
-              const label = sameKindSessions.length > 1 ? `${baseLabel} (${duplicateIndex + 1})` : baseLabel
-              const title = `${label} · ${kindLabel}${session.kind === 'files' ? ' · ' + session.currentPath : ''}`
-              return (
-                <div
-                  className={'session-tab ' + (isActive ? 'active' : '')}
-                  key={session.id}
-                  onMouseDown={(event) => {
-                    if (event.button !== 1) return
-                    event.preventDefault()
-                    closeSession(session.id)
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault()
-                    openSessionContextMenu(session.id, event.clientX, event.clientY)
-                  }}
-                >
-                  <button
-                    className="session-tab-select"
-                    id={'session-tab-' + session.id}
-                    role="tab"
-                    aria-selected={isActive}
-                    aria-controls={'session-panel-' + session.id}
-                    title={title}
-                    onClick={() => activateSession(session.id)}
-                    onKeyDown={(event) => handleSessionTabContextMenuKeyDown(event, session.id)}
-                  >
-                    {session.kind === 'files' ? <FolderOpen size={14} /> : <Terminal size={14} />}
-                    <span className="session-tab-label">{label}</span>
-                    <small>{kindLabel}</small>
-                    {session.status === 'connecting' || session.status === 'awaiting-trust'
-                      ? <LoaderCircle className="spin session-tab-state" size={12} />
-                      : <span className={'session-tab-state-dot ' + session.status} />}
-                  </button>
-                  <button
-                    className="session-tab-close"
-                    title={'关闭 ' + label + ' ' + kindLabel}
-                    aria-label={'关闭 ' + label + ' ' + kindLabel}
-                    onClick={() => closeSession(session.id)}
-                  ><X size={13} /></button>
-                </div>
-              )
-            })}
-          </div>
-          <button className="icon-button session-add-button" title="新建会话" aria-label="新建会话" onClick={() => setSessionChooserOpen(true)}>
-            <Plus size={16} />
-          </button>
-        </nav>
+        <SessionTabBar
+          sessions={sessions}
+          profiles={profiles}
+          activeSessionId={activeSessionId}
+          actions={actions.sessions}
+          onAdd={() => setSessionChooserOpen(true)}
+        />
 
         {sessionContextMenu && (
           <div

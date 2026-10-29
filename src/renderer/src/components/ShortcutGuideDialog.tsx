@@ -42,6 +42,7 @@ const shortcutGroups: ShortcutGroup[] = [
     scope: '通用',
     icon: Keyboard,
     items: [
+      { bindings: [['Ctrl', 'Shift', 'Left'], ['Ctrl', 'Shift', 'Right']], action: '标签聚焦时，向左或向右移动会话标签' },
       { bindings: [['鼠标中键']], action: '关闭当前会话标签' },
       { bindings: [['Esc']], action: '关闭当前菜单或弹窗' },
     ],
