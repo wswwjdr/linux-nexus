@@ -1,11 +1,11 @@
-import type { RefObject, SyntheticEvent, WheelEvent } from 'react'
+import type { Ref, RefObject, SyntheticEvent, WheelEvent } from 'react'
 import { LoaderCircle, X } from 'lucide-react'
 import type { ImagePreviewSize, PreviewDialog as PreviewDialogState } from '@/app-types'
 import ImagePreviewPanel from './ImagePreviewPanel'
 import MarkdownPreviewPanel from './MarkdownPreviewPanel'
 import MediaPreviewPanel from './MediaPreviewPanel'
 import PdfPreviewPanel from './PdfPreviewPanel'
-import TextPreviewPanel from './TextPreviewPanel'
+import TextPreviewPanel, { type TextPreviewPanelHandle } from './TextPreviewPanel'
 
 export interface PreviewDialogProps {
   previewDialog: PreviewDialogState | null
@@ -13,6 +13,7 @@ export interface PreviewDialogProps {
   textDirty: boolean
   textSaving: boolean
   textSaveConfirmation: { name: string; path: string } | null
+  textSearchRef?: Ref<TextPreviewPanelHandle>
   imageZoom: number
   imagePreviewSize: ImagePreviewSize | null
   imageViewportRef: RefObject<HTMLDivElement | null>
@@ -31,6 +32,7 @@ export default function PreviewDialog({
   textDirty,
   textSaving,
   textSaveConfirmation,
+  textSearchRef,
   imageZoom,
   imagePreviewSize,
   imageViewportRef,
@@ -61,6 +63,7 @@ export default function PreviewDialog({
         {previewDialog.kind === 'loading' && <div className="preview-loading"><LoaderCircle className="spin" size={20} /> 正在读取文件</div>}
         {result?.type === 'text' && (
           <TextPreviewPanel
+            ref={textSearchRef}
             draft={textDraft}
             dirty={textDirty}
             saving={textSaving}

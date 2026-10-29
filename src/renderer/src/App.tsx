@@ -478,7 +478,7 @@ export default function App() {
     activeSession,
     activeSessionId,
     shortcutGuideOpen,
-    requestSearch: (sessionId) => workspaceActionsRef.current.get(sessionId)?.requestSearch(),
+    requestSearch: (sessionId) => workspaceActionsRef.current.get(sessionId)?.requestSearch(true),
     modalOpen,
     workspaceOpenSessionIds,
     browserContextMenu,

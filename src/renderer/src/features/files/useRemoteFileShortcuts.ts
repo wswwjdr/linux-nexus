@@ -35,6 +35,7 @@ export function useRemoteFileShortcuts({
 }: UseRemoteFileShortcutsOptions) {
   useEffect(() => {
     const openSearchShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f') return
       if (shortcutGuideOpen || modalOpen) {
         event.preventDefault()

@@ -200,6 +200,12 @@ test('file workspaces retain independent search and preview state across session
     })
     const editor = firstWorkspace.querySelector<HTMLTextAreaElement>('.text-preview-editor')!
     setInputValue(editor, 'edited text')
+    act(() => previewActions.get(first.id)!.requestSearch(true))
+    const textSearch = firstWorkspace.querySelector<HTMLInputElement>('[aria-label="搜索文本"]')!
+    assert.ok(textSearch)
+    setInputValue(textSearch, 'text')
+    assert.equal(firstWorkspace.querySelector('.text-preview-search-count')?.textContent, '1 / 1')
+    assert.equal(document.querySelector('.confirmation-backdrop'), null)
     assert.deepEqual(previewCalls[0], { sessionId: first.id, path: '/home/user/notes.txt' })
 
     act(() => root.render(render(second.id)))
@@ -207,6 +213,10 @@ test('file workspaces retain independent search and preview state across session
     assert.equal(secondWorkspace.classList.contains('active'), true)
     assert.equal(secondWorkspace.querySelector('.text-preview-editor'), null)
     act(() => root.render(render(first.id)))
+    assert.equal(firstWorkspace.querySelector<HTMLTextAreaElement>('.text-preview-editor')?.value, 'edited text')
+    assert.equal(firstWorkspace.querySelector<HTMLInputElement>('[aria-label="搜索文本"]')?.value, 'text')
+    act(() => window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    assert.equal(firstWorkspace.querySelector('[aria-label="搜索文本"]'), null)
     assert.equal(firstWorkspace.querySelector<HTMLTextAreaElement>('.text-preview-editor')?.value, 'edited text')
 
     act(() => firstWorkspace.querySelector<HTMLButtonElement>('.text-preview-save')!.click())

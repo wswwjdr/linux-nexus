@@ -4,6 +4,7 @@ import type { PreviewType } from '@shared/file-type-registry'
 import ConfirmationDialog from '@/components/ConfirmationDialog'
 import LogPreviewDialog from '@/components/previews/LogPreviewDialog'
 import PreviewDialog from '@/components/previews/PreviewDialog'
+import type { TextPreviewPanelHandle } from '@/components/previews/TextPreviewPanel'
 import SearchDialog from '@/features/search/SearchDialog'
 import { usePreview } from '@/hooks/usePreview'
 import type { ScriptExecutionDialogState, SessionTab } from '@/app-types'
@@ -12,7 +13,7 @@ import type { ToastNotice } from '@/GlobalToast'
 import ScriptSessionDialogs from './ScriptSessionDialogs'
 
 export interface SessionFileWorkspaceActions {
-  requestSearch: () => void
+  requestSearch: (preferTextSearch?: boolean) => void
   previewFile: (entry: Pick<RemoteEntry, 'name' | 'path'>, type: PreviewType) => Promise<void>
   previewLogFile: (entry: Pick<RemoteEntry, 'name' | 'path'>) => Promise<void>
 }
@@ -66,6 +67,7 @@ export default function FileSessionWorkspace({
 
   const [confirmDiscardForSearch, setConfirmDiscardForSearch] = useState(false)
   const workspaceRef = useRef<HTMLDivElement>(null)
+  const textSearchRef = useRef<TextPreviewPanelHandle>(null)
   const previewOpen = Boolean(preview.previewDialog || preview.logPreviewDialog)
   const openSearch = useCallback(() => {
     preview.closePreview()
@@ -74,8 +76,12 @@ export default function FileSessionWorkspace({
       (workspaceRef.current?.querySelector<HTMLInputElement>('.search-tab-panel:not([hidden]) .search-query-field input:not(:disabled)') ?? workspaceRef.current?.querySelector<HTMLButtonElement>('.search-modal .modal-close'))?.focus()
     }
   }, [onSearchOpenChange, preview.closePreview, previewOpen, searchOpen, session.id])
-  const requestSearch = useCallback(() => {
+  const requestSearch = useCallback((preferTextSearch = false) => {
     if (!active || preview.textSaving || preview.textSaveConfirmation || confirmDiscardForSearch) return
+    if (preferTextSearch && textSearchRef.current) {
+      textSearchRef.current.openSearch()
+      return
+    }
     if (preview.textDirty) setConfirmDiscardForSearch(true)
     else openSearch()
   }, [active, confirmDiscardForSearch, openSearch, preview.textDirty, preview.textSaveConfirmation, preview.textSaving])
@@ -129,6 +135,7 @@ export default function FileSessionWorkspace({
       if (!active || event.key !== 'Escape' || preview.textSaveConfirmation || confirmDiscardForSearch) return
       if (!preview.previewDialog && !preview.logPreviewDialog) return
       event.preventDefault()
+      if (textSearchRef.current?.closeSearch()) return
       preview.closePreview()
     }
     window.addEventListener('keydown', dismissOnEscape)
@@ -156,6 +163,7 @@ export default function FileSessionWorkspace({
         textDirty={preview.textDirty}
         textSaving={preview.textSaving}
         textSaveConfirmation={preview.textSaveConfirmation}
+        textSearchRef={textSearchRef}
         imageZoom={preview.imageZoom}
         imagePreviewSize={preview.imagePreviewSize}
         imageViewportRef={preview.imageViewportRef}
