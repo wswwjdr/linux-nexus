@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
+import { execFile, spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import test from 'node:test'
 import type { Client, ClientChannel } from 'ssh2'
 import { cancelRemoteOperation, executeRemoteOperation } from '../src/main/remote-operations.ts'
@@ -70,7 +75,7 @@ function attachSession(client: Client): void {
 
 for (const operation of ['copy', 'move'] as const) {
   for (const strategy of ['force', 'skip'] as const) {
-    test(`${operation} ${strategy} executes once with quoted paths and no preflight`, async () => {
+    test(`${operation} ${strategy} executes in one SSH command with quoted paths`, async () => {
       const remote = mockClient((_command, _index, channel) => {
         channel.onEnd = (current) => current.complete()
       })
@@ -89,6 +94,142 @@ for (const operation of ['copy', 'move'] as const) {
     })
   }
 }
+
+// Exercise the actual generated server command, including filesystem collisions.
+const gitPath = process.platform === 'win32'
+  ? spawnSync('where.exe', ['git'], { encoding: 'utf8' }).stdout?.trim().split(/\r?\n/)[0]
+  : undefined
+const bash = process.env.LINUX_NEXUS_TEST_BASH
+  ?? (process.platform === 'win32' && gitPath ? resolve(dirname(gitPath), '../bin/bash.exe') : 'bash')
+const bashAvailable = spawnSync(bash, ['--version']).status === 0
+
+async function withFilesystem(action: (context: {
+  directory: string
+  run: (sources: string[], options?: { target?: string; operation?: 'copy' | 'move'; strategy?: 'force' | 'skip' }) => Promise<void>
+}) => Promise<void>) {
+  const directory = await mkdtemp(join(tmpdir(), 'nexus-paste-'))
+  const remoteDirectory = directory.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, drive: string) => '/' + drive.toLowerCase())
+  const remote = mockClient((command, _index, channel) => {
+    channel.onEnd = (current) => {
+      execFile(bash, ['-c', command], { encoding: 'buffer' }, (error, stdout, stderr) => {
+        if (stderr.length) current.stderr.emit('data', stderr)
+        current.complete(stdout, error ? (typeof error.code === 'number' ? error.code : 1) : 0)
+      })
+    }
+  })
+  attachSession(remote.client)
+  try {
+    await action({
+      directory,
+      run: async (sources, { target = '', operation = 'copy', strategy = 'force' } = {}) => {
+        const result = await executeRemoteOperation({
+          ...copyRequest(strategy), requestId: crypto.randomUUID(), operation,
+          sourcePaths: sources.map((source) => remoteDirectory + '/' + source),
+          targetDirectory: remoteDirectory + (target ? '/' + target : ''),
+        })
+        assert.equal(result.status, 'completed')
+      },
+    })
+  } finally {
+    sessions.delete('session-1')
+    await rm(directory, { recursive: true, force: true })
+  }
+}
+
+const filesystemTest = { skip: !bashAvailable && 'Bash is required for remote command filesystem tests' }
+const specialName = process.platform === 'win32' ? "中文 ' $文件.txt" : "中文 ' $文件\n.txt"
+
+for (const strategy of ['force', 'skip'] as const) {
+  test(`same-directory ${strategy} copy numbers files and folders without modifying existing entries`, filesystemTest, async () => {
+    await withFilesystem(async ({ directory, run }) => {
+      for (const name of ['test.txt', 'README', '.env', '.config.json', specialName]) {
+        await writeFile(join(directory, name), 'source:' + name)
+      }
+      await writeFile(join(directory, 'test(2).txt'), 'existing')
+      await mkdir(join(directory, 'test(3).txt'))
+      await mkdir(join(directory, 'folder.with.dots'))
+      await writeFile(join(directory, 'folder.with.dots', 'nested.txt'), 'nested')
+      await mkdir(join(directory, 'folder.with.dots(2)'))
+      await writeFile(join(directory, 'folder.with.dots(2)', 'keep.txt'), 'keep')
+      await run(['test.txt', 'README', '.env', '.config.json', specialName, 'folder.with.dots'], { strategy })
+      await run(['test.txt'], { strategy })
+      for (const name of ['test(4).txt', 'test(5).txt']) assert.equal(await readFile(join(directory, name), 'utf8'), 'source:test.txt')
+      assert.equal(await readFile(join(directory, 'test.txt'), 'utf8'), 'source:test.txt')
+      assert.equal(await readFile(join(directory, 'test(2).txt'), 'utf8'), 'existing')
+      for (const [source, copy] of [
+        ['README', 'README(2)'], ['.env', '.env(2)'], ['.config.json', '.config(2).json'],
+        [specialName, specialName.slice(0, -4) + '(2).txt'],
+      ]) assert.equal(await readFile(join(directory, copy), 'utf8'), 'source:' + source)
+      assert.equal(await readFile(join(directory, 'folder.with.dots(3)', 'nested.txt'), 'utf8'), 'nested')
+      assert.deepEqual(await readdir(join(directory, 'folder.with.dots(2)')), ['keep.txt'])
+    })
+  })
+}
+
+test('simultaneous same-directory copies reserve different names', filesystemTest, async () => {
+  await withFilesystem(async ({ directory, run }) => {
+    await writeFile(join(directory, 'test.txt'), 'content')
+    await mkdir(join(directory, 'folder'))
+    await writeFile(join(directory, 'folder', 'nested.txt'), 'nested')
+    await Promise.all(Array.from({ length: 4 }, () => run(['test.txt', 'folder'])))
+    for (let index = 2; index <= 5; index++) {
+      assert.equal(await readFile(join(directory, `test(${index}).txt`), 'utf8'), 'content')
+      assert.equal(await readFile(join(directory, `folder(${index})`, 'nested.txt'), 'utf8'), 'nested')
+    }
+  })
+})
+
+test('same-directory moves keep sources in place and mixed copies still obey cross-directory strategies', filesystemTest, async () => {
+  await withFilesystem(async ({ directory, run }) => {
+    await writeFile(join(directory, 'test.txt'), 'original')
+    await mkdir(join(directory, 'folder'))
+    await run(['test.txt', 'folder'], { operation: 'move' })
+    assert.deepEqual((await readdir(directory)).sort(), ['folder', 'test.txt'])
+    await mkdir(join(directory, 'other'))
+    await writeFile(join(directory, 'other', 'test.txt'), 'other')
+    await run(['test.txt', 'other/test.txt'], { strategy: 'skip' })
+    assert.equal(await readFile(join(directory, 'test.txt'), 'utf8'), 'original')
+    assert.equal(await readFile(join(directory, 'test(2).txt'), 'utf8'), 'original')
+    await run(['other/test.txt'])
+    assert.equal(await readFile(join(directory, 'test.txt'), 'utf8'), 'other')
+    await run(['other/test.txt'], { target: 'folder', operation: 'move' })
+    assert.equal(await readFile(join(directory, 'folder', 'test.txt'), 'utf8'), 'other')
+    assert.equal(existsSync(join(directory, 'other', 'test.txt')), false)
+  })
+})
+
+test('same-directory copy reports a missing source instead of creating an empty duplicate', filesystemTest, async () => {
+  await withFilesystem(async ({ directory, run }) => {
+    await assert.rejects(run(['missing.txt']), /来源可能已不存在/)
+    await assert.rejects(run(['missing.txt'], { operation: 'move' }), /移动来源已不存在/)
+    assert.deepEqual(await readdir(directory), [])
+  })
+})
+
+test('directory aliases use same-directory naming and moves remain in place', filesystemTest, async () => {
+  await withFilesystem(async ({ directory, run }) => {
+    await writeFile(join(directory, 'test.txt'), 'content')
+    await symlink(directory, join(directory, 'alias'), process.platform === 'win32' ? 'junction' : 'dir')
+    await run(['alias/test.txt'])
+    await run(['test.txt'], { target: 'alias' })
+    await run(['test.txt'], { target: 'alias', operation: 'move' })
+    for (const name of ['test.txt', 'test(2).txt', 'test(3).txt']) {
+      assert.equal(await readFile(join(directory, name), 'utf8'), 'content')
+    }
+  })
+})
+
+test('a dangling symlink occupies a duplicate name', {
+  skip: !bashAvailable || process.platform === 'win32' ? 'Requires a POSIX filesystem with symlinks' : false,
+}, async () => {
+  await withFilesystem(async ({ directory, run }) => {
+    await writeFile(join(directory, 'test.txt'), 'content')
+    await symlink('missing', join(directory, 'test(2).txt'))
+    await run(['test.txt'])
+    assert.equal(await readFile(join(directory, 'test(3).txt'), 'utf8'), 'content')
+    assert.equal(existsSync(join(directory, 'missing')), false)
+  })
+})
 
 for (const [archive, options] of [
   ['release.tar.gz', ['--overwrite', '--skip-old-files', '--keep-newer-files']],

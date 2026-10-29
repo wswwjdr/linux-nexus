@@ -51,6 +51,40 @@ function strategyFlags(strategy: OperationExecutionStrategy): string[] {
   return ['-u']
 }
 
+const copyInPlaceScript = `
+copy_in_place() {
+  local source=$1 name stem extension='' destination reservation_error index=2 is_directory=0
+  name=\${source##*/}
+  stem=$name
+  if [[ ! -L "$source" && -d "$source" ]]; then
+    is_directory=1
+  elif [[ ! -L "$source" && -f "$source" ]]; then
+    if [[ "\${name:1}" == *.* ]]; then
+      stem=\${name%.*}
+      extension=.\${name##*.}
+    fi
+  else
+    printf '%s\\n' "只能复制普通文件或文件夹，来源可能已不存在：$source" >&2
+    exit 1
+  fi
+  while :; do
+    destination="$target/$stem($index)$extension"
+    index=$((index + 1))
+    [[ ! -e "$destination" && ! -L "$destination" ]] || continue
+    # Reserve the name before copying so simultaneous pastes cannot overwrite each other.
+    if (( is_directory )); then
+      if reservation_error=$(mkdir -- "$destination" 2>&1); then break; fi
+    else
+      if reservation_error=$( (set -o noclobber; : > "$destination") 2>&1); then break; fi
+    fi
+    [[ -e "$destination" || -L "$destination" ]] && continue
+    printf '%s\\n' "$reservation_error" >&2
+    exit 1
+  done
+  cp -R --preserve=mode,timestamps -fT -- "$source" "$destination"
+}
+`.trim()
+
 function archiveUnpackCommand(format: RemoteArchiveFormat, strategy: OperationExecutionStrategy): string {
   const policy = strategy === 'force' ? '--overwrite'
     : strategy === 'skip' ? '--skip-old-files'
@@ -77,8 +111,28 @@ function operationCommandParts(
     const copyOptions = intent.operation === 'copy' ? ['-R', '--preserve=mode,timestamps'] : []
     const optionText = [...copyOptions, ...flags].join(' ')
     return {
-      script: `set -eu\n${utility}${optionText ? ' ' + optionText : ''} -- "$@"`,
-      args: [...intent.sourcePaths, intent.targetDirectory],
+      script: [
+        'set -eu',
+        'target=$1; shift',
+        ...(intent.operation === 'copy' ? [copyInPlaceScript] : []),
+        'pending=()',
+        'for source in "$@"; do',
+        '  parent=${source%/*}; parent=${parent:-/}',
+        // Compare directory identities too, so aliases through symlinks behave like the original path.
+        '  if [[ "$target" -ef "$parent" ]]; then',
+        ...(intent.operation === 'copy' ? ['    copy_in_place "$source"'] : [
+          '    [[ -e "$source" || -L "$source" ]] || { printf "%s\\n" "移动来源已不存在：$source" >&2; exit 1; }',
+        ]),
+        '  else',
+        '    pending+=("$source")',
+        '  fi',
+        'done',
+        'if (( ${#pending[@]} )); then',
+        '  set -- "${pending[@]}" "$target"',
+        `  ${utility}${optionText ? ' ' + optionText : ''} -- "$@"`,
+        'fi',
+      ].join('\n'),
+      args: [intent.targetDirectory, ...intent.sourcePaths],
     }
   }
 

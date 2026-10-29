@@ -100,6 +100,10 @@ async function mountWorkflow({ hold = false, failure = '' } = {}) {
       connectedProfile = next
       await act(async () => { root.render(createElement(Harness)) })
     },
+    async select(paths: string[]) {
+      sessionsRef.current[0] = { ...sessionsRef.current[0], selectedPaths: paths }
+      await act(async () => { root.render(createElement(Harness)) })
+    },
     unmount() { act(() => root.unmount()); host.remove() },
   }
 }
@@ -199,6 +203,23 @@ test('paste skip executes directly and retains cut records; server changes disab
       await run(() => view.operations.pasteRemoteEntries('/target'))
     }
     assert.equal(view.requests.length, 1)
+  } finally { view.unmount() }
+})
+
+test('Ctrl+C replaces an earlier clipboard entry with the current selection before same-directory paste', async () => {
+  const view = await mountWorkflow()
+  try {
+    await view.select([sources[1].path])
+    await run(() => key('c'))
+    assert.deepEqual(view.operations.remoteClipboard?.sourcePaths, [sources[1].path])
+    view.sessionsRef.current[0].currentPath = '/source'
+    await view.select([sources[0].path])
+    await run(() => key('c'))
+    await run(() => key('v'))
+    assert.equal(view.requests.length, 1)
+    assert.deepEqual(view.requests[0].sourcePaths, [sources[0].path])
+    assert.equal(view.requests[0].targetDirectory, '/source')
+    assert.deepEqual(view.operations.remoteClipboard?.sourcePaths, [sources[0].path])
   } finally { view.unmount() }
 })
 
