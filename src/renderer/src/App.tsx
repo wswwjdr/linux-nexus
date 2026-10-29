@@ -336,7 +336,6 @@ export default function App() {
   const {
     transfers,
     uploadSelection,
-    uploadSelectionBusy,
     cancelUploadSelection,
     confirmUploadSelection,
     cancelTransfer: cancelTransferJob,
@@ -813,8 +812,7 @@ export default function App() {
 
       {uploadSelection && <UploadConfirmDialog
         selection={uploadSelection}
-        busy={uploadSelectionBusy}
-        onConfirm={(strategy) => void confirmUploadSelection(strategy)}
+        onConfirm={() => confirmUploadSelection('force')}
         onCancel={cancelUploadSelection}
       />}
 

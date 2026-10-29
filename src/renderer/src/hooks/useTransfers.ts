@@ -33,7 +33,6 @@ export function useTransfers({
 }: UseTransfersOptions) {
   const [transfers, setTransfers] = useState<Record<string, TransferJob>>({})
   const [uploadSelection, setUploadSelection] = useState<UploadSelection | null>(null)
-  const [uploadSelectionBusy, setUploadSelectionBusy] = useState(false)
   const completionTimers = useRef(new Map<string, number>())
   const sessionIdsRef = useRef(sessionIds)
   sessionIdsRef.current = sessionIds
@@ -226,7 +225,13 @@ export function useTransfers({
         strategy,
         ...(entries ? { entries } : {}),
       })
-      if (selection) setUploadSelection(selection)
+      if (!selection) return
+      if (selection.strategy === 'confirm' && selection.conflicts.length > 0) {
+        setUploadSelection(selection)
+      } else {
+        const executionStrategy = selection.strategy === 'confirm' ? 'skip' : selection.strategy
+        void executeUploadSelection(selection, executionStrategy)
+      }
     } catch (error) {
       showToast('error', '选择上传内容失败：' + errorMessage(error))
     }
@@ -244,11 +249,7 @@ export function useTransfers({
     void prepareUpload('drop', strategy, entries)
   }
 
-  const confirmUploadSelection = async (strategy: OperationExecutionStrategy) => {
-    const selection = uploadSelection
-    if (!selection || uploadSelectionBusy) return
-    setUploadSelectionBusy(true)
-    setUploadSelection(null)
+  const executeUploadSelection = async (selection: UploadSelection, strategy: OperationExecutionStrategy) => {
     await runTransfer(selection.name, 'upload', () => window.remoteFiles.executeUpload({ selectionId: selection.selectionId, strategy }), {
       refreshPath: selection.remoteDirectory,
       initialTotal: selection.items.reduce((sum, item) => sum + (item.type === 'file' ? item.size : 0), 0),
@@ -256,11 +257,16 @@ export function useTransfers({
       requestId: selection.requestId,
       sessionId: selection.sessionId,
     })
-    setUploadSelectionBusy(false)
+  }
+
+  const confirmUploadSelection = (strategy: OperationExecutionStrategy) => {
+    if (!uploadSelection) return
+    setUploadSelection(null)
+    void executeUploadSelection(uploadSelection, strategy)
   }
 
   const cancelUploadSelection = () => {
-    if (!uploadSelection || uploadSelectionBusy) return
+    if (!uploadSelection) return
     void window.remoteFiles.cancelUploadSelection(uploadSelection.selectionId)
       .catch((error) => showToast('error', '取消上传选择失败：' + errorMessage(error)))
     setUploadSelection(null)
@@ -287,7 +293,6 @@ export function useTransfers({
   return {
     transfers,
     uploadSelection,
-    uploadSelectionBusy,
     cancelUploadSelection,
     confirmUploadSelection,
     cancelTransfer,

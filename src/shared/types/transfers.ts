@@ -78,7 +78,7 @@ export interface UploadSelection {
   strategy: OperationStrategy
   items: UploadSelectionItem[]
   failures: TransferFailure[]
-  commandPreviews: Record<OperationExecutionStrategy, string>
+  conflicts: string[]
 }
 
 export interface UploadExecutionRequest {

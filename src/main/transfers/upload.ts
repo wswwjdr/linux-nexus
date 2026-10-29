@@ -7,9 +7,8 @@ import type { TransferItem } from '../runtime'
 import { getMainWindow, messageFromError } from '../runtime'
 import { readAppSettings } from '../state-store'
 import { filesSession, normalizedRemotePath } from '../remote-fs'
-import { buildRemoteCommand, runRemoteCommand } from '../ssh-commands'
+import { runRemoteCommand } from '../ssh-commands'
 import { transferFileStream } from './stream-transfer'
-import { uploadMoveFlag } from './upload-strategy'
 import {
   collectLocalTree,
   findPathCollisions,
@@ -168,26 +167,6 @@ async function collectUploadSources(request: UploadSelectionRequest, signal: Abo
   return { remoteRoot: remoteDirectory, name: selection.filePaths.length === 1 ? basename(selection.filePaths[0]) : `上传 ${items.length} 项`, items, failures }
 }
 
-function uploadCommandPreview(targetPath: string, strategy: OperationExecutionStrategy): string {
-  const moveFlag = uploadMoveFlag(strategy)
-  const script = [
-    'set -eu',
-    'destination=$1; modified=$2',
-    'directory=$(dirname -- "$destination"); name=$(basename -- "$destination")',
-    'temporary=$(mktemp -- "$directory/.$name.linux-nexus.XXXXXX")',
-    'trap \'rm -f -- "$temporary"\' EXIT',
-    'trap \'exit 129\' HUP',
-    'trap \'exit 130\' INT',
-    'trap \'exit 143\' TERM',
-    'cat > "$temporary"',
-    'touch -d "@$modified" -- "$temporary"',
-    `mv ${moveFlag} -- "$temporary" "$destination"`,
-    '[[ ! -e "$temporary" ]] || rm -f -- "$temporary"',
-    'trap - EXIT HUP INT TERM',
-  ].join('\n')
-  return buildRemoteCommand(script, [targetPath, '本机修改时间'])
-}
-
 export async function selectUploadSources(value: unknown): Promise<UploadSelection | null> {
   if (!isRecord(value)
     || typeof value.requestId !== 'string' || !value.requestId
@@ -208,10 +187,18 @@ export async function selectUploadSources(value: unknown): Promise<UploadSelecti
   if (sources.items.length === 0 && sources.failures.length === 0) throw new Error('没有可上传的文件')
   const remoteDirectory = normalizedRemotePath(request.remoteDirectory || '/')
   const remoteRoot = sources.remoteRoot
-  const sample = sources.items.find((item) => item.type === 'file')
-  const sampleTarget = sample
-    ? sample.relativePath ? posix.join(remoteRoot, sample.relativePath) : remoteRoot
-    : remoteRoot
+  const targets = sources.items.filter((item) => item.type === 'file')
+    .map((item) => item.relativePath ? posix.join(remoteRoot, item.relativePath) : remoteRoot)
+  let conflicts: string[] = []
+  if (request.strategy === 'confirm' && targets.length > 0) {
+    const { stdout } = await runRemoteCommand(session.client, [
+      'set -eu',
+      'while IFS= read -r -d "" target; do',
+      '  if [[ -e "$target" || -L "$target" ]]; then printf "%s\\0" "$target"; fi',
+      'done',
+    ].join('\n'), [], { stdin: targets.map((target) => Buffer.from(target + '\0')) })
+    conflicts = stdout.toString('utf8').split('\0').filter(Boolean)
+  }
   const selection: UploadSelection = {
     selectionId: randomUUID(),
     requestId: request.requestId,
@@ -227,11 +214,7 @@ export async function selectUploadSources(value: unknown): Promise<UploadSelecti
       size: item.size,
     })),
     failures: sources.failures,
-    commandPreviews: {
-      force: uploadCommandPreview(sampleTarget, 'force'),
-      skip: uploadCommandPreview(sampleTarget, 'skip'),
-      update: uploadCommandPreview(sampleTarget, 'update'),
-    },
+    conflicts,
   }
   uploadSelections.set(selection.selectionId, {
     selection,

@@ -92,7 +92,7 @@ const pasteStrategies: Array<{ strategy: PasteStrategy; label: string; descripti
 
 const uploadStrategies: Array<{ strategy: OperationStrategy; label: string; description: string }> = [
   ...executionStrategies,
-  { strategy: 'confirm', label: '确认后上传', description: '上传前确认内容，并选择覆盖或跳过同名文件。' },
+  { strategy: 'confirm', label: '同名时确认', description: '目标存在同名文件时确认是否覆盖。' },
 ]
 
 function pasteStrategyMenu(disabled: boolean): FileMenuNode {
