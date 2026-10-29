@@ -83,3 +83,53 @@ test('expanded performance monitor displays readable metrics and keeps refresh a
     host.remove()
   }
 })
+
+test('performance popover isolates background wheel events only while open', async () => {
+  const [{ createRoot }, { default: PerformanceMonitor }] = await Promise.all([
+    import('react-dom/client'),
+    import('../src/renderer/src/components/PerformanceMonitor.tsx'),
+  ])
+  const host = document.createElement('div')
+  const background = document.createElement('div')
+  document.body.append(host, background)
+  const root = createRoot(host)
+  let backgroundWheelCount = 0
+  background.addEventListener('wheel', () => backgroundWheelCount++)
+  const wheel = (target: Element) => {
+    const event = new dom.window.WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 120 })
+    target.dispatchEvent(event)
+    return event
+  }
+  const render = (open: boolean) => act(() => root.render(createElement(PerformanceMonitor, {
+    state: null,
+    thresholds: DEFAULT_PERFORMANCE_THRESHOLDS,
+    open,
+    onOpenChange: () => {},
+    onRefresh: () => {},
+  })))
+
+  try {
+    render(false)
+    assert.equal(wheel(background).defaultPrevented, false)
+    assert.equal(backgroundWheelCount, 1)
+
+    render(true)
+    assert.equal(wheel(background).defaultPrevented, true)
+    assert.equal(backgroundWheelCount, 1, 'background handlers must not receive wheel events while open')
+    const content = host.querySelector('.performance-empty')!
+    assert.equal(wheel(content).defaultPrevented, false, 'popover content must retain native scrolling')
+
+    render(false)
+    assert.equal(wheel(background).defaultPrevented, false)
+    assert.equal(backgroundWheelCount, 2, 'closing must restore background wheel handling')
+
+    render(true)
+    act(() => root.unmount())
+    assert.equal(wheel(background).defaultPrevented, false)
+    assert.equal(backgroundWheelCount, 3, 'unmounting must remove the wheel listener')
+  } finally {
+    act(() => root.unmount())
+    host.remove()
+    background.remove()
+  }
+})

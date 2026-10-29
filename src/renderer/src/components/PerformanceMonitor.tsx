@@ -100,10 +100,17 @@ export default function PerformanceMonitor({ state, thresholds, open, onOpenChan
     const dismissOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onOpenChange(false)
     }
+    const blockBackgroundWheel = (event: WheelEvent) => {
+      if (rootRef.current?.contains(event.target as Node)) return
+      event.preventDefault()
+      event.stopPropagation()
+    }
     document.addEventListener('pointerdown', dismissOutside, true)
+    document.addEventListener('wheel', blockBackgroundWheel, { capture: true, passive: false })
     window.addEventListener('keydown', dismissOnEscape)
     return () => {
       document.removeEventListener('pointerdown', dismissOutside, true)
+      document.removeEventListener('wheel', blockBackgroundWheel, true)
       window.removeEventListener('keydown', dismissOnEscape)
       window.clearInterval(clock)
     }
