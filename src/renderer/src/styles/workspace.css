@@ -237,6 +237,7 @@
 .warning-button:hover:not(:disabled) { border-color:var(--border-warning-strong); background:var(--surface-warning-strong); }
 .global-toast-stack { position: fixed; z-index: 8; top: 78px; right: 22px; width: min(480px, calc(100vw - 44px)); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
 .global-toast { min-height: 44px; display: flex; align-items: center; gap: 9px; padding: 6px 8px 6px 12px; border:1px solid; border-radius: var(--radius); box-shadow: var(--shadow-toast); pointer-events: auto; }
+.global-toast.is-leaving { opacity: 0; pointer-events: none; transition: opacity var(--toast-fade-duration) ease-out; }
 .global-toast.error { border-color:var(--border-danger); color:var(--text-danger); background:var(--surface-danger); }
 .global-toast.error > svg { color:var(--red); }
 .global-toast.info { border-color:var(--border-info); color:var(--text-info); background:var(--surface-info); }

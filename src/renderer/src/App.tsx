@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Cloud, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, RefreshCw, Search, Settings, Terminal, Upload } from 'lucide-react'
-import GlobalToast, { type ToastNotice } from './GlobalToast'
+import GlobalToast from './GlobalToast'
 import type { SessionPreviewActions } from './features/files/FileSessionWorkspace'
 import { useScriptExecution } from './features/files/useScriptExecution'
 import { useFileMenuActions } from './features/files/useFileMenuActions'
@@ -14,6 +14,7 @@ import SessionChooser from './components/SessionChooser'
 import ShortcutGuideDialog from './components/ShortcutGuideDialog'
 import PerformanceMonitor from './components/PerformanceMonitor'
 import { useTransfers } from './hooks/useTransfers'
+import { useToastQueue } from './hooks/useToastQueue'
 import { useProfileManagement } from './hooks/useProfileManagement'
 import { useCommandAliases } from './hooks/useCommandAliases'
 import { useRemoteOperations } from './features/remote-files/useRemoteOperations'
@@ -51,7 +52,7 @@ export default function App() {
   const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>('details')
   const [performanceThresholds, setPerformanceThresholds] = useState<PerformanceThresholds>(DEFAULT_PERFORMANCE_THRESHOLDS)
   const [fileTypeExtensions, setFileTypeExtensions] = useState<FileTypeExtensions>(defaultFileTypeExtensions)
-  const [toast, setToast] = useState<ToastNotice | null>(null)
+  const { toast, showToast, dismissToast } = useToastQueue()
   const [recentConnections, setRecentConnections] = useState<RecentConnection[]>(readRecentConnections)
   const [pendingHostKeys, setPendingHostKeys] = useState<PendingHostKey[]>([])
   const [browserContextMenu, setBrowserContextMenu] = useState<BrowserContextMenuState | null>(null)
@@ -59,7 +60,6 @@ export default function App() {
   const [searchOpenSessionIds, setSearchOpenSessionIds] = useState<Set<string>>(() => new Set())
   const [workspaceOpenSessionIds, setWorkspaceOpenSessionIds] = useState<Set<string>>(() => new Set())
   const [workspaceBlockingSessionIds, setWorkspaceBlockingSessionIds] = useState<Set<string>>(() => new Set())
-  const toastSequenceRef = useRef(0)
   const connectingSessionsRef = useRef(new Set<string>())
   const directoryLoadIdsRef = useRef(new Map<string, number>())
   const contextMenuAnchorRef = useRef<HTMLElement | null>(null)
@@ -74,9 +74,6 @@ export default function App() {
   const updateSession = useCallback((sessionId: string, update: (session: SessionTab) => SessionTab) => {
     sessionsRef.current = sessionsRef.current.map((session) => session.id === sessionId ? update(session) : session)
     setSessions((current) => current.map((session) => session.id === sessionId ? update(session) : session))
-  }, [])
-  const showToast = useCallback((kind: ToastNotice['kind'], message: string, action?: ToastNotice['action']) => {
-    setToast({ id: ++toastSequenceRef.current, kind, message, action })
   }, [])
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
@@ -165,9 +162,6 @@ export default function App() {
       for (const sessionId of sessionIds) next.delete(sessionId)
       return next
     })
-  }, [])
-  const dismissToast = useCallback((noticeId: number) => {
-    setToast((current) => current?.id === noticeId ? null : current)
   }, [])
   const {
     profiles,
