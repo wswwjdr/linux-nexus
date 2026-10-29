@@ -297,6 +297,8 @@ export function useRemoteOperations({
     } catch (error) {
       showToast('error', `${label}失败：${errorMessage(error)}`)
     } finally {
+      activeOperationRef.current = null
+      setActiveOperation(null)
       const affectedDirectories = new Set([
         ...request.sourcePaths.map(getParentPath),
         request.targetDirectory,
@@ -309,9 +311,6 @@ export function useRemoteOperations({
         await Promise.all(refreshSessions.map((candidate) => loadDirectory(candidate.id, candidate.currentPath)))
       } catch (error) {
         showToast('error', `目录刷新失败：${errorMessage(error)}`)
-      } finally {
-        activeOperationRef.current = null
-        setActiveOperation(null)
       }
     }
   }

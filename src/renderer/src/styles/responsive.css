@@ -29,7 +29,7 @@
   .pathbar-tools { gap: 8px; }
   .file-icon-grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 7px; padding: 12px; }
   .file-tile { height: 108px; }
-  .global-toast { top: 70px; right: 12px; width: min(480px, calc(100vw - 24px)); }
+  .global-toast-stack { top: 70px; right: 12px; width: min(480px, calc(100vw - 24px)); }
   .file-table .date-col { display: none; }
   .file-table th.date-col, .file-table td.date-col { display: none; }
   .file-table .name-col { width: 72%; padding-left: 17px; }

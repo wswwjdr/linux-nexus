@@ -113,9 +113,6 @@
 .file-content-wrap { min-height: 0; flex: 1; overflow: auto; position: relative; }
 .file-content-wrap:focus { outline: none; }
 .file-content-wrap.selecting, .file-content-wrap.selecting * { user-select: none; cursor: crosshair; }
-.remote-copy-status { position: sticky; z-index: 2; top: 0; min-height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom:1px solid var(--border-success); color:var(--text-success); background:var(--surface-success); font-size: 11px; }
-.remote-copy-status > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.remote-copy-status .icon-button { width: 25px; height: 25px; margin-left: auto; color:var(--text-secondary); }
 .selection-marquee { position: fixed; z-index: 5; border:1px solid var(--border-success-strong); background:color-mix(in srgb, var(--accent-success) 30%, transparent); pointer-events: none; }
 .file-drop-overlay { position: absolute; z-index: 4; inset: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 20px; border:2px dashed var(--border-success-strong); border-radius: 5px; color:var(--text-success); background:color-mix(in srgb, var(--surface) 94%, transparent); text-align: center; pointer-events: none; }
 .file-drop-overlay > svg { flex: 0 0 auto; color:var(--green); }
@@ -238,13 +235,15 @@
 .danger-button:hover:not(:disabled) { border-color:var(--border-danger-strong); background:var(--surface-danger-strong); }
 .warning-button { height: 35px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border:1px solid var(--gold-action); border-radius: var(--radius); color:var(--text-inverse); background:var(--gold-action); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s, border-color .15s; }
 .warning-button:hover:not(:disabled) { border-color:var(--border-warning-strong); background:var(--surface-warning-strong); }
-.global-toast { position: fixed; z-index: 8; top: 78px; right: 22px; width: min(480px, calc(100vw - 44px)); min-height: 44px; display: flex; align-items: center; gap: 9px; padding: 6px 8px 6px 12px; border:1px solid; border-radius: var(--radius); box-shadow: var(--shadow-toast); }
+.global-toast-stack { position: fixed; z-index: 8; top: 78px; right: 22px; width: min(480px, calc(100vw - 44px)); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.global-toast { min-height: 44px; display: flex; align-items: center; gap: 9px; padding: 6px 8px 6px 12px; border:1px solid; border-radius: var(--radius); box-shadow: var(--shadow-toast); pointer-events: auto; }
 .global-toast.error { border-color:var(--border-danger); color:var(--text-danger); background:var(--surface-danger); }
 .global-toast.error > svg { color:var(--red); }
 .global-toast.info { border-color:var(--border-info); color:var(--text-info); background:var(--surface-info); }
 .global-toast.info > svg { color:var(--blue); }
 .global-toast-message { min-width: 0; flex: 1; overflow-wrap: anywhere; line-height: 1.45; }
 .global-toast .icon-button { flex: 0 0 auto; }
+.global-toast > svg, .global-toast > button { flex-shrink: 0; }
 .global-toast-action { color:var(--gold); }
 .global-toast-action:hover:not(:disabled) { color:var(--text-warning); background:var(--gold-soft); border-color:var(--border-warning); }
 .transfer-tray { position: absolute; right: 20px; bottom: 76px; z-index: 2; width: 360px; max-width: calc(100% - 40px); max-height: min(65vh, 600px); overflow-y: auto; display: flex; flex-direction: column; gap: 7px; }

@@ -35,7 +35,7 @@ function session(id: string, currentPath: string): SessionTab {
   }
 }
 
-async function mountWorkflow({ hold = false, failure = '' } = {}) {
+async function mountWorkflow({ hold = false, failure = '', holdRefresh = false } = {}) {
   const { createRoot } = await import('react-dom/client')
   const host = document.createElement('div')
   document.body.append(host)
@@ -50,6 +50,8 @@ async function mountWorkflow({ hold = false, failure = '' } = {}) {
   let finish!: (status?: OperationExecutionResult['status']) => void
   let operations!: ReturnType<typeof useRemoteOperations>
   let drag!: ReturnType<typeof useFileDragAndDrop>
+  let releaseRefresh!: () => void
+  const refreshGate = holdRefresh ? new Promise<void>((resolve) => { releaseRefresh = resolve }) : Promise.resolve()
   const api = {
     executeOperation: async (request: OperationExecutionRequest) => {
       requests.push(request)
@@ -74,7 +76,7 @@ async function mountWorkflow({ hold = false, failure = '' } = {}) {
       activeSession, connectedProfile, connectedSessionId: activeSession.id,
       currentPath: activeSession.currentPath, sessionsRef,
       updateSession: (id, update) => { sessionsRef.current = sessionsRef.current.map((item) => item.id === id ? update(item) : item) },
-      loadDirectory: async (id) => { refreshed.push(id); return true },
+      loadDirectory: async (id) => { refreshed.push(id); await refreshGate; return true },
       showToast: (kind, message) => notices.push({ kind, message }), setBrowserContextMenu: () => {},
     })
     useRemoteFileShortcuts({
@@ -96,6 +98,7 @@ async function mountWorkflow({ hold = false, failure = '' } = {}) {
   return {
     get operations() { return operations }, get drag() { return drag }, requests, cancelled, refreshed, notices, renames, sessionsRef,
     finish: (status?: OperationExecutionResult['status']) => finish(status),
+    releaseRefresh: () => releaseRefresh(),
     async changeProfile(next: ServerProfile) {
       connectedProfile = next
       await act(async () => { root.render(createElement(Harness)) })
@@ -261,6 +264,35 @@ test('pending commands block repeated submissions, expose cancellation and keep 
     assert.ok(view.refreshed.includes('source'))
   } finally { view.unmount() }
 })
+
+for (const operation of ['copy', 'move', 'extract'] as const) {
+  for (const outcome of ['completed', 'cancelled', 'failed'] as const) {
+    test(`${operation} clears its running state on ${outcome} before directory refresh finishes`, async () => {
+      const view = await mountWorkflow({ hold: outcome !== 'failed', failure: outcome === 'failed' ? 'Permission denied' : '', holdRefresh: true })
+      const label = operation === 'copy' ? '复制' : operation === 'move' ? '移动' : '解压'
+      try {
+        if (operation === 'extract') {
+          await run(() => view.operations.extractRemoteArchive({ name: 'a.zip', path: '/a.zip' }, 'current-directory', '/target', 'force'))
+        } else {
+          await run(() => operation === 'copy' ? view.operations.copyRemoteSelection(sources) : view.operations.cutRemoteSelection(sources))
+          await run(() => view.operations.pasteRemoteEntries('/target'))
+        }
+        if (outcome !== 'failed') {
+          assert.equal(view.operations.activeOperation?.operation, operation)
+          await run(() => view.finish(outcome))
+        }
+        assert.ok(view.refreshed.includes('active'))
+        assert.equal(view.operations.activeOperation, null)
+        assert.ok(view.notices.some(({ kind, message }) => outcome === 'failed'
+          ? kind === 'error' && message === `${label}失败：Permission denied`
+          : message === `${label}${outcome === 'completed' ? '已完成' : '已取消'}`))
+      } finally {
+        await run(() => view.releaseRefresh())
+        view.unmount()
+      }
+    })
+  }
+}
 
 test('completed move does not erase a newer cut selection', async () => {
   const view = await mountWorkflow({ hold: true })

@@ -46,7 +46,7 @@ interface SessionWorkspaceState {
   breadcrumbs: Array<{ label: string; path: string }>
   sort: SessionTab['sort']
   sortedEntries: RemoteEntry[]
-  operationStatus: 'copy' | 'move' | 'extract' | null
+  operationActive: boolean
   highlightedPath: string | null
   sessionContextMenu: SessionContextMenuState | null
   browserContextMenu: BrowserContextMenu | null
@@ -61,7 +61,7 @@ interface SessionWorkspaceActions {
   sessions: Pick<SessionOperations,
     'closeSession' | 'openSessionContextMenu' | 'handleSessionTabContextMenuKeyDown' | 'duplicateSession' | 'reorderSession' | 'activateSession' | 'reconnectSession' | 'navigate'>
   remoteFiles: Pick<RemoteOperations,
-    'requestRemoteEntriesDeletion' | 'beginRemoteMove' | 'cancelActiveOperation' | 'extractRemoteArchive'>
+    'requestRemoteEntriesDeletion' | 'beginRemoteMove' | 'extractRemoteArchive'>
   browser: Pick<FileBrowserProps,
     'onOpenEntryContextMenu' | 'onOpenDirectoryContextMenu' | 'onDropUpload' | 'onDropError'>
   serverList: Pick<ServerListProps, 'onAdd' | 'onConnect' | 'onEdit' | 'onSetPinned' | 'onDelete'>
@@ -94,7 +94,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
   const { state, actions, sessionContextMenuRef, contextMenuAnchorRef } = props
   const {
     sessions, profiles, offlineProfiles, activeSession, activeSessionId, connectedSessionId,
-    currentPath, entries, loading, viewMode, breadcrumbs, sort, sortedEntries, operationStatus,
+    currentPath, entries, loading, viewMode, breadcrumbs, sort, sortedEntries, operationActive,
     highlightedPath, sessionContextMenu, browserContextMenu, searchOpenSessionIds,
     scriptCommandDialogs, scriptExecutionDialogs,
     fileTypeExtensions, transfers,
@@ -104,7 +104,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
     reconnectSession,
     navigate,
   } = actions.sessions
-  const { requestRemoteEntriesDeletion, beginRemoteMove, cancelActiveOperation, extractRemoteArchive } = actions.remoteFiles
+  const { requestRemoteEntriesDeletion, beginRemoteMove, extractRemoteArchive } = actions.remoteFiles
   const {
     onOpenEntryContextMenu,
     onOpenDirectoryContextMenu,
@@ -174,7 +174,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
               sort={sort}
               sortedEntries={sortedEntries}
               selectedPaths={activeSession.selectedPaths}
-              operationStatus={operationStatus}
+              operationActive={operationActive}
               highlightedPath={highlightedPath}
               onViewModeChange={(mode) => patchSession(activeSession.id, { viewMode: mode })}
               onNavigate={navigate}
@@ -185,7 +185,6 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
               onDeleteEntries={requestRemoteEntriesDeletion}
               onDropUpload={uploadDroppedEntries}
               onDropMove={beginRemoteMove}
-              onCancelOperation={cancelActiveOperation}
               onDropError={(error) => showToast('error', errorMessage(error))}
             />
           </div>

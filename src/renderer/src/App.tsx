@@ -634,7 +634,7 @@ export default function App() {
             breadcrumbs,
             sort,
             sortedEntries,
-            operationStatus: activeOperation && activeSession?.id === activeOperation.sessionId ? activeOperation.operation : null,
+            operationActive: activeOperation !== null,
             highlightedPath,
             sessionContextMenu,
             browserContextMenu,
@@ -658,7 +658,6 @@ export default function App() {
             remoteFiles: {
               requestRemoteEntriesDeletion,
               beginRemoteMove,
-              cancelActiveOperation,
               extractRemoteArchive,
             },
             browser: {
@@ -707,7 +706,14 @@ export default function App() {
         />
       </main>
 
-      <GlobalToast notice={toast} onDismiss={dismissToast} />
+      <GlobalToast
+        notice={toast}
+        onDismiss={dismissToast}
+        progress={activeOperation ? {
+          message: `正在${activeOperation.operation === 'copy' ? '复制' : activeOperation.operation === 'move' ? '移动' : '解压'}…`,
+          onCancel: cancelActiveOperation,
+        } : null}
+      />
 
       {shortcutGuideOpen && <ShortcutGuideDialog onClose={closeShortcutGuide} />}
 

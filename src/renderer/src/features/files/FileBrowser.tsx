@@ -2,7 +2,6 @@ import {
   Folder,
   LoaderCircle,
   Upload,
-  X,
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import type { DroppedUploadEntry, RemoteEntry } from '@shared/types'
@@ -22,7 +21,7 @@ interface FileBrowserProps {
   sort: { column: SortColumn; direction: SortDirection }
   sortedEntries: RemoteEntry[]
   selectedPaths: string[]
-  operationStatus: 'copy' | 'move' | 'extract' | null
+  operationActive: boolean
   highlightedPath: string | null
   onViewModeChange: (mode: FileViewMode) => void
   onNavigate: (path: string) => Promise<boolean>
@@ -33,7 +32,6 @@ interface FileBrowserProps {
   onDeleteEntries: (entries: RemoteEntry[]) => void
   onDropUpload: (entries: DroppedUploadEntry[]) => void
   onDropMove: (sourcePaths: string[], targetDirectory: string) => void
-  onCancelOperation: () => void
   onDropError: (error: unknown) => void
 }
 
@@ -46,7 +44,7 @@ export default function FileBrowser({
   sort,
   sortedEntries,
   selectedPaths,
-  operationStatus,
+  operationActive,
   highlightedPath,
   onViewModeChange,
   onNavigate,
@@ -57,7 +55,6 @@ export default function FileBrowser({
   onDeleteEntries,
   onDropUpload,
   onDropMove,
-  onCancelOperation,
   onDropError,
 }: FileBrowserProps) {
   const contentRef = useRef<HTMLDivElement>(null)
@@ -137,7 +134,7 @@ export default function FileBrowser({
   } = useFileDragAndDrop({
     sortedEntries,
     selectedPathsRef,
-    operationActive: operationStatus !== null,
+    operationActive,
     onDropUpload,
     onDropMove,
     onDropError,
@@ -272,13 +269,6 @@ export default function FileBrowser({
         onDragLeave={handleDragLeave}
         onDrop={(event) => void handleDrop(event)}
       >
-        {operationStatus && (
-          <div className="remote-copy-status" role="status">
-            <LoaderCircle className="spin" size={15} />
-            <span>正在{operationStatus === 'copy' ? '复制' : operationStatus === 'move' ? '移动' : '解压'}…</span>
-            <button type="button" className="icon-button" title="取消操作" aria-label="取消操作" onClick={onCancelOperation}><X size={14} /></button>
-          </div>
-        )}
         <FileEntryCollection
           selectedPaths={selectedPaths}
           highlightedPath={highlightedPath}
@@ -287,7 +277,7 @@ export default function FileBrowser({
           viewMode={viewMode}
           dropTargetPath={dropTargetPath}
           hoveredPath={hoveredEntry?.entry.path ?? null}
-          operationActive={operationStatus !== null}
+          operationActive={operationActive}
           hoverCardRef={hoverCardRef}
           onToggleSort={onToggleSort}
           onEntryClick={handleEntryClick}
