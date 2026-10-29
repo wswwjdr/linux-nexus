@@ -15,7 +15,7 @@ import SessionChooser from './components/SessionChooser'
 import ShortcutGuideDialog from './components/ShortcutGuideDialog'
 import PerformanceMonitor from './components/PerformanceMonitor'
 import { useTransfers } from './hooks/useTransfers'
-import { useToastQueue } from './hooks/useToastQueue'
+import { useToasts } from './hooks/useToasts'
 import { useProfileManagement } from './hooks/useProfileManagement'
 import { useCommandAliases } from './hooks/useCommandAliases'
 import { useRemoteOperations } from './features/remote-files/useRemoteOperations'
@@ -54,7 +54,7 @@ export default function App() {
   const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>('details')
   const [performanceThresholds, setPerformanceThresholds] = useState<PerformanceThresholds>(DEFAULT_PERFORMANCE_THRESHOLDS)
   const [fileTypeExtensions, setFileTypeExtensions] = useState<FileTypeExtensions>(defaultFileTypeExtensions)
-  const { toast, showToast, dismissToast } = useToastQueue()
+  const { notices, showToast, dismissToast } = useToasts()
   const [recentConnections, setRecentConnections] = useState<RecentConnection[]>(readRecentConnections)
   const [pendingHostKeys, setPendingHostKeys] = useState<PendingHostKey[]>([])
   const [browserContextMenu, setBrowserContextMenu] = useState<BrowserContextMenuState | null>(null)
@@ -701,7 +701,7 @@ export default function App() {
       </main>
 
       <GlobalToast
-        notice={toast}
+        notices={notices}
         onDismiss={dismissToast}
         progress={activeOperation ? {
           message: `正在${activeOperation.operation === 'copy' ? '复制' : activeOperation.operation === 'move' ? '移动' : '解压'}…`,

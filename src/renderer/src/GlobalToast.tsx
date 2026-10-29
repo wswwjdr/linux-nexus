@@ -12,7 +12,7 @@ export interface ToastNotice {
 }
 
 interface GlobalToastProps {
-  notice: ToastNotice | null
+  notices: ToastNotice[]
   onDismiss: (noticeId: number) => void
   progress?: {
     message: string
@@ -20,6 +20,7 @@ interface GlobalToastProps {
   } | null
 }
 
+const DISPLAY_MS = 3000
 const FADE_OUT_MS = 240
 const fadeStyle = { '--toast-fade-duration': `${FADE_OUT_MS}ms` } as CSSProperties
 
@@ -29,7 +30,7 @@ function ToastMessage({ notice, onDismiss }: { notice: ToastNotice; onDismiss: G
   useEffect(() => {
     const timeout = leaving
       ? window.setTimeout(() => onDismiss(notice.id), FADE_OUT_MS)
-      : window.setTimeout(() => setLeaving(true), 6000)
+      : window.setTimeout(() => setLeaving(true), DISPLAY_MS)
     return () => window.clearTimeout(timeout)
   }, [leaving, notice.id, onDismiss])
 
@@ -60,8 +61,8 @@ function ToastMessage({ notice, onDismiss }: { notice: ToastNotice; onDismiss: G
   )
 }
 
-export default function GlobalToast({ notice, onDismiss, progress }: GlobalToastProps) {
-  if (!notice && !progress) return null
+export default function GlobalToast({ notices, onDismiss, progress }: GlobalToastProps) {
+  if (notices.length === 0 && !progress) return null
 
   return (
     <div className="global-toast-stack">
@@ -72,7 +73,7 @@ export default function GlobalToast({ notice, onDismiss, progress }: GlobalToast
           <button type="button" className="secondary-button" onClick={progress.onCancel}>取消操作</button>
         </div>
       )}
-      {notice && <ToastMessage key={notice.id} notice={notice} onDismiss={onDismiss} />}
+      {notices.map((notice) => <ToastMessage key={notice.id} notice={notice} onDismiss={onDismiss} />)}
     </div>
   )
 }

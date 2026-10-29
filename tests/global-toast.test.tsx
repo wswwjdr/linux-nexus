@@ -3,7 +3,7 @@ import test from 'node:test'
 import { act, createElement, type ComponentProps } from 'react'
 import { JSDOM } from 'jsdom'
 import GlobalToast from '../src/renderer/src/GlobalToast.tsx'
-import { useToastQueue } from '../src/renderer/src/hooks/useToastQueue.ts'
+import { useToasts } from '../src/renderer/src/hooks/useToasts.ts'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })
 Object.defineProperties(globalThis, {
@@ -28,18 +28,18 @@ async function mountToasts() {
     return timerId
   }) as typeof window.setTimeout
   window.clearTimeout = (id) => { timers.delete(id) }
-  let queue!: ReturnType<typeof useToastQueue>
+  let toasts!: ReturnType<typeof useToasts>
   let progress: ComponentProps<typeof GlobalToast>['progress'] = null
   function Harness() {
-    queue = useToastQueue()
-    return createElement(GlobalToast, { notice: queue.toast, onDismiss: queue.dismissToast, progress })
+    toasts = useToasts()
+    return createElement(GlobalToast, { notices: toasts.notices, onDismiss: toasts.dismissToast, progress })
   }
   await act(async () => root.render(createElement(Harness)))
 
   return {
     host,
     timers,
-    get queue() { return queue },
+    get toasts() { return toasts },
     async setProgress(next: typeof progress) {
       progress = next
       await act(async () => root.render(createElement(Harness)))
@@ -65,69 +65,95 @@ async function mountToasts() {
   }
 }
 
-test('notices are shown in FIFO order with a full lifetime and fade before advancing, including arrivals during fading', async () => {
+function messages(host: HTMLElement) {
+  return [...host.querySelectorAll('.global-toast-message')].map((element) => element.textContent)
+}
+
+test('notices appear immediately in arrival order and expire together after three seconds and fading', async () => {
   const view = await mountToasts()
   try {
     act(() => {
-      view.queue.showToast('info', '第一条')
-      view.queue.showToast('error', '第二条')
-      view.queue.showToast('info', '第三条')
+      view.toasts.showToast('info', '第一条')
+      view.toasts.showToast('error', '第二条')
+      view.toasts.showToast('info', '第三条')
     })
-    assert.equal(view.host.querySelectorAll('.global-toast').length, 1)
-    assert.ok(view.host.textContent?.includes('第一条'))
-    assert.ok(!view.host.textContent?.includes('第二条'))
-    await view.advance(5999)
+    assert.deepEqual(messages(view.host), ['第一条', '第二条', '第三条'])
+    assert.equal(view.host.querySelectorAll('[role="alert"]').length, 1)
+    await view.advance(2999)
     assert.equal(view.host.querySelector('.is-leaving'), null)
     await view.advance(1)
-    assert.ok(view.host.querySelector('.is-leaving'))
-    act(() => view.queue.showToast('info', '第四条'))
+    assert.equal(view.host.querySelectorAll('.is-leaving').length, 3)
     await view.advance(239)
-    assert.ok(view.host.textContent?.includes('第一条'))
+    assert.equal(view.host.querySelectorAll('.global-toast').length, 3)
     await view.advance(1)
-    assert.ok(view.host.querySelector('[role="alert"]')?.textContent?.includes('第二条'))
+    assert.equal(view.host.querySelector('.global-toast-stack'), null)
+    assert.equal(view.toasts.notices.length, 0)
+  } finally { view.unmount() }
+})
+
+test('each notice keeps its own lifetime including notices arriving during another notice fading', async () => {
+  const view = await mountToasts()
+  try {
+    act(() => view.toasts.showToast('info', '第一条'))
+    await view.advance(1000)
+    act(() => view.toasts.showToast('info', '第二条'))
+    await view.advance(2000)
+    assert.equal(view.host.querySelectorAll('.is-leaving').length, 1)
+    act(() => view.toasts.showToast('info', '第三条'))
+    assert.deepEqual(messages(view.host), ['第一条', '第二条', '第三条'])
+    await view.advance(240)
+    assert.deepEqual(messages(view.host), ['第二条', '第三条'])
+    await view.advance(759)
     assert.equal(view.host.querySelector('.is-leaving'), null)
-    await view.advance(6000)
+    await view.advance(1)
+    assert.equal(view.host.querySelectorAll('.is-leaving').length, 1)
+    await view.advance(240)
+    assert.deepEqual(messages(view.host), ['第三条'])
+    await view.advance(1759)
+    assert.equal(view.host.querySelector('.is-leaving'), null)
+    await view.advance(1)
     assert.ok(view.host.querySelector('.is-leaving'))
     await view.advance(240)
-    assert.ok(view.host.textContent?.includes('第三条'))
-    await view.advance(6240)
-    assert.ok(view.host.textContent?.includes('第四条'))
-    await view.advance(6240)
     assert.equal(view.host.querySelector('.global-toast'), null)
   } finally { view.unmount() }
 })
 
-test('manual dismissal fades before advancing and a stale dismissal cannot discard the next notice', async () => {
+test('closing a middle notice removes only that notice and does not reset other timers', async () => {
   const view = await mountToasts()
   try {
     act(() => {
-      view.queue.showToast('info', '第一条')
-      view.queue.showToast('info', '第二条')
+      view.toasts.showToast('info', '第一条')
+      view.toasts.showToast('info', '第二条')
+      view.toasts.showToast('info', '第三条')
     })
-    const firstId = view.queue.toast!.id
+    const middleId = view.toasts.notices[1].id
     await view.advance(500)
-    act(() => view.host.querySelector<HTMLButtonElement>('[aria-label="关闭提示"]')!.click())
-    assert.ok(view.host.querySelector('.is-leaving'))
+    act(() => view.host.querySelectorAll<HTMLButtonElement>('[aria-label="关闭提示"]')[1].click())
+    assert.equal(view.host.querySelectorAll('.is-leaving').length, 1)
     await view.advance(239)
-    assert.equal(view.queue.toast?.id, firstId)
+    assert.equal(view.toasts.notices.length, 3)
     await view.advance(1)
-    assert.ok(view.host.textContent?.includes('第二条'))
-    act(() => view.queue.dismissToast(firstId))
-    assert.ok(view.host.textContent?.includes('第二条'))
-    await view.advance(5999)
+    assert.deepEqual(messages(view.host), ['第一条', '第三条'])
+    act(() => view.toasts.dismissToast(middleId))
+    assert.deepEqual(messages(view.host), ['第一条', '第三条'])
+    await view.advance(2259)
     assert.equal(view.host.querySelector('.is-leaving'), null)
+    await view.advance(1)
+    assert.equal(view.host.querySelectorAll('.is-leaving').length, 2)
+    await view.advance(240)
+    assert.equal(view.host.querySelector('.global-toast'), null)
   } finally { view.unmount() }
 })
 
-test('notice actions execute once and any resulting notice joins the queue after the current fade', async () => {
+test('notice actions execute once and resulting notices appear immediately', async () => {
   const view = await mountToasts()
   let actions = 0
   try {
-    act(() => view.queue.showToast('error', '连接失败', {
+    act(() => view.toasts.showToast('error', '连接失败', {
       label: '重试',
       onClick: () => {
         actions++
-        view.queue.showToast('info', '已发起重试')
+        view.toasts.showToast('info', '已发起重试')
       },
     }))
     const button = view.host.querySelector<HTMLButtonElement>('[aria-label="重试"]')!
@@ -135,14 +161,14 @@ test('notice actions execute once and any resulting notice joins the queue after
     act(() => button.click())
     assert.equal(actions, 1)
     assert.equal(button.disabled, true)
-    assert.ok(view.host.textContent?.includes('连接失败'))
+    assert.deepEqual(messages(view.host), ['连接失败', '已发起重试'])
     await view.advance(240)
-    assert.ok(view.host.textContent?.includes('已发起重试'))
+    assert.deepEqual(messages(view.host), ['已发起重试'])
     assert.equal(view.host.querySelector('.is-leaving'), null)
   } finally { view.unmount() }
 })
 
-test('operation progress does not expire or block the notice queue and remains cancellable', async () => {
+test('operation progress remains cancellable and persistent alongside multiple notices', async () => {
   const view = await mountToasts()
   let cancellations = 0
   try {
@@ -152,15 +178,16 @@ test('operation progress does not expire or block the notice queue and remains c
     assert.ok(view.host.textContent?.includes('正在复制…'))
     act(() => view.host.querySelector<HTMLButtonElement>('button')!.click())
     assert.equal(cancellations, 1)
-    act(() => view.queue.showToast('error', '取消操作失败'))
-    assert.equal(view.host.querySelectorAll('.global-toast').length, 2)
-    await view.advance(6240)
-    assert.equal(view.host.querySelector('[role="alert"]'), null)
-    assert.ok(view.host.textContent?.includes('正在复制…'))
+    act(() => {
+      view.toasts.showToast('error', '取消操作失败')
+      view.toasts.showToast('info', '路径已复制')
+    })
+    assert.deepEqual(messages(view.host), ['正在复制…', '取消操作失败', '路径已复制'])
+    await view.advance(3240)
+    assert.deepEqual(messages(view.host), ['正在复制…'])
     assert.equal(view.timers.size, 0)
     await view.setProgress(null)
-    act(() => view.queue.showToast('info', '复制已完成'))
-    assert.ok(!view.host.textContent?.includes('正在复制'))
-    assert.ok(view.host.textContent?.includes('复制已完成'))
+    act(() => view.toasts.showToast('info', '复制已完成'))
+    assert.deepEqual(messages(view.host), ['复制已完成'])
   } finally { view.unmount() }
 })
