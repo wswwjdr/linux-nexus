@@ -22,6 +22,7 @@ interface FileSessionWorkspaceProps {
   session: SessionTab
   active: boolean
   searchOpen: boolean
+  propertiesOpen: boolean
   scriptCommandDialog: { name: string; command: string } | null
   scriptExecutionDialog: ScriptExecutionDialogState | null
   fileTypeExtensions: FileTypeExtensions
@@ -43,6 +44,7 @@ export default function FileSessionWorkspace({
   session,
   active,
   searchOpen,
+  propertiesOpen,
   scriptCommandDialog,
   scriptExecutionDialog,
   fileTypeExtensions,
@@ -86,11 +88,11 @@ export default function FileSessionWorkspace({
     else openSearch()
   }, [active, confirmDiscardForSearch, openSearch, preview.textDirty, preview.textSaveConfirmation, preview.textSaving])
   useEffect(() => {
-    if (active && searchOpen && !previewOpen && !confirmDiscardForSearch) {
+    if (active && searchOpen && !previewOpen && !propertiesOpen && !confirmDiscardForSearch) {
       const timer = window.setTimeout(() => (workspaceRef.current?.querySelector<HTMLInputElement>('.search-tab-panel:not([hidden]) .search-query-field input:not(:disabled)') ?? workspaceRef.current?.querySelector<HTMLButtonElement>('.search-modal .modal-close'))?.focus(), 0)
       return () => window.clearTimeout(timer)
     }
-  }, [active, searchOpen, previewOpen, confirmDiscardForSearch])
+  }, [active, searchOpen, previewOpen, propertiesOpen, confirmDiscardForSearch])
   useEffect(() => {
     onRegisterWorkspaceActions(session.id, {
       previewFile: preview.previewFile,
@@ -151,7 +153,7 @@ export default function FileSessionWorkspace({
           currentPath={session.currentPath}
           visible={active && !previewOpen}
           fileTypeExtensions={fileTypeExtensions}
-          previewOpen={previewOpen}
+          previewOpen={previewOpen || propertiesOpen}
           onClose={() => onSearchOpenChange(session.id, false)}
           onMenuAction={(action, context) => onMenuAction(action, context, session.id)}
         />

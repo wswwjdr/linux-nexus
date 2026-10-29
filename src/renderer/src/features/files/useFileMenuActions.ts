@@ -31,6 +31,7 @@ interface UseFileMenuActionsOptions {
   remoteOperations: Pick<RemoteOperations,
     'copyRemoteSelection' | 'cutRemoteSelection' | 'pasteRemoteEntries' | 'requestRemoteEntriesDeletion' | 'requestRemoteEntryRename' | 'setCreateDirectoryDialog' | 'extractRemoteArchive'>
   locateSearchResult: SessionOperations['locateSearchResult']
+  openEntryProperties: (sessionId: string, path: string) => void
   patchSession: (sessionId: string, patch: Partial<SessionTab>) => void
   showToast: (kind: ToastNotice['kind'], message: string, action?: ToastNotice['action']) => void
 }
@@ -50,6 +51,7 @@ export function useFileMenuActions({
   transfers,
   remoteOperations,
   locateSearchResult,
+  openEntryProperties,
   patchSession,
   showToast,
 }: UseFileMenuActionsOptions) {
@@ -100,6 +102,9 @@ export function useFileMenuActions({
       : context.kind === 'multiple-entries' ? context.entries
         : null
     switch (action.type) {
+      case 'properties':
+        if (entry) openEntryProperties(sessionId, entry.path)
+        break
       case 'preview':
         if (entry) void workspaceActionsRef.current.get(sessionId)?.previewFile(entry, action.previewType)
         break

@@ -1,4 +1,4 @@
-import { Archive, ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronRight, ClipboardPaste, Copy, Eye, FileText, FolderOpen, FolderPlus, Pencil, Play, Scissors, Terminal, Trash2, Upload, type LucideIcon } from 'lucide-react'
+import { Archive, ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronRight, ClipboardPaste, Copy, Eye, FileText, FolderOpen, FolderPlus, Info, Pencil, Play, Scissors, Terminal, Trash2, Upload, type LucideIcon } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from 'react'
 import type { FileTypeExtensions } from '@shared/types'
 import type { ContextMenuPosition } from '@/app-types'
@@ -33,6 +33,7 @@ const icons: Record<FileMenuIcon, LucideIcon> = {
   'file-text': FileText,
   'folder-open': FolderOpen,
   'folder-plus': FolderPlus,
+  info: Info,
   pencil: Pencil,
   play: Play,
   scissors: Scissors,

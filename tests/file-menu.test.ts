@@ -25,7 +25,7 @@ test('single file composes preview, reverse-preview and script strategies before
 
   assert.deepEqual(nodes.map((node) => node.kind === 'separator' ? node.kind : node.id), [
     'preview', 'preview-log', 'script-execution', 'separator',
-    'download', 'copy', 'cut', 'paste-strategy', 'copy-path', 'rename', 'delete',
+    'download', 'copy', 'cut', 'paste-strategy', 'copy-path', 'rename', 'delete', 'properties',
   ])
   const scriptMenu = nodes.find((node) => node.kind === 'submenu' && node.id === 'script-execution')
   assert.equal(scriptMenu?.kind, 'submenu')
@@ -63,13 +63,13 @@ test('file suffix settings immediately control menu capabilities and exact multi
   assert.equal(partialMatch.some((node) => node.id === 'script-execution'), false)
 })
 
-test('single unsupported entries expose only path copying', () => {
+test('single unsupported entries expose path copying and properties', () => {
   for (const type of ['symlink', 'other'] as const) {
     const nodes = resolveFileContextMenu(
       { kind: 'single-entry', entry: entry('link', type), canPaste: true },
       defaultFileTypeExtensions(),
     )
-    assert.deepEqual(nodes.map(({ id }) => id), ['copy-path'])
+    assert.deepEqual(nodes.map(({ id }) => id), ['copy-path', 'properties'])
   }
 })
 
@@ -114,10 +114,10 @@ test('all-supported selections keep one batch menu and directory backgrounds use
 test('search results share all applicable type actions and keep location navigation', () => {
   const nodes = resolveFileContextMenu({ kind: 'search-result', result: result('run.sh') }, defaultFileTypeExtensions())
   assert.deepEqual(nodes.map((node) => node.kind === 'separator' ? node.kind : node.id), [
-    'preview', 'preview-log', 'script-execution', 'separator', 'open-location',
+    'preview', 'preview-log', 'script-execution', 'separator', 'open-location', 'properties',
   ])
   const target = resolveFileContextMenu({ kind: 'search-result', result: result('run.sh') }, defaultFileTypeExtensions())
-  assert.equal(target.at(-1)?.kind === 'action' ? target.at(-1)?.label : '', '打开所在目录')
+  assert.equal(target.at(-1)?.kind === 'action' ? target.at(-1)?.label : '', '属性')
 })
 
 test('supported archive files expose extraction while ordinary compressed streams do not', () => {
@@ -196,6 +196,7 @@ test('archive actions from search results always use the active browser director
       extractRemoteArchive: (...args) => calls.push(args),
     },
     locateSearchResult: async () => true,
+    openEntryProperties: () => {},
     patchSession: () => {},
     showToast: () => {},
   })
@@ -212,5 +213,36 @@ test('archive actions from search results always use the active browser director
     ['current-directory', '/active/browser/path', 'force'],
     ['archive-directory', '/active/browser/path', 'force'],
     ['choose-directory', '/active/browser/path', 'force'],
+  ])
+})
+
+test('properties is the last action for every single entry and search result, never for batches or backgrounds', () => {
+  for (const type of ['file', 'directory', 'symlink', 'other'] as const) {
+    for (const context of [
+      { kind: 'single-entry', entry: entry('item', type), canPaste: false },
+      { kind: 'search-result', result: { name: 'item', path: '/item', type } },
+    ] as FileContextMenuContext[]) {
+      assert.deepEqual(actions(resolveFileContextMenu(context, defaultFileTypeExtensions())).at(-1)?.action, { type: 'properties' })
+    }
+  }
+  for (const context of [
+    { kind: 'multiple-entries', entries: [entry('a'), entry('b')], canPaste: false },
+    { kind: 'directory-background', directory: '/', canPaste: false, sort: { column: 'name', direction: 'ascending' } },
+  ] as FileContextMenuContext[]) {
+    assert.equal(actions(resolveFileContextMenu(context, defaultFileTypeExtensions())).some(({ action }) => action.type === 'properties'), false)
+  }
+})
+
+test('property dispatch closes the menu and binds the target to the originating session', () => {
+  const calls: unknown[] = []
+  const { dispatchFileMenuAction } = useFileMenuActions({
+    setBrowserContextMenu: (menu) => calls.push(['menu', menu]),
+    openEntryProperties: (sessionId, path) => calls.push(['properties', sessionId, path]),
+  } as Parameters<typeof useFileMenuActions>[0])
+  dispatchFileMenuAction({ type: 'properties' }, { kind: 'search-result', result: result('found.txt') }, 'search-session')
+  dispatchFileMenuAction({ type: 'properties' }, { kind: 'single-entry', entry: entry('link', 'symlink'), canPaste: false }, 'browser-session')
+  assert.deepEqual(calls, [
+    ['menu', null], ['properties', 'search-session', '/home/user/found.txt'],
+    ['menu', null], ['properties', 'browser-session', '/home/user/link'],
   ])
 })

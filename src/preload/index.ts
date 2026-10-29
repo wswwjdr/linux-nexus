@@ -55,6 +55,10 @@ const api: RemoteFilesApi = {
     ipcRenderer.invoke('aliases:delete', profileId, name, expectedCommand),
   listDirectory: (sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('files:list', sessionId, remotePath),
+  getRemoteEntryProperties: (sessionId: string, remotePath: string) =>
+    ipcRenderer.invoke('files:properties', sessionId, remotePath),
+  getRemoteDirectoryDiskUsage: (sessionId: string, remotePath: string) =>
+    ipcRenderer.invoke('files:directory-disk-usage', sessionId, remotePath),
   startNameSearch: (request: NameSearchRequest) => ipcRenderer.invoke('files:name-search', request),
   cancelNameSearch: (requestId: string) => ipcRenderer.invoke('files:name-search-cancel', requestId),
   startContentSearch: (request: ContentSearchRequest) => ipcRenderer.invoke('files:content-search', request),

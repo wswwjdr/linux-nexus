@@ -9,6 +9,18 @@
 .modal-kicker { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; color:var(--green); font-size: 11px; font-weight: 600; }
 .modal-heading h2, .modal h2 { margin: 0; color:var(--text-success); font-size: 17px; font-weight: 700; }
 .modal-close { margin-top: -3px; margin-right: -5px; }
+.file-properties-backdrop { z-index: 10; }
+.file-properties-modal { width: min(100%, 560px); display: flex; flex-direction: column; overflow: hidden; }
+.file-properties-modal h2 { display: flex; align-items: center; gap: 8px; }
+.file-properties-content { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.file-properties-details { margin: 0; display: grid; gap: 12px; user-select: text; }
+.file-properties-details > div { min-width: 0; display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 12px; font-size: 12px; line-height: 1.6; }
+.file-properties-details dt { color: var(--text-secondary); }
+.file-properties-details dd { min-width: 0; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-primary); }
+.file-properties-disk-usage { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.file-properties-hint { margin: 6px 0 0; font-size: 11px; color: var(--text-secondary); }
+.file-properties-status { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); }
+.file-properties-modal .modal-footer { margin-top: 20px; }
 .session-launcher-backdrop { z-index: 7; padding: 20px; }
 .session-launcher { padding: 20px; border-radius: 6px; }
 .confirmation-backdrop { z-index: 9; }

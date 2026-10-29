@@ -18,6 +18,7 @@ import SessionChooser from '../src/renderer/src/components/SessionChooser'
 import ConfirmationDialog from '../src/renderer/src/components/ConfirmationDialog'
 import UploadConfirmDialog from '../src/renderer/src/components/UploadConfirmDialog'
 import RemoteEntryRenameDialog from '../src/renderer/src/components/RemoteEntryRenameDialog'
+import RemoteEntryPropertiesDialog from '../src/renderer/src/components/RemoteEntryPropertiesDialog'
 import { RemoteArchiveDialogs } from '../src/renderer/src/components/RemoteArchiveDialogs'
 import PerformanceMonitor from '../src/renderer/src/components/PerformanceMonitor'
 import { ProfileDialogs } from '../src/renderer/src/components/dialogs/ProfileDialogs'
@@ -26,7 +27,7 @@ import { SettingsDialog } from '../src/renderer/src/components/dialogs/SettingsD
 import { SecurityDialogs } from '../src/renderer/src/components/dialogs/SecurityDialogs'
 import { DEFAULT_APP_SETTINGS } from '../src/shared/app-settings'
 import { performanceThresholdsToForm } from '../src/renderer/src/app-types'
-import type { PreviewResult } from '../src/shared/types'
+import type { PreviewResult, RemoteEntryProperties } from '../src/shared/types'
 
 const noop = () => {}
 const longText = Array.from({ length: 200 }, (_, index) => `第 ${index + 1} 行：用于检查滚动区域的文件内容。`).join('\n')
@@ -72,8 +73,21 @@ test('dialogs fit window and session bounds with reachable actions at small wind
   ]
   // Portal dialogs must render into a document before their markup can be tested.
   const { createRoot } = await import('react-dom/client')
-  Object.defineProperty(window, 'remoteFiles', { value: { listDirectory: async () => Array.from({ length: 30 }, (_, index) => ({ name: `目录-${index}`, path: `/目录-${index}`, type: 'directory', size: 0, modifiedAt: null, permissions: '' })) } })
+  Object.defineProperty(window, 'remoteFiles', { value: {
+    listDirectory: async () => Array.from({ length: 30 }, (_, index) => ({ name: `目录-${index}`, path: `/目录-${index}`, type: 'directory', size: 0, modifiedAt: null, permissions: '' })),
+    getRemoteEntryProperties: async (_session: string, path: string): Promise<RemoteEntryProperties> => ({
+      name: '中文文件名-'.repeat(16) + '.txt', path: path + '/含空格 和换行\n' + 'long-path-'.repeat(30),
+      type: path.slice(1) as RemoteEntryProperties['type'], size: 123456789, permissions: '4755', symbolicPermissions: '-rwsr-xr-x',
+      owner: 'test-user', uid: 1000, group: 'test-group', gid: 1000,
+      accessedAt: '2026-10-01T12:00:00Z', modifiedAt: '2026-10-02T12:00:00Z', changedAt: '2026-10-03T12:00:00Z', createdAt: '2026-10-01T12:00:00Z',
+      linkTarget: path === '/symlink' ? '../' + '链接目标/'.repeat(30) : null,
+    }),
+  } })
   for (const [name, element] of [
+    ...(['file', 'directory', 'symlink', 'other'] as const).map((type) => [
+      'properties ' + type,
+      <RemoteEntryPropertiesDialog sessionId="session" path={'/' + type} onClose={noop} />,
+    ] as const),
     ['confirmation', <ConfirmationDialog title="确认删除文件？" description="所选文件将被删除。" details={Array.from({ length: 20 }, (_, index) => ({ label: `文件 ${index}`, value: `/目录/文件-${index}.txt` }))} tone="danger" confirmLabel="删除" onConfirm={noop} onCancel={noop} />],
     ['upload', <UploadConfirmDialog selection={{ selectionId: 'selection', requestId: 'request', sessionId: 'session', profileId: 'server', remoteDirectory: '/', remoteRoot: '/', name: 'upload', strategy: 'confirm', items: [], failures: [], conflicts: Array.from({ length: 30 }, (_, index) => `/文件-${index}.txt`) }} onConfirm={noop} onCancel={noop} />],
     ['archive destination', <RemoteArchiveDialogs destination={{ sessionId: 'session', entry: { name: 'archive.tar.gz', path: '/archive.tar.gz' }, directory: '/', strategy: 'force' }} onCloseDestination={noop} onChooseDestination={noop} onCreateDirectory={async () => {}} />],
@@ -106,7 +120,8 @@ test('dialogs fit window and session bounds with reachable actions at small wind
       child.on('exit', (code) => resolve({ code, output }))
     })
     assert.equal(result.code, 0, result.output)
-    assert.match(result.output, /"checks":160,"failures":\[\]/)
+    const checks = (fixtures.length * 2 - 2) * 4
+    assert.ok(result.output.includes(`"checks":${checks},"failures":[]`), result.output)
   } finally {
     await rm(directory, { recursive: true, force: true })
     dom.window.close()

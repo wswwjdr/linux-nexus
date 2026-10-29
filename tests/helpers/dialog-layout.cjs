@@ -17,7 +17,7 @@ app.whenReady().then(async () => {
         const errors = await window.webContents.executeJavaScript(`(${checkLayout.toString()})(${JSON.stringify({ css, html: fixture.html, scope })})`)
         checks++
         failures.push(...errors.map((error) => `${fixture.name}, ${scope}, ${width}x${height}: ${error}`))
-        if (process.env.LAYOUT_SCREENSHOT_PATH && fixture.name === 'text' && scope === 'session' && width === 1050) {
+        if (process.env.LAYOUT_SCREENSHOT_PATH && fixture.name === (process.env.LAYOUT_SCREENSHOT_FIXTURE || 'text') && scope === 'session' && width === 1050) {
           await window.webContents.capturePage(undefined, { stayHidden: true })
           await new Promise((resolve) => setTimeout(resolve, 100))
           writeFileSync(process.env.LAYOUT_SCREENSHOT_PATH, (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())

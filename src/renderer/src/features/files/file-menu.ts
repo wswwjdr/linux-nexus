@@ -18,6 +18,7 @@ export type FileMenuIcon =
   | 'file-text'
   | 'folder-open'
   | 'folder-plus'
+  | 'info'
   | 'pencil'
   | 'play'
   | 'scissors'
@@ -43,6 +44,7 @@ export type FileMenuAction =
   | { type: 'create-directory' }
   | { type: 'upload'; strategy: OperationStrategy }
   | { type: 'open-location' }
+  | { type: 'properties' }
 
 export type FileMenuActionNode = {
   kind: 'action'
@@ -334,6 +336,13 @@ const searchResultStrategy: FileContextMenuStrategy = {
   },
 }
 
+const entryPropertiesStrategy: FileContextMenuStrategy = {
+  id: 'entry-properties',
+  group: 'common',
+  matches: (context) => context.kind === 'single-entry' || context.kind === 'search-result',
+  contribute: () => [action('properties', '属性', 'info', { type: 'properties' })],
+}
+
 export const fileContextMenuStrategies: readonly FileContextMenuStrategy[] = [
   previewStrategy,
   reversePreviewStrategy,
@@ -343,6 +352,7 @@ export const fileContextMenuStrategies: readonly FileContextMenuStrategy[] = [
   multipleEntriesStrategy,
   directoryBackgroundStrategy,
   searchResultStrategy,
+  entryPropertiesStrategy,
 ]
 
 export function resolveFileContextMenu(context: FileContextMenuContext, fileTypeExtensions: FileTypeExtensions): FileMenuNode[] {

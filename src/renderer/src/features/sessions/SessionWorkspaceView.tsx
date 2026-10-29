@@ -51,6 +51,7 @@ interface SessionWorkspaceState {
   sessionContextMenu: SessionContextMenuState | null
   browserContextMenu: BrowserContextMenu | null
   searchOpenSessionIds: Set<string>
+  entryPropertiesSessionId: string | null
   scriptCommandDialogs: ReadonlyMap<string, ScriptCommandDialog>
   scriptExecutionDialogs: ReadonlyMap<string, ScriptExecutionDialogState>
   fileTypeExtensions: FileTypeExtensions
@@ -240,6 +241,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
           return (
             <FileSessionWorkspace
               key={session.id}
+              propertiesOpen={state.entryPropertiesSessionId === session.id}
               session={session}
               active={activeSessionId === session.id}
               searchOpen={searchOpenSessionIds.has(session.id)}

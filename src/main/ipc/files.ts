@@ -7,8 +7,13 @@ import { cancelNameSearch, startNameSearch } from '../name-search'
 import { cancelContentSearch, startContentSearch } from '../content-search'
 import { cancelScriptExecution, startScriptExecution } from '../script-execution-runtime'
 import { filesSession, renameRemoteEntry } from '../remote-fs'
+import { getRemoteEntryProperties, getRemoteDirectoryDiskUsage } from '../file-properties'
 
 export function registerFilesIpc(): void {
+  ipcMain.handle('files:properties', (_event, sessionId: string, remotePath: string) =>
+    getRemoteEntryProperties(sessionId, remotePath))
+  ipcMain.handle('files:directory-disk-usage', (_event, sessionId: string, remotePath: string) =>
+    getRemoteDirectoryDiskUsage(sessionId, remotePath))
   ipcMain.handle('files:list', (_event, sessionId: string, remotePath: string) =>
     listDirectory(sessionId, remotePath))
   ipcMain.handle('files:name-search', (_event, request: NameSearchRequest) => startNameSearch(request))

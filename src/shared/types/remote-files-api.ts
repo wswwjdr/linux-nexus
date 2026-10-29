@@ -7,6 +7,7 @@ import type { AppSettings, AppSettingsPatch } from './settings'
 import type { DroppedUploadEntry, TransferResult, OperationExecutionRequest, OperationExecutionResult, UploadSelectionRequest, UploadSelection, UploadExecutionRequest, TransferProgress, TransferQueuedEvent } from './transfers'
 import type { PreviewResult, TextLineEnding, LogPreviewPage } from './previews'
 import type { PreviewType } from '../file-type-registry'
+import type { RemoteEntryProperties } from './file-properties'
 
 export interface RemoteFilesApi {
   listProfiles(): Promise<ServerProfile[]>
@@ -29,6 +30,8 @@ export interface RemoteFilesApi {
   saveCommandAlias(profileId: string, name: string, command: string, existingCommand?: string): Promise<CommandAliasOperationResult>
   deleteCommandAlias(profileId: string, name: string, expectedCommand: string): Promise<CommandAliasOperationResult>
   listDirectory(sessionId: string, remotePath: string): Promise<RemoteEntry[]>
+  getRemoteEntryProperties(sessionId: string, remotePath: string): Promise<RemoteEntryProperties>
+  getRemoteDirectoryDiskUsage(sessionId: string, remotePath: string): Promise<number>
   startNameSearch(request: NameSearchRequest): Promise<void>
   cancelNameSearch(requestId: string): Promise<boolean>
   startContentSearch(request: ContentSearchRequest): Promise<void>

@@ -10,6 +10,7 @@ import ConfirmationDialog from './components/ConfirmationDialog'
 import UploadConfirmDialog from './components/UploadConfirmDialog'
 import { RemoteArchiveDialogs } from './components/RemoteArchiveDialogs'
 import RemoteEntryRenameDialog from './components/RemoteEntryRenameDialog'
+import RemoteEntryPropertiesDialog from './components/RemoteEntryPropertiesDialog'
 import SessionChooser from './components/SessionChooser'
 import ShortcutGuideDialog from './components/ShortcutGuideDialog'
 import PerformanceMonitor from './components/PerformanceMonitor'
@@ -49,6 +50,7 @@ export default function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [sessionChooserOpen, setSessionChooserOpen] = useState(false)
   const [shortcutGuideOpen, setShortcutGuideOpen] = useState(false)
+  const [entryProperties, setEntryProperties] = useState<{ sessionId: string; path: string; anchor: HTMLElement | null } | null>(null)
   const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>('details')
   const [performanceThresholds, setPerformanceThresholds] = useState<PerformanceThresholds>(DEFAULT_PERFORMANCE_THRESHOLDS)
   const [fileTypeExtensions, setFileTypeExtensions] = useState<FileTypeExtensions>(defaultFileTypeExtensions)
@@ -462,11 +464,12 @@ export default function App() {
       extractRemoteArchive,
     },
     locateSearchResult,
+    openEntryProperties: (sessionId, path) => setEntryProperties({ sessionId, path, anchor: contextMenuAnchorRef.current }),
     patchSession,
     showToast,
   })
   const modalOpen = Boolean(
-    profileDialog || profileDeleteDialog || createDirectoryDialog || renameEntryDialog || settingsForm
+    profileDialog || profileDeleteDialog || createDirectoryDialog || renameEntryDialog || entryProperties || settingsForm
       || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
       || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || uploadSelection
       || archiveDestinationDialog
@@ -629,6 +632,7 @@ export default function App() {
             sessionContextMenu,
             browserContextMenu,
             searchOpenSessionIds,
+            entryPropertiesSessionId: entryProperties?.sessionId ?? null,
             scriptCommandDialogs,
             scriptExecutionDialogs,
             fileTypeExtensions,
@@ -760,6 +764,14 @@ export default function App() {
         onDismissAliasHostKey={commandAliases.dismissHostKey}
       />
 
+      {entryProperties && (
+        <RemoteEntryPropertiesDialog
+          sessionId={entryProperties.sessionId}
+          path={entryProperties.path}
+          returnFocus={entryProperties.anchor}
+          onClose={() => setEntryProperties(null)}
+        />
+      )}
       {renameEntryDialog && (
         <RemoteEntryRenameDialog
           key={renameEntryDialog.entry.path}

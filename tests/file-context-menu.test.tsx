@@ -108,6 +108,15 @@ test('clicking rename dispatches the rename command for files and folders', () =
   }
 })
 
+test('clicking properties dispatches a read-only property action', () => {
+  const menu = mount({ kind: 'single-entry', entry: { ...entry('link'), type: 'symlink' }, canPaste: false })
+  try {
+    const properties = Array.from(menu.host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find((button) => button.textContent === '属性')!
+    act(() => properties.click())
+    assert.deepEqual(menu.actions, [{ type: 'properties' }])
+  } finally { menu.unmount() }
+})
+
 test('opens and closes script submenu with arrows and returns focus to the invoking file on Escape', () => {
   const menu = mount({ kind: 'single-entry', entry: entry('run.sh'), canPaste: true })
   assert.equal(menu.host.querySelectorAll('[role="separator"]').length, 1)
