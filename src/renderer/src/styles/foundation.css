@@ -107,7 +107,7 @@ button { color:inherit; }
 button:focus-visible, input:focus-visible, textarea:focus-visible { outline:2px solid var(--focus-outline); outline-offset: 2px; }
 button:disabled { cursor: not-allowed; opacity: .45; }
 
-.app-shell { display: flex; height: 100vh; min-height: 560px; background:var(--canvas); }
+.app-shell { display: flex; height: 100vh; min-height: 0; background:var(--canvas); }
 .app-shell.modal-open > .main-area { pointer-events: none; }
 .startup-shell { min-width: 0; }
 .startup-loading { min-height: 0; flex: 1; display: grid; place-items: center; color:var(--text-secondary); }

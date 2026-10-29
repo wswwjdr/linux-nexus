@@ -28,10 +28,10 @@ export default function SessionChooser({ profiles, onClose, onCreate }: SessionC
   }, [onClose])
 
   return (
-    <div className="session-launcher-backdrop" onMouseDown={(event) => {
+    <div className="modal-backdrop session-launcher-backdrop" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose()
     }}>
-      <section className="session-launcher" role="dialog" aria-modal="true" aria-labelledby="session-launcher-title">
+      <section className="modal session-launcher" role="dialog" aria-modal="true" aria-labelledby="session-launcher-title">
         <header className="session-launcher-header">
           <h2 id="session-launcher-title">新建会话</h2>
           <button className="icon-button subtle" title="关闭" aria-label="关闭" onClick={onClose}><X size={15} /></button>

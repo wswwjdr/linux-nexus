@@ -45,21 +45,19 @@
 }
 
 @media (max-width: 780px) {
-  .pdf-preview-backdrop { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); place-items: stretch; padding: 8px; }
-  .pdf-preview-modal { width: 100%; height: 100%; max-height: none; padding: 12px; }
-  .log-preview-backdrop { padding: 8px; }
-  .log-preview-modal { width: 100%; height: calc(100vh - 16px); padding: 15px; }
-  .settings-modal { width: 100%; max-height: calc(100vh - 16px); padding: 16px; }
-  .shortcut-guide-modal { width: 100%; max-height: calc(100vh - 16px); padding: 16px; }
+  .modal-backdrop { padding: 8px; }
+  .pdf-preview-modal { width: 100%; height: 100%; padding: 12px; }
+  .log-preview-modal { width: 100%; height: 100%; padding: 15px; }
+  .settings-modal { width: 100%; padding: 16px; }
+  .shortcut-guide-modal { width: 100%; padding: 16px; }
   .shortcut-guide-row { grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 9px 0; }
   .command-alias-add-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .command-alias-add { grid-column: 1 / -1; justify-self: end; }
-  .search-backdrop { padding: 8px; }
-  .search-modal { width: 100%; height: calc(100vh - 16px); padding: 15px; }
+  .search-modal { width: 100%; height: 100%; padding: 15px; }
   .search-dialog-header { margin-bottom: 10px; }
   .search-dialog-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
-  .search-dialog-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, auto) minmax(0, 1fr); gap: 10px; }
-  .search-controls { max-height: min(46vh, 350px); padding: 0 3px 10px 0; border-right:0; border-bottom:1px solid var(--line); }
+  .search-dialog-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+  .search-controls { padding: 0 3px 10px 0; border-right:0; border-bottom:1px solid var(--line); }
   .search-results-header { flex-direction: column; gap: 8px; }
   .search-counters { justify-content: flex-start; }
 }

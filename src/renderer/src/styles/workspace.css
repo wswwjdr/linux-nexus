@@ -8,7 +8,7 @@
 .performance-summary-button > svg { flex: 0 0 auto; }
 .performance-summary-item { display: inline-flex; align-items: baseline; gap: 3px; color:var(--text-primary); font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .performance-summary-item small { color:var(--text-secondary); font-size: 9px; }
-.performance-popover { position: fixed; z-index: 8; top: 58px; right: 16px; width: min(680px, calc(100vw - 32px)); max-height: min(80vh, 720px); overflow-y: auto; overscroll-behavior: contain; padding: 18px; border:1px solid var(--line-strong); border-radius: 5px; color:var(--text-primary); background:var(--surface); box-shadow: var(--shadow-dialog); }
+.performance-popover { position: fixed; z-index: 8; top: 58px; right: 16px; width: min(680px, calc(100vw - 32px)); max-height: min(720px, calc(100dvh - 74px)); overflow-y: auto; overscroll-behavior: contain; padding: 18px; border:1px solid var(--line-strong); border-radius: 5px; color:var(--text-primary); background:var(--surface); box-shadow: var(--shadow-dialog); }
 .performance-popover-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .performance-popover-header h2 { margin: 0 0 6px; color:var(--text-strong); font-size: 16px; font-weight: 650; }
 .performance-popover-actions { display: flex; flex: 0 0 auto; gap: 2px; margin-top: -4px; }
@@ -274,8 +274,6 @@
 .transfer-failure-list { display: grid; gap: 7px; max-height: 180px; margin-top: 7px; overflow-y: auto; }
 .transfer-failure { display: grid; gap: 2px; min-width: 0; padding-top: 6px; border-top:1px solid var(--border-danger); overflow-wrap: anywhere; }
 .transfer-failure small { color:var(--text-danger); font-size: 10px; }
-.session-launcher-backdrop { position: fixed; z-index: 7; inset: 0; display: grid; place-items: center; padding: 20px; background:var(--backdrop); backdrop-filter: blur(2px); }
-.session-launcher { width: min(100%, 440px); padding: 20px; border:1px solid var(--border-success); border-radius: 6px; background:var(--surface); box-shadow: var(--shadow-dialog); }
 .session-launcher-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .session-launcher-header h2 { margin: 0; color:var(--text-success); font-size: 16px; font-weight: 650; }
 .session-launcher-label { display: block; margin: 0 0 8px; color:var(--text-secondary); font-size: 11px; font-weight: 600; }

@@ -1,5 +1,5 @@
 .remote-archive-backdrop { z-index: 10; }
-.remote-directory-picker { width: min(100%, 620px); max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+.remote-directory-picker { width: min(100%, 620px); display: flex; flex-direction: column; }
 .remote-directory-picker .modal-heading { flex: 0 0 auto; align-items: flex-start; }
 .remote-directory-picker .modal-heading h2 { margin: 0; }
 .remote-archive-subtitle { max-width: 500px; margin: 5px 0 0; color:var(--text-secondary); font-size: 11px; overflow-wrap: anywhere; }
