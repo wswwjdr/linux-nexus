@@ -87,7 +87,7 @@ const executionStrategies: Array<{ strategy: OperationExecutionStrategy; label: 
   { strategy: 'update', label: '仅更新较旧文件', description: '处理不存在的文件，以及目标中修改时间更早的同名文件。' },
 ]
 
-const pasteStrategies: Array<{ strategy: PasteStrategy; label: string; description: string }> = executionStrategies
+const overwriteAndSkipStrategies: Array<{ strategy: PasteStrategy; label: string; description: string }> = executionStrategies
   .filter((item): item is typeof item & { strategy: PasteStrategy } => item.strategy !== 'update')
 
 const uploadStrategies: Array<{ strategy: OperationStrategy; label: string; description: string }> = [
@@ -103,7 +103,7 @@ function pasteStrategyMenu(disabled: boolean): FileMenuNode {
     icon: 'clipboard-paste',
     disabled,
     disabledReason: disabled ? '当前无法粘贴' : undefined,
-    children: pasteStrategies.map(({ strategy, label, description }) => action(
+    children: overwriteAndSkipStrategies.map(({ strategy, label, description }) => action(
       'paste-' + strategy,
       label,
       undefined,
@@ -222,7 +222,7 @@ const archiveExtractionStrategy: FileContextMenuStrategy = {
       icon: 'archive',
       children: destinations.flatMap((destination, index) => [
         ...(index ? [{ kind: 'separator' as const, id: 'extract-' + destination.id + '-separator' }] : []),
-        ...executionStrategies.map(({ strategy, label }) => action(
+        ...overwriteAndSkipStrategies.map(({ strategy, label }) => action(
           'extract-' + destination.id + '-' + strategy,
           destination.label + ' · ' + label,
           undefined,

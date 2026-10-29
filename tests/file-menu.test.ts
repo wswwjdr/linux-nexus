@@ -131,11 +131,11 @@ test('supported archive files expose extraction while ordinary compressed stream
     const labels = archiveMenu.children.filter((node) => node.kind === 'action').map(({ label }) => label)
     assert.equal(archiveMenu.children.filter((node) => node.kind === 'separator').length, 2)
     assert.ok(labels.includes('release/ · 覆盖同名文件'))
-    assert.equal(labels.length, 9)
+    assert.equal(labels.length, 6)
     assert.ok(!labels.some((label) => label.includes('确认后处理')))
     assert.deepEqual(actions(archiveMenu.children).map(({ action }) => action), [
       ...(['current-directory', 'archive-directory', 'choose-directory'] as const).flatMap((target) =>
-        (['force', 'skip', 'update'] as const).map((strategy) => ({
+        (['force', 'skip'] as const).map((strategy) => ({
           type: 'extract-archive' as const, target, strategy,
         }))),
     ])
@@ -146,7 +146,7 @@ test('supported archive files expose extraction while ordinary compressed stream
   ).find((node) => node.kind === 'submenu' && node.id === 'extract-archive')
   assert.equal(searchArchiveMenu?.kind, 'submenu')
   if (searchArchiveMenu?.kind === 'submenu') {
-    assert.equal(actions(searchArchiveMenu.children).length, 9)
+    assert.equal(actions(searchArchiveMenu.children).length, 6)
   }
 
   const unsupportedNodes = resolveFileContextMenu(
@@ -205,12 +205,12 @@ test('archive actions from search results always use the active browser director
   }
 
   for (const target of ['current-directory', 'archive-directory', 'choose-directory'] as const) {
-    dispatchFileMenuAction({ type: 'extract-archive', target, strategy: 'update' }, searchContext, 'active-session')
+    dispatchFileMenuAction({ type: 'extract-archive', target, strategy: 'force' }, searchContext, 'active-session')
   }
 
   assert.deepEqual(calls.map(([, target, activeDirectory, strategy]) => [target, activeDirectory, strategy]), [
-    ['current-directory', '/active/browser/path', 'update'],
-    ['archive-directory', '/active/browser/path', 'update'],
-    ['choose-directory', '/active/browser/path', 'update'],
+    ['current-directory', '/active/browser/path', 'force'],
+    ['archive-directory', '/active/browser/path', 'force'],
+    ['choose-directory', '/active/browser/path', 'force'],
   ])
 })
