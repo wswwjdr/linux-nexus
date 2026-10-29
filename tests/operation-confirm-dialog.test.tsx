@@ -3,7 +3,7 @@ import test from 'node:test'
 import { act, createElement } from 'react'
 import type { Root } from 'react-dom/client'
 import { JSDOM } from 'jsdom'
-import type { OperationExecutionStrategy, OperationPreflight } from '../src/shared/types.ts'
+import type { OperationExecutionStrategy, RemoteOperationConfirmation } from '../src/shared/types.ts'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })
 Object.defineProperties(globalThis, {
@@ -17,21 +17,20 @@ Object.defineProperties(globalThis, {
   IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true, writable: true },
 })
 
-test('shows server conflicts and the final command before execution', async () => {
+test('shows the selected operation and command before execution', async () => {
   const { default: OperationConfirmDialog } = await import('../src/renderer/src/components/OperationConfirmDialog.tsx')
   const { createRoot } = await import('react-dom/client')
   const host = document.createElement('div')
   document.body.append(host)
   const root: Root = createRoot(host)
   const selected: OperationExecutionStrategy[] = []
-  const preflight: OperationPreflight = {
-    preflightId: 'preflight',
+  const confirmation: RemoteOperationConfirmation = {
+    requestId: 'request-1',
     sessionId: 'session',
     operation: 'copy',
     sourcePaths: ['/home/source'],
     targetDirectory: '/home/target',
     strategy: 'confirm',
-    conflicts: [{ sourcePath: '/home/source', targetPath: '/home/target/source', sourceType: 'file', targetType: 'file' }],
     commandPreviews: {
       force: 'cp -f -- /home/source /home/target',
       skip: 'cp -n -- /home/source /home/target',
@@ -42,14 +41,14 @@ test('shows server conflicts and the final command before execution', async () =
   try {
     await act(async () => {
       root.render(createElement(OperationConfirmDialog, {
-        preflight,
+        confirmation,
         busy: false,
         onConfirm: (strategy: OperationExecutionStrategy) => selected.push(strategy),
         onCancel: () => {},
       }))
       await Promise.resolve()
     })
-    assert.ok(document.body.textContent?.includes('/home/target/source'))
+    assert.ok(document.body.textContent?.includes('/home/target'))
     assert.ok(document.body.textContent?.includes('cp -f -- /home/source /home/target'))
     await act(async () => {
       document.querySelector<HTMLButtonElement>('.operation-confirm-dialog .primary-button')!.click()

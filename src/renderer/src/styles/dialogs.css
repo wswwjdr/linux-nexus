@@ -44,13 +44,7 @@
 .operation-conflict-policy strong { font-size: 11px; font-weight: 600; }
 .operation-conflict-policy small { color:var(--text-secondary); font-size: 10px; line-height: 1.45; }
 .operation-strategy-label { margin: 12px 0 0; color:var(--text-secondary); font-size: 11px; line-height: 1.5; }
-.operation-conflict-section { min-width: 0; display: grid; gap: 7px; margin-top: 14px; }
 .operation-conflict-list { min-width: 0; max-height: 190px; display: grid; gap: 7px; overflow: auto; }
-.operation-conflict-item { min-width: 0; display: grid; gap: 7px; padding: 8px 10px; border:1px solid var(--line); border-radius: var(--radius); background:var(--surface-soft); }
-.operation-conflict-item > div { min-width: 0; display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: start; gap: 8px; }
-.operation-conflict-item span { color:var(--text-secondary); font-size: 10px; }
-.operation-conflict-item code { min-width: 0; color:var(--text-primary); font: 10px/1.5 Consolas, 'Cascadia Mono', monospace; overflow-wrap: anywhere; }
-.operation-conflict-section > p { margin: 0; color:var(--text-secondary); font-size: 10px; }
 .field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; color:var(--text-primary); font-size: 11px; font-weight: 600; }
 .field input { width: 100%; height: 36px; padding: 0 10px; border:1px solid var(--line-strong); border-radius: var(--radius); color:var(--text-primary); background:var(--surface); font-size: 12px; font-weight: 400; }
 .field select { width: 100%; height: 36px; padding: 0 10px; border:1px solid var(--line-strong); border-radius: var(--radius); color:var(--text-primary); background:var(--surface); font-size: 12px; font-weight: 400; }

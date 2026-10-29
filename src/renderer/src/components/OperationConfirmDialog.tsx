@@ -1,30 +1,29 @@
 import { useEffect, useId, useState } from 'react'
 import { AlertTriangle, Check, LoaderCircle, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import type { OperationExecutionStrategy, OperationPreflight } from '@shared/types'
+import type { OperationExecutionStrategy, RemoteOperationConfirmation } from '@shared/types'
 
 export default function OperationConfirmDialog({
-  preflight,
+  confirmation,
   busy,
   onConfirm,
   onCancel,
 }: {
-  preflight: OperationPreflight
+  confirmation: RemoteOperationConfirmation
   busy: boolean
   onConfirm: (strategy: OperationExecutionStrategy) => void
   onCancel: () => void
 }) {
   const titleId = useId()
   const [confirmedStrategy, setConfirmedStrategy] = useState<OperationExecutionStrategy>('force')
-  const needsConflictChoice = preflight.strategy === 'confirm' && preflight.conflicts.length > 0
-  const selectedStrategy = needsConflictChoice ? confirmedStrategy : preflight.strategy === 'confirm' ? 'force' : preflight.strategy
-  const label = preflight.operation === 'copy' ? '复制' : preflight.operation === 'move' ? '移动' : '解压'
-  const isExtract = preflight.operation === 'extract'
+  const needsConflictChoice = confirmation.strategy === 'confirm'
+  const selectedStrategy: OperationExecutionStrategy = confirmation.strategy === 'confirm' ? confirmedStrategy : confirmation.strategy
+  const label = confirmation.operation === 'copy' ? '复制' : confirmation.operation === 'move' ? '移动' : '解压'
+  const isExtract = confirmation.operation === 'extract'
   const sourceLabel = isExtract ? '压缩包' : '来源项目'
-  const sourcePaths = isExtract ? [preflight.archivePath!] : preflight.sourcePaths
-  const destination = isExtract ? preflight.outputDirectory! : preflight.targetDirectory
-  const command = preflight.commandPreviews[selectedStrategy]
-  const visibleConflicts = preflight.conflicts.slice(0, 8)
+  const sourcePaths = isExtract ? [confirmation.archivePath!] : confirmation.sourcePaths
+  const destination = isExtract ? confirmation.outputDirectory! : confirmation.targetDirectory
+  const command = confirmation.commandPreviews[selectedStrategy]
   const strategyDescription = selectedStrategy === 'force'
     ? '同名时覆盖目标项目（-f）'
     : selectedStrategy === 'skip'
@@ -65,7 +64,7 @@ export default function OperationConfirmDialog({
           </div>
         </div>
         {needsConflictChoice && <fieldset className="operation-conflict-policy" disabled={busy}>
-          <legend>目标中有同名项目，选择处理方式</legend>
+          <legend>选择遇到同名项目时的处理方式</legend>
           <label>
             <input type="radio" name={titleId + '-policy'} checked={confirmedStrategy === 'force'} onChange={() => setConfirmedStrategy('force')} />
             <span><strong>覆盖同名项目</strong><small>替换目标中已有的同名内容。</small></span>
@@ -75,21 +74,7 @@ export default function OperationConfirmDialog({
             <span><strong>跳过同名项目</strong><small>保留目标中的内容，不处理这些项目。</small></span>
           </label>
         </fieldset>}
-        {!needsConflictChoice && <p className="operation-strategy-label">
-          {preflight.conflicts.length > 0
-            ? `遇到同名项目时：${strategyDescription}。`
-            : '预检未发现同名项目。'}
-        </p>}
-        {visibleConflicts.length > 0 && <div className="operation-conflict-section" aria-label="同名项目">
-          <div className="operation-section-heading">目标中已有同名项目（{preflight.conflicts.length} 项）</div>
-          <div className="operation-conflict-list">
-            {visibleConflicts.map((conflict) => <div className="operation-conflict-item" key={conflict.sourcePath + '\0' + conflict.targetPath}>
-              <div><span>来源</span><code>{conflict.sourcePath}</code></div>
-              <div><span>目标已有</span><code>{conflict.targetPath}</code></div>
-            </div>)}
-          </div>
-          {preflight.conflicts.length > visibleConflicts.length && <p>另有 {preflight.conflicts.length - visibleConflicts.length} 项未显示</p>}
-        </div>}
+        {!needsConflictChoice && <p className="operation-strategy-label">遇到同名项目时：{strategyDescription}。</p>}
         <details className="operation-command-preview">
           <summary>查看将发送到服务器的命令</summary>
           <code>{command}</code>

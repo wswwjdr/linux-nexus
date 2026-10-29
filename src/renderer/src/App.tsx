@@ -8,7 +8,6 @@ import SessionWorkspaceView from './features/sessions/SessionWorkspaceView'
 import DialogLayer from './components/DialogLayer'
 import ConfirmationDialog from './components/ConfirmationDialog'
 import OperationConfirmDialog from './components/OperationConfirmDialog'
-import ArchiveDependencyInstallDialog from './components/ArchiveDependencyInstallDialog'
 import UploadConfirmDialog from './components/UploadConfirmDialog'
 import { RemoteArchiveDialogs } from './components/RemoteArchiveDialogs'
 import SessionChooser from './components/SessionChooser'
@@ -342,10 +341,10 @@ export default function App() {
 
   const {
     transfers,
-    uploadPreflight,
-    uploadPreflightBusy,
-    cancelUploadPreflight,
-    confirmUploadPreflight,
+    uploadSelection,
+    uploadSelectionBusy,
+    cancelUploadSelection,
+    confirmUploadSelection,
     cancelTransfer: cancelTransferJob,
     uploadFiles,
     uploadFolder,
@@ -363,13 +362,10 @@ export default function App() {
   })
 
   const {
-    operationPreflight,
+    operationConfirmation,
     activeOperation,
     operationBusy,
     archiveDestinationDialog,
-    archiveInstallRequest,
-    archiveInstallBusy,
-    archiveInstallError,
     canPasteRemote,
     remoteEntryDeleteDialog,
     remoteEntryDeleteError,
@@ -389,8 +385,6 @@ export default function App() {
     cancelActiveOperation,
     extractRemoteArchive,
     beginArchiveExtractionAt,
-    confirmArchiveDependencyInstall,
-    cancelArchiveDependencyInstall,
     createArchiveDestinationDirectory,
     setArchiveDestinationDialog,
   } = useRemoteOperations({
@@ -482,7 +476,7 @@ export default function App() {
   const modalOpen = Boolean(
     profileDialog || profileDeleteDialog || createDirectoryDialog || settingsForm
       || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
-      || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || operationPreflight || archiveInstallRequest || uploadPreflight
+      || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || operationConfirmation || uploadSelection
       || archiveDestinationDialog
       || (activeSessionId && workspaceBlockingSessionIds.has(activeSessionId))
       || sessionChooserOpen || shortcutGuideOpen,
@@ -804,26 +798,18 @@ export default function App() {
         />
       )}
 
-      {operationPreflight && !archiveInstallRequest && <OperationConfirmDialog
-        preflight={operationPreflight}
+      {operationConfirmation && <OperationConfirmDialog
+        confirmation={operationConfirmation}
         busy={operationBusy}
         onConfirm={(strategy) => void confirmRemoteOperation(strategy)}
         onCancel={cancelActiveOperation}
       />}
 
-      {archiveInstallRequest && <ArchiveDependencyInstallDialog
-        dependencies={archiveInstallRequest.dependencies}
-        busy={archiveInstallBusy}
-        error={archiveInstallError}
-        onInstall={(password) => void confirmArchiveDependencyInstall(password)}
-        onCancel={cancelArchiveDependencyInstall}
-      />}
-
-      {uploadPreflight && <UploadConfirmDialog
-        preflight={uploadPreflight}
-        busy={uploadPreflightBusy}
-        onConfirm={(strategy) => void confirmUploadPreflight(strategy)}
-        onCancel={cancelUploadPreflight}
+      {uploadSelection && <UploadConfirmDialog
+        selection={uploadSelection}
+        busy={uploadSelectionBusy}
+        onConfirm={(strategy) => void confirmUploadSelection(strategy)}
+        onCancel={cancelUploadSelection}
       />}
 
       <RemoteArchiveDialogs

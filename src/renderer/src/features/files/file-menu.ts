@@ -84,7 +84,7 @@ const operationStrategies: Array<{ strategy: OperationStrategy; label: string; d
   { strategy: 'force', label: '强制覆盖 (-f)', description: '使用服务器命令的强制覆盖选项；权限和目录结构限制仍然生效。' },
   { strategy: 'skip', label: '跳过已有目标 (-n)', description: '目标中存在同名项目时保留目标并跳过该项。' },
   { strategy: 'update', label: '仅源项目较新时处理 (-u)', description: '目标不存在，或来源的修改时间晚于目标时才处理。' },
-  { strategy: 'confirm', label: '确认后处理', description: '执行前检查同名冲突；有冲突时可统一选择覆盖或跳过。' },
+  { strategy: 'confirm', label: '确认后处理', description: '确认操作后，选择遇到同名项目时覆盖或跳过。' },
 ]
 
 function pasteStrategyMenu(disabled: boolean): FileMenuNode {

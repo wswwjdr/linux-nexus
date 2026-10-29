@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import type { ContentSearchRequest, NameSearchRequest, OperationExecutionStrategy, ScriptExecutionRequest, UploadExecutionRequest } from '@shared/types'
 import { copyRemotePath, createRemoteDirectory, deleteRemoteEntries, listDirectory } from '../connections'
-import { cancelTransfer, downloadEntries, executePreparedUpload, preflightUpload, uploadPreflightContext, cancelUploadPreflight, validateDownloadPaths, withTransferLock } from '../transfers'
+import { cancelTransfer, downloadEntries, executeSelectedUpload, selectUploadSources, uploadSelectionContext, cancelUploadSelection, validateDownloadPaths, withTransferLock } from '../transfers'
 import { previewFile, readLogPreview, releasePreview, saveTextFile } from '../previews'
 import { cancelNameSearch, startNameSearch } from '../name-search'
 import { cancelContentSearch, startContentSearch } from '../content-search'
@@ -23,22 +23,22 @@ export function registerFilesIpc(): void {
   const transferSession = (sessionId: string) => {
     return filesSession(sessionId)
   }
-  ipcMain.handle('files:upload-preflight', (_event, request: unknown) => preflightUpload(request))
+  ipcMain.handle('files:upload-select', (_event, request: unknown) => selectUploadSources(request))
   ipcMain.handle('files:upload-execute', (event, request: unknown) => {
-    if (typeof request !== 'object' || request === null || !('preflightId' in request)
-      || typeof request.preflightId !== 'string' || !request.preflightId
+    if (typeof request !== 'object' || request === null || !('selectionId' in request)
+      || typeof request.selectionId !== 'string' || !request.selectionId
       || !('strategy' in request) || typeof request.strategy !== 'string') throw new Error('上传执行参数无效')
     if (!['force', 'skip', 'update'].includes(request.strategy)) throw new Error('上传策略无效')
     const uploadRequest = request as unknown as UploadExecutionRequest
-    const preflightId = uploadRequest.preflightId
-    const { requestId, sessionId, profileId } = uploadPreflightContext(preflightId)
+    const selectionId = uploadRequest.selectionId
+    const { requestId, sessionId, profileId } = uploadSelectionContext(selectionId)
     return withTransferLock(profileId, sessionId, requestId,
-      (signal) => executePreparedUpload(event, preflightId, uploadRequest.strategy as OperationExecutionStrategy, signal),
+      (signal) => executeSelectedUpload(event, selectionId, uploadRequest.strategy as OperationExecutionStrategy, signal),
       () => { if (!event.sender.isDestroyed()) event.sender.send('files:transfer-queued', { requestId }) })
   })
-  ipcMain.handle('files:upload-preflight-cancel', (_event, preflightId: unknown) => {
-    if (typeof preflightId !== 'string' || !preflightId) throw new Error('上传预检编号无效')
-    return cancelUploadPreflight(preflightId)
+  ipcMain.handle('files:upload-selection-cancel', (_event, selectionId: unknown) => {
+    if (typeof selectionId !== 'string' || !selectionId) throw new Error('上传选择编号无效')
+    return cancelUploadSelection(selectionId)
   })
   ipcMain.handle('files:download', (event, requestId: string, sessionId: string, remotePaths: unknown) => {
     const paths = validateDownloadPaths(remotePaths)
@@ -59,8 +59,8 @@ export function registerFilesIpc(): void {
   })
   ipcMain.handle('files:preview', (_event, sessionId: string, remotePath: string, type: Parameters<typeof previewFile>[2]) =>
     previewFile(sessionId, remotePath, type))
-  ipcMain.handle('files:text-save', (_event, sessionId: string, remotePath: string, content: string, expectedRevision: unknown, forceOverwrite?: boolean) =>
-    saveTextFile(sessionId, remotePath, content, expectedRevision, forceOverwrite))
+  ipcMain.handle('files:text-save', (_event, sessionId: string, remotePath: string, content: string, lineEnding: unknown) =>
+    saveTextFile(sessionId, remotePath, content, lineEnding))
   ipcMain.handle('files:preview-log', (_event, sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number) =>
     readLogPreview(sessionId, remotePath, beforeOffset, snapshotSize))
   ipcMain.handle('files:preview-release', (_event, token: string) => releasePreview(token))

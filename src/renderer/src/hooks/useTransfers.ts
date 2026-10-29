@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { DroppedUploadEntry, OperationExecutionStrategy, OperationStrategy, RemoteEntry, TransferProgress, TransferResult, UploadPreflight } from '@shared/types'
+import type { DroppedUploadEntry, OperationExecutionStrategy, OperationStrategy, RemoteEntry, TransferProgress, TransferResult, UploadSelection } from '@shared/types'
 import type { TransferJob } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { errorMessage } from '@/app-utils'
@@ -32,8 +32,8 @@ export function useTransfers({
   showToast,
 }: UseTransfersOptions) {
   const [transfers, setTransfers] = useState<Record<string, TransferJob>>({})
-  const [uploadPreflight, setUploadPreflight] = useState<UploadPreflight | null>(null)
-  const [uploadPreflightBusy, setUploadPreflightBusy] = useState(false)
+  const [uploadSelection, setUploadSelection] = useState<UploadSelection | null>(null)
+  const [uploadSelectionBusy, setUploadSelectionBusy] = useState(false)
   const completionTimers = useRef(new Map<string, number>())
   const sessionIdsRef = useRef(sessionIds)
   sessionIdsRef.current = sessionIds
@@ -218,7 +218,7 @@ export function useTransfers({
     const activeSessionId = sessionId
     const remoteDirectory = currentPath
     try {
-      const preflight = await window.remoteFiles.preflightUpload({
+      const selection = await window.remoteFiles.selectUploadSources({
         requestId: crypto.randomUUID(),
         sessionId: activeSessionId,
         remoteDirectory,
@@ -226,9 +226,9 @@ export function useTransfers({
         strategy,
         ...(entries ? { entries } : {}),
       })
-      if (preflight) setUploadPreflight(preflight)
+      if (selection) setUploadSelection(selection)
     } catch (error) {
-      showToast('error', '上传预检失败：' + errorMessage(error))
+      showToast('error', '选择上传内容失败：' + errorMessage(error))
     }
   }
 
@@ -244,26 +244,26 @@ export function useTransfers({
     void prepareUpload('drop', strategy, entries)
   }
 
-  const confirmUploadPreflight = async (strategy: OperationExecutionStrategy) => {
-    const preflight = uploadPreflight
-    if (!preflight || uploadPreflightBusy) return
-    setUploadPreflightBusy(true)
-    setUploadPreflight(null)
-    await runTransfer(preflight.name, 'upload', () => window.remoteFiles.executeUpload({ preflightId: preflight.preflightId, strategy }), {
-      refreshPath: preflight.remoteDirectory,
-      initialTotal: preflight.items.reduce((sum, item) => sum + (item.type === 'file' ? item.size : 0), 0),
+  const confirmUploadSelection = async (strategy: OperationExecutionStrategy) => {
+    const selection = uploadSelection
+    if (!selection || uploadSelectionBusy) return
+    setUploadSelectionBusy(true)
+    setUploadSelection(null)
+    await runTransfer(selection.name, 'upload', () => window.remoteFiles.executeUpload({ selectionId: selection.selectionId, strategy }), {
+      refreshPath: selection.remoteDirectory,
+      initialTotal: selection.items.reduce((sum, item) => sum + (item.type === 'file' ? item.size : 0), 0),
       deferTrayUntilProgress: true,
-      requestId: preflight.requestId,
-      sessionId: preflight.sessionId,
+      requestId: selection.requestId,
+      sessionId: selection.sessionId,
     })
-    setUploadPreflightBusy(false)
+    setUploadSelectionBusy(false)
   }
 
-  const cancelUploadPreflight = () => {
-    if (!uploadPreflight || uploadPreflightBusy) return
-    void window.remoteFiles.cancelUploadPreflight(uploadPreflight.preflightId)
-      .catch((error) => showToast('error', '取消上传预检失败：' + errorMessage(error)))
-    setUploadPreflight(null)
+  const cancelUploadSelection = () => {
+    if (!uploadSelection || uploadSelectionBusy) return
+    void window.remoteFiles.cancelUploadSelection(uploadSelection.selectionId)
+      .catch((error) => showToast('error', '取消上传选择失败：' + errorMessage(error)))
+    setUploadSelection(null)
   }
 
   const download = (entries: RemoteEntry[]) => {
@@ -286,10 +286,10 @@ export function useTransfers({
 
   return {
     transfers,
-    uploadPreflight,
-    uploadPreflightBusy,
-    cancelUploadPreflight,
-    confirmUploadPreflight,
+    uploadSelection,
+    uploadSelectionBusy,
+    cancelUploadSelection,
+    confirmUploadSelection,
     cancelTransfer,
     uploadFiles,
     uploadFolder,

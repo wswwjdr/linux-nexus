@@ -7,11 +7,10 @@ import type {
   LogPreviewPage,
   OperationExecutionRequest,
   OperationExecutionResult,
-  OperationPreflight,
-  OperationPreflightRequest,
-  ArchiveDependency,
-  UploadPreflightRequest,
-  UploadPreflight,
+  RemoteOperationConfirmation,
+  RemoteOperationIntent,
+  UploadSelectionRequest,
+  UploadSelection,
   UploadExecutionRequest,
   PreviewResult,
   PreviewType,
@@ -52,14 +51,10 @@ const api: RemoteFilesApi = {
   updateAppSettings: (patch: AppSettingsPatch): Promise<AppSettings> => ipcRenderer.invoke('settings:update', patch),
   listCommandAliasSnapshots: (): Promise<CommandAliasSnapshot[]> => ipcRenderer.invoke('aliases:list'),
   syncCommandAliases: (profileId: string): Promise<CommandAliasOperationResult> => ipcRenderer.invoke('aliases:sync', profileId),
-  saveCommandAlias: (profileId: string, name: string, command: string): Promise<CommandAliasOperationResult> =>
-    ipcRenderer.invoke('aliases:save', profileId, name, command),
-  preflightDeleteCommandAlias: (profileId: string, name: string, expectedCommand: string): Promise<CommandAliasOperationResult> =>
-    ipcRenderer.invoke('aliases:delete-preflight', profileId, name, expectedCommand),
-  executeCommandAliasOperation: (preflightId: string): Promise<CommandAliasOperationResult> =>
-    ipcRenderer.invoke('aliases:execute', preflightId),
-  cancelCommandAliasPreflight: (preflightId: string): Promise<boolean> =>
-    ipcRenderer.invoke('aliases:preflight-cancel', preflightId),
+  saveCommandAlias: (profileId: string, name: string, command: string, existingCommand?: string): Promise<CommandAliasOperationResult> =>
+    ipcRenderer.invoke('aliases:save', profileId, name, command, existingCommand),
+  deleteCommandAlias: (profileId: string, name: string, expectedCommand: string): Promise<CommandAliasOperationResult> =>
+    ipcRenderer.invoke('aliases:delete', profileId, name, expectedCommand),
   listDirectory: (sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('files:list', sessionId, remotePath),
   startNameSearch: (request: NameSearchRequest) => ipcRenderer.invoke('files:name-search', request),
@@ -68,18 +63,16 @@ const api: RemoteFilesApi = {
   cancelContentSearch: (requestId: string) => ipcRenderer.invoke('files:content-search-cancel', requestId),
   startScriptExecution: (request: ScriptExecutionRequest): Promise<void> => ipcRenderer.invoke('files:script-execution-start', request),
   cancelScriptExecution: (requestId: string): Promise<boolean> => ipcRenderer.invoke('files:script-execution-cancel', requestId),
-  preflightUpload: (request: UploadPreflightRequest): Promise<UploadPreflight | null> => ipcRenderer.invoke('files:upload-preflight', request),
+  selectUploadSources: (request: UploadSelectionRequest): Promise<UploadSelection | null> => ipcRenderer.invoke('files:upload-select', request),
   executeUpload: (request: UploadExecutionRequest) => ipcRenderer.invoke('files:upload-execute', request),
-  cancelUploadPreflight: (preflightId: string) => ipcRenderer.invoke('files:upload-preflight-cancel', preflightId),
+  cancelUploadSelection: (selectionId: string) => ipcRenderer.invoke('files:upload-selection-cancel', selectionId),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   downloadEntries: (requestId: string, sessionId: string, remotePaths: string[]) =>
     ipcRenderer.invoke('files:download', requestId, sessionId, remotePaths),
   cancelTransfer: (requestId: string) => ipcRenderer.invoke('files:transfer-cancel', requestId),
-  preflightOperation: (request: OperationPreflightRequest): Promise<OperationPreflight> => ipcRenderer.invoke('files:operation-preflight', request),
+  composeOperation: (request: RemoteOperationIntent): Promise<RemoteOperationConfirmation> => ipcRenderer.invoke('files:operation-compose', request),
   executeOperation: (request: OperationExecutionRequest): Promise<OperationExecutionResult> => ipcRenderer.invoke('files:operation-execute', request),
-  cancelOperation: (preflightId: string): Promise<boolean> => ipcRenderer.invoke('files:operation-cancel', preflightId),
-  installArchiveDependencies: (sessionId: string, dependencies: ArchiveDependency[], password: string): Promise<void> =>
-    ipcRenderer.invoke('files:archive-dependencies-install', sessionId, dependencies, password),
+  cancelOperation: (requestId: string): Promise<boolean> => ipcRenderer.invoke('files:operation-cancel', requestId),
   createRemoteDirectory: (sessionId: string, remoteDirectory: string, name: string) =>
     ipcRenderer.invoke('files:create-directory', sessionId, remoteDirectory, name),
   copyRemotePath: (sessionId: string, remotePath: string) =>
@@ -89,8 +82,8 @@ const api: RemoteFilesApi = {
   previewFile: (sessionId: string, remotePath: string, type: PreviewType): Promise<PreviewResult> =>
     ipcRenderer.invoke('files:preview', sessionId, remotePath, type),
   openExternalUrl: (url: string): Promise<void> => ipcRenderer.invoke('shell:open-external', url),
-  saveTextFile: (sessionId: string, remotePath: string, content: string, expectedRevision, forceOverwrite?: boolean) =>
-    ipcRenderer.invoke('files:text-save', sessionId, remotePath, content, expectedRevision, forceOverwrite),
+  saveTextFile: (sessionId: string, remotePath: string, content: string, lineEnding) =>
+    ipcRenderer.invoke('files:text-save', sessionId, remotePath, content, lineEnding),
   readLogPreview: (sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number): Promise<LogPreviewPage> =>
     ipcRenderer.invoke('files:preview-log', sessionId, remotePath, beforeOffset, snapshotSize),
   releasePreview: (token: string) => ipcRenderer.invoke('files:preview-release', token),

@@ -2,11 +2,11 @@ import { dialog } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { lstat as localLstat } from 'node:fs/promises'
 import { basename, isAbsolute, posix } from 'node:path'
-import type { OperationConflict, OperationExecutionStrategy, TransferFailure, TransferResult, UploadPreflight, UploadPreflightRequest } from '@shared/types'
+import type { OperationExecutionStrategy, TransferFailure, TransferResult, UploadSelection, UploadSelectionRequest } from '@shared/types'
 import type { TransferItem } from '../runtime'
 import { getMainWindow, messageFromError } from '../runtime'
 import { readAppSettings } from '../state-store'
-import { filesSession, normalizedRemotePath, remotePathType } from '../remote-fs'
+import { filesSession, normalizedRemotePath } from '../remote-fs'
 import { buildRemoteCommand, runRemoteCommand } from '../ssh-commands'
 import { transferFileStream } from './stream-transfer'
 import { uploadMoveFlag } from './upload-strategy'
@@ -99,8 +99,8 @@ async function prepareDroppedItems(entries: unknown, signal: AbortSignal): Promi
   }), failures }
 }
 
-interface StoredUploadPreflight {
-  publicPreflight: UploadPreflight
+interface StoredUploadSelection {
+  selection: UploadSelection
   items: TransferItem[]
   expiresAt: number
 }
@@ -112,17 +112,17 @@ interface UploadSources {
   failures: TransferFailure[]
 }
 
-const uploadPreflights = new Map<string, StoredUploadPreflight>()
-const UPLOAD_PREFLIGHT_TTL_MS = 10 * 60_000
+const uploadSelections = new Map<string, StoredUploadSelection>()
+const UPLOAD_SELECTION_TTL_MS = 10 * 60_000
 
-function pruneUploadPreflights(): void {
+function pruneUploadSelections(): void {
   const now = Date.now()
-  for (const [id, preflight] of uploadPreflights) {
-    if (preflight.expiresAt <= now) uploadPreflights.delete(id)
+  for (const [id, selection] of uploadSelections) {
+    if (selection.expiresAt <= now) uploadSelections.delete(id)
   }
 }
 
-async function collectUploadSources(request: UploadPreflightRequest, signal: AbortSignal): Promise<UploadSources | null> {
+async function collectUploadSources(request: UploadSelectionRequest, signal: AbortSignal): Promise<UploadSources | null> {
   const remoteDirectory = normalizedRemotePath(request.remoteDirectory || '/')
   if (request.mode === 'drop') {
     if (!Array.isArray(request.entries)) throw new Error('拖入文件清单无效')
@@ -168,40 +168,6 @@ async function collectUploadSources(request: UploadPreflightRequest, signal: Abo
   return { remoteRoot: remoteDirectory, name: selection.filePaths.length === 1 ? basename(selection.filePaths[0]) : `上传 ${items.length} 项`, items, failures }
 }
 
-const uploadConflictScript = [
-  'for path in "$@"; do',
-  '  if [[ -e "$path" || -L "$path" ]]; then',
-  '    if [[ -L "$path" ]]; then type=symlink; elif [[ -d "$path" ]]; then type=directory; elif [[ -f "$path" ]]; then type=file; else type=other; fi',
-  '    printf "%s\\0%s\\0" "$path" "$type"',
-  '  fi',
-  'done',
-].join('\n')
-
-function parseUploadConflicts(output: Buffer, items: TransferItem[], remoteRoot: string): OperationConflict[] {
-  const fields = output.toString('utf8').split('\0')
-  if (fields.at(-1) === '') fields.pop()
-  if (fields.length % 2 !== 0) throw new Error('服务器返回的上传冲突清单格式无效')
-  const itemsByPath = new Map(items.map((item) => [item.relativePath ? posix.join(remoteRoot, item.relativePath) : remoteRoot, item]))
-  const conflicts: OperationConflict[] = []
-  for (let index = 0; index < fields.length; index += 2) {
-    const targetPath = fields[index]
-    const targetType = fields[index + 1]
-    const item = itemsByPath.get(targetPath)
-    if (!item || (targetType !== 'file' && targetType !== 'directory' && targetType !== 'symlink' && targetType !== 'other')) {
-      throw new Error('服务器返回了无效的上传冲突')
-    }
-    conflicts.push({
-      sourcePath: item.localPath ?? item.relativePath,
-      targetPath,
-      sourceType: item.type,
-      targetType,
-    })
-  }
-  const unsupported = conflicts.find((conflict) => conflict.targetType === 'symlink' || conflict.targetType === 'other')
-  if (unsupported) throw new Error('上传目标包含符号链接或特殊文件：' + unsupported.targetPath)
-  return conflicts
-}
-
 function uploadCommandPreview(targetPath: string, strategy: OperationExecutionStrategy): string {
   const moveFlag = uploadMoveFlag(strategy)
   const script = [
@@ -222,18 +188,18 @@ function uploadCommandPreview(targetPath: string, strategy: OperationExecutionSt
   return buildRemoteCommand(script, [targetPath, '本机修改时间'])
 }
 
-export async function preflightUpload(value: unknown): Promise<UploadPreflight | null> {
+export async function selectUploadSources(value: unknown): Promise<UploadSelection | null> {
   if (!isRecord(value)
     || typeof value.requestId !== 'string' || !value.requestId
     || typeof value.sessionId !== 'string' || !value.sessionId
     || typeof value.remoteDirectory !== 'string'
     || !['files', 'folder', 'drop'].includes(value.mode as string)
     || !['force', 'skip', 'update', 'confirm'].includes(value.strategy as string)) {
-    throw new Error('上传预检参数无效')
+    throw new Error('上传来源参数无效')
   }
-  const request = value as unknown as UploadPreflightRequest
-  pruneUploadPreflights()
-  if ([...uploadPreflights.values()].some(({ publicPreflight }) => publicPreflight.requestId === request.requestId)) {
+  const request = value as unknown as UploadSelectionRequest
+  pruneUploadSelections()
+  if ([...uploadSelections.values()].some(({ selection }) => selection.requestId === request.requestId)) {
     throw new Error('上传请求编号重复')
   }
   const session = filesSession(request.sessionId)
@@ -241,22 +207,13 @@ export async function preflightUpload(value: unknown): Promise<UploadPreflight |
   if (!sources) return null
   if (sources.items.length === 0 && sources.failures.length === 0) throw new Error('没有可上传的文件')
   const remoteDirectory = normalizedRemotePath(request.remoteDirectory || '/')
-  if (await remotePathType(session.client, remoteDirectory) !== 'directory') throw new Error('上传目标不是文件夹')
-
   const remoteRoot = sources.remoteRoot
-  const destinations = sources.items.map((item) => item.relativePath ? posix.join(remoteRoot, item.relativePath) : remoteRoot)
-  const { stdout } = destinations.length
-    ? await runRemoteCommand(session.client, uploadConflictScript, destinations)
-    : { stdout: Buffer.alloc(0) }
-  const conflicts = parseUploadConflicts(stdout, sources.items, remoteRoot)
-  const typeMismatch = conflicts.find((conflict) => conflict.sourceType !== conflict.targetType)
-  if (typeMismatch) throw new Error('上传来源与目标类型不一致：' + typeMismatch.targetPath)
   const sample = sources.items.find((item) => item.type === 'file')
   const sampleTarget = sample
     ? sample.relativePath ? posix.join(remoteRoot, sample.relativePath) : remoteRoot
     : remoteRoot
-  const preflight: UploadPreflight = {
-    preflightId: randomUUID(),
+  const selection: UploadSelection = {
+    selectionId: randomUUID(),
     requestId: request.requestId,
     sessionId: session.sessionId,
     profileId: session.profileId,
@@ -269,7 +226,6 @@ export async function preflightUpload(value: unknown): Promise<UploadPreflight |
       type: item.type,
       size: item.size,
     })),
-    conflicts,
     failures: sources.failures,
     commandPreviews: {
       force: uploadCommandPreview(sampleTarget, 'force'),
@@ -277,23 +233,23 @@ export async function preflightUpload(value: unknown): Promise<UploadPreflight |
       update: uploadCommandPreview(sampleTarget, 'update'),
     },
   }
-  uploadPreflights.set(preflight.preflightId, {
-    publicPreflight: preflight,
+  uploadSelections.set(selection.selectionId, {
+    selection,
     items: sources.items,
-    expiresAt: Date.now() + UPLOAD_PREFLIGHT_TTL_MS,
+    expiresAt: Date.now() + UPLOAD_SELECTION_TTL_MS,
   })
-  return preflight
+  return selection
 }
 
-export function uploadPreflightContext(preflightId: string): Pick<UploadPreflight, 'requestId' | 'sessionId' | 'profileId'> {
-  pruneUploadPreflights()
-  const stored = uploadPreflights.get(preflightId)
-  if (!stored) throw new Error('上传预检已过期，请重新操作')
-  return stored.publicPreflight
+export function uploadSelectionContext(selectionId: string): Pick<UploadSelection, 'requestId' | 'sessionId' | 'profileId'> {
+  pruneUploadSelections()
+  const stored = uploadSelections.get(selectionId)
+  if (!stored) throw new Error('上传来源选择已过期，请重新选择')
+  return stored.selection
 }
 
-export function cancelUploadPreflight(preflightId: string): boolean {
-  return uploadPreflights.delete(preflightId)
+export function cancelUploadSelection(selectionId: string): boolean {
+  return uploadSelections.delete(selectionId)
 }
 
 async function uploadItems(
@@ -337,12 +293,7 @@ async function uploadItems(
     if (directories.length) {
       await runRemoteCommand(session.client, [
         'set -eu',
-        'missing=()',
-        'for directory in "$@"; do',
-        '  if [[ -e "$directory" || -L "$directory" ]]; then [[ -d "$directory" && ! -L "$directory" ]] || { printf "上传目录目标类型不匹配: %s\\n" "$directory" >&2; exit 1; }',
-        '  else missing+=("$directory"); fi',
-        'done',
-        'if ((${#missing[@]})); then mkdir -p -- "${missing[@]}"; fi',
+        'mkdir -p -- "$@"',
       ].join('\n'), directories, { signal, collectStdout: false })
     }
     const tasks = files.map((item) => {
@@ -371,32 +322,20 @@ async function uploadItems(
   }
 }
 
-export async function executePreparedUpload(
+export async function executeSelectedUpload(
   event: Electron.IpcMainInvokeEvent,
-  preflightId: string,
+  selectionId: string,
   strategy: OperationExecutionStrategy,
   signal: AbortSignal,
 ): Promise<TransferResult> {
   if (!['force', 'skip', 'update'].includes(strategy)) throw new Error('上传策略无效')
-  const stored = uploadPreflights.get(preflightId)
+  const stored = uploadSelections.get(selectionId)
   if (!stored || stored.expiresAt <= Date.now()) {
-    uploadPreflights.delete(preflightId)
-    throw new Error('上传预检已过期，请重新操作')
+    uploadSelections.delete(selectionId)
+    throw new Error('上传来源选择已过期，请重新选择')
   }
-  const preflight = stored.publicPreflight
-  if (preflight.strategy !== 'confirm' && preflight.strategy !== strategy) throw new Error('上传策略与预检策略不一致')
-  uploadPreflights.delete(preflightId)
-  const skipped = strategy === 'skip'
-    ? preflight.conflicts.map((conflict) => conflict.targetPath)
-    : []
-  const skippedDirectories = preflight.conflicts
-    .filter((conflict) => conflict.sourceType === 'directory' && conflict.targetType !== 'directory')
-    .map((conflict) => conflict.targetPath)
-  const items = stored.items.filter((item) => {
-    const target = item.relativePath ? posix.join(preflight.remoteRoot, item.relativePath) : preflight.remoteRoot
-    return !skipped.includes(target)
-      && !skippedDirectories.some((directory) => target === directory || target.startsWith(directory + '/'))
-  })
-  return uploadItems(event, preflight.requestId, preflight.sessionId, preflight.profileId,
-    preflight.remoteRoot, items, preflight.failures, strategy, signal)
+  if (stored.selection.strategy !== 'confirm' && stored.selection.strategy !== strategy) throw new Error('上传策略与所选策略不一致')
+  uploadSelections.delete(selectionId)
+  return uploadItems(event, stored.selection.requestId, stored.selection.sessionId, stored.selection.profileId,
+    stored.selection.remoteRoot, stored.items, stored.selection.failures, strategy, signal)
 }

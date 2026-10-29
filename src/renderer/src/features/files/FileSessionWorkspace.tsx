@@ -168,18 +168,14 @@ export default function FileSessionWorkspace({
           eyebrow="保存远程文件"
           title={`覆盖 ${preview.textSaveConfirmation.name}？`}
           details={[{ label: '远程路径', value: preview.textSaveConfirmation.path }]}
-          description={preview.textSaveConflict
-            ? '服务器文件已被修改。你可以重新加载服务器内容，或继续覆盖服务器当前文件。'
-            : '保存前会在服务器计算 SHA-256；内容未变化时以临时文件写入并原子替换。'}
+          description="保存会将内容写入服务器同目录临时文件，再原子替换远端文件。"
           tone="warning"
-          confirmLabel={preview.textSaveConflict ? '仍然覆盖' : '保存'}
-          secondaryActionLabel={preview.textSaveConflict ? '重新加载' : undefined}
+          confirmLabel="保存"
           busyLabel="正在保存"
           error={preview.textSaveError}
           errorLabel="保存失败"
           busy={preview.textSaving}
-          onConfirm={() => void preview.confirmTextSave(preview.textSaveConflict)}
-          onSecondaryAction={() => void preview.reloadTextAfterConflict()}
+          onConfirm={() => void preview.confirmTextSave()}
           onCancel={preview.cancelTextSave}
         />
       )}

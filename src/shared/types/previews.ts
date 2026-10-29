@@ -1,22 +1,7 @@
 export type TextLineEnding = '\n' | '\r\n' | '\r' | null
 
-export interface TextFileRevision {
-  contentHash: string
-  lineEnding: TextLineEnding
-}
-
-export interface TextFileSaveResult {
-  status: 'saved'
-  revision: TextFileRevision
-}
-
-export interface TextFileSaveConflict {
-  status: 'conflict'
-  currentHash: string
-}
-
 export type PreviewResult =
-  | { type: 'text'; name: string; content: string; revision: TextFileRevision }
+  | { type: 'text'; name: string; content: string; lineEnding: TextLineEnding }
   | { type: 'markdown'; name: string; content: string }
   | { type: 'pdf'; name: string; url: string; token: string }
   | { type: 'image'; name: string; url: string; token: string }

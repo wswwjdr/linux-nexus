@@ -30,16 +30,8 @@ export interface TransferQueuedEvent {
 export type RemoteOperationKind = 'copy' | 'move' | 'extract'
 export type OperationExecutionStrategy = 'force' | 'skip' | 'update'
 export type OperationStrategy = OperationExecutionStrategy | 'confirm'
-export type ArchiveDependency = 'unzip' | 'gzip' | 'bzip2' | 'xz' | 'zstd'
 
-export interface OperationConflict {
-  sourcePath: string
-  targetPath: string
-  sourceType: 'file' | 'directory'
-  targetType: 'file' | 'directory' | 'symlink' | 'other'
-}
-
-export interface OperationPreflightRequest {
+export interface RemoteOperationIntent {
   requestId: string
   sessionId: string
   operation: RemoteOperationKind
@@ -50,34 +42,32 @@ export interface OperationPreflightRequest {
   wrapInDirectory?: boolean
 }
 
-export interface OperationPreflight {
-  preflightId: string
+export interface RemoteOperationConfirmation extends RemoteOperationIntent {
+  outputDirectory?: string
+  commandPreviews: Record<OperationExecutionStrategy, string>
+}
+
+export interface OperationExecutionRequest {
+  requestId: string
   sessionId: string
   operation: RemoteOperationKind
   sourcePaths: string[]
   targetDirectory: string
-  strategy: OperationStrategy
-  conflicts: OperationConflict[]
-  commandPreviews: Record<OperationExecutionStrategy, string>
-  archivePath?: string
-  outputDirectory?: string
-  missingDependencies?: ArchiveDependency[]
-}
-
-export interface OperationExecutionRequest {
-  preflightId: string
   strategy: OperationExecutionStrategy
+  archivePath?: string
+  wrapInDirectory?: boolean
 }
 
 export interface OperationExecutionResult {
   status: 'completed' | 'cancelled'
+  requestId: string
   operation: RemoteOperationKind
   command: string
 }
 
 export type UploadSourceMode = 'files' | 'folder' | 'drop'
 
-export interface UploadPreflightRequest {
+export interface UploadSelectionRequest {
   requestId: string
   sessionId: string
   remoteDirectory: string
@@ -86,14 +76,14 @@ export interface UploadPreflightRequest {
   strategy: OperationStrategy
 }
 
-export interface UploadPreflightItem {
+export interface UploadSelectionItem {
   name: string
   type: 'file' | 'directory'
   size: number
 }
 
-export interface UploadPreflight {
-  preflightId: string
+export interface UploadSelection {
+  selectionId: string
   requestId: string
   sessionId: string
   profileId: string
@@ -101,14 +91,13 @@ export interface UploadPreflight {
   remoteRoot: string
   name: string
   strategy: OperationStrategy
-  items: UploadPreflightItem[]
-  conflicts: OperationConflict[]
+  items: UploadSelectionItem[]
   failures: TransferFailure[]
   commandPreviews: Record<OperationExecutionStrategy, string>
 }
 
 export interface UploadExecutionRequest {
-  preflightId: string
+  selectionId: string
   strategy: OperationExecutionStrategy
 }
 

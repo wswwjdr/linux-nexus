@@ -21,20 +21,17 @@ export interface CommandAliasSnapshot {
   status: 'unsynced' | 'synced' | 'stale'
 }
 
-export interface CommandAliasPreflight {
-  preflightId: string
+export interface CommandAliasConfirmation {
   profileId: string
   operation: 'overwrite' | 'delete'
   name: string
   existingCommand: string
   command?: string
-  commandPreview: string
 }
 
 export type CommandAliasOperationResult =
   | { status: 'completed'; snapshot: CommandAliasSnapshot }
   | { status: 'host-key-required'; fingerprint: string; previousFingerprint?: string }
-  | { status: 'confirmation-required'; preflight: CommandAliasPreflight }
   | { status: 'updated-sync-failed'; message: string; snapshot: CommandAliasSnapshot }
 
 export interface SaveProfileInput {

@@ -1,10 +1,10 @@
 import { useState, type Dispatch, type FormEvent, type MutableRefObject, type SetStateAction } from 'react'
 import type {
-  ArchiveDependency,
+  OperationExecutionRequest,
   OperationExecutionStrategy,
-  OperationPreflight,
-  OperationPreflightRequest,
   OperationStrategy,
+  RemoteOperationConfirmation,
+  RemoteOperationIntent,
   RemoteOperationKind,
   RemoteEntry,
   ServerProfile,
@@ -13,7 +13,7 @@ import type { BrowserContextMenu, SessionTab } from '@/app-types'
 import { errorMessage, getParentPath } from '@/app-utils'
 
 interface ActiveOperation {
-  preflightId: string
+  requestId: string
   sessionId: string
   operation: RemoteOperationKind
 }
@@ -28,12 +28,6 @@ interface RemoteEntryDeleteDialog {
   entries: RemoteEntry[]
   sessionId: string
   directory: string
-}
-
-export interface ArchiveDependencyInstallRequest {
-  sessionId: string
-  dependencies: ArchiveDependency[]
-  operationRequest: OperationPreflightRequest
 }
 
 export interface ArchiveDestinationDialogState {
@@ -72,15 +66,12 @@ export function useRemoteOperations({
   const [remoteEntryDeleteError, setRemoteEntryDeleteError] = useState<string | null>(null)
   const [remoteEntryDeleting, setRemoteEntryDeleting] = useState(false)
   const [remoteClipboard, setRemoteClipboard] = useState<RemoteClipboard | null>(null)
-  const [operationPreflight, setOperationPreflight] = useState<OperationPreflight | null>(null)
+  const [operationConfirmation, setOperationConfirmation] = useState<RemoteOperationConfirmation | null>(null)
   const [activeOperation, setActiveOperation] = useState<ActiveOperation | null>(null)
   const [operationBusy, setOperationBusy] = useState(false)
   const [createDirectoryDialog, setCreateDirectoryDialog] = useState<{ name: string } | null>(null)
   const [creatingDirectory, setCreatingDirectory] = useState(false)
   const [archiveDestinationDialog, setArchiveDestinationDialog] = useState<ArchiveDestinationDialogState | null>(null)
-  const [archiveInstallRequest, setArchiveInstallRequest] = useState<ArchiveDependencyInstallRequest | null>(null)
-  const [archiveInstallBusy, setArchiveInstallBusy] = useState(false)
-  const [archiveInstallError, setArchiveInstallError] = useState<string | null>(null)
 
   const clipboardMatchesProfile = Boolean(remoteClipboard && connectedProfile
     && remoteClipboard.profile.id === connectedProfile.id
@@ -88,7 +79,7 @@ export function useRemoteOperations({
     && remoteClipboard.profile.port === connectedProfile.port
     && remoteClipboard.profile.username === connectedProfile.username)
   const canPasteRemote = Boolean(clipboardMatchesProfile && activeSession?.kind === 'files'
-    && activeSession.status === 'connected' && !activeOperation && !operationPreflight && !archiveInstallRequest)
+    && activeSession.status === 'connected' && !activeOperation && !operationConfirmation)
 
   const setRemoteSelectionClipboard = (selectedEntries: RemoteEntry[], mode: RemoteClipboard['mode']) => {
     if (!connectedProfile || !connectedSessionId || selectedEntries.length === 0) return
@@ -149,7 +140,7 @@ export function useRemoteOperations({
     strategy: OperationStrategy,
   ) => {
     const session = activeSession
-    if (!session || session.kind !== 'files' || session.status !== 'connected' || activeOperation || operationPreflight) return
+    if (!session || session.kind !== 'files' || session.status !== 'connected' || activeOperation || operationConfirmation) return
     setBrowserContextMenu(null)
     if (target === 'choose-directory') {
       setArchiveDestinationDialog({ sessionId: session.id, entry, directory: activeDirectory, strategy })
@@ -162,32 +153,6 @@ export function useRemoteOperations({
     const dialog = archiveDestinationDialog
     if (!dialog) return
     startArchiveExtraction(dialog.entry, dialog.sessionId, targetDirectory, false, dialog.strategy)
-  }
-
-  const confirmArchiveDependencyInstall = async (password: string) => {
-    const request = archiveInstallRequest
-    if (!request || archiveInstallBusy) return
-    setArchiveInstallBusy(true)
-    setArchiveInstallError(null)
-    try {
-      await window.remoteFiles.installArchiveDependencies(request.sessionId, request.dependencies, password)
-      const preflight = await window.remoteFiles.preflightOperation(request.operationRequest)
-      if (preflight.missingDependencies?.length) throw new Error('依赖安装后服务器仍缺少所需工具')
-      setOperationPreflight(preflight)
-      setArchiveInstallRequest(null)
-      showToast('info', '依赖已安装，请确认服务器解压命令')
-    } catch (error) {
-      setArchiveInstallError(errorMessage(error))
-    } finally {
-      setArchiveInstallBusy(false)
-    }
-  }
-
-  const cancelArchiveDependencyInstall = () => {
-    if (archiveInstallBusy) return
-    setArchiveInstallRequest(null)
-    setArchiveInstallError(null)
-    setOperationPreflight(null)
   }
 
   const createArchiveDestinationDirectory = async (directory: string, name: string) => {
@@ -248,10 +213,10 @@ export function useRemoteOperations({
     const sessionId = extra?.sessionId ?? activeSession?.id
     const session = sessionId ? sessionsRef.current.find((candidate) => candidate.id === sessionId) : null
     if (!session || session.kind !== 'files' || session.status !== 'connected'
-      || activeOperation || operationPreflight || archiveInstallRequest) return
+      || activeOperation || operationConfirmation) return
     setBrowserContextMenu(null)
     try {
-      const operationRequest: OperationPreflightRequest = {
+      const operationRequest: RemoteOperationIntent = {
         requestId: window.crypto.randomUUID(),
         sessionId: session.id,
         operation,
@@ -260,15 +225,11 @@ export function useRemoteOperations({
         strategy,
         ...(extra?.archivePath ? { archivePath: extra.archivePath, wrapInDirectory: extra.wrapInDirectory } : {}),
       }
-      const preflight = await window.remoteFiles.preflightOperation(operationRequest)
-      setOperationPreflight(preflight)
-      if (preflight.missingDependencies?.length) {
-        setArchiveInstallRequest({ sessionId: session.id, dependencies: preflight.missingDependencies, operationRequest })
-        setArchiveInstallError(null)
-      }
+      const confirmation = await window.remoteFiles.composeOperation(operationRequest)
+      setOperationConfirmation(confirmation)
     } catch (error) {
       const label = operation === 'copy' ? '复制' : operation === 'move' ? '移动' : '解压'
-      showToast('error', `${label}预检失败：${errorMessage(error)}`)
+      showToast('error', `${label}命令生成失败：${errorMessage(error)}`)
     }
   }
 
@@ -288,31 +249,41 @@ export function useRemoteOperations({
   }
 
   const confirmRemoteOperation = async (strategy: OperationExecutionStrategy) => {
-    const preflight = operationPreflight
-    if (!preflight || operationBusy) return
+    const confirmation = operationConfirmation
+    if (!confirmation || operationBusy) return
     setOperationBusy(true)
-    setActiveOperation({ preflightId: preflight.preflightId, sessionId: preflight.sessionId, operation: preflight.operation })
-    const label = preflight.operation === 'copy' ? '复制' : preflight.operation === 'move' ? '移动' : '解压'
+    setActiveOperation({ requestId: confirmation.requestId, sessionId: confirmation.sessionId, operation: confirmation.operation })
+    const label = confirmation.operation === 'copy' ? '复制' : confirmation.operation === 'move' ? '移动' : '解压'
     try {
-      const result = await window.remoteFiles.executeOperation({ preflightId: preflight.preflightId, strategy })
+      const request: OperationExecutionRequest = {
+        requestId: confirmation.requestId,
+        sessionId: confirmation.sessionId,
+        operation: confirmation.operation,
+        sourcePaths: confirmation.sourcePaths,
+        targetDirectory: confirmation.targetDirectory,
+        strategy,
+        ...(confirmation.archivePath ? { archivePath: confirmation.archivePath } : {}),
+        ...(confirmation.wrapInDirectory !== undefined ? { wrapInDirectory: confirmation.wrapInDirectory } : {}),
+      }
+      const result = await window.remoteFiles.executeOperation(request)
       showToast('info', result.status === 'cancelled' ? `${label}已取消` : `${label}命令已完成`)
-      if (result.status === 'completed' && preflight.operation === 'move') {
+      if (result.status === 'completed' && confirmation.operation === 'move') {
         setRemoteClipboard((current) => current?.mode === 'cut'
-          && current.sourcePaths.length === preflight.sourcePaths.length
-          && current.sourcePaths.every((path, index) => path === preflight.sourcePaths[index]) ? null : current)
+          && current.sourcePaths.length === confirmation.sourcePaths.length
+          && current.sourcePaths.every((path, index) => path === confirmation.sourcePaths[index]) ? null : current)
       }
     } catch (error) {
       showToast('error', `${label}失败：${errorMessage(error)}`)
     } finally {
       setOperationBusy(false)
       setActiveOperation(null)
-      setOperationPreflight(null)
+      setOperationConfirmation(null)
       const affectedDirectories = new Set([
-        ...preflight.sourcePaths.map(getParentPath),
-        preflight.targetDirectory,
-        ...(preflight.outputDirectory ? [preflight.outputDirectory] : []),
+        ...confirmation.sourcePaths.map(getParentPath),
+        confirmation.targetDirectory,
+        ...(confirmation.outputDirectory ? [confirmation.outputDirectory] : []),
       ])
-      const session = sessionsRef.current.find((candidate) => candidate.id === preflight.sessionId)
+      const session = sessionsRef.current.find((candidate) => candidate.id === confirmation.sessionId)
       const refreshSessions = sessionsRef.current.filter((candidate) => candidate.profileId === session?.profileId
         && candidate.kind === 'files' && candidate.status === 'connected'
         && [...affectedDirectories].some((directory) => candidate.currentPath === directory
@@ -323,14 +294,14 @@ export function useRemoteOperations({
 
   const cancelActiveOperation = () => {
     if (activeOperation) {
-      void window.remoteFiles.cancelOperation(activeOperation.preflightId).catch((error) => showToast('error', `取消操作失败：${errorMessage(error)}`))
+      void window.remoteFiles.cancelOperation(activeOperation.requestId).catch((error) => showToast('error', `取消操作失败：${errorMessage(error)}`))
       return
     }
-    if (operationPreflight) setOperationPreflight(null)
+    if (operationConfirmation) setOperationConfirmation(null)
   }
 
   return {
-    operationPreflight,
+    operationConfirmation,
     activeOperation,
     operationBusy,
     canPasteRemote,
@@ -342,14 +313,9 @@ export function useRemoteOperations({
     setCreateDirectoryDialog,
     creatingDirectory,
     archiveDestinationDialog,
-    archiveInstallRequest,
-    archiveInstallBusy,
-    archiveInstallError,
     submitCreateDirectory,
     extractRemoteArchive,
     beginArchiveExtractionAt,
-    confirmArchiveDependencyInstall,
-    cancelArchiveDependencyInstall,
     createArchiveDestinationDirectory,
     setArchiveDestinationDialog,
     requestRemoteEntriesDeletion,

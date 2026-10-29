@@ -37,7 +37,7 @@ export async function transferFileStream(
 ): Promise<void> {
   signal.throwIfAborted()
   if (direction === 'upload') {
-    if (!uploadOptions) throw new Error('上传预检信息缺失')
+    if (!uploadOptions) throw new Error('上传参数缺失')
     const source = createReadStream(sourcePath, { highWaterMark: TRANSFER_CHUNK_SIZE })
     let uploaded = 0
     const chunks = async function* () {
