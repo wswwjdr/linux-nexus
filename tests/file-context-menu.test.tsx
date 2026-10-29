@@ -67,11 +67,10 @@ test('renders disabled commands accessibly and supports Home, End and arrow navi
   const buttons = Array.from(menu.host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
   assert.equal(document.activeElement, buttons[0])
   const pasteTrigger = menu.host.querySelector<HTMLButtonElement>('[data-submenu-trigger="paste-strategy"]')!
+  assert.equal(pasteTrigger.disabled, true)
+  assert.match(pasteTrigger.getAttribute('aria-label') ?? '', /剪贴板为空/)
   act(() => pasteTrigger.click())
-  const pasteActions = Array.from(menu.host.querySelectorAll<HTMLButtonElement>('[data-submenu-panel="paste-strategy"] [role="menuitem"]'))
-  assert.equal(pasteActions.length, 5)
-  assert.equal(pasteActions.every((button) => button.disabled), true)
-  assert.match(pasteActions[0].getAttribute('aria-label') ?? '', /剪贴板为空/)
+  assert.equal(menu.host.querySelector('[data-submenu-panel="paste-strategy"]'), null)
 
   key(buttons[0], 'End')
   assert.equal(document.activeElement, buttons.at(-1))
@@ -82,6 +81,19 @@ test('renders disabled commands accessibly and supports Home, End and arrow navi
   key(buttons[1], 'ArrowUp')
   assert.equal(document.activeElement, buttons[0])
   menu.unmount()
+})
+
+test('paste submenu exposes only immediate force and skip actions', () => {
+  const menu = mount({ kind: 'single-entry', entry: entry('plain.txt'), canPaste: true })
+  try {
+    const trigger = menu.host.querySelector<HTMLButtonElement>('[data-submenu-trigger="paste-strategy"]')!
+    act(() => trigger.click())
+    const items = Array.from(menu.host.querySelectorAll<HTMLButtonElement>('[data-submenu-panel="paste-strategy"] [role="menuitem"]'))
+    assert.equal(items.length, 2)
+    act(() => items[0].click())
+    act(() => items[1].click())
+    assert.deepEqual(menu.actions, [{ type: 'paste', strategy: 'force' }, { type: 'paste', strategy: 'skip' }])
+  } finally { menu.unmount() }
 })
 
 test('opens and closes script submenu with arrows and returns focus to the invoking file on Escape', () => {

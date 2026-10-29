@@ -4,7 +4,7 @@ import { classifyFileTypeCategories, fileTypeDefinition } from '@shared/file-typ
 import { previewTypesForFile, previewTypeLabels } from '@shared/preview-file-type'
 import { archiveBaseName, archiveFormatForName } from '@shared/archive'
 import type { SortColumn, SortDirection } from '@/app-types'
-import type { OperationStrategy } from '@shared/types'
+import type { OperationExecutionStrategy, OperationStrategy, PasteStrategy } from '@shared/types'
 
 export type FileMenuIcon =
   | 'arrow-down'
@@ -28,13 +28,13 @@ export type FileMenuIcon =
 export type FileMenuAction =
   | { type: 'preview'; previewType: PreviewType }
   | { type: 'preview-log' }
-  | { type: 'extract-archive'; target: 'current-directory' | 'archive-directory' | 'choose-directory'; strategy: OperationStrategy }
+  | { type: 'extract-archive'; target: 'current-directory' | 'archive-directory' | 'choose-directory'; strategy: OperationExecutionStrategy }
   | { type: 'run-script' }
   | { type: 'adjust-script-command' }
   | { type: 'download' }
   | { type: 'copy' }
   | { type: 'cut' }
-  | { type: 'paste'; strategy: OperationStrategy }
+  | { type: 'paste'; strategy: PasteStrategy }
   | { type: 'copy-path' }
   | { type: 'delete' }
   | { type: 'sort-column'; column: SortColumn }
@@ -80,10 +80,17 @@ const action = (
   options: Pick<FileMenuActionNode, 'disabled' | 'disabledReason' | 'description' | 'checked'> = {},
 ): FileMenuActionNode => ({ kind: 'action', id, label, icon, action: menuAction, ...options })
 
-const operationStrategies: Array<{ strategy: OperationStrategy; label: string; description: string }> = [
+const executionStrategies: Array<{ strategy: OperationExecutionStrategy; label: string; description: string }> = [
   { strategy: 'force', label: '强制覆盖 (-f)', description: '使用服务器命令的强制覆盖选项；权限和目录结构限制仍然生效。' },
   { strategy: 'skip', label: '跳过已有目标 (-n)', description: '目标中存在同名项目时保留目标并跳过该项。' },
   { strategy: 'update', label: '仅源项目较新时处理 (-u)', description: '目标不存在，或来源的修改时间晚于目标时才处理。' },
+]
+
+const pasteStrategies: Array<{ strategy: PasteStrategy; label: string; description: string }> = executionStrategies
+  .filter((item): item is typeof item & { strategy: PasteStrategy } => item.strategy !== 'update')
+
+const uploadStrategies: Array<{ strategy: OperationStrategy; label: string; description: string }> = [
+  ...executionStrategies,
   { strategy: 'confirm', label: '确认后处理', description: '确认操作后，选择遇到同名项目时覆盖或跳过。' },
 ]
 
@@ -95,7 +102,7 @@ function pasteStrategyMenu(disabled: boolean): FileMenuNode {
     icon: 'clipboard-paste',
     disabled,
     disabledReason: disabled ? '剪贴板为空' : undefined,
-    children: operationStrategies.filter(({ strategy }) => strategy !== 'update').map(({ strategy, label, description }) => action(
+    children: pasteStrategies.map(({ strategy, label, description }) => action(
       'paste-' + strategy,
       label,
       undefined,
@@ -111,7 +118,7 @@ function uploadStrategyMenu(): FileMenuNode {
     id: 'upload-strategy',
     label: '上传',
     icon: 'upload',
-    children: operationStrategies.map(({ strategy, label }) => action(
+    children: uploadStrategies.map(({ strategy, label }) => action(
       'upload-' + strategy,
       label,
       undefined,
@@ -213,7 +220,7 @@ const archiveExtractionStrategy: FileContextMenuStrategy = {
       icon: 'archive',
       children: destinations.flatMap((destination, index) => [
         ...(index ? [{ kind: 'separator' as const, id: 'extract-' + destination.id + '-separator' }] : []),
-        ...operationStrategies.map(({ strategy, label }) => action(
+        ...executionStrategies.map(({ strategy, label }) => action(
           'extract-' + destination.id + '-' + strategy,
           destination.label + ' · ' + label,
           undefined,

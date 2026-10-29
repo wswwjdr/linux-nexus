@@ -27,7 +27,7 @@ export default function UploadConfirmDialog({
 
   return createPortal((
     <div className="modal-backdrop confirmation-backdrop" role="presentation">
-      <section className="modal operation-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby={titleId}>
+      <section className="modal upload-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="confirmation-heading">
           <div className="confirmation-icon warning"><AlertTriangle size={19} /></div>
           <div className="confirmation-title-group">

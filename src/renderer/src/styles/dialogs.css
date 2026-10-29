@@ -27,22 +27,12 @@
 .operation-command-preview summary { width: fit-content; cursor: pointer; }
 .operation-command-preview summary:hover { color:var(--text-primary); }
 .operation-command-preview code { display: block; width: 100%; min-width: 0; max-height: 180px; overflow: auto; padding: 8px 10px; border:1px solid var(--line); border-radius: var(--radius); color:var(--text-primary); background:var(--surface-soft); font: 11px/1.55 Consolas, 'Cascadia Mono', monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-.operation-confirm-dialog { width: min(100%, 520px); max-height: calc(100vh - 32px); overflow-y: auto; }
+.upload-confirm-dialog { width: min(100%, 520px); max-height: calc(100vh - 32px); overflow-y: auto; }
 .operation-action-summary { display: grid; gap: 8px; color:var(--text-primary); font-size: 12px; line-height: 1.5; }
-.operation-action-summary > p { margin: 0; }
-.operation-destination { display: block; padding: 8px 10px; border:1px solid var(--line); border-radius: var(--radius); color:var(--text-primary); background:var(--surface-soft); font: 11px/1.5 Consolas, 'Cascadia Mono', monospace; overflow-wrap: anywhere; }
-.operation-section-heading { color:var(--text-secondary); font-size: 11px; font-weight: 600; }
-.operation-source-list { min-width: 0; max-height: 132px; overflow: auto; padding: 8px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
-.operation-source-list ul { display: grid; gap: 6px; margin: 7px 0 0; padding: 0; list-style: none; }
-.operation-source-list li { min-width: 0; }
-.operation-source-list code { color:var(--text-primary); font: 11px/1.5 Consolas, 'Cascadia Mono', monospace; overflow-wrap: anywhere; }
 .operation-conflict-policy { min-width: 0; display: grid; gap: 8px; margin: 14px 0 0; padding: 10px 12px 12px; border:1px solid var(--border-warning); border-radius: var(--radius); color:var(--text-primary); background:var(--surface-warning); }
 .operation-conflict-policy legend { padding: 0 4px; color:var(--text-warning); font-size: 11px; font-weight: 650; }
 .operation-conflict-policy label { min-width: 0; display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: start; gap: 7px; cursor: pointer; }
 .operation-conflict-policy input { margin: 2px 0 0; }
-.operation-conflict-policy label span { min-width: 0; display: grid; gap: 2px; }
-.operation-conflict-policy strong { font-size: 11px; font-weight: 600; }
-.operation-conflict-policy small { color:var(--text-secondary); font-size: 10px; line-height: 1.45; }
 .operation-strategy-label { margin: 12px 0 0; color:var(--text-secondary); font-size: 11px; line-height: 1.5; }
 .operation-conflict-list { min-width: 0; max-height: 190px; display: grid; gap: 7px; overflow: auto; }
 .field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; color:var(--text-primary); font-size: 11px; font-weight: 600; }

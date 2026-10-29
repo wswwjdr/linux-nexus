@@ -7,7 +7,6 @@ import { useFileMenuActions } from './features/files/useFileMenuActions'
 import SessionWorkspaceView from './features/sessions/SessionWorkspaceView'
 import DialogLayer from './components/DialogLayer'
 import ConfirmationDialog from './components/ConfirmationDialog'
-import OperationConfirmDialog from './components/OperationConfirmDialog'
 import UploadConfirmDialog from './components/UploadConfirmDialog'
 import { RemoteArchiveDialogs } from './components/RemoteArchiveDialogs'
 import SessionChooser from './components/SessionChooser'
@@ -362,9 +361,7 @@ export default function App() {
   })
 
   const {
-    operationConfirmation,
     activeOperation,
-    operationBusy,
     archiveDestinationDialog,
     canPasteRemote,
     remoteEntryDeleteDialog,
@@ -381,7 +378,6 @@ export default function App() {
     cutRemoteSelection,
     beginRemoteMove,
     pasteRemoteEntries,
-    confirmRemoteOperation,
     cancelActiveOperation,
     extractRemoteArchive,
     beginArchiveExtractionAt,
@@ -393,7 +389,6 @@ export default function App() {
     connectedSessionId,
     currentPath,
     sessionsRef,
-    patchSession,
     updateSession,
     loadDirectory,
     showToast,
@@ -476,7 +471,7 @@ export default function App() {
   const modalOpen = Boolean(
     profileDialog || profileDeleteDialog || createDirectoryDialog || settingsForm
       || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
-      || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || operationConfirmation || uploadSelection
+      || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || uploadSelection
       || archiveDestinationDialog
       || (activeSessionId && workspaceBlockingSessionIds.has(activeSessionId))
       || sessionChooserOpen || shortcutGuideOpen,
@@ -798,12 +793,6 @@ export default function App() {
         />
       )}
 
-      {operationConfirmation && <OperationConfirmDialog
-        confirmation={operationConfirmation}
-        busy={operationBusy}
-        onConfirm={(strategy) => void confirmRemoteOperation(strategy)}
-        onCancel={cancelActiveOperation}
-      />}
 
       {uploadSelection && <UploadConfirmDialog
         selection={uploadSelection}

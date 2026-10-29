@@ -29,23 +29,8 @@ export interface TransferQueuedEvent {
 
 export type RemoteOperationKind = 'copy' | 'move' | 'extract'
 export type OperationExecutionStrategy = 'force' | 'skip' | 'update'
+export type PasteStrategy = 'force' | 'skip'
 export type OperationStrategy = OperationExecutionStrategy | 'confirm'
-
-export interface RemoteOperationIntent {
-  requestId: string
-  sessionId: string
-  operation: RemoteOperationKind
-  sourcePaths: string[]
-  targetDirectory: string
-  strategy: OperationStrategy
-  archivePath?: string
-  wrapInDirectory?: boolean
-}
-
-export interface RemoteOperationConfirmation extends RemoteOperationIntent {
-  outputDirectory?: string
-  commandPreviews: Record<OperationExecutionStrategy, string>
-}
 
 export interface OperationExecutionRequest {
   requestId: string

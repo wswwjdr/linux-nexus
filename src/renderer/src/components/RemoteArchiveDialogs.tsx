@@ -132,7 +132,7 @@ function RemoteDirectoryPicker({
         <div className="remote-directory-current"><Folder size={15} aria-hidden="true" /><span title={directory}>{directory}</span></div>
         <div className="modal-footer">
           <button type="button" className="secondary-button" disabled={creating} onClick={onClose}>取消</button>
-          <button type="button" className="primary-button" disabled={creating || loading || Boolean(loadError)} onClick={() => onChoose(directory)}><Check size={15} />选择此目录</button>
+          <button type="button" className="primary-button" disabled={creating || loading || Boolean(loadError)} onClick={() => onChoose(directory)}><Check size={15} />解压到此目录</button>
         </div>
       </section>
     </div>

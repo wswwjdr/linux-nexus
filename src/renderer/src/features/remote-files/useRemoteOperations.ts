@@ -1,10 +1,8 @@
-import { useState, type Dispatch, type FormEvent, type MutableRefObject, type SetStateAction } from 'react'
+import { useRef, useState, type Dispatch, type FormEvent, type MutableRefObject, type SetStateAction } from 'react'
 import type {
   OperationExecutionRequest,
   OperationExecutionStrategy,
-  OperationStrategy,
-  RemoteOperationConfirmation,
-  RemoteOperationIntent,
+  PasteStrategy,
   RemoteOperationKind,
   RemoteEntry,
   ServerProfile,
@@ -34,7 +32,7 @@ export interface ArchiveDestinationDialogState {
   sessionId: string
   entry: Pick<RemoteEntry, 'name' | 'path'>
   directory: string
-  strategy: OperationStrategy
+  strategy: OperationExecutionStrategy
 }
 
 interface UseRemoteOperationsOptions {
@@ -43,7 +41,6 @@ interface UseRemoteOperationsOptions {
   connectedSessionId: string | null
   currentPath: string
   sessionsRef: MutableRefObject<SessionTab[]>
-  patchSession: (sessionId: string, patch: Partial<SessionTab>) => void
   updateSession: (sessionId: string, update: (session: SessionTab) => SessionTab) => void
   loadDirectory: (sessionId: string, remotePath: string) => Promise<boolean>
   showToast: (kind: 'info' | 'error', message: string, action?: { label: string; onClick: () => void }) => void
@@ -56,7 +53,6 @@ export function useRemoteOperations({
   connectedSessionId,
   currentPath,
   sessionsRef,
-  patchSession,
   updateSession,
   loadDirectory,
   showToast,
@@ -66,9 +62,8 @@ export function useRemoteOperations({
   const [remoteEntryDeleteError, setRemoteEntryDeleteError] = useState<string | null>(null)
   const [remoteEntryDeleting, setRemoteEntryDeleting] = useState(false)
   const [remoteClipboard, setRemoteClipboard] = useState<RemoteClipboard | null>(null)
-  const [operationConfirmation, setOperationConfirmation] = useState<RemoteOperationConfirmation | null>(null)
   const [activeOperation, setActiveOperation] = useState<ActiveOperation | null>(null)
-  const [operationBusy, setOperationBusy] = useState(false)
+  const activeOperationRef = useRef<ActiveOperation | null>(null)
   const [createDirectoryDialog, setCreateDirectoryDialog] = useState<{ name: string } | null>(null)
   const [creatingDirectory, setCreatingDirectory] = useState(false)
   const [archiveDestinationDialog, setArchiveDestinationDialog] = useState<ArchiveDestinationDialogState | null>(null)
@@ -79,7 +74,7 @@ export function useRemoteOperations({
     && remoteClipboard.profile.port === connectedProfile.port
     && remoteClipboard.profile.username === connectedProfile.username)
   const canPasteRemote = Boolean(clipboardMatchesProfile && activeSession?.kind === 'files'
-    && activeSession.status === 'connected' && !activeOperation && !operationConfirmation)
+    && activeSession.status === 'connected' && !activeOperation)
 
   const setRemoteSelectionClipboard = (selectedEntries: RemoteEntry[], mode: RemoteClipboard['mode']) => {
     if (!connectedProfile || !connectedSessionId || selectedEntries.length === 0) return
@@ -123,7 +118,7 @@ export function useRemoteOperations({
     sessionId: string,
     targetDirectory: string,
     wrapInDirectory: boolean,
-    strategy: OperationStrategy,
+    strategy: OperationExecutionStrategy,
   ) => {
     setArchiveDestinationDialog(null)
     void startRemoteOperation('extract', [], targetDirectory, strategy, {
@@ -137,10 +132,10 @@ export function useRemoteOperations({
     entry: Pick<RemoteEntry, 'name' | 'path'>,
     target: 'current-directory' | 'archive-directory' | 'choose-directory',
     activeDirectory: string,
-    strategy: OperationStrategy,
+    strategy: OperationExecutionStrategy,
   ) => {
     const session = activeSession
-    if (!session || session.kind !== 'files' || session.status !== 'connected' || activeOperation || operationConfirmation) return
+    if (!session || session.kind !== 'files' || session.status !== 'connected' || activeOperationRef.current) return
     setBrowserContextMenu(null)
     if (target === 'choose-directory') {
       setArchiveDestinationDialog({ sessionId: session.id, entry, directory: activeDirectory, strategy })
@@ -207,103 +202,77 @@ export function useRemoteOperations({
     operation: RemoteOperationKind,
     sourcePaths: string[],
     targetDirectory: string,
-    strategy: OperationStrategy,
+    strategy: OperationExecutionStrategy,
     extra?: { archivePath?: string; wrapInDirectory?: boolean; sessionId?: string },
   ) => {
     const sessionId = extra?.sessionId ?? activeSession?.id
     const session = sessionId ? sessionsRef.current.find((candidate) => candidate.id === sessionId) : null
     if (!session || session.kind !== 'files' || session.status !== 'connected'
-      || activeOperation || operationConfirmation) return
+      || activeOperationRef.current) return
     setBrowserContextMenu(null)
+    const request: OperationExecutionRequest = {
+      requestId: window.crypto.randomUUID(),
+      sessionId: session.id,
+      operation,
+      sourcePaths: [...sourcePaths],
+      targetDirectory,
+      strategy,
+      ...(extra?.archivePath ? { archivePath: extra.archivePath, wrapInDirectory: extra.wrapInDirectory } : {}),
+    }
+    const running = { requestId: request.requestId, sessionId: session.id, operation }
+    activeOperationRef.current = running
+    setActiveOperation(running)
+    const clipboardAtStart = remoteClipboard
+    const label = operation === 'copy' ? '复制' : operation === 'move' ? '移动' : '解压'
     try {
-      const operationRequest: RemoteOperationIntent = {
-        requestId: window.crypto.randomUUID(),
-        sessionId: session.id,
-        operation,
-        sourcePaths: [...sourcePaths],
-        targetDirectory,
-        strategy,
-        ...(extra?.archivePath ? { archivePath: extra.archivePath, wrapInDirectory: extra.wrapInDirectory } : {}),
+      const result = await window.remoteFiles.executeOperation(request)
+      showToast('info', result.status === 'cancelled' ? `${label}已取消` : `${label}命令已完成`)
+      if (result.status === 'completed' && operation === 'move' && strategy === 'force') {
+        setRemoteClipboard((current) => current === clipboardAtStart && current?.mode === 'cut'
+          && current.profile.id === session.profileId
+          && current.sourcePaths.length === request.sourcePaths.length
+          && current.sourcePaths.every((path, index) => path === request.sourcePaths[index]) ? null : current)
       }
-      const confirmation = await window.remoteFiles.composeOperation(operationRequest)
-      setOperationConfirmation(confirmation)
     } catch (error) {
-      const label = operation === 'copy' ? '复制' : operation === 'move' ? '移动' : '解压'
-      showToast('error', `${label}命令生成失败：${errorMessage(error)}`)
+      showToast('error', `${label}失败：${errorMessage(error)}`)
+    } finally {
+      const affectedDirectories = new Set([
+        ...request.sourcePaths.map(getParentPath),
+        request.targetDirectory,
+      ])
+      const refreshSessions = sessionsRef.current.filter((candidate) => candidate.profileId === session.profileId
+        && candidate.kind === 'files' && candidate.status === 'connected'
+        && [...affectedDirectories].some((directory) => candidate.currentPath === directory
+          || candidate.currentPath.startsWith(directory === '/' ? '/' : directory + '/')))
+      try {
+        await Promise.all(refreshSessions.map((candidate) => loadDirectory(candidate.id, candidate.currentPath)))
+      } catch (error) {
+        showToast('error', `目录刷新失败：${errorMessage(error)}`)
+      } finally {
+        activeOperationRef.current = null
+        setActiveOperation(null)
+      }
     }
   }
 
-  const beginRemoteCopy = (targetDirectory: string, strategy: OperationStrategy = 'confirm') => {
-    if (!remoteClipboard || remoteClipboard.mode !== 'copy' || !canPasteRemote) return
-    void startRemoteOperation('copy', remoteClipboard.sourcePaths, targetDirectory, strategy)
+  const beginRemoteMove = (sourcePaths: string[], targetDirectory: string) => {
+    void startRemoteOperation('move', sourcePaths, targetDirectory, 'force')
   }
 
-  const beginRemoteMove = (sourcePaths: string[], targetDirectory: string, strategy: OperationStrategy = 'confirm') => {
-    void startRemoteOperation('move', sourcePaths, targetDirectory, strategy)
-  }
-
-  const pasteRemoteEntries = (targetDirectory: string, strategy: OperationStrategy = 'confirm') => {
+  const pasteRemoteEntries = (targetDirectory: string, strategy: PasteStrategy = 'force') => {
     if (!remoteClipboard || !canPasteRemote) return
     const operation = remoteClipboard.mode === 'cut' ? 'move' : 'copy'
     void startRemoteOperation(operation, remoteClipboard.sourcePaths, targetDirectory, strategy)
   }
 
-  const confirmRemoteOperation = async (strategy: OperationExecutionStrategy) => {
-    const confirmation = operationConfirmation
-    if (!confirmation || operationBusy) return
-    setOperationBusy(true)
-    setActiveOperation({ requestId: confirmation.requestId, sessionId: confirmation.sessionId, operation: confirmation.operation })
-    const label = confirmation.operation === 'copy' ? '复制' : confirmation.operation === 'move' ? '移动' : '解压'
-    try {
-      const request: OperationExecutionRequest = {
-        requestId: confirmation.requestId,
-        sessionId: confirmation.sessionId,
-        operation: confirmation.operation,
-        sourcePaths: confirmation.sourcePaths,
-        targetDirectory: confirmation.targetDirectory,
-        strategy,
-        ...(confirmation.archivePath ? { archivePath: confirmation.archivePath } : {}),
-        ...(confirmation.wrapInDirectory !== undefined ? { wrapInDirectory: confirmation.wrapInDirectory } : {}),
-      }
-      const result = await window.remoteFiles.executeOperation(request)
-      showToast('info', result.status === 'cancelled' ? `${label}已取消` : `${label}命令已完成`)
-      if (result.status === 'completed' && confirmation.operation === 'move') {
-        setRemoteClipboard((current) => current?.mode === 'cut'
-          && current.sourcePaths.length === confirmation.sourcePaths.length
-          && current.sourcePaths.every((path, index) => path === confirmation.sourcePaths[index]) ? null : current)
-      }
-    } catch (error) {
-      showToast('error', `${label}失败：${errorMessage(error)}`)
-    } finally {
-      setOperationBusy(false)
-      setActiveOperation(null)
-      setOperationConfirmation(null)
-      const affectedDirectories = new Set([
-        ...confirmation.sourcePaths.map(getParentPath),
-        confirmation.targetDirectory,
-        ...(confirmation.outputDirectory ? [confirmation.outputDirectory] : []),
-      ])
-      const session = sessionsRef.current.find((candidate) => candidate.id === confirmation.sessionId)
-      const refreshSessions = sessionsRef.current.filter((candidate) => candidate.profileId === session?.profileId
-        && candidate.kind === 'files' && candidate.status === 'connected'
-        && [...affectedDirectories].some((directory) => candidate.currentPath === directory
-          || candidate.currentPath.startsWith(directory === '/' ? '/' : directory + '/')))
-      await Promise.all(refreshSessions.map((candidate) => loadDirectory(candidate.id, candidate.currentPath)))
-    }
-  }
-
   const cancelActiveOperation = () => {
-    if (activeOperation) {
-      void window.remoteFiles.cancelOperation(activeOperation.requestId).catch((error) => showToast('error', `取消操作失败：${errorMessage(error)}`))
-      return
+    if (activeOperationRef.current) {
+      void window.remoteFiles.cancelOperation(activeOperationRef.current.requestId).catch((error) => showToast('error', `取消操作失败：${errorMessage(error)}`))
     }
-    if (operationConfirmation) setOperationConfirmation(null)
   }
 
   return {
-    operationConfirmation,
     activeOperation,
-    operationBusy,
     canPasteRemote,
     remoteClipboard,
     remoteEntryDeleteDialog,
@@ -323,10 +292,8 @@ export function useRemoteOperations({
     confirmRemoteEntryDeletion,
     copyRemoteSelection,
     cutRemoteSelection,
-    beginRemoteCopy,
     beginRemoteMove,
     pasteRemoteEntries,
-    confirmRemoteOperation,
     cancelActiveOperation,
   }
 }

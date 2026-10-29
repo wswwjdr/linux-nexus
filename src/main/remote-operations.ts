@@ -3,8 +3,6 @@ import type {
   OperationExecutionRequest,
   OperationExecutionResult,
   OperationExecutionStrategy,
-  RemoteOperationConfirmation,
-  RemoteOperationIntent,
 } from '@shared/types'
 import { archiveBaseName, archiveFormatForName, type RemoteArchiveFormat } from '@shared/archive'
 import { buildRemoteCommand, executeRemoteCommand } from './ssh-commands'
@@ -18,12 +16,12 @@ interface ActiveOperation {
 
 const activeOperations = new Map<string, ActiveOperation>()
 
-function validateIntent(value: RemoteOperationIntent): RemoteOperationIntent & { outputDirectory?: string } {
+function validateRequest(value: OperationExecutionRequest): OperationExecutionRequest & { outputDirectory?: string } {
   if (!value || typeof value !== 'object'
     || typeof value.requestId !== 'string' || !value.requestId
     || typeof value.sessionId !== 'string' || !value.sessionId
     || !['copy', 'move', 'extract'].includes(value.operation)
-    || !['force', 'skip', 'update', 'confirm'].includes(value.strategy)
+    || !['force', 'skip', 'update'].includes(value.strategy)
     || !Array.isArray(value.sourcePaths)
     || value.sourcePaths.some((path) => typeof path !== 'string')) throw new Error('远端操作参数无效')
   const sourcePaths = value.sourcePaths.map(normalizedRemotePath)
@@ -38,6 +36,7 @@ function validateIntent(value: RemoteOperationIntent): RemoteOperationIntent & {
       : targetDirectory
     return { ...value, sourcePaths, targetDirectory, archivePath, outputDirectory }
   }
+  if (value.strategy === 'update') throw new Error('复制和移动仅支持覆盖或跳过策略')
   if (sourcePaths.length === 0 || value.archivePath !== undefined || sourcePaths.includes('/')
     || new Set(sourcePaths).size !== sourcePaths.length) throw new Error('远端操作来源路径无效')
   if (sourcePaths.some((sourcePath) => targetDirectory === sourcePath || targetDirectory.startsWith(sourcePath + '/'))) {
@@ -68,7 +67,7 @@ function archiveUnpackCommand(format: RemoteArchiveFormat, strategy: OperationEx
 }
 
 function operationCommandParts(
-  intent: RemoteOperationIntent & { outputDirectory?: string },
+  intent: OperationExecutionRequest & { outputDirectory?: string },
   strategy: OperationExecutionStrategy,
 ): { script: string; args: string[] } {
   if (intent.operation !== 'extract') {
@@ -97,37 +96,22 @@ function operationCommandParts(
 }
 
 function buildOperationCommand(
-  intent: RemoteOperationIntent & { outputDirectory?: string },
+  intent: OperationExecutionRequest & { outputDirectory?: string },
   strategy: OperationExecutionStrategy,
 ): string {
   const parts = operationCommandParts(intent, strategy)
   return buildRemoteCommand(parts.script, parts.args)
 }
 
-export function composeRemoteOperation(value: RemoteOperationIntent): RemoteOperationConfirmation {
-  const intent = validateIntent(value)
-  return {
-    ...intent,
-    commandPreviews: {
-      force: buildOperationCommand(intent, 'force'),
-      skip: buildOperationCommand(intent, 'skip'),
-      update: buildOperationCommand(intent, 'update'),
-    },
-  }
-}
-
 export function executeRemoteOperation(value: OperationExecutionRequest): Promise<OperationExecutionResult> {
-  if (!value || typeof value !== 'object'
-    || typeof value.requestId !== 'string' || !value.requestId
-    || typeof value.sessionId !== 'string' || !value.sessionId
-    || !['force', 'skip', 'update'].includes(value.strategy)) throw new Error('远端操作参数无效')
-  const intent = validateIntent({ ...value, strategy: value.strategy })
+  const intent = validateRequest(value)
+  if (activeOperations.has(intent.requestId)) throw new Error('远端操作编号重复')
   const session = filesSession(intent.sessionId)
   const command = buildOperationCommand(intent, value.strategy)
   const controller = new AbortController()
   const promise = executeRemoteCommand(session.client, command, { signal: controller.signal, collectStdout: false })
     .then((): OperationExecutionResult => ({ status: 'completed', requestId: value.requestId, operation: intent.operation, command }))
-    .catch((error: unknown) => {
+    .catch((error: unknown): OperationExecutionResult => {
       if (controller.signal.aborted) return { status: 'cancelled', requestId: value.requestId, operation: intent.operation, command }
       throw error
     })

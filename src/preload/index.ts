@@ -7,8 +7,6 @@ import type {
   LogPreviewPage,
   OperationExecutionRequest,
   OperationExecutionResult,
-  RemoteOperationConfirmation,
-  RemoteOperationIntent,
   UploadSelectionRequest,
   UploadSelection,
   UploadExecutionRequest,
@@ -70,7 +68,6 @@ const api: RemoteFilesApi = {
   downloadEntries: (requestId: string, sessionId: string, remotePaths: string[]) =>
     ipcRenderer.invoke('files:download', requestId, sessionId, remotePaths),
   cancelTransfer: (requestId: string) => ipcRenderer.invoke('files:transfer-cancel', requestId),
-  composeOperation: (request: RemoteOperationIntent): Promise<RemoteOperationConfirmation> => ipcRenderer.invoke('files:operation-compose', request),
   executeOperation: (request: OperationExecutionRequest): Promise<OperationExecutionResult> => ipcRenderer.invoke('files:operation-execute', request),
   cancelOperation: (requestId: string): Promise<boolean> => ipcRenderer.invoke('files:operation-cancel', requestId),
   createRemoteDirectory: (sessionId: string, remoteDirectory: string, name: string) =>

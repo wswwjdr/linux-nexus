@@ -4,7 +4,7 @@ import type { ScriptExecutionRequest, ScriptExecutionEvent } from './script-exec
 import type { ConnectResult, TrustHostKeyInput, SessionKind, TerminalOutputEvent, ConnectionClosedEvent } from './sessions'
 import type { PerformanceMonitorState } from './performance'
 import type { AppSettings, AppSettingsPatch } from './settings'
-import type { DroppedUploadEntry, TransferResult, RemoteOperationConfirmation, RemoteOperationIntent, OperationExecutionRequest, OperationExecutionResult, UploadSelectionRequest, UploadSelection, UploadExecutionRequest, TransferProgress, TransferQueuedEvent } from './transfers'
+import type { DroppedUploadEntry, TransferResult, OperationExecutionRequest, OperationExecutionResult, UploadSelectionRequest, UploadSelection, UploadExecutionRequest, TransferProgress, TransferQueuedEvent } from './transfers'
 import type { PreviewResult, TextLineEnding, LogPreviewPage } from './previews'
 import type { PreviewType } from '../file-type-registry'
 
@@ -41,7 +41,6 @@ export interface RemoteFilesApi {
   getPathForFile(file: File): string
   downloadEntries(requestId: string, sessionId: string, remotePaths: string[]): Promise<TransferResult>
   cancelTransfer(requestId: string): Promise<boolean>
-  confirmOperation(request: RemoteOperationIntent): Promise<RemoteOperationConfirmation>
   executeOperation(request: OperationExecutionRequest): Promise<OperationExecutionResult>
   cancelOperation(requestId: string): Promise<boolean>
   createRemoteDirectory(sessionId: string, remoteDirectory: string, name: string): Promise<void>

@@ -122,11 +122,11 @@ test('supported archive files expose extraction while ordinary compressed stream
     const labels = archiveMenu.children.filter((node) => node.kind === 'action').map(({ label }) => label)
     assert.equal(archiveMenu.children.filter((node) => node.kind === 'separator').length, 2)
     assert.ok(labels.includes('release/ · 强制覆盖 (-f)'))
-    assert.equal(labels.length, 12)
-    assert.ok(labels.includes('选择目录 · 确认后处理'))
+    assert.equal(labels.length, 9)
+    assert.ok(!labels.some((label) => label.includes('确认后处理')))
     assert.deepEqual(actions(archiveMenu.children).map(({ action }) => action), [
       ...(['current-directory', 'archive-directory', 'choose-directory'] as const).flatMap((target) =>
-        (['force', 'skip', 'update', 'confirm'] as const).map((strategy) => ({
+        (['force', 'skip', 'update'] as const).map((strategy) => ({
           type: 'extract-archive' as const, target, strategy,
         }))),
     ])
@@ -137,7 +137,7 @@ test('supported archive files expose extraction while ordinary compressed stream
   ).find((node) => node.kind === 'submenu' && node.id === 'extract-archive')
   assert.equal(searchArchiveMenu?.kind, 'submenu')
   if (searchArchiveMenu?.kind === 'submenu') {
-    assert.equal(actions(searchArchiveMenu.children).length, 12)
+    assert.equal(actions(searchArchiveMenu.children).length, 9)
   }
 
   const unsupportedNodes = resolveFileContextMenu(
@@ -145,6 +145,21 @@ test('supported archive files expose extraction while ordinary compressed stream
     defaultFileTypeExtensions(),
   )
   assert.equal(actions(unsupportedNodes).some(({ id }) => id === 'extract-archive'), false)
+})
+
+test('paste keeps force and skip while upload retains all four strategies', () => {
+  const nodes = resolveFileContextMenu({
+    kind: 'directory-background', directory: '/target', canPaste: true,
+    sort: { column: 'name', direction: 'ascending' },
+  }, defaultFileTypeExtensions())
+  const commands = actions(nodes).map(({ action }) => action)
+  assert.deepEqual(commands.filter((action) => action.type === 'paste'), [
+    { type: 'paste', strategy: 'force' }, { type: 'paste', strategy: 'skip' },
+  ])
+  assert.deepEqual(commands.filter((action) => action.type === 'upload'), [
+    { type: 'upload', strategy: 'force' }, { type: 'upload', strategy: 'skip' },
+    { type: 'upload', strategy: 'update' }, { type: 'upload', strategy: 'confirm' },
+  ])
 })
 
 test('archive actions from search results always use the active browser directory', () => {

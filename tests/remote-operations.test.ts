@@ -2,10 +2,10 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import test from 'node:test'
 import type { Client, ClientChannel } from 'ssh2'
-import { cancelRemoteOperation, composeRemoteOperation, executeRemoteOperation } from '../src/main/remote-operations.ts'
+import { cancelRemoteOperation, executeRemoteOperation } from '../src/main/remote-operations.ts'
 import { sessions } from '../src/main/runtime.ts'
 import { shellQuote } from '../src/shared/shell.ts'
-import type { RemoteOperationIntent } from '../src/shared/types.ts'
+import type { OperationExecutionRequest } from '../src/shared/types.ts'
 
 class MockChannel extends EventEmitter {
   stderr = new EventEmitter()
@@ -53,7 +53,7 @@ function mockClient(respond: (command: string, index: number, channel: MockChann
   return { client, commands, channels }
 }
 
-function copyIntent(strategy: RemoteOperationIntent['strategy'] = 'confirm'): RemoteOperationIntent {
+function copyRequest(strategy: OperationExecutionRequest['strategy'] = 'force'): OperationExecutionRequest {
   return {
     requestId: 'request-1',
     sessionId: 'session-1',
@@ -68,89 +68,101 @@ function attachSession(client: Client): void {
   sessions.set('session-1', { sessionId: 'session-1', client, kind: 'files', profileId: 'profile-1' })
 }
 
-test('composes native cp and mv command previews locally without contacting the server', () => {
+for (const operation of ['copy', 'move'] as const) {
+  for (const strategy of ['force', 'skip'] as const) {
+    test(`${operation} ${strategy} executes once with quoted paths and no preflight`, async () => {
+      const remote = mockClient((_command, _index, channel) => {
+        channel.onEnd = (current) => current.complete()
+      })
+      attachSession(remote.client)
+      try {
+        const source = "/home/space ' quote\n中文; $(touch nope)"
+        const result = await executeRemoteOperation({ ...copyRequest(strategy), operation, sourcePaths: [source] })
+        assert.equal(result.status, 'completed')
+        assert.equal(remote.commands.length, 1)
+        assert.ok(remote.commands[0].includes(shellQuote(source)))
+        const utility = operation === 'copy' ? 'cp -R --preserve=mode,timestamps' : 'mv'
+        assert.ok(remote.commands[0].includes(`${utility} -${strategy === 'force' ? 'f' : 'n'} -- "$@"`))
+        assert.ok(!remote.commands[0].includes('find --'))
+        assert.ok(!remote.commands[0].includes('mktemp'))
+      } finally { sessions.delete('session-1') }
+    })
+  }
+}
+
+for (const [archive, options] of [
+  ['release.tar.gz', ['--overwrite', '--skip-old-files', '--keep-newer-files']],
+  ['release.zip', ['-o', '-n', '-u']],
+] as const) {
+  for (const [index, strategy] of (['force', 'skip', 'update'] as const).entries()) {
+    test(`extracts ${archive} with ${strategy} directly without scanning`, async () => {
+      const remote = mockClient((_command, _index, channel) => {
+        channel.onEnd = (current) => current.complete()
+      })
+      attachSession(remote.client)
+      try {
+        const result = await executeRemoteOperation({
+          ...copyRequest(), operation: 'extract', sourcePaths: [],
+          archivePath: '/home/' + archive, wrapInDirectory: true, strategy,
+        })
+        assert.equal(result.status, 'completed')
+        assert.equal(remote.commands.length, 1)
+        assert.ok(remote.commands[0].includes('mkdir -p -- "$output"'))
+        assert.ok(remote.commands[0].includes(options[index]))
+        assert.ok(remote.commands[0].includes(shellQuote('/home/target/release')))
+        assert.ok(!remote.commands[0].includes('find --'))
+        assert.ok(!remote.commands[0].includes('mktemp'))
+      } finally { sessions.delete('session-1') }
+    })
+  }
+}
+
+test('rejects invalid requests before opening an SSH channel', () => {
   const remote = mockClient(() => {})
   attachSession(remote.client)
   try {
-    const source = "/home/space ' quote\n中文"
-    const copy = composeRemoteOperation({ ...copyIntent(), sourcePaths: [source] })
+    for (const targetDirectory of ['/home/source', '/home/source/nested']) {
+      assert.throws(() => executeRemoteOperation({ ...copyRequest(), sourcePaths: ['/home/source'], targetDirectory }), /自身或其子文件夹/)
+    }
+    assert.throws(() => executeRemoteOperation({ ...copyRequest(), sourcePaths: ['/'] }), /来源路径无效/)
+    assert.throws(() => executeRemoteOperation({ ...copyRequest(), sourcePaths: ['/a', '/a'] }), /来源路径无效/)
+    assert.throws(() => executeRemoteOperation({ ...copyRequest(), strategy: 'confirm' } as unknown as OperationExecutionRequest), /参数无效/)
+    assert.throws(() => executeRemoteOperation({ ...copyRequest(), strategy: 'update' }), /仅支持覆盖或跳过/)
     assert.equal(remote.commands.length, 0)
-    assert.ok(copy.commandPreviews.force.includes('cp -R --preserve=mode,timestamps -f -- "$@"'))
-    assert.ok(copy.commandPreviews.skip.includes('cp -R --preserve=mode,timestamps -n -- "$@"'))
-    assert.ok(copy.commandPreviews.update.includes('cp -R --preserve=mode,timestamps -u -- "$@"'))
-    assert.ok(copy.commandPreviews.force.includes(shellQuote(source)))
-
-    const move = composeRemoteOperation({ ...copyIntent(), operation: 'move' })
-    assert.ok(move.commandPreviews.force.includes('mv -f -- "$@"'))
-    assert.ok(move.commandPreviews.skip.includes('mv -n -- "$@"'))
-    assert.ok(move.commandPreviews.update.includes('mv -u -- "$@"'))
-  } finally {
-    sessions.delete('session-1')
-  }
+  } finally { sessions.delete('session-1') }
 })
 
-test('executes the selected copy policy in one server command after confirmation', async () => {
-  const remote = mockClient((_command, _index, channel) => {
-    channel.onEnd = (current) => current.complete()
+for (const [operation, error] of [
+  ['move', 'mv: cannot move: Directory not empty'],
+  ['extract', 'unzip: command not found'],
+] as const) {
+  test(`propagates server ${operation} errors without retries`, async () => {
+    const remote = mockClient((_command, _index, channel) => {
+      channel.onEnd = (current) => {
+        current.stderr.emit('data', Buffer.from(error))
+        current.complete(Buffer.alloc(0), 1)
+      }
+    })
+    attachSession(remote.client)
+    try {
+      await assert.rejects(executeRemoteOperation({ ...copyRequest(), operation,
+        ...(operation === 'extract' ? { sourcePaths: [], archivePath: '/home/a.zip', wrapInDirectory: false } : {}),
+      }), { message: error })
+      assert.equal(remote.commands.length, 1)
+    } finally { sessions.delete('session-1') }
   })
-  attachSession(remote.client)
-  try {
-    composeRemoteOperation(copyIntent())
-    assert.equal(remote.commands.length, 0)
+}
 
-    const result = await executeRemoteOperation({ ...copyIntent('skip'), strategy: 'skip' })
-    assert.equal(result.status, 'completed')
-    assert.equal(remote.commands.length, 1)
-    assert.ok(remote.commands[0].includes('cp -R --preserve=mode,timestamps -n -- "$@"'))
-    assert.ok(!remote.commands[0].includes('mktemp'))
-    assert.ok(!remote.commands[0].includes('find --'))
-  } finally {
-    sessions.delete('session-1')
-  }
-})
-
-test('executes extraction directly into the selected destination without staging or scanning', async () => {
-  const remote = mockClient((_command, _index, channel) => {
-    channel.onEnd = (current) => current.complete()
-  })
-  attachSession(remote.client)
-  const intent: RemoteOperationIntent = {
-    requestId: 'archive-request',
-    sessionId: 'session-1',
-    operation: 'extract',
-    sourcePaths: [],
-    targetDirectory: '/home/target',
-    archivePath: '/home/release.tar.gz',
-    wrapInDirectory: true,
-    strategy: 'confirm',
-  }
-  try {
-    const confirmation = composeRemoteOperation(intent)
-    assert.equal(confirmation.outputDirectory, '/home/target/release')
-    assert.ok(confirmation.commandPreviews.skip.includes('mkdir -p -- "$output"'))
-    assert.ok(confirmation.commandPreviews.skip.includes('tar --no-same-owner --no-same-permissions --skip-old-files -xzf'))
-    assert.ok(!confirmation.commandPreviews.skip.includes('mktemp'))
-    assert.ok(!confirmation.commandPreviews.skip.includes('find --'))
-
-    const result = await executeRemoteOperation({ ...intent, strategy: 'skip' })
-    assert.equal(result.status, 'completed')
-    assert.equal(remote.commands.length, 1)
-    assert.ok(remote.commands[0].includes('tar --no-same-owner --no-same-permissions --skip-old-files -xzf'))
-  } finally {
-    sessions.delete('session-1')
-  }
-})
-
-test('cancels the active final server command by sending TERM through its channel', async () => {
+test('rejects duplicate request IDs and cancels the active command through SSH', async () => {
   const remote = mockClient(() => {})
   attachSession(remote.client)
   try {
-    const pending = executeRemoteOperation({ ...copyIntent('force'), strategy: 'force' })
+    const pending = executeRemoteOperation(copyRequest())
+    assert.throws(() => executeRemoteOperation(copyRequest()), /编号重复/)
+    assert.equal(remote.commands.length, 1)
     assert.equal(cancelRemoteOperation('request-1'), true)
-    const result = await pending
-    assert.equal(result.status, 'cancelled')
+    assert.equal((await pending).status, 'cancelled')
     assert.deepEqual(remote.channels[0].signals, ['TERM'])
-  } finally {
-    sessions.delete('session-1')
-  }
+    assert.equal(cancelRemoteOperation('request-1'), false)
+  } finally { sessions.delete('session-1') }
 })

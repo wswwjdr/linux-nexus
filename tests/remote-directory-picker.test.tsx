@@ -66,14 +66,10 @@ test('remote directory picker browses, creates and selects a destination without
   } as RemoteFilesApi
   Object.defineProperty(window, 'remoteFiles', { configurable: true, value: api })
   const view = await mount(RemoteArchiveDialogs, {
-    destination: { sessionId: 'session', entry: { name: 'release.tar.gz', path: '/home/user/release.tar.gz' }, directory: '/home/user' },
-    extraction: null,
-    summary: null,
+    destination: { sessionId: 'session', entry: { name: 'release.tar.gz', path: '/home/user/release.tar.gz' }, directory: '/home/user', strategy: 'force' as const },
     onCloseDestination: () => {},
     onChooseDestination: (path: string) => selected.push(path),
     onCreateDirectory: async (path: string, name: string) => { created.push({ directory: path, name }) },
-    onConflictDecision: () => {},
-    onCloseSummary: () => {},
   })
 
   try {
@@ -97,7 +93,10 @@ test('remote directory picker browses, creates and selects a destination without
       .find((button) => button.textContent?.includes('output'))
     assert.ok(output)
     await clickAndSettle(output)
-    await clickAndSettle(document.querySelector<HTMLButtonElement>('.remote-directory-picker .primary-button')!)
+    assert.deepEqual(selected, [])
+    const extract = document.querySelector<HTMLButtonElement>('.remote-directory-picker .primary-button')!
+    assert.equal(extract.textContent, '解压到此目录')
+    await clickAndSettle(extract)
 
     assert.deepEqual(created, [{ directory: '/home/user/projects', name: 'output' }])
     assert.deepEqual(selected, ['/home/user/projects/output'])
