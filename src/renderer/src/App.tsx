@@ -477,8 +477,6 @@ export default function App() {
   useRemoteFileShortcuts({
     activeSession,
     activeSessionId,
-    shortcutGuideOpen,
-    requestSearch: (sessionId) => workspaceActionsRef.current.get(sessionId)?.requestSearch(true),
     modalOpen,
     workspaceOpenSessionIds,
     browserContextMenu,
@@ -584,7 +582,7 @@ export default function App() {
             )}
             {activeSession?.kind === 'files' && connectedSessionId ? (
               <>
-                <button className="icon-button toolbar-button" title="搜索文件（Ctrl+F）" aria-label="搜索文件（Ctrl+F）" onClick={openSearch}>
+                <button className="icon-button toolbar-button" title="搜索文件" aria-label="搜索文件" onClick={openSearch}>
                   <Search size={16} />
                 </button>
                 <button className="icon-button toolbar-button" title="新建 SSH 终端" aria-label="新建 SSH 终端" onClick={openTerminalForCurrentPath}>

@@ -5,8 +5,6 @@ import type { BrowserContextMenu, SessionContextMenuState, SessionTab } from '@/
 interface UseRemoteFileShortcutsOptions {
   activeSession: SessionTab | null
   activeSessionId: string | null
-  shortcutGuideOpen: boolean
-  requestSearch: (sessionId: string) => void
   modalOpen: boolean
   workspaceOpenSessionIds: Set<string>
   browserContextMenu: BrowserContextMenu | null
@@ -21,8 +19,6 @@ interface UseRemoteFileShortcutsOptions {
 export function useRemoteFileShortcuts({
   activeSession,
   activeSessionId,
-  shortcutGuideOpen,
-  requestSearch,
   modalOpen,
   workspaceOpenSessionIds,
   browserContextMenu,
@@ -33,22 +29,6 @@ export function useRemoteFileShortcuts({
   cutRemoteSelection,
   pasteRemoteEntries,
 }: UseRemoteFileShortcutsOptions) {
-  useEffect(() => {
-    const openSearchShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing) return
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f') return
-      if (shortcutGuideOpen || modalOpen) {
-        event.preventDefault()
-        return
-      }
-      if (activeSession?.kind !== 'files' || activeSession.status !== 'connected') return
-      event.preventDefault()
-      requestSearch(activeSession.id)
-    }
-    window.addEventListener('keydown', openSearchShortcut)
-    return () => window.removeEventListener('keydown', openSearchShortcut)
-  }, [activeSession, requestSearch, shortcutGuideOpen, modalOpen])
-
   useEffect(() => {
     const handleRemoteFileShortcut = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || modalOpen

@@ -80,8 +80,8 @@ async function mountWorkflow({ hold = false, failure = '', holdRefresh = false }
       showToast: (kind, message) => notices.push({ kind, message }), setBrowserContextMenu: () => {},
     })
     useRemoteFileShortcuts({
-      activeSession, activeSessionId: activeSession.id, shortcutGuideOpen: false,
-      requestSearch: () => {}, modalOpen: false,
+      activeSession, activeSessionId: activeSession.id,
+      modalOpen: false,
       workspaceOpenSessionIds: new Set(), browserContextMenu: null, sessionContextMenu: null,
       sortedEntries: sources, canPasteRemote: operations.canPasteRemote,
       copyRemoteSelection: operations.copyRemoteSelection, cutRemoteSelection: operations.cutRemoteSelection,
