@@ -24,7 +24,6 @@ interface FileEntryCollectionProps {
   onOpenDirectory: (entry: RemoteEntry) => void
   onTileMouseEnter: (entry: RemoteEntry, element: HTMLElement) => void
   onTileMouseLeave: (event: MouseEvent<HTMLElement>) => void
-  onTileFocus: (entry: RemoteEntry, element: HTMLElement) => void
   onTileBlur: (event: FocusEvent<HTMLElement>) => void
 }
 
@@ -73,7 +72,6 @@ export default function FileEntryCollection({
   onOpenDirectory,
   onTileMouseEnter,
   onTileMouseLeave,
-  onTileFocus,
   onTileBlur,
 }: FileEntryCollectionProps) {
   if (viewMode === 'details') {
@@ -140,7 +138,6 @@ export default function FileEntryCollection({
           onClick={(event) => onEntryClick(entry.path, event)}
           onMouseEnter={(event) => onTileMouseEnter(entry, event.currentTarget)}
           onMouseLeave={onTileMouseLeave}
-          onFocus={(event) => onTileFocus(entry, event.currentTarget)}
           onBlur={onTileBlur}
           onContextMenu={(event) => onEntryContextMenu(event, entry)}
           onDragStart={(event) => onEntryDragStart(entry, event)}

@@ -304,7 +304,6 @@ export default function FileBrowser({
             if (event.relatedTarget instanceof Node && hoverCardRef.current?.contains(event.relatedTarget)) return
             cancelEntryDetails()
           }}
-          onTileFocus={showEntryDetails}
           onTileBlur={hideEntryDetailsOnBlur}
         />        {loading && <div className="table-state"><LoaderCircle className="spin" size={19} /> 正在读取目录</div>}
         {!loading && entries.length === 0 && <div className="table-state empty-directory"><Folder size={22} /> 此目录为空</div>}
