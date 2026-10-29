@@ -82,9 +82,9 @@ const action = (
 ): FileMenuActionNode => ({ kind: 'action', id, label, icon, action: menuAction, ...options })
 
 const executionStrategies: Array<{ strategy: OperationExecutionStrategy; label: string; description: string }> = [
-  { strategy: 'force', label: '覆盖同名文件', description: '遇到同名文件时覆盖；权限和目录结构限制仍然生效。' },
-  { strategy: 'skip', label: '跳过同名文件', description: '保留目标目录中的同名文件，继续处理其他文件。' },
-  { strategy: 'update', label: '仅更新较旧文件', description: '目标不存在，或来源的修改时间晚于目标时才处理。' },
+  { strategy: 'force', label: '覆盖同名文件', description: '替换目标位置的同名文件。' },
+  { strategy: 'skip', label: '跳过同名文件', description: '保留已有文件，处理其余文件。' },
+  { strategy: 'update', label: '仅更新较旧文件', description: '处理不存在的文件，以及目标中修改时间更早的同名文件。' },
 ]
 
 const pasteStrategies: Array<{ strategy: PasteStrategy; label: string; description: string }> = executionStrategies
@@ -92,7 +92,7 @@ const pasteStrategies: Array<{ strategy: PasteStrategy; label: string; descripti
 
 const uploadStrategies: Array<{ strategy: OperationStrategy; label: string; description: string }> = [
   ...executionStrategies,
-  { strategy: 'confirm', label: '同名时确认', description: '目标存在同名文件时确认是否覆盖。' },
+  { strategy: 'confirm', label: '同名时询问', description: '有同名文件时询问是否覆盖，否则直接上传。' },
 ]
 
 function pasteStrategyMenu(disabled: boolean): FileMenuNode {
@@ -119,11 +119,12 @@ function uploadStrategyMenu(): FileMenuNode {
     id: 'upload-strategy',
     label: '上传',
     icon: 'upload',
-    children: uploadStrategies.map(({ strategy, label }) => action(
+    children: uploadStrategies.map(({ strategy, label, description }) => action(
       'upload-' + strategy,
       label,
       undefined,
       { type: 'upload', strategy },
+      { description },
     )),
   }
 }

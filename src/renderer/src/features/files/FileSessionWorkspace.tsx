@@ -166,11 +166,11 @@ export default function FileSessionWorkspace({
       {active && preview.textSaveConfirmation && (
         <ConfirmationDialog
           eyebrow="保存远程文件"
-          title={`覆盖 ${preview.textSaveConfirmation.name}？`}
+          title={`保存对 ${preview.textSaveConfirmation.name} 的修改？`}
           details={[{ label: '远程路径', value: preview.textSaveConfirmation.path }]}
-          description="保存后将用当前编辑内容覆盖服务器上的文件。"
+          description="保存将用当前编辑的内容替换服务器上的文件。"
           tone="warning"
-          confirmLabel="保存"
+          confirmLabel="保存修改"
           busyLabel="正在保存"
           error={preview.textSaveError}
           errorLabel="保存失败"
