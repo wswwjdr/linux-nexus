@@ -81,7 +81,7 @@ async function mountWorkflow({ hold = false, failure = '', holdRefresh = false }
     })
     useRemoteFileShortcuts({
       activeSession, activeSessionId: activeSession.id, shortcutGuideOpen: false,
-      searchOpenSessionIds: new Set(), setSearchOpen: () => {}, modalOpen: false,
+      requestSearch: () => {}, modalOpen: false,
       workspaceOpenSessionIds: new Set(), browserContextMenu: null, sessionContextMenu: null,
       sortedEntries: sources, canPasteRemote: operations.canPasteRemote,
       copyRemoteSelection: operations.copyRemoteSelection, cutRemoteSelection: operations.cutRemoteSelection,

@@ -1,7 +1,7 @@
 import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { ServerProfile, SessionKind, StartupConnection, TrustHostKeyInput } from '@shared/types'
 import type { PendingHostKey, RecentConnection, SessionTab, BrowserContextMenu } from '@/app-types'
-import type { SessionPreviewActions } from '@/features/files/FileSessionWorkspace'
+import type { SessionFileWorkspaceActions } from '@/features/files/FileSessionWorkspace'
 import type { ToastNotice } from '@/GlobalToast'
 import { connectFailureText, errorMessage, getParentPath } from '@/app-utils'
 
@@ -35,7 +35,7 @@ interface UseSessionOperationsOptions {
   removeSessionWorkspaceState: (sessionIds: string[]) => void
   removeSessionScriptStates: (sessionIds: string[]) => void
   removeSessionPerformanceState: (sessionIds: string[]) => void
-  previewActionsRef: MutableRefObject<Map<string, SessionPreviewActions>>
+  workspaceActionsRef: MutableRefObject<Map<string, SessionFileWorkspaceActions>>
   directoryLoadIdsRef: MutableRefObject<Map<string, number>>
   connectingSessionsRef: MutableRefObject<Set<string>>
   setSearchOpen: (sessionId: string, open: boolean) => void
@@ -66,7 +66,7 @@ export function useSessionOperations({
   removeSessionWorkspaceState,
   removeSessionScriptStates,
   removeSessionPerformanceState,
-  previewActionsRef,
+  workspaceActionsRef,
   directoryLoadIdsRef,
   connectingSessionsRef,
   setSearchOpen,
@@ -250,7 +250,7 @@ export function useSessionOperations({
     removeSessionWorkspaceState([sessionId])
     removeSessionScriptStates([sessionId])
     removeSessionPerformanceState([sessionId])
-    previewActionsRef.current.delete(sessionId)
+    workspaceActionsRef.current.delete(sessionId)
     if (activeSessionId === sessionId) {
       const next = remaining[previousIndex] ?? remaining[previousIndex - 1]
       setActiveSessionId(next?.id ?? null)

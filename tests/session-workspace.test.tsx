@@ -10,7 +10,7 @@ import type {
   RemoteFilesApi,
 } from '../src/shared/types.ts'
 import { defaultFileTypeExtensions } from '../src/shared/app-settings.ts'
-import FileSessionWorkspace, { type SessionPreviewActions } from '../src/renderer/src/features/files/FileSessionWorkspace.tsx'
+import FileSessionWorkspace, { type SessionFileWorkspaceActions } from '../src/renderer/src/features/files/FileSessionWorkspace.tsx'
 import type { SessionTab } from '../src/renderer/src/app-types.ts'
 import type { FileContextMenuContext, FileMenuAction } from '../src/renderer/src/features/files/file-menu.ts'
 
@@ -107,8 +107,8 @@ test('file workspaces retain independent search and preview state across session
   const first = session('first')
   const second = session('second')
   const noOp = () => {}
-  const previewActions = new Map<string, SessionPreviewActions>()
-  const registerPreviewActions = (sessionId: string, actions: SessionPreviewActions | null) => {
+  const previewActions = new Map<string, SessionFileWorkspaceActions>()
+  const registerWorkspaceActions = (sessionId: string, actions: SessionFileWorkspaceActions | null) => {
     if (actions) previewActions.set(sessionId, actions)
     else previewActions.delete(sessionId)
   }
@@ -133,7 +133,7 @@ test('file workspaces retain independent search and preview state across session
       onSearchOpenChange: noOp,
       onWorkspaceOpenChange: noOp,
       onBlockingChange,
-      onRegisterPreviewActions: registerPreviewActions,
+      onRegisterWorkspaceActions: registerWorkspaceActions,
       onMenuAction,
       onOpenExternalLink: noOp,
     }),
@@ -146,7 +146,7 @@ test('file workspaces retain independent search and preview state across session
       onSearchOpenChange: noOp,
       onWorkspaceOpenChange: noOp,
       onBlockingChange,
-      onRegisterPreviewActions: registerPreviewActions,
+      onRegisterWorkspaceActions: registerWorkspaceActions,
       onMenuAction,
       onOpenExternalLink: noOp,
     }),
@@ -211,13 +211,33 @@ test('file workspaces retain independent search and preview state across session
 
     act(() => firstWorkspace.querySelector<HTMLButtonElement>('.text-preview-save')!.click())
     assert.equal(blockingSessionIds.has(first.id), true)
+    act(() => previewActions.get(first.id)!.requestSearch())
+    assert.equal(firstWorkspace.querySelector<HTMLTextAreaElement>('.text-preview-editor')?.value, 'edited text')
     const confirmation = document.body.querySelector<HTMLElement>('.confirmation-backdrop')
     assert.ok(confirmation)
     act(() => Array.from(confirmation!.querySelectorAll<HTMLButtonElement>('button'))
       .find((button) => button.textContent?.trim() === '取消')!.click())
     assert.equal(blockingSessionIds.has(first.id), false)
 
-    act(() => firstWorkspace.querySelector<HTMLButtonElement>('button[aria-label="关闭预览"]')!.click())
+    act(() => previewActions.get(first.id)!.requestSearch())
+    let discard = document.body.querySelector<HTMLElement>('.confirmation-backdrop')!
+    assert.ok(discard.textContent?.includes('放弃未保存的修改'))
+    act(() => previewActions.get(first.id)!.requestSearch())
+    assert.equal(document.querySelectorAll('.confirmation-backdrop').length, 1)
+    act(() => window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    assert.equal(document.querySelector('.confirmation-backdrop'), null)
+    assert.equal(firstWorkspace.querySelector<HTMLTextAreaElement>('.text-preview-editor')?.value, 'edited text')
+    assert.ok(document.activeElement === editor)
+    act(() => previewActions.get(first.id)!.requestSearch())
+    discard = document.body.querySelector<HTMLElement>('.confirmation-backdrop')!
+    act(() => Array.from(discard.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.trim() === '放弃修改并搜索')!.click())
+    assert.equal(firstWorkspace.querySelector('.text-preview-editor'), null)
+    assert.equal(firstWorkspace.querySelector<HTMLInputElement>('.search-query-field input')?.value, 'first.txt')
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
+    assert.ok(document.activeElement === firstWorkspace.querySelector('.search-modal .modal-close'))
+    assert.equal(requests.length, 2)
+
     act(() => firstWorkspace.querySelectorAll<HTMLButtonElement>('.name-search-result')[1].click())
     const imagePreviewAction = Array.from(firstWorkspace.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
       .find((button) => button.textContent?.includes('预览'))
@@ -227,6 +247,10 @@ test('file workspaces retain independent search and preview state across session
       await Promise.resolve()
     })
 
+    act(() => previewActions.get(first.id)!.requestSearch())
+    assert.equal(firstWorkspace.querySelector('.preview-backdrop'), null)
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
+    assert.deepEqual(releasedTokens, ['preview-token-first'])
     act(() => root.unmount())
     assert.deepEqual(cancelledRequests.sort(), requests.map(({ requestId }) => requestId).sort())
     assert.deepEqual(releasedTokens, ['preview-token-first'])

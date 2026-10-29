@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { RemoteEntry } from '@shared/types'
 import type { BrowserContextMenu, SessionTab } from '../../app-types'
-import type { SessionPreviewActions } from './FileSessionWorkspace'
+import type { SessionFileWorkspaceActions } from './FileSessionWorkspace'
 import type { FileContextMenuContext, FileMenuAction } from './file-menu'
 import type { ToastNotice } from '../../GlobalToast'
 import type { useRemoteOperations } from '../remote-files/useRemoteOperations'
@@ -25,7 +25,7 @@ interface UseFileMenuActionsOptions {
   setSessionContextMenu: Dispatch<SetStateAction<{ sessionId: string; x: number; y: number } | null>>
   contextMenuAnchorRef: { current: HTMLElement | null }
   setSearchOpen: (sessionId: string, open: boolean) => void
-  previewActionsRef: { current: Map<string, SessionPreviewActions> }
+  workspaceActionsRef: { current: Map<string, SessionFileWorkspaceActions> }
   scriptExecution: Pick<ScriptExecution, 'runScript' | 'requestScriptCommandEdit'>
   transfers: Pick<TransferOperations, 'download' | 'uploadFiles'>
   remoteOperations: Pick<RemoteOperations,
@@ -45,7 +45,7 @@ export function useFileMenuActions({
   setSessionContextMenu,
   contextMenuAnchorRef,
   setSearchOpen,
-  previewActionsRef,
+  workspaceActionsRef,
   scriptExecution,
   transfers,
   remoteOperations,
@@ -101,10 +101,10 @@ export function useFileMenuActions({
         : null
     switch (action.type) {
       case 'preview':
-        if (entry) void previewActionsRef.current.get(sessionId)?.previewFile(entry, action.previewType)
+        if (entry) void workspaceActionsRef.current.get(sessionId)?.previewFile(entry, action.previewType)
         break
       case 'preview-log':
-        if (entry) void previewActionsRef.current.get(sessionId)?.previewLogFile(entry)
+        if (entry) void workspaceActionsRef.current.get(sessionId)?.previewLogFile(entry)
         break
       case 'extract-archive':
         if (entry) remoteOperations.extractRemoteArchive(entry, action.target, currentPath, action.strategy)

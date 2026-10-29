@@ -71,7 +71,7 @@ interface SessionWorkspaceActions {
   }
   fileWorkspace: Pick<FileWorkspaceProps,
     'showToast' | 'onSearchOpenChange' | 'onWorkspaceOpenChange' | 'onBlockingChange'
-    | 'onRegisterPreviewActions' | 'onCloseScriptCommand' | 'onUpdateScriptCommand'
+    | 'onRegisterWorkspaceActions' | 'onCloseScriptCommand' | 'onUpdateScriptCommand'
     | 'onSubmitScriptCommand' | 'onCloseScriptExecution' | 'onStopScriptExecution'
     | 'onMenuAction' | 'onOpenExternalLink'>
   loadDirectory: (sessionId: string, remotePath: string) => Promise<boolean>
@@ -120,7 +120,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
     onSearchOpenChange: setSearchOpen,
     onWorkspaceOpenChange: setWorkspaceOpen,
     onBlockingChange: setWorkspaceBlocking,
-    onRegisterPreviewActions: registerPreviewActions,
+    onRegisterWorkspaceActions: registerWorkspaceActions,
     onCloseScriptCommand,
     onUpdateScriptCommand,
     onSubmitScriptCommand,
@@ -252,7 +252,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
               onSearchOpenChange={setSearchOpen}
               onWorkspaceOpenChange={setWorkspaceOpen}
               onBlockingChange={setWorkspaceBlocking}
-              onRegisterPreviewActions={registerPreviewActions}
+              onRegisterWorkspaceActions={registerWorkspaceActions}
               onCloseScriptCommand={onCloseScriptCommand}
               onUpdateScriptCommand={onUpdateScriptCommand}
               onSubmitScriptCommand={onSubmitScriptCommand}

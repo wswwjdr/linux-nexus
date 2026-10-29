@@ -6,8 +6,7 @@ interface UseRemoteFileShortcutsOptions {
   activeSession: SessionTab | null
   activeSessionId: string | null
   shortcutGuideOpen: boolean
-  searchOpenSessionIds: Set<string>
-  setSearchOpen: (sessionId: string, open: boolean) => void
+  requestSearch: (sessionId: string) => void
   modalOpen: boolean
   workspaceOpenSessionIds: Set<string>
   browserContextMenu: BrowserContextMenu | null
@@ -23,8 +22,7 @@ export function useRemoteFileShortcuts({
   activeSession,
   activeSessionId,
   shortcutGuideOpen,
-  searchOpenSessionIds,
-  setSearchOpen,
+  requestSearch,
   modalOpen,
   workspaceOpenSessionIds,
   browserContextMenu,
@@ -38,17 +36,17 @@ export function useRemoteFileShortcuts({
   useEffect(() => {
     const openSearchShortcut = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f') return
-      if (shortcutGuideOpen) {
+      if (shortcutGuideOpen || modalOpen) {
         event.preventDefault()
         return
       }
       if (activeSession?.kind !== 'files' || activeSession.status !== 'connected') return
       event.preventDefault()
-      if (!searchOpenSessionIds.has(activeSession.id)) setSearchOpen(activeSession.id, true)
+      requestSearch(activeSession.id)
     }
     window.addEventListener('keydown', openSearchShortcut)
     return () => window.removeEventListener('keydown', openSearchShortcut)
-  }, [activeSession, searchOpenSessionIds, setSearchOpen, shortcutGuideOpen])
+  }, [activeSession, requestSearch, shortcutGuideOpen, modalOpen])
 
   useEffect(() => {
     const handleRemoteFileShortcut = (event: KeyboardEvent) => {

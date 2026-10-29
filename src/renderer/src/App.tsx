@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Cloud, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, RefreshCw, Search, Settings, Terminal, Upload } from 'lucide-react'
 import GlobalToast from './GlobalToast'
-import type { SessionPreviewActions } from './features/files/FileSessionWorkspace'
+import type { SessionFileWorkspaceActions } from './features/files/FileSessionWorkspace'
 import { useScriptExecution } from './features/files/useScriptExecution'
 import { useFileMenuActions } from './features/files/useFileMenuActions'
 import SessionWorkspaceView from './features/sessions/SessionWorkspaceView'
@@ -64,7 +64,7 @@ export default function App() {
   const directoryLoadIdsRef = useRef(new Map<string, number>())
   const contextMenuAnchorRef = useRef<HTMLElement | null>(null)
   const sessionContextMenuRef = useRef<HTMLDivElement>(null)
-  const previewActionsRef = useRef(new Map<string, SessionPreviewActions>())
+  const workspaceActionsRef = useRef(new Map<string, SessionFileWorkspaceActions>())
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
   const patchSession = useCallback((sessionId: string, patch: Partial<SessionTab>) => {
@@ -139,12 +139,9 @@ export default function App() {
       return next
     })
   }, [])
-  const registerPreviewActions = useCallback((sessionId: string, actions: {
-    previewFile: (entry: Pick<RemoteEntry, 'name' | 'path'>, type: PreviewType) => Promise<void>
-    previewLogFile: (entry: Pick<RemoteEntry, 'name' | 'path'>) => Promise<void>
-  } | null) => {
-    if (actions) previewActionsRef.current.set(sessionId, actions)
-    else previewActionsRef.current.delete(sessionId)
+  const registerWorkspaceActions = useCallback((sessionId: string, actions: SessionFileWorkspaceActions | null) => {
+    if (actions) workspaceActionsRef.current.set(sessionId, actions)
+    else workspaceActionsRef.current.delete(sessionId)
   }, [])
   const removeSessionWorkspaceState = useCallback((sessionIds: string[]) => {
     setSearchOpenSessionIds((current) => {
@@ -216,7 +213,7 @@ export default function App() {
       }
       removeSessionWorkspaceState(affectedSessions.map(({ id }) => id))
       removeSessionPerformanceState(affectedSessions.map(({ id }) => id))
-      for (const session of affectedSessions) previewActionsRef.current.delete(session.id)
+      for (const session of affectedSessions) workspaceActionsRef.current.delete(session.id)
       if (activeSessionId && !remaining.some((session) => session.id === activeSessionId)) {
         setActiveSessionId(remaining.at(-1)?.id ?? null)
       }
@@ -436,7 +433,7 @@ export default function App() {
     removeSessionWorkspaceState,
     removeSessionScriptStates: removeScriptSessionStates,
     removeSessionPerformanceState,
-    previewActionsRef,
+    workspaceActionsRef,
     directoryLoadIdsRef,
     connectingSessionsRef,
     setSearchOpen,
@@ -452,7 +449,7 @@ export default function App() {
     setSessionContextMenu,
     contextMenuAnchorRef,
     setSearchOpen,
-    previewActionsRef,
+    workspaceActionsRef,
     scriptExecution: { runScript, requestScriptCommandEdit },
     transfers: { download, uploadFiles },
     remoteOperations: {
@@ -481,8 +478,7 @@ export default function App() {
     activeSession,
     activeSessionId,
     shortcutGuideOpen,
-    searchOpenSessionIds,
-    setSearchOpen,
+    requestSearch: (sessionId) => workspaceActionsRef.current.get(sessionId)?.requestSearch(),
     modalOpen,
     workspaceOpenSessionIds,
     browserContextMenu,
@@ -495,7 +491,7 @@ export default function App() {
   })
 
   const openSearch = () => {
-    if (activeSession?.kind === 'files' && activeSession.status === 'connected') setSearchOpen(activeSession.id, true)
+    if (activeSession?.kind === 'files' && activeSession.status === 'connected') workspaceActionsRef.current.get(activeSession.id)?.requestSearch()
   }
 
   const openTerminalForCurrentPath = () => {
@@ -675,7 +671,7 @@ export default function App() {
               onSearchOpenChange: setSearchOpen,
               onWorkspaceOpenChange: setWorkspaceOpen,
               onBlockingChange: setWorkspaceBlocking,
-              onRegisterPreviewActions: registerPreviewActions,
+              onRegisterWorkspaceActions: registerWorkspaceActions,
               onCloseScriptCommand: closeScriptCommandDialog,
               onUpdateScriptCommand: updateScriptCommand,
               onSubmitScriptCommand: submitScriptCommand,

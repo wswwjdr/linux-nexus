@@ -1,4 +1,4 @@
-import { useEffect, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import type { FileTypeExtensions, RemoteEntry } from '@shared/types'
 import type { PreviewType } from '@shared/file-type-registry'
 import ConfirmationDialog from '@/components/ConfirmationDialog'
@@ -11,7 +11,8 @@ import type { FileContextMenuContext, FileMenuAction } from './file-menu'
 import type { ToastNotice } from '@/GlobalToast'
 import ScriptSessionDialogs from './ScriptSessionDialogs'
 
-export interface SessionPreviewActions {
+export interface SessionFileWorkspaceActions {
+  requestSearch: () => void
   previewFile: (entry: Pick<RemoteEntry, 'name' | 'path'>, type: PreviewType) => Promise<void>
   previewLogFile: (entry: Pick<RemoteEntry, 'name' | 'path'>) => Promise<void>
 }
@@ -27,7 +28,7 @@ interface FileSessionWorkspaceProps {
   onSearchOpenChange: (sessionId: string, open: boolean) => void
   onWorkspaceOpenChange: (sessionId: string, open: boolean) => void
   onBlockingChange: (sessionId: string, blocking: boolean) => void
-  onRegisterPreviewActions: (sessionId: string, actions: SessionPreviewActions | null) => void
+  onRegisterWorkspaceActions: (sessionId: string, actions: SessionFileWorkspaceActions | null) => void
   onCloseScriptCommand: (sessionId: string) => void
   onUpdateScriptCommand: (sessionId: string, command: string) => void
   onSubmitScriptCommand: (sessionId: string, event: FormEvent<HTMLFormElement>) => void
@@ -48,7 +49,7 @@ export default function FileSessionWorkspace({
   onSearchOpenChange,
   onWorkspaceOpenChange,
   onBlockingChange,
-  onRegisterPreviewActions,
+  onRegisterWorkspaceActions,
   onCloseScriptCommand,
   onUpdateScriptCommand,
   onSubmitScriptCommand,
@@ -63,24 +64,47 @@ export default function FileSessionWorkspace({
     showToast,
   })
 
+  const [confirmDiscardForSearch, setConfirmDiscardForSearch] = useState(false)
+  const workspaceRef = useRef<HTMLDivElement>(null)
+  const previewOpen = Boolean(preview.previewDialog || preview.logPreviewDialog)
+  const openSearch = useCallback(() => {
+    preview.closePreview()
+    onSearchOpenChange(session.id, true)
+    if (searchOpen && !previewOpen) {
+      (workspaceRef.current?.querySelector<HTMLInputElement>('.search-tab-panel:not([hidden]) .search-query-field input:not(:disabled)') ?? workspaceRef.current?.querySelector<HTMLButtonElement>('.search-modal .modal-close'))?.focus()
+    }
+  }, [onSearchOpenChange, preview.closePreview, previewOpen, searchOpen, session.id])
+  const requestSearch = useCallback(() => {
+    if (!active || preview.textSaving || preview.textSaveConfirmation || confirmDiscardForSearch) return
+    if (preview.textDirty) setConfirmDiscardForSearch(true)
+    else openSearch()
+  }, [active, confirmDiscardForSearch, openSearch, preview.textDirty, preview.textSaveConfirmation, preview.textSaving])
   useEffect(() => {
-    onRegisterPreviewActions(session.id, {
+    if (active && searchOpen && !previewOpen && !confirmDiscardForSearch) {
+      const timer = window.setTimeout(() => (workspaceRef.current?.querySelector<HTMLInputElement>('.search-tab-panel:not([hidden]) .search-query-field input:not(:disabled)') ?? workspaceRef.current?.querySelector<HTMLButtonElement>('.search-modal .modal-close'))?.focus(), 0)
+      return () => window.clearTimeout(timer)
+    }
+  }, [active, searchOpen, previewOpen, confirmDiscardForSearch])
+  useEffect(() => {
+    onRegisterWorkspaceActions(session.id, {
       previewFile: preview.previewFile,
       previewLogFile: preview.previewLogFile,
+      requestSearch,
     })
-    return () => onRegisterPreviewActions(session.id, null)
-  }, [onRegisterPreviewActions, preview.previewFile, preview.previewLogFile, session.id])
+    return () => onRegisterWorkspaceActions(session.id, null)
+  }, [onRegisterWorkspaceActions, preview.previewFile, preview.previewLogFile, requestSearch, session.id])
 
   useEffect(() => {
     if (session.status !== 'disconnected') return
     preview.closePreview()
+    setConfirmDiscardForSearch(false)
     onSearchOpenChange(session.id, false)
   }, [session.id, session.status])
 
   useEffect(() => {
-    onBlockingChange(session.id, active && Boolean(preview.textSaveConfirmation))
+    onBlockingChange(session.id, active && Boolean(preview.textSaveConfirmation || confirmDiscardForSearch))
     return () => onBlockingChange(session.id, false)
-  }, [active, onBlockingChange, preview.textSaveConfirmation, session.id])
+  }, [active, confirmDiscardForSearch, onBlockingChange, preview.textSaveConfirmation, session.id])
 
   useEffect(() => {
     onWorkspaceOpenChange(session.id, active && (
@@ -102,25 +126,25 @@ export default function FileSessionWorkspace({
 
   useEffect(() => {
     const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || preview.textSaveConfirmation) return
+      if (!active || event.key !== 'Escape' || preview.textSaveConfirmation || confirmDiscardForSearch) return
       if (!preview.previewDialog && !preview.logPreviewDialog) return
       event.preventDefault()
       preview.closePreview()
     }
     window.addEventListener('keydown', dismissOnEscape)
     return () => window.removeEventListener('keydown', dismissOnEscape)
-  }, [preview.closePreview, preview.logPreviewDialog, preview.previewDialog, preview.textSaveConfirmation])
+  }, [active, confirmDiscardForSearch, preview.closePreview, preview.logPreviewDialog, preview.previewDialog, preview.textSaveConfirmation])
 
   return (
-    <div className={'session-workspace-layer' + (active ? ' active' : '')} aria-hidden={!active}>
+    <div ref={workspaceRef} className={'session-workspace-layer' + (active ? ' active' : '')} aria-hidden={!active}>
       {searchOpen && (
         <SearchDialog
           sessionId={session.id}
           profileId={session.profileId}
           currentPath={session.currentPath}
-          visible={active}
+          visible={active && !previewOpen}
           fileTypeExtensions={fileTypeExtensions}
-          previewOpen={Boolean(preview.previewDialog || preview.logPreviewDialog)}
+          previewOpen={previewOpen}
           onClose={() => onSearchOpenChange(session.id, false)}
           onMenuAction={(action, context) => onMenuAction(action, context, session.id)}
         />
@@ -162,6 +186,21 @@ export default function FileSessionWorkspace({
         onCloseExecution={() => onCloseScriptExecution(session.id)}
         onStopExecution={() => onStopScriptExecution(session.id)}
       />
+
+      {active && confirmDiscardForSearch && (
+        <ConfirmationDialog
+          title="放弃未保存的修改？"
+          description="关闭预览将丢弃尚未保存的修改。"
+          tone="warning"
+          confirmLabel="放弃修改并搜索"
+          cancelLabel="继续编辑"
+          onConfirm={() => { setConfirmDiscardForSearch(false); openSearch() }}
+          onCancel={() => {
+            setConfirmDiscardForSearch(false)
+            workspaceRef.current?.querySelector<HTMLTextAreaElement>('.text-preview-editor')?.focus()
+          }}
+        />
+      )}
 
       {active && preview.textSaveConfirmation && (
         <ConfirmationDialog

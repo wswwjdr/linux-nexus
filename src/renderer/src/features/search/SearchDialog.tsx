@@ -27,8 +27,8 @@ export default function SearchDialog({ sessionId, profileId, currentPath, visibl
   const [confirmClose, setConfirmClose] = useState(false)
   const namePaneRef = useRef<SearchPaneHandle>(null)
   const contentPaneRef = useRef<SearchPaneHandle>(null)
-  const stateRef = useRef({ running, menuOpen, confirmClose, previewOpen })
-  stateRef.current = { running, menuOpen, confirmClose, previewOpen }
+  const stateRef = useRef({ running, menuOpen, confirmClose, previewOpen, visible })
+  stateRef.current = { running, menuOpen, confirmClose, previewOpen, visible }
   const anyRunning = running.name || running.content
 
   const updateNameRunning = useCallback((value: boolean) => {
@@ -51,7 +51,7 @@ export default function SearchDialog({ sessionId, profileId, currentPath, visibl
 
   useEffect(() => {
     const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || stateRef.current.previewOpen) return
+      if (event.key !== 'Escape' || !stateRef.current.visible || stateRef.current.previewOpen) return
       if (stateRef.current.menuOpen.name || stateRef.current.menuOpen.content) return
       event.preventDefault()
       event.stopImmediatePropagation()

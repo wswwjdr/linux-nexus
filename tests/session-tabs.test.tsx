@@ -56,7 +56,7 @@ async function mountTabs(initial = [session('first'), session('second', 'termina
       setCreateDirectoryDialog: noOp, patchSession: noOp, updateSession: noOp,
       loadDirectory: async () => true, removeSessionWorkspaceState: noOp,
       removeSessionScriptStates: noOp, removeSessionPerformanceState: noOp,
-      previewActionsRef: useRef(new Map()), directoryLoadIdsRef: useRef(new Map()),
+      workspaceActionsRef: useRef(new Map()), directoryLoadIdsRef: useRef(new Map()),
       connectingSessionsRef: useRef(new Set()), setSearchOpen: noOp, showToast: noOp,
     })
     current = { sessions, activeId, ref: sessionsRef.current }
