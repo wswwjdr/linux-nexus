@@ -44,6 +44,7 @@ export interface RemoteFilesApi {
   executeOperation(request: OperationExecutionRequest): Promise<OperationExecutionResult>
   cancelOperation(requestId: string): Promise<boolean>
   createRemoteDirectory(sessionId: string, remoteDirectory: string, name: string): Promise<void>
+  renameRemoteEntry(sessionId: string, remotePath: string, name: string): Promise<string>
   copyRemotePath(sessionId: string, remotePath: string): Promise<void>
   deleteRemoteEntries(sessionId: string, remotePaths: string[]): Promise<void>
   previewFile(sessionId: string, remotePath: string, type: PreviewType): Promise<PreviewResult>

@@ -96,6 +96,18 @@ test('paste submenu exposes only immediate force and skip actions', () => {
   } finally { menu.unmount() }
 })
 
+test('clicking rename dispatches the rename command for files and folders', () => {
+  for (const type of ['file', 'directory'] as const) {
+    const menu = mount({ kind: 'single-entry', entry: { ...entry('item'), type }, canPaste: false })
+    try {
+      const rename = Array.from(menu.host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+        .find((button) => button.textContent === '重命名')!
+      act(() => rename.click())
+      assert.deepEqual(menu.actions, [{ type: 'rename' }])
+    } finally { menu.unmount() }
+  }
+})
+
 test('opens and closes script submenu with arrows and returns focus to the invoking file on Escape', () => {
   const menu = mount({ kind: 'single-entry', entry: entry('run.sh'), canPaste: true })
   assert.equal(menu.host.querySelectorAll('[role="separator"]').length, 1)

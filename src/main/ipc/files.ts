@@ -6,7 +6,7 @@ import { previewFile, readLogPreview, releasePreview, saveTextFile } from '../pr
 import { cancelNameSearch, startNameSearch } from '../name-search'
 import { cancelContentSearch, startContentSearch } from '../content-search'
 import { cancelScriptExecution, startScriptExecution } from '../script-execution-runtime'
-import { filesSession } from '../remote-fs'
+import { filesSession, renameRemoteEntry } from '../remote-fs'
 
 export function registerFilesIpc(): void {
   ipcMain.handle('files:list', (_event, sessionId: string, remotePath: string) =>
@@ -50,6 +50,8 @@ export function registerFilesIpc(): void {
   ipcMain.handle('files:transfer-cancel', (_event, requestId: string) => cancelTransfer(requestId))
   ipcMain.handle('files:create-directory', (_event, sessionId: string, remoteDirectory: string, name: string) =>
     createRemoteDirectory(sessionId, remoteDirectory, name))
+  ipcMain.handle('files:rename', (_event, sessionId: string, remotePath: string, name: string) =>
+    renameRemoteEntry(sessionId, remotePath, name))
   ipcMain.handle('files:path-copy', (_event, sessionId: string, remotePath: string) => copyRemotePath(sessionId, remotePath))
   ipcMain.handle('files:delete', (_event, sessionId: string, remotePaths: unknown) => {
     if (!Array.isArray(remotePaths) || remotePaths.some((remotePath) => typeof remotePath !== 'string')) {

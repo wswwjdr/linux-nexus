@@ -9,6 +9,7 @@ import DialogLayer from './components/DialogLayer'
 import ConfirmationDialog from './components/ConfirmationDialog'
 import UploadConfirmDialog from './components/UploadConfirmDialog'
 import { RemoteArchiveDialogs } from './components/RemoteArchiveDialogs'
+import RemoteEntryRenameDialog from './components/RemoteEntryRenameDialog'
 import SessionChooser from './components/SessionChooser'
 import ShortcutGuideDialog from './components/ShortcutGuideDialog'
 import PerformanceMonitor from './components/PerformanceMonitor'
@@ -371,6 +372,10 @@ export default function App() {
     setCreateDirectoryDialog,
     creatingDirectory,
     submitCreateDirectory,
+    renameEntryDialog,
+    requestRemoteEntryRename,
+    cancelRemoteEntryRename,
+    submitRemoteEntryRename,
     requestRemoteEntriesDeletion,
     cancelRemoteEntryDeletion,
     confirmRemoteEntryDeletion,
@@ -461,6 +466,7 @@ export default function App() {
       cutRemoteSelection,
       pasteRemoteEntries,
       requestRemoteEntriesDeletion,
+      requestRemoteEntryRename,
       setCreateDirectoryDialog,
       extractRemoteArchive,
     },
@@ -469,7 +475,7 @@ export default function App() {
     showToast,
   })
   const modalOpen = Boolean(
-    profileDialog || profileDeleteDialog || createDirectoryDialog || settingsForm
+    profileDialog || profileDeleteDialog || createDirectoryDialog || renameEntryDialog || settingsForm
       || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
       || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || uploadSelection
       || archiveDestinationDialog
@@ -755,6 +761,15 @@ export default function App() {
         onTrustAliasHostKey={() => void commandAliases.trustHostKey()}
         onDismissAliasHostKey={commandAliases.dismissHostKey}
       />
+
+      {renameEntryDialog && (
+        <RemoteEntryRenameDialog
+          key={renameEntryDialog.entry.path}
+          state={renameEntryDialog}
+          onSubmit={submitRemoteEntryRename}
+          onClose={cancelRemoteEntryRename}
+        />
+      )}
 
       {remoteEntryDeleteDialog && (
         <ConfirmationDialog

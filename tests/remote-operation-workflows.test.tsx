@@ -44,6 +44,7 @@ async function mountWorkflow({ hold = false, failure = '' } = {}) {
   const cancelled: string[] = []
   const refreshed: string[] = []
   const notices: Array<{ kind: string; message: string }> = []
+  const renames: Array<{ sessionId: string; path: string; name: string }> = []
   const sessionsRef = { current: [session('active', '/target'), session('source', '/source'), session('nested', '/target/release')] }
   let connectedProfile = profile
   let finish!: (status?: OperationExecutionResult['status']) => void
@@ -59,6 +60,11 @@ async function mountWorkflow({ hold = false, failure = '' } = {}) {
       return { status: 'completed', requestId: request.requestId, operation: request.operation, command: 'server command' }
     },
     cancelOperation: async (requestId: string) => { cancelled.push(requestId); finish('cancelled'); return true },
+    renameRemoteEntry: async (sessionId: string, path: string, name: string) => {
+      renames.push({ sessionId, path, name })
+      if (failure) throw new Error(failure)
+      return path.slice(0, path.lastIndexOf('/') + 1) + name
+    },
   } as RemoteFilesApi
   Object.defineProperty(window, 'remoteFiles', { configurable: true, value: api })
 
@@ -66,7 +72,8 @@ async function mountWorkflow({ hold = false, failure = '' } = {}) {
     const activeSession = sessionsRef.current[0]
     operations = useRemoteOperations({
       activeSession, connectedProfile, connectedSessionId: activeSession.id,
-      currentPath: activeSession.currentPath, sessionsRef, updateSession: () => {},
+      currentPath: activeSession.currentPath, sessionsRef,
+      updateSession: (id, update) => { sessionsRef.current = sessionsRef.current.map((item) => item.id === id ? update(item) : item) },
       loadDirectory: async (id) => { refreshed.push(id); return true },
       showToast: (kind, message) => notices.push({ kind, message }), setBrowserContextMenu: () => {},
     })
@@ -87,7 +94,7 @@ async function mountWorkflow({ hold = false, failure = '' } = {}) {
   }
   await act(async () => { root.render(createElement(Harness)) })
   return {
-    get operations() { return operations }, get drag() { return drag }, requests, cancelled, refreshed, notices,
+    get operations() { return operations }, get drag() { return drag }, requests, cancelled, refreshed, notices, renames, sessionsRef,
     finish: (status?: OperationExecutionResult['status']) => finish(status),
     async changeProfile(next: ServerProfile) {
       connectedProfile = next
@@ -104,6 +111,57 @@ async function run(action: () => void) {
 function key(key: string) {
   window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key, ctrlKey: true, bubbles: true, cancelable: true }))
 }
+
+test('folder rename keeps the invoking session, remaps descendant tabs and clipboard, and refreshes affected directories', async () => {
+  const view = await mountWorkflow()
+  const inside = {
+    ...session('inside', '/source/folder/nested'), startPath: '/source/folder',
+    selectedPaths: ['/source/folder/nested/a.txt'], highlightedPath: '/source/folder/nested/a.txt',
+    entries: [{ ...sources[0], path: '/source/folder/nested/a.txt' }],
+  }
+  const otherProfile = { ...session('other-profile', '/source/folder'), profileId: 'different' }
+  const sibling = session('sibling', '/source/folder-extra')
+  view.sessionsRef.current.push(inside, otherProfile, sibling)
+  try {
+    await run(() => view.operations.copyRemoteSelection([sources[1]]))
+    await run(() => view.operations.requestRemoteEntryRename(sources[1], 'source'))
+    await act(async () => { await view.operations.submitRemoteEntryRename('renamed folder') })
+    assert.deepEqual(view.renames, [{ sessionId: 'source', path: '/source/folder', name: 'renamed folder' }])
+    assert.equal(view.operations.renameEntryDialog, null)
+    const source = view.sessionsRef.current.find(({ id }) => id === 'source')!
+    assert.equal(source.entries[1].name, 'renamed folder')
+    assert.equal(source.entries[1].path, '/source/renamed folder')
+    assert.deepEqual(source.selectedPaths, ['/source/a.txt', '/source/renamed folder'])
+    const nested = view.sessionsRef.current.find(({ id }) => id === 'inside')!
+    assert.equal(nested.currentPath, '/source/renamed folder/nested')
+    assert.equal(nested.startPath, '/source/renamed folder')
+    assert.deepEqual(nested.history, ['/source/renamed folder/nested'])
+    assert.deepEqual(nested.selectedPaths, ['/source/renamed folder/nested/a.txt'])
+    assert.equal(nested.entries[0].path, '/source/renamed folder/nested/a.txt')
+    assert.equal(nested.highlightedPath, '/source/renamed folder/nested/a.txt')
+    assert.equal(view.sessionsRef.current.find(({ id }) => id === 'other-profile'), otherProfile)
+    assert.equal(view.sessionsRef.current.find(({ id }) => id === 'sibling')?.currentPath, sibling.currentPath)
+    assert.deepEqual(view.operations.remoteClipboard?.sourcePaths, ['/source/renamed folder'])
+    assert.deepEqual(view.refreshed.sort(), ['inside', 'source'])
+    assert.ok(view.notices.some(({ message }) => message === '已重命名'))
+  } finally { view.unmount() }
+})
+
+test('rename failure preserves the dialog and recorded paths; an unchanged name closes without an API call', async () => {
+  const view = await mountWorkflow({ failure: '同名文件或文件夹已存在' })
+  try {
+    await run(() => view.operations.requestRemoteEntryRename(sources[0], 'source'))
+    await act(async () => {
+      await assert.rejects(view.operations.submitRemoteEntryRename('exists.txt'), /同名文件或文件夹已存在/)
+    })
+    assert.equal(view.operations.renameEntryDialog?.entry.path, sources[0].path)
+    assert.equal(view.sessionsRef.current[1].entries[0].path, sources[0].path)
+    assert.deepEqual(view.refreshed, [])
+    await act(async () => { await view.operations.submitRemoteEntryRename('a.txt') })
+    assert.equal(view.operations.renameEntryDialog, null)
+    assert.equal(view.renames.length, 1)
+  } finally { view.unmount() }
+})
 
 test('Ctrl+C/X only record sources; Ctrl+V executes immediately and preserves copy records', async () => {
   const view = await mountWorkflow()

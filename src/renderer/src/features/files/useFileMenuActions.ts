@@ -29,7 +29,7 @@ interface UseFileMenuActionsOptions {
   scriptExecution: Pick<ScriptExecution, 'runScript' | 'requestScriptCommandEdit'>
   transfers: Pick<TransferOperations, 'download' | 'uploadFiles'>
   remoteOperations: Pick<RemoteOperations,
-    'copyRemoteSelection' | 'cutRemoteSelection' | 'pasteRemoteEntries' | 'requestRemoteEntriesDeletion' | 'setCreateDirectoryDialog' | 'extractRemoteArchive'>
+    'copyRemoteSelection' | 'cutRemoteSelection' | 'pasteRemoteEntries' | 'requestRemoteEntriesDeletion' | 'requestRemoteEntryRename' | 'setCreateDirectoryDialog' | 'extractRemoteArchive'>
   locateSearchResult: SessionOperations['locateSearchResult']
   patchSession: (sessionId: string, patch: Partial<SessionTab>) => void
   showToast: (kind: ToastNotice['kind'], message: string, action?: ToastNotice['action']) => void
@@ -135,6 +135,9 @@ export function useFileMenuActions({
         break
       case 'delete':
         if (entries) remoteOperations.requestRemoteEntriesDeletion(entries)
+        break
+      case 'rename':
+        if (context.kind === 'single-entry') remoteOperations.requestRemoteEntryRename(context.entry, sessionId)
         break
       case 'sort-column':
         if (context.kind === 'directory-background' && activeSession?.kind === 'files') {

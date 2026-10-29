@@ -14,6 +14,26 @@ export function normalizedRemotePath(remotePath: string): string {
   return posix.resolve('/', remotePath)
 }
 
+export async function renameRemoteEntry(sessionId: string, remotePath: string, name: string): Promise<string> {
+  const session = filesSession(sessionId)
+  const sourcePath = normalizedRemotePath(remotePath)
+  if (sourcePath === '/') throw new Error('不能重命名服务器根目录')
+  if (typeof name !== 'string' || !name || name === '.' || name === '..' || name.includes('/') || name.includes('\0')) {
+    throw new Error('名称无效：不能为空，不能包含 / 或空字符，也不能是 . 或 ..')
+  }
+  const targetPath = posix.join(posix.dirname(sourcePath), name)
+  if (targetPath === sourcePath) return targetPath
+  await runRemoteCommand(session.client, [
+    'set -eu',
+    '[[ ! -L "$1" && ( -f "$1" || -d "$1" ) ]] || { printf "%s\\n" "只能重命名普通文件或文件夹，来源可能已不存在" >&2; exit 1; }',
+    '[[ ! -e "$2" && ! -L "$2" ]] || { printf "%s\\n" "同名文件或文件夹已存在" >&2; exit 1; }',
+    'mv -nT -- "$1" "$2"',
+    // mv -n can skip a concurrently created destination with a successful exit code.
+    '[[ ! -e "$1" && ! -L "$1" ]] || { printf "%s\\n" "重命名未完成，目标名称可能已被占用" >&2; exit 1; }',
+  ].join('\n'), [sourcePath, targetPath])
+  return targetPath
+}
+
 export interface RemoteTreeEntry {
   relativePath: string
   type: 'directory' | 'file' | 'symlink' | 'other'

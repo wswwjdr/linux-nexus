@@ -72,6 +72,8 @@ const api: RemoteFilesApi = {
   cancelOperation: (requestId: string): Promise<boolean> => ipcRenderer.invoke('files:operation-cancel', requestId),
   createRemoteDirectory: (sessionId: string, remoteDirectory: string, name: string) =>
     ipcRenderer.invoke('files:create-directory', sessionId, remoteDirectory, name),
+  renameRemoteEntry: (sessionId: string, remotePath: string, name: string) =>
+    ipcRenderer.invoke('files:rename', sessionId, remotePath, name),
   copyRemotePath: (sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('files:path-copy', sessionId, remotePath),
   deleteRemoteEntries: (sessionId: string, remotePaths: string[]) =>

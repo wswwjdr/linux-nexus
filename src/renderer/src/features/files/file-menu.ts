@@ -36,6 +36,7 @@ export type FileMenuAction =
   | { type: 'cut' }
   | { type: 'paste'; strategy: PasteStrategy }
   | { type: 'copy-path' }
+  | { type: 'rename' }
   | { type: 'delete' }
   | { type: 'sort-column'; column: SortColumn }
   | { type: 'sort-direction'; direction: SortDirection }
@@ -248,6 +249,7 @@ const singleEntryStrategy: FileContextMenuStrategy = {
       action('cut', '剪切', 'scissors', { type: 'cut' }),
       pasteStrategyMenu(!context.canPaste),
       action('copy-path', '复制路径', 'copy', { type: 'copy-path' }),
+      action('rename', '重命名', 'pencil', { type: 'rename' }),
       action('delete', '删除', 'trash', { type: 'delete' }),
     ]
   },

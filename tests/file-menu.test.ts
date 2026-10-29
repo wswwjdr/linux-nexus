@@ -25,7 +25,7 @@ test('single file composes preview, reverse-preview and script strategies before
 
   assert.deepEqual(nodes.map((node) => node.kind === 'separator' ? node.kind : node.id), [
     'preview', 'preview-log', 'script-execution', 'separator',
-    'download', 'copy', 'cut', 'paste-strategy', 'copy-path', 'delete',
+    'download', 'copy', 'cut', 'paste-strategy', 'copy-path', 'rename', 'delete',
   ])
   const scriptMenu = nodes.find((node) => node.kind === 'submenu' && node.id === 'script-execution')
   assert.equal(scriptMenu?.kind, 'submenu')
@@ -71,6 +71,15 @@ test('single unsupported entries expose only path copying', () => {
     )
     assert.deepEqual(nodes.map(({ id }) => id), ['copy-path'])
   }
+})
+
+test('single files and directories expose rename, while batch and background menus do not', () => {
+  for (const type of ['file', 'directory'] as const) {
+    const nodes = resolveFileContextMenu({ kind: 'single-entry', entry: entry('item', type), canPaste: false }, defaultFileTypeExtensions())
+    assert.deepEqual(actions(nodes).find((node) => node.id === 'rename')?.action, { type: 'rename' })
+  }
+  const batch = resolveFileContextMenu({ kind: 'multiple-entries', entries: [entry('a'), entry('b')], canPaste: true }, defaultFileTypeExtensions())
+  assert.equal(actions(batch).some((node) => node.action.type === 'rename'), false)
 })
 
 test('mixed selections never expose operations that would silently skip selected entries', () => {
@@ -182,6 +191,7 @@ test('archive actions from search results always use the active browser director
       cutRemoteSelection: () => {},
       pasteRemoteEntries: () => {},
       requestRemoteEntriesDeletion: () => {},
+      requestRemoteEntryRename: () => {},
       setCreateDirectoryDialog: () => {},
       extractRemoteArchive: (...args) => calls.push(args),
     },

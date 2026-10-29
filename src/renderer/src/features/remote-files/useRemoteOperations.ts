@@ -28,6 +28,12 @@ interface RemoteEntryDeleteDialog {
   directory: string
 }
 
+export interface RemoteEntryRenameDialogState {
+  entry: RemoteEntry
+  sessionId: string
+  profileId: string
+}
+
 export interface ArchiveDestinationDialogState {
   sessionId: string
   entry: Pick<RemoteEntry, 'name' | 'path'>
@@ -66,6 +72,7 @@ export function useRemoteOperations({
   const activeOperationRef = useRef<ActiveOperation | null>(null)
   const [createDirectoryDialog, setCreateDirectoryDialog] = useState<{ name: string } | null>(null)
   const [creatingDirectory, setCreatingDirectory] = useState(false)
+  const [renameEntryDialog, setRenameEntryDialog] = useState<RemoteEntryRenameDialogState | null>(null)
   const [archiveDestinationDialog, setArchiveDestinationDialog] = useState<ArchiveDestinationDialogState | null>(null)
 
   const clipboardMatchesProfile = Boolean(remoteClipboard && connectedProfile
@@ -110,6 +117,60 @@ export function useRemoteOperations({
       showToast('error', `创建文件夹失败：${errorMessage(error)}`)
     } finally {
       setCreatingDirectory(false)
+    }
+  }
+
+  const requestRemoteEntryRename = (entry: RemoteEntry, sessionId: string) => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session || session.kind !== 'files' || session.status !== 'connected') return
+    setBrowserContextMenu(null)
+    setRenameEntryDialog({ entry, sessionId, profileId: session.profileId })
+  }
+
+  const cancelRemoteEntryRename = () => setRenameEntryDialog(null)
+
+  const submitRemoteEntryRename = async (name: string) => {
+    if (!renameEntryDialog) return
+    const { entry, sessionId, profileId } = renameEntryDialog
+    if (name === entry.name) {
+      setRenameEntryDialog(null)
+      return
+    }
+    const targetPath = await window.remoteFiles.renameRemoteEntry(sessionId, entry.path, name)
+    const remapPath = (path: string) => path === entry.path
+      || (entry.type === 'directory' && path.startsWith(entry.path + '/'))
+      ? targetPath + path.slice(entry.path.length) : path
+
+    // Keep other tabs inside a renamed folder and recorded clipboard sources usable.
+    const relatedSessions = sessionsRef.current.filter((session) => session.profileId === profileId && session.kind === 'files')
+    for (const session of relatedSessions) {
+      updateSession(session.id, (current) => ({
+        ...current,
+        currentPath: remapPath(current.currentPath),
+        startPath: remapPath(current.startPath),
+        history: current.history.map(remapPath),
+        entries: current.entries.map((item) => ({
+          ...item,
+          path: remapPath(item.path),
+          name: item.path === entry.path ? name : item.name,
+        })),
+        selectedPaths: current.selectedPaths.map(remapPath),
+        highlightedPath: current.highlightedPath === null ? null : remapPath(current.highlightedPath),
+      }))
+    }
+    setRemoteClipboard((current) => current?.profile.id === profileId
+      ? { ...current, sourcePaths: current.sourcePaths.map(remapPath) } : current)
+    setRenameEntryDialog(null)
+    showToast('info', '已重命名')
+
+    const directory = getParentPath(entry.path)
+    try {
+      await Promise.all(relatedSessions
+        .filter((session) => session.status === 'connected'
+          && (session.currentPath === directory || remapPath(session.currentPath) !== session.currentPath))
+        .map((session) => loadDirectory(session.id, remapPath(session.currentPath))))
+    } catch (error) {
+      showToast('error', `目录刷新失败：${errorMessage(error)}`)
     }
   }
 
@@ -281,6 +342,10 @@ export function useRemoteOperations({
     createDirectoryDialog,
     setCreateDirectoryDialog,
     creatingDirectory,
+    renameEntryDialog,
+    requestRemoteEntryRename,
+    cancelRemoteEntryRename,
+    submitRemoteEntryRename,
     archiveDestinationDialog,
     submitCreateDirectory,
     extractRemoteArchive,
