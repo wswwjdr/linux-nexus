@@ -1,20 +1,16 @@
-import { useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type Ref } from 'react'
-import { CaseSensitive, ChevronDown, ChevronUp, LoaderCircle, Save, Search, X } from 'lucide-react'
-import { findTextMatches } from './text-search'
+import { useImperativeHandle, useLayoutEffect, useMemo, useRef, type KeyboardEvent, type Ref } from 'react'
+import { LoaderCircle, Save, Search } from 'lucide-react'
+import PreviewSearchBar from './PreviewSearchBar'
+import { usePreviewSearch, type PreviewSearchHandle } from './usePreviewSearch'
 
 interface TextPreviewPanelProps {
-  ref?: Ref<TextPreviewPanelHandle>
+  ref?: Ref<PreviewSearchHandle>
   draft: string
   dirty: boolean
   saving: boolean
   saveConfirmationOpen: boolean
   onUpdateDraft: (content: string) => void
   onRequestSave: () => void
-}
-
-export interface TextPreviewPanelHandle {
-  openSearch: () => void
-  closeSearch: () => boolean
 }
 
 export default function TextPreviewPanel({
@@ -26,23 +22,14 @@ export default function TextPreviewPanel({
   onUpdateDraft,
   onRequestSave,
 }: TextPreviewPanelProps) {
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [query, setQuery] = useState('')
-  const [caseSensitive, setCaseSensitive] = useState(false)
-  const [matchAnchor, setMatchAnchor] = useState(0)
-  const [revealRequest, setRevealRequest] = useState(0)
   const editorRef = useRef<HTMLTextAreaElement>(null)
-  const searchRef = useRef<HTMLInputElement>(null)
   const highlightRef = useRef<HTMLPreElement>(null)
   const matchRef = useRef<HTMLElement>(null)
   const disabled = saving || saveConfirmationOpen
   // Search the textarea's normalized value so CRLF/CR offsets match its selection API.
   const content = useMemo(() => draft.replace(/\r\n|\r/g, '\n'), [draft])
-  const matches = useMemo(() => searchOpen ? findTextMatches(content, query, caseSensitive) : [], [content, query, caseSensitive, searchOpen])
-  const foundIndex = matches.findIndex((offset) => offset >= matchAnchor)
-  const matchIndex = matches.length ? foundIndex === -1 ? matches.length - 1 : foundIndex : -1
-  const matchStart = matches[matchIndex]
-  const matchEnd = matchStart === undefined ? undefined : matchStart + query.length
+  const search = usePreviewSearch(content)
+  const { searchOpen, searchRef, matchStart, matchEnd, revealRequest, navigate } = search
 
   const syncScroll = () => {
     const editor = editorRef.current!
@@ -64,37 +51,16 @@ export default function TextPreviewPanel({
 
   const openSearch = () => {
     const editor = editorRef.current!
-    const selected = editor.value.slice(editor.selectionStart, editor.selectionEnd)
-    if (selected && !selected.includes('\n')) setQuery(selected)
-    setMatchAnchor(editor.selectionStart)
-    setSearchOpen(true)
-    setRevealRequest((value) => value + 1)
-    // The input mounts after this event; the layout effect focuses it on first open.
-    searchRef.current?.focus()
-    searchRef.current?.select()
+    search.openSearch(editor.value.slice(editor.selectionStart, editor.selectionEnd), editor.selectionStart)
   }
 
-  useLayoutEffect(() => {
-    if (searchOpen) {
-      searchRef.current!.focus()
-      searchRef.current!.select()
-    }
-  }, [searchOpen])
-
   const closeSearch = () => {
-    if (!searchOpen) return false
-    setSearchOpen(false)
+    if (!search.closeSearch()) return false
     editorRef.current!.focus({ preventScroll: true })
     return true
   }
 
   useImperativeHandle(ref, () => ({ openSearch, closeSearch }))
-
-  const navigate = (direction: number) => {
-    if (!matches.length) return
-    setMatchAnchor(matches[(matchIndex + direction + matches.length) % matches.length])
-    setRevealRequest((value) => value + 1)
-  }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.nativeEvent.isComposing) return
@@ -120,29 +86,7 @@ export default function TextPreviewPanel({
 
   return (
     <div className="text-preview-content" onKeyDown={onKeyDown}>
-      {searchOpen && (
-        <div className="text-preview-search" role="search" aria-label="文本内搜索">
-          <Search size={15} aria-hidden="true" />
-          <input
-            ref={searchRef}
-            aria-label="搜索文本"
-            placeholder="搜索文本"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            disabled={disabled}
-            value={query}
-            onChange={(event) => { setQuery(event.target.value); setMatchAnchor(0); setRevealRequest((value) => value + 1) }}
-          />
-          <span className="text-preview-search-count" role="status">
-            {!query ? '' : matches.length ? `${matchIndex + 1} / ${matches.length}` : '无匹配'}
-          </span>
-          <button type="button" className="icon-button" title="区分大小写" aria-label="区分大小写" aria-pressed={caseSensitive} disabled={disabled} onClick={() => { setCaseSensitive(!caseSensitive); setMatchAnchor(0); setRevealRequest((value) => value + 1) }}><CaseSensitive size={17} /></button>
-          <button type="button" className="icon-button" title="上一处（Shift+Enter）" aria-label="上一处" disabled={disabled || !matches.length} onClick={() => navigate(-1)}><ChevronUp size={16} /></button>
-          <button type="button" className="icon-button" title="下一处（Enter）" aria-label="下一处" disabled={disabled || !matches.length} onClick={() => navigate(1)}><ChevronDown size={16} /></button>
-          <button type="button" className="icon-button" title="关闭文本搜索（Esc）" aria-label="关闭文本搜索" disabled={disabled} onClick={closeSearch}><X size={15} /></button>
-        </div>
-      )}
+      <PreviewSearchBar search={search} disabled={disabled} onClose={closeSearch} />
       <div className="text-preview-surface">
         <pre ref={highlightRef} className="preview-text text-preview-highlight" aria-hidden="true">
           {matchStart === undefined ? content : <>{content.slice(0, matchStart)}<mark ref={matchRef}>{content.slice(matchStart, matchEnd)}</mark>{content.slice(matchEnd)}</>}{'\n'}

@@ -4,7 +4,7 @@ import type { PreviewType } from '@shared/file-type-registry'
 import ConfirmationDialog from '@/components/ConfirmationDialog'
 import LogPreviewDialog from '@/components/previews/LogPreviewDialog'
 import PreviewDialog from '@/components/previews/PreviewDialog'
-import type { TextPreviewPanelHandle } from '@/components/previews/TextPreviewPanel'
+import type { PreviewSearchHandle } from '@/components/previews/usePreviewSearch'
 import SearchDialog from '@/features/search/SearchDialog'
 import { usePreview } from '@/hooks/usePreview'
 import type { ScriptExecutionDialogState, SessionTab } from '@/app-types'
@@ -67,7 +67,7 @@ export default function FileSessionWorkspace({
 
   const [confirmDiscardForSearch, setConfirmDiscardForSearch] = useState(false)
   const workspaceRef = useRef<HTMLDivElement>(null)
-  const textSearchRef = useRef<TextPreviewPanelHandle>(null)
+  const textSearchRef = useRef<PreviewSearchHandle>(null)
   const previewOpen = Boolean(preview.previewDialog || preview.logPreviewDialog)
   const openSearch = useCallback(() => {
     preview.closePreview()
@@ -179,6 +179,7 @@ export default function FileSessionWorkspace({
       <LogPreviewDialog
         logPreviewDialog={preview.logPreviewDialog}
         logViewportRef={preview.logViewportRef}
+        textSearchRef={textSearchRef}
         onClosePreview={preview.closePreview}
         onLogPreviewScroll={preview.onLogPreviewScroll}
       />

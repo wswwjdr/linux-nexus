@@ -235,6 +235,7 @@ details[open] > .settings-disclosure-summary .settings-disclosure-chevron { tran
 .text-preview-editor:focus { border-color:var(--border-success-strong); }
 .text-preview-editor:disabled { color:var(--text-secondary); }
 .log-preview-text { min-width: 0; min-height: 0; max-height: none; flex: 1; white-space: pre-wrap; overflow-wrap: anywhere; }
+.log-preview-text mark { padding: 0; color:inherit; background:var(--surface-warning-strong); outline:1px solid var(--border-warning-strong); }
 .preview-media { height: 70vh; min-height: 0; flex: 0 1 auto; display: grid; place-items: center; overflow: auto; border-radius: var(--radius); background:var(--surface-terminal); }
 .image-preview-viewport { display: block; }
 .preview-image-canvas { min-width: 100%; min-height: 100%; display: flex; justify-content: safe center; align-items: safe center; }

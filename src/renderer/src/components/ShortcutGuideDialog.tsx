@@ -20,7 +20,7 @@ const shortcutGroups: ShortcutGroup[] = [
     icon: FolderOpen,
     items: [
       { bindings: [['Ctrl', 'F']], action: '打开文件搜索' },
-      { bindings: [['Ctrl', 'F']], action: '文本预览中打开内容搜索' },
+      { bindings: [['Ctrl', 'F']], action: '文本或倒序预览中打开内容搜索' },
       { bindings: [['Enter'], ['Shift', 'Enter']], action: '文本搜索框中定位下一处 / 上一处' },
       { bindings: [['F3'], ['Shift', 'F3']], action: '文本预览中定位下一处 / 上一处' },
       { bindings: [['Ctrl', 'C']], action: '复制选中的文件或文件夹' },

@@ -94,9 +94,7 @@ test('file workspaces retain independent search and preview state across session
         revision: { contentHash: 'hash', lineEnding: '\n' },
       }
     },
-    readLogPreview: async () => {
-      throw new Error('not used')
-    },
+    readLogPreview: async () => ({ name: 'app.log', content: 'tail target', startOffset: 100, fileSize: 111, limitBytes: 1000, hasEarlier: true }),
     releasePreview: async (token: string) => { releasedTokens.push(token) },
   } as unknown as RemoteFilesApi
   window.remoteFiles = remoteFiles
@@ -261,6 +259,13 @@ test('file workspaces retain independent search and preview state across session
     assert.equal(firstWorkspace.querySelector('.preview-backdrop'), null)
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
     assert.deepEqual(releasedTokens, ['preview-token-first'])
+    await act(async () => { await previewActions.get(first.id)!.previewLogFile({ name: 'app.log', path: '/app.log' }) })
+    act(() => previewActions.get(first.id)!.requestSearch(true))
+    assert.ok(firstWorkspace.querySelector('.log-preview-text'))
+    assert.ok(firstWorkspace.querySelector('[aria-label="搜索文本"]'))
+    act(() => window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    assert.equal(firstWorkspace.querySelector('[aria-label="搜索文本"]'), null)
+    assert.ok(firstWorkspace.querySelector('.log-preview-text'))
     act(() => root.unmount())
     assert.deepEqual(cancelledRequests.sort(), requests.map(({ requestId }) => requestId).sort())
     assert.deepEqual(releasedTokens, ['preview-token-first'])

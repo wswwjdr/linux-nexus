@@ -1,10 +1,13 @@
-import type { RefObject } from 'react'
+import type { Ref, RefObject } from 'react'
 import { LoaderCircle, X } from 'lucide-react'
 import type { LogPreviewDialog as LogPreviewDialogState } from '@/app-types'
+import LogPreviewPanel from './LogPreviewPanel'
+import type { PreviewSearchHandle } from './usePreviewSearch'
 
 export interface LogPreviewDialogProps {
   logPreviewDialog: LogPreviewDialogState | null
   logViewportRef: RefObject<HTMLPreElement | null>
+  textSearchRef?: Ref<PreviewSearchHandle>
   onClosePreview: () => void
   onLogPreviewScroll: () => void
 }
@@ -12,6 +15,7 @@ export interface LogPreviewDialogProps {
 export default function LogPreviewDialog({
   logPreviewDialog,
   logViewportRef,
+  textSearchRef,
   onClosePreview,
   onLogPreviewScroll,
 }: LogPreviewDialogProps) {
@@ -30,16 +34,7 @@ export default function LogPreviewDialog({
           <div className="preview-loading"><LoaderCircle className="spin" size={20} /> 正在读取日志</div>
         )}
         {logPreviewDialog.kind === 'ready' && (
-          <>
-            <div className="log-preview-status" aria-live="polite">
-              {logPreviewDialog.loadingEarlier
-                ? <><LoaderCircle className="spin" size={14} /> 正在读取更早内容</>
-                : !logPreviewDialog.hasEarlier
-                  ? logPreviewDialog.startOffset === 0 ? '已到文件开头' : '已达到文本预览上限'
-                  : ''}
-            </div>
-            <pre ref={logViewportRef} className="preview-text log-preview-text" tabIndex={0} onScroll={onLogPreviewScroll}>{logPreviewDialog.content}</pre>
-          </>
+          <LogPreviewPanel ref={textSearchRef} dialog={logPreviewDialog} viewportRef={logViewportRef} onScroll={onLogPreviewScroll} />
         )}
       </section>
     </div>

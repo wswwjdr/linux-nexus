@@ -5,7 +5,8 @@ import ImagePreviewPanel from './ImagePreviewPanel'
 import MarkdownPreviewPanel from './MarkdownPreviewPanel'
 import MediaPreviewPanel from './MediaPreviewPanel'
 import PdfPreviewPanel from './PdfPreviewPanel'
-import TextPreviewPanel, { type TextPreviewPanelHandle } from './TextPreviewPanel'
+import TextPreviewPanel from './TextPreviewPanel'
+import type { PreviewSearchHandle } from './usePreviewSearch'
 
 export interface PreviewDialogProps {
   previewDialog: PreviewDialogState | null
@@ -13,7 +14,7 @@ export interface PreviewDialogProps {
   textDirty: boolean
   textSaving: boolean
   textSaveConfirmation: { name: string; path: string } | null
-  textSearchRef?: Ref<TextPreviewPanelHandle>
+  textSearchRef?: Ref<PreviewSearchHandle>
   imageZoom: number
   imagePreviewSize: ImagePreviewSize | null
   imageViewportRef: RefObject<HTMLDivElement | null>
