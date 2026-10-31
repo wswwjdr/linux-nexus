@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import type { FileTypeExtensions, RemoteEntry } from '@shared/types'
 import type { PreviewType } from '@shared/file-type-registry'
+import { previewTypesForFile } from '@shared/preview-file-type'
 import ConfirmationDialog from '@/components/ConfirmationDialog'
 import LogPreviewDialog from '@/components/previews/LogPreviewDialog'
 import PreviewDialog from '@/components/previews/PreviewDialog'
@@ -11,9 +12,11 @@ import type { ScriptExecutionDialogState, SessionTab } from '@/app-types'
 import type { FileContextMenuContext, FileMenuAction } from './file-menu'
 import type { ToastNotice } from '@/GlobalToast'
 import ScriptSessionDialogs from './ScriptSessionDialogs'
+import FileOpenDialog from './FileOpenDialog'
 
 export interface SessionFileWorkspaceActions {
   requestSearch: (preferTextSearch?: boolean) => void
+  openFile: (entry: Pick<RemoteEntry, 'name' | 'path'>) => void
   previewFile: (entry: Pick<RemoteEntry, 'name' | 'path'>, type: PreviewType) => Promise<void>
   previewLogFile: (entry: Pick<RemoteEntry, 'name' | 'path'>) => Promise<void>
 }
@@ -68,9 +71,17 @@ export default function FileSessionWorkspace({
   })
 
   const [confirmDiscardForSearch, setConfirmDiscardForSearch] = useState(false)
+  const [fileToOpen, setFileToOpen] = useState<Pick<RemoteEntry, 'name' | 'path'> | null>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const textSearchRef = useRef<PreviewSearchHandle>(null)
   const previewOpen = Boolean(preview.previewDialog || preview.logPreviewDialog)
+  const openFile = useCallback((entry: Pick<RemoteEntry, 'name' | 'path'>) => {
+    if (!active || session.status !== 'connected' || previewOpen || fileToOpen || confirmDiscardForSearch) return
+    const types = previewTypesForFile(entry.name, fileTypeExtensions)
+    if (types.length === 0) showToast('info', '暂不支持的文件类型：' + entry.name)
+    else if (types.length === 1) void preview.previewFile(entry, types[0])
+    else setFileToOpen({ name: entry.name, path: entry.path })
+  }, [active, session.status, previewOpen, fileToOpen, confirmDiscardForSearch, fileTypeExtensions, showToast, preview.previewFile])
   const openSearch = useCallback(() => {
     preview.closePreview()
     onSearchOpenChange(session.id, true)
@@ -79,50 +90,54 @@ export default function FileSessionWorkspace({
     }
   }, [onSearchOpenChange, preview.closePreview, previewOpen, searchOpen, session.id])
   const requestSearch = useCallback((preferTextSearch = false) => {
-    if (!active || preview.textSaving || preview.textSaveConfirmation || confirmDiscardForSearch) return
+    if (!active || fileToOpen || preview.textSaving || preview.textSaveConfirmation || confirmDiscardForSearch) return
     if (preferTextSearch && textSearchRef.current) {
       textSearchRef.current.openSearch()
       return
     }
     if (preview.textDirty) setConfirmDiscardForSearch(true)
     else openSearch()
-  }, [active, confirmDiscardForSearch, openSearch, preview.textDirty, preview.textSaveConfirmation, preview.textSaving])
+  }, [active, fileToOpen, confirmDiscardForSearch, openSearch, preview.textDirty, preview.textSaveConfirmation, preview.textSaving])
   useEffect(() => {
-    if (active && searchOpen && !previewOpen && !propertiesOpen && !confirmDiscardForSearch) {
+    if (active && searchOpen && !previewOpen && !propertiesOpen && !confirmDiscardForSearch && !fileToOpen) {
       const timer = window.setTimeout(() => (workspaceRef.current?.querySelector<HTMLInputElement>('.search-tab-panel:not([hidden]) .search-query-field input:not(:disabled)') ?? workspaceRef.current?.querySelector<HTMLButtonElement>('.search-modal .modal-close'))?.focus(), 0)
       return () => window.clearTimeout(timer)
     }
-  }, [active, searchOpen, previewOpen, propertiesOpen, confirmDiscardForSearch])
+  }, [active, searchOpen, previewOpen, propertiesOpen, confirmDiscardForSearch, fileToOpen])
   useEffect(() => {
     onRegisterWorkspaceActions(session.id, {
       previewFile: preview.previewFile,
       previewLogFile: preview.previewLogFile,
       requestSearch,
+      openFile,
     })
     return () => onRegisterWorkspaceActions(session.id, null)
-  }, [onRegisterWorkspaceActions, preview.previewFile, preview.previewLogFile, requestSearch, session.id])
+  }, [onRegisterWorkspaceActions, preview.previewFile, preview.previewLogFile, requestSearch, openFile, session.id])
 
   useEffect(() => {
     if (session.status !== 'disconnected') return
     preview.closePreview()
     setConfirmDiscardForSearch(false)
+    setFileToOpen(null)
     onSearchOpenChange(session.id, false)
   }, [session.id, session.status])
 
   useEffect(() => {
-    onBlockingChange(session.id, active && Boolean(preview.textSaveConfirmation || confirmDiscardForSearch))
+    onBlockingChange(session.id, active && Boolean(preview.textSaveConfirmation || confirmDiscardForSearch || fileToOpen))
     return () => onBlockingChange(session.id, false)
-  }, [active, confirmDiscardForSearch, onBlockingChange, preview.textSaveConfirmation, session.id])
+  }, [active, confirmDiscardForSearch, fileToOpen, onBlockingChange, preview.textSaveConfirmation, session.id])
 
   useEffect(() => {
     onWorkspaceOpenChange(session.id, active && (
       searchOpen
+      || Boolean(fileToOpen)
       || Boolean(preview.previewDialog || preview.logPreviewDialog)
       || Boolean(scriptCommandDialog || scriptExecutionDialog)
     ))
     return () => onWorkspaceOpenChange(session.id, false)
   }, [
     active,
+    fileToOpen,
     onWorkspaceOpenChange,
     preview.logPreviewDialog,
     preview.previewDialog,
@@ -151,9 +166,9 @@ export default function FileSessionWorkspace({
           sessionId={session.id}
           profileId={session.profileId}
           currentPath={session.currentPath}
-          visible={active && !previewOpen}
+          visible={active && !previewOpen && !fileToOpen}
           fileTypeExtensions={fileTypeExtensions}
-          previewOpen={previewOpen || propertiesOpen}
+          previewOpen={previewOpen || propertiesOpen || Boolean(fileToOpen)}
           onClose={() => onSearchOpenChange(session.id, false)}
           onMenuAction={(action, context) => onMenuAction(action, context, session.id)}
         />
@@ -176,6 +191,18 @@ export default function FileSessionWorkspace({
         onUpdateTextDraft={preview.updateTextDraft}
         onRequestTextSave={preview.requestTextSave}
       />
+
+      {active && fileToOpen && (
+        <FileOpenDialog
+          name={fileToOpen.name}
+          types={previewTypesForFile(fileToOpen.name, fileTypeExtensions)}
+          onClose={() => setFileToOpen(null)}
+          onSelect={(type) => {
+            setFileToOpen(null)
+            void preview.previewFile(fileToOpen, type)
+          }}
+        />
+      )}
 
       <LogPreviewDialog
         logPreviewDialog={preview.logPreviewDialog}

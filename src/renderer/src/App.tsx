@@ -655,6 +655,7 @@ export default function App() {
               extractRemoteArchive,
             },
             browser: {
+              onOpenFile: (entry) => workspaceActionsRef.current.get(activeSession!.id)!.openFile(entry),
               onOpenEntryContextMenu: openEntryContextMenu,
               onOpenDirectoryContextMenu: openDirectoryContextMenu,
               onDropUpload: uploadDroppedEntries,

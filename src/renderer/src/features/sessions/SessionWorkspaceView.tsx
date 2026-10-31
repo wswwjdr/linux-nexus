@@ -64,7 +64,7 @@ interface SessionWorkspaceActions {
   remoteFiles: Pick<RemoteOperations,
     'requestRemoteEntriesDeletion' | 'beginRemoteMove' | 'extractRemoteArchive'>
   browser: Pick<FileBrowserProps,
-    'onOpenEntryContextMenu' | 'onOpenDirectoryContextMenu' | 'onDropUpload' | 'onDropError'>
+    'onOpenFile' | 'onOpenEntryContextMenu' | 'onOpenDirectoryContextMenu' | 'onDropUpload' | 'onDropError'>
   serverList: Pick<ServerListProps, 'onAdd' | 'onConnect' | 'onEdit' | 'onSetPinned' | 'onDelete'>
   terminal: {
     onReconnect: SessionOperations['reconnectSession']
@@ -179,6 +179,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
               highlightedPath={highlightedPath}
               onViewModeChange={(mode) => patchSession(activeSession.id, { viewMode: mode })}
               onNavigate={navigate}
+              onOpenFile={actions.browser.onOpenFile}
               onToggleSort={toggleSort}
               onSelectedPathsChange={(selectedPaths) => patchSession(activeSession.id, { selectedPaths })}
               onOpenEntryContextMenu={openEntryContextMenu}

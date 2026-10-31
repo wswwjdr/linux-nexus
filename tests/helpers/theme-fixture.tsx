@@ -59,7 +59,7 @@ function Files({ grid = false }: { grid?: boolean }) {
       selectedPaths={['/srv/app.log']} highlightedPath={null} sort={{ column: 'name', direction: 'ascending' }}
       viewMode={grid ? 'icons' : 'details'} dropTargetPath={null} hoveredPath={null} operationActive={false}
       onToggleSort={noop} onEntryClick={noop} onEntryContextMenu={noop} onEntryDragStart={noop}
-      onEntryDragOver={noop} onEntryDragLeave={noop} onEntryDrop={noop} onOpenDirectory={noop}
+      onEntryDragOver={noop} onEntryDragLeave={noop} onEntryDrop={noop} onOpenEntry={noop}
       onTileMouseEnter={noop} onTileMouseLeave={noop} onTileBlur={noop} />
   </div>
 }

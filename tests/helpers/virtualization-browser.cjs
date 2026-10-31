@@ -15,7 +15,7 @@ app.whenReady().then(async () => {
           import '/src/renderer/src/styles/foundation.css'; import '/src/renderer/src/styles/theme.css'; import '/src/renderer/src/styles/workspace.css';
           const entries = Array.from({ length: 10000 }, (_, i) => ({ path: '/file-' + i, name: 'file-' + i, type: 'file', size: 100, modifiedAt: null, permissions: '644' }));
           function Fixture() { const ref = useRef(null); const [view, setView] = useState('details'); const [highlight, setHighlight] = useState(null); window.changeView = setView; window.highlightLast = () => setHighlight('/file-9999');
-            const actions = Object.fromEntries(['onToggleSort','onEntryClick','onEntryContextMenu','onEntryDragStart','onEntryDragOver','onEntryDragLeave','onEntryDrop','onOpenDirectory','onTileMouseEnter','onTileMouseLeave','onTileBlur'].map(key => [key, () => {}]));
+            const actions = Object.fromEntries(['onToggleSort','onEntryClick','onEntryContextMenu','onEntryDragStart','onEntryDragOver','onEntryDragLeave','onEntryDrop','onOpenEntry','onTileMouseEnter','onTileMouseLeave','onTileBlur'].map(key => [key, () => {}]));
             return React.createElement('div', { ref, id: 'viewport', style: { height: 400, overflow: 'auto' } }, React.createElement(Collection, { ...actions, viewportRef: ref, sortedEntries: entries, selectedPaths: [], highlightedPath: highlight, sort: { column: 'name', direction: 'ascending' }, viewMode: view, dropTargetPath: null, hoveredPath: null, operationActive: false, hoverCardRef: { current: null } })); }
           createRoot(document.getElementById('root')).render(React.createElement(Fixture));
         </script></body></html>`)

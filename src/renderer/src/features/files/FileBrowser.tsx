@@ -24,6 +24,7 @@ interface FileBrowserProps {
   operationActive: boolean
   highlightedPath: string | null
   onViewModeChange: (mode: FileViewMode) => void
+  onOpenFile: (entry: RemoteEntry) => void
   onNavigate: (path: string) => Promise<boolean>
   onToggleSort: (column: SortColumn) => void
   onSelectedPathsChange: (paths: string[]) => void
@@ -48,6 +49,7 @@ export default function FileBrowser({
   highlightedPath,
   onViewModeChange,
   onNavigate,
+  onOpenFile,
   onToggleSort,
   onSelectedPathsChange,
   onOpenEntryContextMenu,
@@ -287,8 +289,10 @@ export default function FileBrowser({
           onEntryDragOver={handleEntryDragOver}
           onEntryDragLeave={handleEntryDragLeave}
           onEntryDrop={handleEntryDrop}
-          onOpenDirectory={(entry) => {
+          onOpenEntry={(entry) => {
+            cancelEntryDetails()
             if (entry.type === 'directory') void onNavigate(entry.path)
+            else if (entry.type === 'file') onOpenFile(entry)
           }}
           onTileMouseEnter={scheduleEntryDetails}
           onTileMouseLeave={(event) => {

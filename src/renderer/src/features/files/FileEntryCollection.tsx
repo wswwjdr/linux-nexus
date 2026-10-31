@@ -23,7 +23,7 @@ interface FileEntryCollectionProps {
   onEntryDragOver: (entry: RemoteEntry, event: DragEvent<HTMLElement>) => void
   onEntryDragLeave: (entry: RemoteEntry, event: DragEvent<HTMLElement>) => void
   onEntryDrop: (entry: RemoteEntry, event: DragEvent<HTMLElement>) => void
-  onOpenDirectory: (entry: RemoteEntry) => void
+  onOpenEntry: (entry: RemoteEntry) => void
   onTileMouseEnter: (entry: RemoteEntry, element: HTMLElement) => void
   onTileMouseLeave: (event: MouseEvent<HTMLElement>) => void
   onTileBlur: (event: FocusEvent<HTMLElement>) => void
@@ -72,7 +72,7 @@ export default function FileEntryCollection({
   onEntryDragOver,
   onEntryDragLeave,
   onEntryDrop,
-  onOpenDirectory,
+  onOpenEntry,
   onTileMouseEnter,
   onTileMouseLeave,
   onTileBlur,
@@ -102,6 +102,7 @@ export default function FileEntryCollection({
               aria-selected={selected.has(entry.path)}
               tabIndex={entry.path === highlightedPath ? 0 : -1}
               onClick={(event) => onEntryClick(entry.path, event)}
+              onDoubleClick={() => onOpenEntry(entry)}
               onContextMenu={(event) => onEntryContextMenu(event, entry)}
               onDragStart={(event) => onEntryDragStart(entry, event)}
               onDragOver={(event) => onEntryDragOver(entry, event)}
@@ -113,7 +114,6 @@ export default function FileEntryCollection({
                   className={'entry-name ' + (entry.type === 'directory' ? 'directory-entry' : '')}
                   title={entry.name}
                   aria-pressed={selected.has(entry.path)}
-                  onDoubleClick={() => onOpenDirectory(entry)}
                 >
                   <span className={'entry-icon ' + (entry.type === 'directory' ? 'folder-icon' : '')}>
                     {entry.type === 'directory' ? <Folder size={17} fill="currentColor" strokeWidth={1.8} /> : <File size={16} />}
@@ -144,6 +144,7 @@ export default function FileEntryCollection({
           aria-describedby={hoveredPath === entry.path ? 'entry-hover-details' : undefined}
           tabIndex={entry.path === highlightedPath ? 0 : -1}
           onClick={(event) => onEntryClick(entry.path, event)}
+          onDoubleClick={() => onOpenEntry(entry)}
           onMouseEnter={(event) => onTileMouseEnter(entry, event.currentTarget)}
           onMouseLeave={onTileMouseLeave}
           onBlur={onTileBlur}
@@ -157,7 +158,6 @@ export default function FileEntryCollection({
             className={'file-tile-main ' + (entry.type === 'directory' ? 'directory-entry' : '')}
             aria-label={entry.name}
             aria-pressed={selected.has(entry.path)}
-            onDoubleClick={() => onOpenDirectory(entry)}
           >
             <span className={'tile-glyph ' + (entry.type === 'directory' ? 'folder-glyph' : '')}>
               {entry.type === 'directory' ? <Folder size={31} fill="currentColor" strokeWidth={1.7} /> : <File size={29} />}
