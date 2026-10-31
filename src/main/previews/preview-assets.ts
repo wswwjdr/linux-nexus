@@ -3,6 +3,7 @@ import { unlink } from 'node:fs/promises'
 
 export type PreviewAsset =
   | { kind: 'local'; filePath: string; contentType: string }
+  | { kind: 'markdown'; sessionId: string; profileId: string; activeStreams: Set<Readable> }
   | {
       kind: 'remote'
       sessionId: string
@@ -14,6 +15,10 @@ export type PreviewAsset =
     }
 
 const previewAssets = new Map<string, PreviewAsset>()
+
+export function registerMarkdownResources(token: string, sessionId: string, profileId: string): void {
+  previewAssets.set(token, { kind: 'markdown', sessionId, profileId, activeStreams: new Set() })
+}
 
 export function registerLocalPreviewAsset(token: string, filePath: string, contentType: string): void {
   previewAssets.set(token, { kind: 'local', filePath, contentType })
@@ -42,7 +47,7 @@ export function getPreviewAsset(token: string): PreviewAsset | undefined {
   return previewAssets.get(token)
 }
 
-function disposeRemoteAsset(asset: Extract<PreviewAsset, { kind: 'remote' }>): void {
+function disposeRemoteAsset(asset: Exclude<PreviewAsset, { kind: 'local' }>): void {
   for (const stream of asset.activeStreams) stream.destroy()
 }
 
@@ -52,7 +57,7 @@ function disposeLocalAsset(asset: Extract<PreviewAsset, { kind: 'local' }>): voi
 
 export function clearPreviewAssets(): void {
   for (const asset of previewAssets.values()) {
-    if (asset.kind === 'remote') disposeRemoteAsset(asset)
+    if (asset.kind !== 'local') disposeRemoteAsset(asset)
     else disposeLocalAsset(asset)
   }
   previewAssets.clear()
@@ -60,7 +65,7 @@ export function clearPreviewAssets(): void {
 
 export function clearPreviewAssetsForSession(sessionId: string): void {
   for (const [token, asset] of previewAssets) {
-    if (asset.kind !== 'remote' || asset.sessionId !== sessionId) continue
+    if (asset.kind === 'local' || asset.sessionId !== sessionId) continue
     disposeRemoteAsset(asset)
     previewAssets.delete(token)
   }
@@ -70,7 +75,7 @@ export async function releasePreview(token: string): Promise<void> {
   const asset = previewAssets.get(token)
   if (!asset) return
   previewAssets.delete(token)
-  if (asset.kind === 'remote') {
+  if (asset.kind !== 'local') {
     disposeRemoteAsset(asset)
     return
   }

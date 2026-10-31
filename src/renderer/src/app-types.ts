@@ -76,10 +76,6 @@ export interface ScriptExecutionDialogState {
   message: string | null
 }
 
-export interface ImagePreviewSize {
-  width: number
-  height: number
-}
 
 export interface RecentConnection {
   profileId: string

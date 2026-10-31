@@ -1,6 +1,9 @@
 @import "./styles/foundation.css";
 @import "./styles/workspace.css";
 @import "./styles/dialogs.css";
+@import "./styles/audio-preview.css";
+@import "video.js/dist/video-js.css";
+@import "./styles/rich-previews.css";
 @import "./styles/search.css";
 @import "./styles/remote-operations.css";
 @import "./styles/responsive.css";

@@ -6,7 +6,7 @@ export type TextSaveResult = { status: 'saved'; version: TextFileVersion } | { s
 
 export type PreviewResult =
   | { type: 'text'; name: string; content: string; lineEnding: TextLineEnding; encoding: TextEncoding; bom: boolean; version: TextFileVersion }
-  | { type: 'markdown'; name: string; content: string }
+  | { type: 'markdown'; name: string; content: string; token: string; resourceBaseUrl: string }
   | { type: 'pdf'; name: string; url: string; token: string }
   | { type: 'image'; name: string; url: string; token: string }
   | { type: 'audio'; name: string; url: string; token: string }

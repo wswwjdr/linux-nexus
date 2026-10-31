@@ -66,7 +66,7 @@ function checkLayout({ css, html, scope, theme }) {
     }
   }
   fits(dialog, 'dialog')
-  const heading = dialog.querySelector('.modal-heading, .confirmation-heading, .search-dialog-header, .session-launcher-header, .performance-popover-header')
+  const heading = dialog.querySelector('.modal-heading, .ap-header, .confirmation-heading, .search-dialog-header, .session-launcher-header, .performance-popover-header')
   if (heading) fits(heading, 'heading')
   const editor = dialog.querySelector('.text-preview-editor')
   if (editor && (editor.clientHeight < 80 || editor.scrollHeight <= editor.clientHeight)) errors.push('text editor must have a usable, scrollable viewport')
@@ -80,7 +80,7 @@ function checkLayout({ css, html, scope, theme }) {
     const rect = button.getBoundingClientRect()
     if (!button.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))) errors.push('footer action is obscured')
   }
-  for (const selector of ['.settings-form-content', '.shortcut-guide-groups', '.preview-markdown', '.log-preview-text', '.script-execution-output', '.search-controls', '.search-results-panel']) {
+  for (const selector of ['.settings-form-content', '.shortcut-guide-groups', '.md-viewport', '.log-preview-text', '.script-execution-output', '.search-controls', '.search-results-panel']) {
     const panel = dialog.querySelector(selector)
     if (panel && panel.clientHeight < 40) errors.push(selector + ' has no usable viewport')
   }

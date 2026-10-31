@@ -210,7 +210,6 @@ details[open] > .settings-disclosure-summary .settings-disclosure-chevron { tran
 .preview-modal .modal-heading h2 { max-width: min(78vw, 480px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .media-preview-modal { width: min(100%, 960px); }
 .text-preview-modal { height: min(680px, 100%); }
-.markdown-preview-modal { height: min(760px, 100%); }
 .pdf-preview-modal { width: min(80vw, 100%); height: min(82vh, 100%); padding: 16px; }
 .text-preview-content { min-height: 0; flex: 1; display: flex; flex-direction: column; }
 .text-preview-search { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; margin-bottom: 9px; padding: 4px 6px; border:1px solid var(--line); border-radius: var(--radius); color:var(--text-secondary); background:var(--surface-soft); }
@@ -238,30 +237,5 @@ details[open] > .settings-disclosure-summary .settings-disclosure-chevron { tran
 .text-preview-editor:disabled { color:var(--text-secondary); }
 .log-preview-text { min-width: 0; min-height: 0; max-height: none; flex: 1; white-space: pre-wrap; overflow-wrap: anywhere; }
 .log-preview-text mark { padding: 0; color:inherit; background:var(--surface-selected-strong); outline:1px solid var(--border-accent); }
-.preview-media { height: 70vh; min-height: 0; flex: 0 1 auto; display: grid; place-items: center; overflow: auto; border-radius: var(--radius); background:var(--surface-media); }
-.image-preview-viewport { display: block; }
-.preview-image-canvas { min-width: 100%; min-height: 100%; display: flex; justify-content: safe center; align-items: safe center; }
-.preview-image { display: block; flex: 0 0 auto; object-fit: contain; user-select: none; }
-.preview-video { display: block; width: 100%; max-height: 100%; min-height: 0; object-fit: contain; }
-.preview-audio-wrap { padding: 24px 8px 12px; }
-.preview-audio-wrap audio { width: min(100%, 520px); }
-.preview-markdown { min-height: 0; flex: 1; overflow: auto; padding: 18px 22px; border:1px solid var(--line); border-radius: var(--radius); color:var(--text-strong); background:var(--surface); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
-.preview-markdown > :first-child { margin-top: 0; }
-.preview-markdown h1, .preview-markdown h2, .preview-markdown h3, .preview-markdown h4 { color:var(--text-strong); line-height: 1.35; }
-.preview-markdown h1 { padding-bottom: 8px; border-bottom:1px solid var(--line); font-size: 23px; }
-.preview-markdown h2 { padding-bottom: 6px; border-bottom:1px solid var(--line); font-size: 19px; }
-.preview-markdown h3 { font-size: 16px; }
-.preview-markdown p { margin: 11px 0; }
-.preview-markdown a { color:var(--text-info); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
-.preview-markdown pre { overflow: auto; padding: 12px; border-radius: 4px; color:var(--text-primary); background:var(--surface-output); font-family: 'Cascadia Code', Consolas, monospace; font-size: 11px; line-height: 1.55; }
-.preview-markdown code { padding: 1px 4px; border-radius: 3px; color:var(--text-accent); background:var(--surface-selected); font-family: 'Cascadia Code', Consolas, monospace; font-size: 11px; }
-.preview-markdown pre code { padding: 0; color:inherit; background:transparent; }
-.preview-markdown blockquote { margin: 12px 0; padding: 2px 12px; border-left:3px solid var(--line); color:var(--text-secondary); background:var(--surface-soft); }
-.preview-markdown table { width: 100%; border-collapse: collapse; font-size: 11px; }
-.preview-markdown th, .preview-markdown td { padding: 7px 9px; border:1px solid var(--line); text-align: left; }
-.preview-markdown th { background:var(--surface-soft); }
-.preview-markdown li + li { margin-top: 3px; }
-.preview-markdown hr { height: 1px; border:0; background:var(--line); }
-.preview-markdown-link-disabled, .preview-markdown-image { color:var(--text-secondary); }
 .preview-pdf { width: 100%; min-height: 0; flex: 1; border:0; background:var(--surface-media); }
 .preview-loading { min-height: 110px; display: flex; align-items: center; justify-content: center; gap: 9px; color:var(--text-secondary); }

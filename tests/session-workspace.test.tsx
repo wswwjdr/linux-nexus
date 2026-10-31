@@ -274,3 +274,113 @@ test('file workspaces retain independent search and preview state across session
     host.remove()
   }
 })
+
+test('audio workspaces pause hidden sessions, retain progress and release tokens on Escape, replacement and disconnect', async () => {
+  const { createRoot } = await import('react-dom/client')
+  const released: string[] = []
+  const played: HTMLMediaElement[] = []
+  const paused = new WeakMap<HTMLMediaElement, boolean>()
+  const prototype = dom.window.HTMLMediaElement.prototype
+  const originals = Object.getOwnPropertyDescriptors(prototype)
+  Object.defineProperties(prototype, {
+    paused: { configurable: true, get() { return paused.get(this) ?? true } },
+    duration: { configurable: true, get() { return 120 } },
+    play: { configurable: true, value(this: HTMLMediaElement) {
+      played.push(this); paused.set(this, false)
+      this.dispatchEvent(new dom.window.Event('play'))
+      return Promise.resolve()
+    } },
+    pause: { configurable: true, value(this: HTMLMediaElement) {
+      paused.set(this, true); this.dispatchEvent(new dom.window.Event('pause'))
+    } },
+    load: { configurable: true, value() {} },
+  })
+  let finishPreview: (result: PreviewResult) => void
+  window.remoteFiles = {
+    previewFile: async (sessionId: string, path: string): Promise<PreviewResult> => path === '/pending.mp3'
+      ? new Promise((resolve) => { finishPreview = resolve })
+      : { type: 'audio', name: path.slice(1), url: 'http://localhost/' + sessionId, token: sessionId + path },
+    releasePreview: async (token: string) => { released.push(token) },
+  } as unknown as RemoteFilesApi
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  const first = session('audio-first')
+  const second = session('audio-second')
+  const actions = new Map<string, SessionFileWorkspaceActions>()
+  const noOp = () => {}
+  const register = (id: string, value: SessionFileWorkspaceActions | null) => {
+    if (value) actions.set(id, value)
+    else actions.delete(id)
+  }
+  const render = (activeId: string) => act(() => root.render(createElement(Fragment, null,
+    ...[first, second].map((session) => createElement(FileSessionWorkspace, {
+      key: session.id, session, active: session.id === activeId, searchOpen: false,
+      fileTypeExtensions: defaultFileTypeExtensions(), showToast: noOp, onSearchOpenChange: noOp,
+      onWorkspaceOpenChange: noOp, onBlockingChange: noOp, onRegisterWorkspaceActions: register,
+      onMenuAction: noOp, onOpenExternalLink: noOp,
+    })),
+  )))
+  const open = async (id: string, name = 'track.mp3') => {
+    await act(async () => { await actions.get(id)!.previewFile({ name, path: '/' + name }, 'audio') })
+  }
+  const escape = () => act(() => {
+    window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+  })
+  const flushRelease = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
+  try {
+    render(first.id)
+    await open(first.id)
+    const audio = host.querySelector('audio')!
+    assert.equal(played.length, 1)
+    audio.currentTime = 37
+    render(second.id)
+    assert.equal(audio.paused, true)
+    await open(second.id)
+    const secondAudio = host.querySelectorAll('audio')[1]
+    act(() => secondAudio.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })))
+    assert.equal(secondAudio.currentTime, 5)
+    assert.equal(audio.currentTime, 37)
+    render(first.id)
+    assert.equal(audio.paused, true)
+    assert.equal(played.length, 2)
+    assert.equal(audio.currentTime, 37)
+    await open(first.id, 'replacement.mp3')
+    await flushRelease()
+    assert.equal(audio.getAttribute('src'), null)
+    assert.deepEqual(released, ['audio-first/track.mp3'])
+    first.status = 'disconnected'
+    render(first.id)
+    await flushRelease()
+    assert.equal(host.querySelectorAll('audio').length, 1)
+    assert.deepEqual(released, ['audio-first/track.mp3', 'audio-first/replacement.mp3'])
+    first.status = 'connected'
+    render(first.id)
+    let pending: Promise<void>
+    act(() => { pending = actions.get(first.id)!.previewFile({ name: 'pending.mp3', path: '/pending.mp3' }, 'audio') })
+    render(second.id)
+    const previousPlays = played.length
+    await act(async () => {
+      finishPreview!({ type: 'audio', name: 'pending.mp3', url: 'http://localhost/pending', token: 'pending' })
+      await pending!
+    })
+    assert.equal(played.length, previousPlays)
+    escape() // Only the active second session closes.
+    await flushRelease()
+    assert.ok(released.includes('audio-second/track.mp3'))
+    assert.equal(host.querySelectorAll('audio').length, 1)
+    render(first.id)
+    assert.equal(played.length, previousPlays)
+    escape()
+    await flushRelease()
+    assert.equal(host.querySelector('audio'), null)
+    assert.equal(released.filter((token) => token === 'pending').length, 1)
+    await open(first.id, 'unmount.mp3')
+    act(() => root.unmount())
+    assert.ok(released.includes('audio-first/unmount.mp3'))
+  } finally {
+    act(() => root.unmount())
+    host.remove()
+    Object.defineProperties(prototype, originals)
+  }
+})

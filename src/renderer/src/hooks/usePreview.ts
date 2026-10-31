@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type SyntheticEvent, type WheelEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { FileTypeExtensions, RemoteEntry, TextEncoding, TextFileVersion, TextLineEnding } from '@shared/types'
 import type { PreviewType } from '@shared/file-type-registry'
 import { previewTypesForFile } from '@shared/preview-file-type'
-import type { ImagePreviewSize, LogPreviewDialog, PreviewDialog } from '@/app-types'
+import type { LogPreviewDialog, PreviewDialog } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { errorMessage } from '@/app-utils'
 
@@ -26,8 +26,6 @@ interface TextPreviewContext {
 export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePreviewOptions) {
   const [previewDialog, setPreviewDialog] = useState<PreviewDialog | null>(null)
   const [logPreviewDialog, setLogPreviewDialog] = useState<LogPreviewDialog | null>(null)
-  const [imageZoom, setImageZoom] = useState(1)
-  const [imagePreviewSize, setImagePreviewSize] = useState<ImagePreviewSize | null>(null)
   const [textDraft, setTextDraft] = useState('')
   const [textEncoding, setTextEncoding] = useState<TextEncoding>('utf8')
   const [textConflict, setTextConflict] = useState(false)
@@ -40,8 +38,6 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
   const previewRequestRef = useRef(0)
   const textPreviewRef = useRef<TextPreviewContext | null>(null)
   const textDraftRef = useRef('')
-  const imageViewportRef = useRef<HTMLDivElement>(null)
-  const previewImageRef = useRef<HTMLImageElement>(null)
   const logPreviewRef = useRef<LogPreviewDialog | null>(null)
   const logViewportRef = useRef<HTMLPreElement>(null)
   const logScrollRestoreRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null)
@@ -83,8 +79,6 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     updateLogPreview(null)
     logScrollRestoreRef.current = null
     logStartAtBottomRef.current = false
-    setImageZoom(1)
-    setImagePreviewSize(null)
     textPreviewRef.current = null
     textDraftRef.current = ''
     setTextDraft('')
@@ -261,43 +255,6 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     }
   }
 
-  const onImageLoad = (event: SyntheticEvent<HTMLImageElement>) => {
-    const viewport = imageViewportRef.current
-    if (!viewport) return
-    const maxWidth = Math.max(1, viewport.clientWidth - 32)
-    const maxHeight = Math.max(1, viewport.clientHeight - 32)
-    const fit = Math.min(1, maxWidth / event.currentTarget.naturalWidth, maxHeight / event.currentTarget.naturalHeight)
-    setImagePreviewSize({
-      width: event.currentTarget.naturalWidth * fit,
-      height: event.currentTarget.naturalHeight * fit,
-    })
-    setImageZoom(1)
-  }
-
-  const zoomImage = (event: WheelEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    const viewport = imageViewportRef.current
-    const image = previewImageRef.current
-    if (!viewport || !image || !imagePreviewSize) return
-    const nextZoom = Math.max(0.25, Math.min(4, imageZoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15)))
-    if (nextZoom === imageZoom) return
-
-    const imageBounds = image.getBoundingClientRect()
-    const viewportBounds = viewport.getBoundingClientRect()
-    const anchorX = (event.clientX - imageBounds.left) / imageZoom
-    const anchorY = (event.clientY - imageBounds.top) / imageZoom
-    const pointerX = event.clientX - viewportBounds.left
-    const pointerY = event.clientY - viewportBounds.top
-    const canvasWidth = Math.max(viewport.clientWidth, imagePreviewSize.width * nextZoom)
-    const canvasHeight = Math.max(viewport.clientHeight, imagePreviewSize.height * nextZoom)
-    setImageZoom(nextZoom)
-    window.requestAnimationFrame(() => {
-      if (imageViewportRef.current !== viewport) return
-      viewport.scrollLeft = (canvasWidth - imagePreviewSize.width * nextZoom) / 2 + anchorX * nextZoom - pointerX
-      viewport.scrollTop = (canvasHeight - imagePreviewSize.height * nextZoom) / 2 + anchorY * nextZoom - pointerY
-    })
-  }
-
   return {
     textEncoding,
     textReloading,
@@ -328,15 +285,11 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     },
     previewDialog,
     logPreviewDialog,
-    imageZoom,
-    imagePreviewSize,
     textDraft,
     textDirty,
     textSaving,
     textSaveConfirmation,
     textSaveError,
-    imageViewportRef,
-    previewImageRef,
     logViewportRef,
     closePreview,
     previewFile,
@@ -346,7 +299,5 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     requestTextSave,
     confirmTextSave,
     cancelTextSave,
-    onImageLoad,
-    zoomImage,
   }
 }

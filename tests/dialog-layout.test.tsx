@@ -43,14 +43,14 @@ test('dialogs fit window and session bounds with reachable actions at small wind
     IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true },
   })
   const preview = (result: PreviewResult) => fixture(result.type, <PreviewDialog
+    active
     textEncoding="utf8" textReloading={false} onReopenText={noop} onConvertTextToUtf8={noop}
     previewDialog={{ kind: 'ready', result }} textDraft={longText} textDirty textSaving={false} textSaveConfirmation={null}
-    imageZoom={1} imagePreviewSize={{ width: 1600, height: 1200 }} imageViewportRef={createRef()} previewImageRef={createRef()}
-    onClosePreview={noop} onUpdateTextDraft={noop} onRequestTextSave={noop} onOpenExternalLink={noop} onPreviewImageLoad={noop} onZoomPreviewImage={noop}
+    onClosePreview={noop} onUpdateTextDraft={noop} onRequestTextSave={noop} onOpenExternalLink={noop}
   />)
   const fixtures = [
     preview({ type: 'text', name: '说明文档.txt', content: longText, lineEnding: '\n', encoding: 'utf8', bom: false, version: { hash: 'a'.repeat(64), identity: 'fixture' } }),
-    preview({ type: 'markdown', name: '说明文档.md', content: longText }),
+    preview({ type: 'markdown', name: '说明文档.md', content: longText, token: 'md', resourceBaseUrl: 'remote-preview://md/docs/readme.md' }),
     preview({ type: 'pdf', name: '说明文档.pdf', url: 'about:blank', token: 'test' }),
     preview({ type: 'image', name: '图片.png', url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1200"/>', token: 'test' }),
     preview({ type: 'video', name: '视频.mp4', url: 'about:blank', token: 'test' }),
@@ -104,7 +104,7 @@ test('dialogs fit window and session bounds with reachable actions at small wind
       host.remove()
     }
   }
-  const css = (await Promise.all(['foundation', 'workspace', 'dialogs', 'search', 'remote-operations', 'responsive', 'theme'].map((name) => readFile(new URL(`../src/renderer/src/styles/${name}.css`, import.meta.url), 'utf8')))).join('\n')
+  const css = (await Promise.all(['foundation', 'workspace', 'dialogs', 'audio-preview', 'rich-previews', 'search', 'remote-operations', 'responsive', 'theme'].map((name) => readFile(new URL(`../src/renderer/src/styles/${name}.css`, import.meta.url), 'utf8')))).join('\n')
   const directory = await mkdtemp(join(tmpdir(), 'linux-nexus-dialog-layout-'))
   try {
     const input = join(directory, 'fixtures.json')

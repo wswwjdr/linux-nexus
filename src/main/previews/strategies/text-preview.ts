@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { registerMarkdownResources } from '../preview-assets'
 import { commitRecord, receiveStagedFile } from '../../staged-write'
 import iconv from 'iconv-lite'
 import type { PreviewResult, TextLineEnding, TextEncoding, TextFileVersion, TextSaveOptions, TextSaveResult } from '@shared/types'
@@ -88,7 +89,7 @@ function parseVersion(hashLine: string, identity: string): TextFileVersion {
 
 export const textPreviewStrategy: PreviewStrategy<TextPreviewResult> = {
   types: ['text', 'markdown'],
-  async preview({ type, client, remotePath, name, limitBytes, encoding }) {
+  async preview({ type, sessionId, profileId, client, remotePath, name, limitBytes, encoding }) {
     const { stdout } = await runRemoteCommand(client, `set -eu
 before=$(stat -c '%d:%i:%s:%y:%z' -- "$1")
 hash=$(sha256sum < "$1"); hash=\${hash%% *}
@@ -103,7 +104,12 @@ cat -- "$1"
     if (buffer.length > limitBytes) throw new Error('文本超过预览上限')
     if (createHash('sha256').update(buffer).digest('hex') !== version.hash) throw new Error('文件在读取期间发生变化，请重新打开')
     const decoded = decodeText(buffer, encoding)
-    if (type === 'markdown') return { type, name, content: decoded.content }
+    if (type === 'markdown') {
+      const token = randomUUID()
+      registerMarkdownResources(token, sessionId, profileId)
+      return { type, name, content: decoded.content, token,
+        resourceBaseUrl: 'remote-preview://' + token + remotePath.split('/').map(encodeURIComponent).join('/') }
+    }
     return { type: 'text', name, ...decoded, version, lineEnding: detectTextLineEnding(decoded.content) }
   },
 }

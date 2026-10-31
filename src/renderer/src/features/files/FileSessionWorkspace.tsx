@@ -134,7 +134,7 @@ export default function FileSessionWorkspace({
 
   useEffect(() => {
     const dismissOnEscape = (event: KeyboardEvent) => {
-      if (!active || event.key !== 'Escape' || preview.textSaveConfirmation || confirmDiscardForSearch) return
+      if (event.defaultPrevented || !active || event.key !== 'Escape' || preview.textSaveConfirmation || confirmDiscardForSearch) return
       if (!preview.previewDialog && !preview.logPreviewDialog) return
       event.preventDefault()
       if (textSearchRef.current?.closeSearch()) return
@@ -160,6 +160,7 @@ export default function FileSessionWorkspace({
       )}
 
       <PreviewDialog
+        active={active}
         previewDialog={preview.previewDialog}
         textReloading={preview.textReloading}
         textEncoding={preview.textEncoding}
@@ -170,16 +171,10 @@ export default function FileSessionWorkspace({
         textSaving={preview.textSaving}
         textSaveConfirmation={preview.textSaveConfirmation}
         textSearchRef={textSearchRef}
-        imageZoom={preview.imageZoom}
-        imagePreviewSize={preview.imagePreviewSize}
-        imageViewportRef={preview.imageViewportRef}
-        previewImageRef={preview.previewImageRef}
         onClosePreview={preview.closePreview}
         onOpenExternalLink={onOpenExternalLink}
         onUpdateTextDraft={preview.updateTextDraft}
         onRequestTextSave={preview.requestTextSave}
-        onPreviewImageLoad={preview.onImageLoad}
-        onZoomPreviewImage={preview.zoomImage}
       />
 
       <LogPreviewDialog

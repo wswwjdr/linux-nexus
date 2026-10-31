@@ -1,15 +1,17 @@
-import type { Ref, RefObject, SyntheticEvent, WheelEvent } from 'react'
+import type { Ref } from 'react'
 import { LoaderCircle, X } from 'lucide-react'
-import type { ImagePreviewSize, PreviewDialog as PreviewDialogState } from '@/app-types'
-import ImagePreviewPanel from './ImagePreviewPanel'
-import MarkdownPreviewPanel from './MarkdownPreviewPanel'
-import MediaPreviewPanel from './MediaPreviewPanel'
+import type { PreviewDialog as PreviewDialogState } from '@/app-types'
+import ImagePreviewDialog from './image/ImagePreviewDialog'
+import MarkdownPreviewDialog from './markdown/MarkdownPreviewDialog'
+import AudioPreviewDialog from './audio/AudioPreviewDialog'
+import VideoPreviewDialog from './video/VideoPreviewDialog'
 import PdfPreviewPanel from './PdfPreviewPanel'
 import TextPreviewPanel from './TextPreviewPanel'
 import type { TextEncoding } from '@shared/types'
 import type { PreviewSearchHandle } from './usePreviewSearch'
 
 export interface PreviewDialogProps {
+  active: boolean
   previewDialog: PreviewDialogState | null
   textReloading: boolean
   textEncoding: TextEncoding
@@ -20,19 +22,14 @@ export interface PreviewDialogProps {
   textSaving: boolean
   textSaveConfirmation: { name: string; path: string } | null
   textSearchRef?: Ref<PreviewSearchHandle>
-  imageZoom: number
-  imagePreviewSize: ImagePreviewSize | null
-  imageViewportRef: RefObject<HTMLDivElement | null>
-  previewImageRef: RefObject<HTMLImageElement | null>
   onClosePreview: () => void
   onUpdateTextDraft: (content: string) => void
   onRequestTextSave: () => void
   onOpenExternalLink: (url: string) => void
-  onPreviewImageLoad: (event: SyntheticEvent<HTMLImageElement>) => void
-  onZoomPreviewImage: (event: WheelEvent<HTMLDivElement>) => void
 }
 
 export default function PreviewDialog({
+  active,
   previewDialog,
   textReloading, textEncoding, onReopenText, onConvertTextToUtf8,
   textDraft,
@@ -40,27 +37,28 @@ export default function PreviewDialog({
   textSaving,
   textSaveConfirmation,
   textSearchRef,
-  imageZoom,
-  imagePreviewSize,
-  imageViewportRef,
-  previewImageRef,
   onClosePreview,
   onUpdateTextDraft,
   onRequestTextSave,
   onOpenExternalLink,
-  onPreviewImageLoad,
-  onZoomPreviewImage,
 }: PreviewDialogProps) {
   if (!previewDialog) return null
   const result = previewDialog.kind === 'ready' ? previewDialog.result : null
   const previewName = previewDialog.kind === 'ready' ? previewDialog.result.name : previewDialog.name
   const textPreview = result?.type === 'text'
-  const markdownPreview = result?.type === 'markdown'
   const pdfPreview = result?.type === 'pdf'
+
+  if (result?.type === 'audio') {
+    return <AudioPreviewDialog key={result.token} result={result} active={active} onClose={onClosePreview} />
+  }
+
+  if (result?.type === 'video') return <VideoPreviewDialog key={result.token} result={result} active={active} onClose={onClosePreview} />
+  if (result?.type === 'image') return <ImagePreviewDialog key={result.token} result={result} active={active} onClose={onClosePreview} />
+  if (result?.type === 'markdown') return <MarkdownPreviewDialog key={result.token} result={result} active={active} onClose={onClosePreview} onOpenExternalLink={onOpenExternalLink} />
 
   return (
     <div className={`modal-backdrop preview-backdrop${pdfPreview ? ' pdf-preview-backdrop' : ''}`} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !textSaving && !textSaveConfirmation && onClosePreview()}>
-      <section className={`modal preview-modal${result ? ` media-preview-modal${textPreview ? ' text-preview-modal' : ''}${markdownPreview ? ' markdown-preview-modal' : ''}${pdfPreview ? ' pdf-preview-modal' : ''}` : ''}`} role="dialog" aria-labelledby="preview-modal-title">
+      <section className={`modal preview-modal${result ? ` media-preview-modal${textPreview ? ' text-preview-modal' : ''}${pdfPreview ? ' pdf-preview-modal' : ''}` : ''}`} role="dialog" aria-labelledby="preview-modal-title">
         <div className="modal-heading">
           <div>
             <h2 id="preview-modal-title">{previewName}</h2>
@@ -85,22 +83,7 @@ export default function PreviewDialog({
             onRequestSave={onRequestTextSave}
           />
         )}
-        {result?.type === 'markdown' && (
-          <MarkdownPreviewPanel content={result.content} onOpenExternalLink={onOpenExternalLink} />
-        )}
         {result?.type === 'pdf' && <PdfPreviewPanel name={result.name} url={result.url} />}
-        {result?.type === 'image' && (
-          <ImagePreviewPanel
-            result={result}
-            zoom={imageZoom}
-            imageSize={imagePreviewSize}
-            viewportRef={imageViewportRef}
-            imageRef={previewImageRef}
-            onImageLoad={onPreviewImageLoad}
-            onZoom={onZoomPreviewImage}
-          />
-        )}
-        {(result?.type === 'audio' || result?.type === 'video') && <MediaPreviewPanel result={result} />}
       </section>
     </div>
   )
