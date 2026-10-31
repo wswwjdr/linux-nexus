@@ -113,7 +113,7 @@ test('dialogs fit window and session bounds with reachable actions at small wind
     const env = { ...process.env }
     delete env.ELECTRON_RUN_AS_NODE
     const result = await new Promise<{ code: number | null; output: string }>((resolve, reject) => {
-      const child = spawn(electron as unknown as string, [fileURLToPath(new URL('./helpers/dialog-layout.cjs', import.meta.url)), input], { env, windowsHide: true, timeout: 30_000 })
+      const child = spawn(electron as unknown as string, [fileURLToPath(new URL('./helpers/dialog-layout.cjs', import.meta.url)), input], { env, windowsHide: true, timeout: 60_000 })
       let output = ''
       child.stdout.on('data', (chunk) => { output += chunk })
       child.stderr.on('data', (chunk) => { output += chunk })
@@ -121,7 +121,7 @@ test('dialogs fit window and session bounds with reachable actions at small wind
       child.on('exit', (code) => resolve({ code, output }))
     })
     assert.equal(result.code, 0, result.output)
-    const checks = (fixtures.length * 2 - 2) * 4
+    const checks = (fixtures.length * 2 - 2) * 4 * 2
     assert.ok(result.output.includes(`"checks":${checks},"failures":[]`), result.output)
   } finally {
     await rm(directory, { recursive: true, force: true })

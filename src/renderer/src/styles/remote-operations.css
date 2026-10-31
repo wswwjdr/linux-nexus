@@ -4,23 +4,23 @@
 .remote-directory-picker .modal-heading h2 { margin: 0; }
 .remote-archive-subtitle { max-width: 500px; margin: 5px 0 0; color:var(--text-secondary); font-size: 11px; overflow-wrap: anywhere; }
 .remote-directory-breadcrumbs { min-width: 0; display: flex; align-items: center; gap: 3px; padding: 8px 9px; overflow-x: auto; border:1px solid var(--line); border-radius: var(--radius); background:var(--surface-soft); }
-.remote-directory-crumb { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 3px; color:var(--muted); }
+.remote-directory-crumb { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 3px; color:var(--text-secondary); }
 .remote-directory-crumb button { min-height: 26px; padding: 0 4px; border:0; border-radius: 3px; color:var(--text-primary); background:transparent; font-size: 11px; cursor: pointer; }
-.remote-directory-crumb button:hover, .remote-directory-crumb button[aria-current="location"] { color:var(--text-success); background:var(--surface-success); }
+.remote-directory-crumb button:hover:not(:disabled), .remote-directory-crumb button[aria-current="location"] { color:var(--text-accent); background:var(--surface-selected); }
 .remote-directory-create { display: flex; gap: 7px; margin-top: 10px; }
-.remote-directory-create input { min-width: 0; min-height: 34px; flex: 1; padding: 0 9px; border:1px solid var(--line-strong); border-radius: var(--radius); color:var(--text-primary); background:var(--surface); font-size: 11px; }
-.remote-directory-create input:focus { border-color:var(--border-success-strong); outline:2px solid var(--focus-outline); }
+.remote-directory-create input { min-width: 0; min-height: 34px; flex: 1; padding: 0 9px; border:1px solid var(--line-strong); border-radius: var(--radius); color:var(--text-primary); background:var(--surface-raised); font-size: 11px; }
+.remote-directory-create input:focus { border-color:var(--border-accent); outline:2px solid var(--focus-outline); }
 .remote-directory-create button { min-height: 34px; }
 .remote-directory-list { min-height: 150px; max-height: min(42vh, 360px); display: flex; flex-direction: column; gap: 2px; margin-top: 9px; overflow: auto; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
 .remote-directory-entry { min-width: 0; min-height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border:0; border-bottom:1px solid var(--line); color:var(--text-primary); background:transparent; text-align: left; cursor: pointer; }
-.remote-directory-entry:hover { background:var(--surface-hover); }
-.remote-directory-entry > svg:first-child { flex: 0 0 auto; color:var(--text-warning); }
+.remote-directory-entry:hover:not(:disabled) { background:var(--surface-hover); }
+.remote-directory-entry > svg:first-child { flex: 0 0 auto; color:var(--text-secondary); }
 .remote-directory-entry > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
-.remote-directory-entry > svg:last-child { flex: 0 0 auto; color:var(--muted); }
+.remote-directory-entry > svg:last-child { flex: 0 0 auto; color:var(--text-secondary); }
 .remote-directory-empty { min-height: 145px; display: flex; align-items: center; justify-content: center; gap: 8px; color:var(--text-secondary); font-size: 11px; }
 .remote-directory-error { padding: 12px; color:var(--text-danger); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .remote-directory-current { min-width: 0; display: flex; align-items: center; gap: 7px; padding-top: 9px; color:var(--text-secondary); font-size: 10px; }
-.remote-directory-current svg { flex: 0 0 auto; color:var(--text-warning); }
+.remote-directory-current svg { flex: 0 0 auto; color:var(--text-secondary); }
 .remote-directory-current span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .remote-directory-picker .modal-footer { flex: 0 0 auto; }
 @media (max-width: 560px) {

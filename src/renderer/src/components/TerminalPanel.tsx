@@ -4,6 +4,7 @@ import { Terminal } from '@xterm/xterm'
 import { Clipboard, Copy } from 'lucide-react'
 import type { TerminalOutputEvent } from '@shared/types'
 import { errorMessage } from '@/app-utils'
+import { readTerminalTheme } from '@/terminal-theme'
 import '@xterm/xterm/css/xterm.css'
 
 interface TerminalPanelProps {
@@ -95,28 +96,7 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
       fontFamily: 'Cascadia Code, Consolas, monospace',
       fontSize: 13,
       scrollback: 5000,
-      theme: {
-        background: '#17211d',
-        foreground: '#e1e9e3',
-        cursor: '#9bd2b5',
-        selectionBackground: '#466453',
-        black: '#18211d',
-        red: '#dc796d',
-        green: '#7ac09a',
-        yellow: '#dfbd74',
-        blue: '#7aa5cc',
-        magenta: '#c18bb8',
-        cyan: '#75bcb9',
-        white: '#dfe7e1',
-        brightBlack: '#69776f',
-        brightRed: '#ee968b',
-        brightGreen: '#9bd2b5',
-        brightYellow: '#f0d493',
-        brightBlue: '#9dc1e3',
-        brightMagenta: '#d9a6d0',
-        brightCyan: '#91d1ce',
-        brightWhite: '#ffffff',
-      },
+      theme: readTerminalTheme(host),
     })
     const fit = new FitAddon()
     terminal.loadAddon(fit)

@@ -68,6 +68,7 @@ function createWindow(): void {
     ? join(process.resourcesPath, 'app.ico')
     : join(app.getAppPath(), 'resources', 'app.ico')
   const window = new BrowserWindow({
+    show: false,
     width: 1160,
     height: 760,
     minWidth: 820,
@@ -105,14 +106,13 @@ function createWindow(): void {
     clearPreviewAssets()
   })
 
-  if (focusWindowWhenCreated) {
-    focusWindowWhenCreated = false
-    window.once('ready-to-show', () => {
-      if (window.isMinimized()) window.restore()
-      window.show()
+  window.once('ready-to-show', () => {
+    window.show()
+    if (focusWindowWhenCreated) {
+      focusWindowWhenCreated = false
       window.focus()
-    })
-  }
+    }
+  })
 }
 
 app.whenReady().then(async () => {

@@ -47,10 +47,10 @@ export function SettingsDialog(props: Pick<DialogLayerProps, "settingsForm" | "p
                       <legend>外观</legend>
                       <div className="settings-view-options settings-theme-options" role="group" aria-label="外观主题">
                         <button type="button" className="settings-view-option" aria-pressed={settingsForm.theme === 'light'} onClick={() => onUpdateTheme('light')}>
-                          <Sun size={15} /> 亮色
+                          <Sun size={15} /> 银砂白
                         </button>
                         <button type="button" className="settings-view-option" aria-pressed={settingsForm.theme === 'dark'} onClick={() => onUpdateTheme('dark')}>
-                          <Moon size={15} /> 暗色
+                          <Moon size={15} /> 石墨黑
                         </button>
                         <button type="button" className="settings-view-option" aria-pressed={settingsForm.theme === 'system'} onClick={() => onUpdateTheme('system')}>
                           <Monitor size={15} /> 跟随系统

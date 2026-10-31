@@ -1,6 +1,6 @@
 // Run layout checks in the same Chromium engine that renders the desktop app.
-const { app, BrowserWindow } = require('electron')
-const { readFileSync, writeFileSync } = require('node:fs')
+const { app, BrowserWindow, nativeTheme } = require('electron')
+const { readFileSync, writeFileSync, mkdirSync } = require('node:fs')
 
 app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
@@ -9,18 +9,27 @@ app.whenReady().then(async () => {
   await window.loadURL('about:blank')
   const failures = []
   let checks = 0
-  for (const [width, height] of [[1440, 900], [1050, 728], [820, 530], [640, 480]]) {
-    window.setContentSize(width, height)
-    for (const scope of ['window', 'session']) {
-      for (const fixture of fixtures) {
-        if (scope === 'session' && ['session chooser', 'performance'].includes(fixture.name)) continue
-        const errors = await window.webContents.executeJavaScript(`(${checkLayout.toString()})(${JSON.stringify({ css, html: fixture.html, scope })})`)
-        checks++
-        failures.push(...errors.map((error) => `${fixture.name}, ${scope}, ${width}x${height}: ${error}`))
-        if (process.env.LAYOUT_SCREENSHOT_PATH && fixture.name === (process.env.LAYOUT_SCREENSHOT_FIXTURE || 'text') && scope === 'session' && width === 1050) {
-          await window.webContents.capturePage(undefined, { stayHidden: true })
-          await new Promise((resolve) => setTimeout(resolve, 100))
-          writeFileSync(process.env.LAYOUT_SCREENSHOT_PATH, (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
+  if (process.env.THEME_SCREENSHOT_DIR) mkdirSync(process.env.THEME_SCREENSHOT_DIR, { recursive: true })
+  for (const theme of ['light', 'dark']) {
+    nativeTheme.themeSource = theme
+    for (const [width, height] of [[1440, 900], [1050, 728], [820, 530], [640, 480]]) {
+      window.setContentSize(width, height)
+      for (const scope of ['window', 'session']) {
+        for (const fixture of fixtures) {
+          if (scope === 'session' && ['session chooser', 'performance'].includes(fixture.name)) continue
+          const errors = await window.webContents.executeJavaScript(`(${checkLayout.toString()})(${JSON.stringify({ css, html: fixture.html, scope, theme })})`)
+          checks++
+          failures.push(...errors.map((error) => `${theme}, ${fixture.name}, ${scope}, ${width}x${height}: ${error}`))
+          if (process.env.THEME_SCREENSHOT_DIR && (scope === 'session' || fixture.name === 'performance') && width === 1050) {
+            await window.webContents.capturePage(undefined, { stayHidden: true })
+            await new Promise((resolve) => setTimeout(resolve, 180))
+            writeFileSync(require('node:path').join(process.env.THEME_SCREENSHOT_DIR, `${theme}-${fixture.name.replaceAll(' ', '-')}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
+          }
+          if (process.env.LAYOUT_SCREENSHOT_PATH && fixture.name === (process.env.LAYOUT_SCREENSHOT_FIXTURE || 'text') && scope === 'session' && width === 1050) {
+            await window.webContents.capturePage(undefined, { stayHidden: true })
+            await new Promise((resolve) => setTimeout(resolve, 100))
+            writeFileSync(process.env.LAYOUT_SCREENSHOT_PATH, (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
+          }
         }
       }
     }
@@ -33,11 +42,15 @@ app.whenReady().then(async () => {
   app.exit(1)
 })
 
-function checkLayout({ css, html, scope }) {
+function checkLayout({ css, html, scope, theme }) {
   document.head.innerHTML = '<style>' + css + '</style>'
   document.body.innerHTML = scope === 'session'
     ? '<div class="app-shell"><main class="main-area"><header class="topbar"></header><div class="session-tabbar"></div><div class="session-content"><div class="session-workspace-layer active">' + html + '</div></div></main></div>'
     : html
+  // The settings fixture models a user who explicitly selected the theme under test.
+  document.querySelectorAll('.settings-theme-options button').forEach((button, index) => {
+    button.setAttribute('aria-pressed', String(index === (theme === 'dark' ? 1 : 0)))
+  })
   // Layout reads flush styles synchronously, including in a hidden BrowserWindow.
   const dialog = document.querySelector('[role="dialog"], [role="alertdialog"]')
   const backdrop = dialog.parentElement

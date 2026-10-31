@@ -3,7 +3,7 @@ import type { ThemeMode } from '@shared/types'
 import { getMainWindow } from './runtime'
 
 export function themeBackgroundColor(): string {
-  return nativeTheme.shouldUseDarkColors ? '#1e1f22' : '#f3f6f3'
+  return nativeTheme.shouldUseDarkColors ? '#111111' : '#f2f2f2'
 }
 
 function updateWindowBackground(): void {
