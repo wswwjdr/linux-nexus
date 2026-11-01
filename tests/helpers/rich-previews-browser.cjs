@@ -136,8 +136,9 @@ app.whenReady().then(async () => {
     key('Escape'); key('Escape', 'keyUp')
     await until('!document.querySelector(".vp-modal")')
     let layouts = 0
-    for (const theme of ['light', 'dark']) {
-      nativeTheme.themeSource = theme
+    for (const theme of ['light', 'dark', 'cream']) {
+      nativeTheme.themeSource = theme === 'dark' ? 'dark' : 'light'
+      await execute(`document.documentElement.dataset.theme = '${theme}'`)
       for (const [width, height] of [[1050, 728], [640, 480]]) {
         window.setContentSize(width, height)
         for (const kind of ['video', 'image', 'markdown']) {

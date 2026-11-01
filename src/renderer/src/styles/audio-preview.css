@@ -87,6 +87,15 @@
   .ap-visualizer { width: 120px; height: 120px; }
   .ap-vinyl { width: 96px; height: 96px; }
 }
+:root[data-theme="cream"] .ap-overlay {
+  --ap-bg: 255, 251, 243;
+  --ap-ink: 64, 59, 51;
+  --ap-text: #403b33;
+  --ap-secondary: #5b5347;
+  --ap-muted: #706657;
+  --ap-border: rgba(64, 59, 51, .12);
+  --ap-border-emphasis: rgba(64, 59, 51, .2);
+}
 @media (prefers-color-scheme: dark) {
   .ap-overlay {
     --ap-bg: 15, 15, 20;

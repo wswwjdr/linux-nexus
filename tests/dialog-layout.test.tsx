@@ -121,7 +121,7 @@ test('dialogs fit window and session bounds with reachable actions at small wind
       child.on('exit', (code) => resolve({ code, output }))
     })
     assert.equal(result.code, 0, result.output)
-    const checks = (fixtures.length * 2 - 2) * 4 * 2
+    const checks = (fixtures.length * 2 - 2) * 4 * 3
     assert.ok(result.output.includes(`"checks":${checks},"failures":[]`), result.output)
   } finally {
     await rm(directory, { recursive: true, force: true })

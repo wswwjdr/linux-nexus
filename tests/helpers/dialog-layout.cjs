@@ -10,8 +10,8 @@ app.whenReady().then(async () => {
   const failures = []
   let checks = 0
   if (process.env.THEME_SCREENSHOT_DIR) mkdirSync(process.env.THEME_SCREENSHOT_DIR, { recursive: true })
-  for (const theme of ['light', 'dark']) {
-    nativeTheme.themeSource = theme
+  for (const theme of ['light', 'dark', 'cream']) {
+    nativeTheme.themeSource = theme === 'dark' ? 'dark' : 'light'
     for (const [width, height] of [[1440, 900], [1050, 728], [820, 530], [640, 480]]) {
       window.setContentSize(width, height)
       for (const scope of ['window', 'session']) {
@@ -43,13 +43,14 @@ app.whenReady().then(async () => {
 })
 
 function checkLayout({ css, html, scope, theme }) {
+  document.documentElement.dataset.theme = theme
   document.head.innerHTML = '<style>' + css + '</style>'
   document.body.innerHTML = scope === 'session'
     ? '<div class="app-shell"><main class="main-area"><header class="topbar"></header><div class="session-tabbar"></div><div class="session-content"><div class="session-workspace-layer active">' + html + '</div></div></main></div>'
     : html
   // The settings fixture models a user who explicitly selected the theme under test.
   document.querySelectorAll('.settings-theme-options button').forEach((button, index) => {
-    button.setAttribute('aria-pressed', String(index === (theme === 'dark' ? 1 : 0)))
+    button.setAttribute('aria-pressed', String(index === ['light', 'dark', 'cream'].indexOf(theme)))
   })
   // Layout reads flush styles synchronously, including in a hidden BrowserWindow.
   const dialog = document.querySelector('[role="dialog"], [role="alertdialog"]')

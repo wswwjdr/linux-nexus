@@ -1,4 +1,4 @@
-import { ChevronRight, FolderOpen, LayoutGrid, List, LoaderCircle, Monitor, Moon, Plus, RefreshCw, Sun, Terminal, Trash2, X } from 'lucide-react'
+import { ChevronRight, FolderOpen, LayoutGrid, List, LoaderCircle, Moon, Palette, Plus, RefreshCw, Sun, Terminal, Trash2, X } from 'lucide-react'
 import type { CommandAlias, CommandAliasSnapshot, FileTypeCategory, ServerProfile, ThemeMode } from '@shared/types'
 import { fileTypeRegistry } from '@shared/file-type-registry'
 import type { PerformanceThresholdField } from '@/app-types'
@@ -52,8 +52,8 @@ export function SettingsDialog(props: Pick<DialogLayerProps, "settingsForm" | "p
                         <button type="button" className="settings-view-option" aria-pressed={settingsForm.theme === 'dark'} onClick={() => onUpdateTheme('dark')}>
                           <Moon size={15} /> 石墨黑
                         </button>
-                        <button type="button" className="settings-view-option" aria-pressed={settingsForm.theme === 'system'} onClick={() => onUpdateTheme('system')}>
-                          <Monitor size={15} /> 跟随系统
+                        <button type="button" className="settings-view-option" aria-pressed={settingsForm.theme === 'cream'} onClick={() => onUpdateTheme('cream')}>
+                          <Palette size={15} /> 米白
                         </button>
                       </div>
                     </fieldset>

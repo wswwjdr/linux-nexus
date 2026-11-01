@@ -15,7 +15,7 @@ export interface StartupConnection {
   kind: SessionKind
 }
 
-export type ThemeMode = 'light' | 'dark' | 'system'
+export type ThemeMode = 'light' | 'dark' | 'cream'
 
 export interface AppSettings extends PreviewLimits {
   theme: ThemeMode

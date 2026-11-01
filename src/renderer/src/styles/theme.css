@@ -52,7 +52,7 @@
   --shadow-transfer: 0 4px 16px #00000014;
   --shadow-dialog: 0 18px 55px #00000038;
 
-  /* SSH stays dark in either application theme. */
+  /* SSH stays dark in every application theme. */
   --surface-terminal: var(--terminal-background);
   --surface-terminal-danger: #321d2a;
   --line-terminal: #737373;
@@ -82,6 +82,35 @@
   --terminal-bright-magenta: #d4c2ff;
   --terminal-bright-cyan: #9fefff;
   --terminal-bright-white: #ffffff;
+}
+
+:root[data-theme="cream"] {
+  --canvas: #f6f1e7;
+  --surface: #f6f1e7;
+  --surface-soft: #eee8dc;
+  --surface-raised: #fffbf3;
+  --surface-hover: #e6dfd1;
+  --surface-selected: #e2d9c8;
+  --surface-selected-strong: #d8cdb8;
+  --line: #cbc1af;
+  --line-strong: #827665;
+  --border-accent: #665b49;
+  --accent: #514737;
+  --text-accent: #3b3328;
+  --action-primary: #514737;
+  --action-primary-hover: #3b3328;
+  --text-strong: #302b24;
+  --text-primary: #403b33;
+  --text-secondary: #5b5347;
+  --text-subtle: #635a4d;
+  --text-info: #514737;
+  --surface-info: #eae3d6;
+  --border-info: #a39682;
+  --focus-outline: #665b49;
+  --focus-surface: #d8cdb8;
+  --surface-output: #fffbf3;
+  --surface-media: #e6dfd1;
+  --backdrop: #302b2466;
 }
 
 @media (prefers-color-scheme: dark) {

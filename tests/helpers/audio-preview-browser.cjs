@@ -81,8 +81,9 @@ app.whenReady().then(async () => {
     assert.equal(await execute('document.querySelector("audio").paused'), true)
     assert.equal(await execute('document.querySelector("audio").currentTime'), position)
     let layoutChecks = 0
-    for (const theme of ['light', 'dark']) {
-      nativeTheme.themeSource = theme
+    for (const theme of ['light', 'dark', 'cream']) {
+      nativeTheme.themeSource = theme === 'dark' ? 'dark' : 'light'
+      await execute(`document.documentElement.dataset.theme = '${theme}'`)
       await until(`matchMedia('(prefers-color-scheme: dark)').matches === ${theme === 'dark'}`)
       for (const [width, height] of [[1050, 728], [820, 530], [640, 480]]) {
         window.setContentSize(width, height)

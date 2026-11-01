@@ -4,6 +4,7 @@ import { performanceThresholdsToForm, type FileViewMode, type PerformanceThresho
 import type { ToastNotice } from '@/GlobalToast'
 import { emptyForm, errorMessage, toPreviewLimitsForm } from '@/app-utils'
 import { defaultFileTypeExtensions } from '@shared/app-settings'
+import { applyRendererTheme } from '@/app-theme'
 
 interface UseProfileManagementOptions {
   showToast: (kind: ToastNotice['kind'], message: string) => void
@@ -71,6 +72,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
   }
 
   const reflectSetting = (key: keyof AppSettings, settings: AppSettings) => {
+    if (key === 'theme') applyRendererTheme(settings.theme)
     if (key === 'defaultView') onDefaultViewChange(settings.defaultView)
     if (key === 'fileTypeExtensions') onFileTypeExtensionsChange(settings.fileTypeExtensions)
     if (key === 'startupConnection') setStartupConnection(settings.startupConnection)
@@ -84,6 +86,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
       try {
         const saved = await window.remoteFiles.updateAppSettings(patch)
         persistedSettingsRef.current = saved
+        if (key === 'theme') applyRendererTheme(saved.theme)
         if (key === 'performanceThresholds') onPerformanceThresholdsChange(saved.performanceThresholds)
       } catch (error) {
         showToast('error', '保存设置失败：' + errorMessage(error))
@@ -112,6 +115,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
       .finally(() => setProfilesLoaded(true))
     void window.remoteFiles.getAppSettings()
       .then((settings) => {
+        applyRendererTheme(settings.theme)
         persistedSettingsRef.current = settings
         setStartupConnection(settings.startupConnection)
         onDefaultViewChange(settings.defaultView)

@@ -62,7 +62,7 @@ function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
 export function validateAppSettings(value: unknown): AppSettings {
   const limitKeys = Object.keys(DEFAULT_PREVIEW_LIMITS)
   if (!isRecord(value) || !hasExactKeys(value, appSettingsKeys)) throw new Error('应用设置结构无效')
-  if (value.theme !== 'light' && value.theme !== 'dark' && value.theme !== 'system') {
+  if (value.theme !== 'light' && value.theme !== 'dark' && value.theme !== 'cream') {
     throw new Error('外观主题设置无效')
   }
   if (value.defaultView !== 'icons' && value.defaultView !== 'details') throw new Error('默认文件视图设置无效')

@@ -59,10 +59,11 @@ test('validates file type extension sets, deduplicates within a category, and ke
 
 test('defaults to light theme and validates all supported theme modes', () => {
   assert.equal(DEFAULT_APP_SETTINGS.theme, 'light')
-  for (const theme of ['light', 'dark', 'system'] as const) {
+  for (const theme of ['light', 'dark', 'cream'] as const) {
     assert.equal(validateAppSettings({ ...DEFAULT_APP_SETTINGS, theme }).theme, theme)
   }
   assert.throws(() => validateAppSettings({ ...DEFAULT_APP_SETTINGS, theme: 'auto' }))
+  assert.throws(() => validateAppSettings({ ...DEFAULT_APP_SETTINGS, theme: 'system' }))
 })
 
 test('requires a complete settings structure with performance thresholds', () => {

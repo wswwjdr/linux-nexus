@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
-test('audio plays and seeks in Electron, pauses across sessions and fits both themes and small windows', { timeout: 45_000 }, async () => {
+test('audio plays and seeks in Electron, pauses across sessions and fits all three themes and small windows', { timeout: 45_000 }, async () => {
   const { default: electron } = await import('electron')
   const env = { ...process.env }
   delete env.ELECTRON_RUN_AS_NODE

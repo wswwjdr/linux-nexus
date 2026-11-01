@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
-test('themes render accessibly, persist, follow nativeTheme and preserve the live SSH terminal', { timeout: 90_000 }, async () => {
+test('themes render accessibly, persist, ignore OS theme changes and preserve the live SSH terminal', { timeout: 90_000 }, async () => {
   const { default: electron } = await import('electron')
   const env = { ...process.env }
   delete env.ELECTRON_RUN_AS_NODE

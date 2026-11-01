@@ -8,6 +8,8 @@ import FileContextMenu from '../../src/renderer/src/features/files/FileContextMe
 import TransferTray from '../../src/renderer/src/components/TransferTray'
 import GlobalToast from '../../src/renderer/src/GlobalToast'
 import TerminalPanel from '../../src/renderer/src/components/TerminalPanel'
+import { useProfileManagement } from '../../src/renderer/src/hooks/useProfileManagement'
+import { SettingsDialog } from '../../src/renderer/src/components/dialogs/SettingsDialog'
 import PerformanceMonitor from '../../src/renderer/src/components/PerformanceMonitor'
 import type { PerformanceSnapshot, PerformanceMonitorState } from '../../src/shared/types'
 import { DEFAULT_APP_SETTINGS } from '../../src/shared/app-settings'
@@ -36,6 +38,8 @@ const monitorState: PerformanceMonitorState = {
   }))],
 }
 const fixtureWindow = window as any
+const showToast = (_kind: string, message: string) => { fixtureWindow.lastToast = message }
+const terminalError = (message: string) => { throw new Error(message) }
 const terminalOpen = Terminal.prototype.open
 Terminal.prototype.open = function (host) {
   fixtureWindow.terminal = this
@@ -44,6 +48,11 @@ Terminal.prototype.open = function (host) {
 fixtureWindow.outputSubscriptions = 0
 fixtureWindow.terminalWrites = []
 fixtureWindow.remoteFiles = {
+  getAppSettings: () => fixtureWindow.settingsApi.getAppSettings(),
+  updateAppSettings: (patch: unknown) => fixtureWindow.rejectSettingsSave
+    ? Promise.reject(new Error('fixture save failure'))
+    : fixtureWindow.settingsApi.updateAppSettings(patch),
+  listProfiles: async () => [profile],
   writeTerminal: async (_session: string, data: string) => fixtureWindow.terminalWrites.push(data),
   resizeTerminal: async () => {},
   onTerminalOutput: (listener: unknown) => {
@@ -66,6 +75,13 @@ function Files({ grid = false }: { grid?: boolean }) {
 
 function Fixture() {
   const [scene, setScene] = useState('home')
+  const management = useProfileManagement({
+    showToast,
+    onProfileSaved: noop, onProfileDeleted: noop, onDefaultViewChange: noop,
+    onFileTypeExtensionsChange: noop, onPerformanceThresholdsChange: noop,
+  })
+  fixtureWindow.openSettings = management.openSettingsDialog
+  fixtureWindow.settingsLoaded = management.profileDataLoaded
   fixtureWindow.showScene = setScene
   return <div className="app-shell"><main className="main-area">
     <header className="topbar"><div className="topbar-left">
@@ -85,7 +101,7 @@ function Fixture() {
     <div className="session-content">
       {scene === 'home' ? <ServerList profiles={[{ profile, connectedAt: 1793435400000 }, { profile: { ...profile, id: 'staging', name: '测试服务器', host: '192.0.2.20', pinned: false } }]}
         connectionPending={false} onAdd={noop} onConnect={noop} onEdit={noop} onSetPinned={noop} onDelete={noop} />
-        : scene === 'terminal' ? <TerminalPanel sessionId="ssh" active connected onError={message => { throw new Error(message) }} />
+        : scene === 'terminal' ? <TerminalPanel sessionId="ssh" active connected onError={terminalError} />
         : <><div className="pathbar"><span className="breadcrumbs">/ srv / <strong>nexus</strong></span>
           <div className="pathbar-tools"><button className="secondary-button" id="enabled">操作</button><button className="secondary-button" disabled id="disabled">不可用</button></div></div>
           <Files grid={scene === 'grid'} /></>}
@@ -97,6 +113,15 @@ function Fixture() {
       } }} onCancel={noop} onDismiss={noop} />
         <GlobalToast notices={[{ id: 1, kind: 'info', message: '正在将发布包上传到 /srv/nexus' }, { id: 2, kind: 'error', message: '测试目录访问失败：权限不足' }]} onDismiss={noop} /></>}
     </div>
-  </main></div>
+  </main>
+    <SettingsDialog settingsForm={management.settingsForm} profiles={[profile]}
+      aliasSnapshot={null} aliasProfileId="" aliasOperationBusy={false} aliasName="" aliasCommand=""
+      onCloseSettings={management.closeSettingsDialog} onUpdateSettings={management.updateSettingsForm}
+      onAddFileTypeExtension={management.addFileTypeExtension} onRemoveFileTypeExtension={management.removeFileTypeExtension}
+      onResetFileTypeExtensions={management.resetFileTypeExtensions} onUpdateDefaultView={management.updateDefaultView}
+      onUpdateTheme={management.updateTheme} onUpdateStartupProfile={management.updateStartupProfile}
+      onUpdateStartupKind={management.updateStartupKind} onSelectAliasProfile={noop} onUpdateAliasName={noop}
+      onUpdateAliasCommand={noop} onSyncAliases={noop} onAddAlias={noop} onRequestAliasDelete={noop} />
+  </div>
 }
 createRoot(document.getElementById('root')!).render(<Fixture />)

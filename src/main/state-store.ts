@@ -131,7 +131,13 @@ export function readAppSettings(): AppSettings {
     return defaults
   }
   try {
-    return validateAppSettings(parseJsonFile(settingsFile))
+    const stored = parseJsonFile(settingsFile)
+    if (isRecord(stored) && stored.theme === 'system') {
+      const migrated = validateAppSettings({ ...stored, theme: 'light' })
+      atomicWriteJson(settingsFile, migrated)
+      return migrated
+    }
+    return validateAppSettings(stored)
   } catch (error) {
     throw new Error('应用设置无效（' + settingsFile + '）：' + messageFromError(error))
   }

@@ -2,17 +2,19 @@ import { nativeTheme } from 'electron'
 import type { ThemeMode } from '@shared/types'
 import { getMainWindow } from './runtime'
 
+let currentTheme: ThemeMode = 'light'
+const backgrounds: Record<ThemeMode, string> = {
+  light: '#f2f2f2',
+  dark: '#111111',
+  cream: '#f6f1e7',
+}
+
 export function themeBackgroundColor(): string {
-  return nativeTheme.shouldUseDarkColors ? '#111111' : '#f2f2f2'
+  return backgrounds[currentTheme]
 }
-
-function updateWindowBackground(): void {
-  getMainWindow()?.setBackgroundColor(themeBackgroundColor())
-}
-
-nativeTheme.on('updated', updateWindowBackground)
 
 export function applyTheme(theme: ThemeMode): void {
-  nativeTheme.themeSource = theme
-  updateWindowBackground()
+  currentTheme = theme
+  nativeTheme.themeSource = theme === 'dark' ? 'dark' : 'light'
+  getMainWindow()?.setBackgroundColor(themeBackgroundColor())
 }

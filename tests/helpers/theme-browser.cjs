@@ -25,7 +25,13 @@ app.whenReady().then(async () => {
     }],
     server: { host: '127.0.0.1', port: 0, watch: null },
   })
-  const window = new BrowserWindow({ show: false, width: 1160, height: 760, webPreferences: { sandbox: true, backgroundThrottling: false } })
+  const preload = join(directory, 'preload.cjs')
+  writeFileSync(preload, `const { contextBridge, ipcRenderer } = require('electron');
+    contextBridge.exposeInMainWorld('settingsApi', {
+      getAppSettings: () => ipcRenderer.invoke('settings:get'),
+      updateAppSettings: patch => ipcRenderer.invoke('settings:update', patch),
+    });`)
+  const window = new BrowserWindow({ show: false, width: 1160, height: 760, webPreferences: { preload, sandbox: true, backgroundThrottling: false } })
   const originalSource = nativeTheme.themeSource
   let main
   window.webContents.on('console-message', details => {
@@ -36,7 +42,7 @@ app.whenReady().then(async () => {
     // Load the production main-process modules, with actual Electron APIs and isolated settings.
     const mainBundle = join(directory, 'main.cjs')
     await require('esbuild').build({
-      stdin: { contents: "export * from './src/main/theme'; export * from './src/main/runtime'; export { configureStateFiles, readAppSettings, writeAppSettings } from './src/main/state-store'", resolveDir: process.cwd() },
+      stdin: { contents: "export { registerSettingsIpc } from './src/main/ipc/settings'; export * from './src/main/theme'; export * from './src/main/runtime'; export { configureStateFiles, readAppSettings, writeAppSettings } from './src/main/state-store'", resolveDir: process.cwd() },
       bundle: true, platform: 'node', format: 'cjs', packages: 'external', outfile: mainBundle,
       alias: { '@shared': resolve('src/shared') },
     })
@@ -47,6 +53,22 @@ app.whenReady().then(async () => {
     runtime.setMainWindow(window)
     store.configureStateFiles(join(directory, 'servers.json'), join(directory, 'settings.json'))
     assert.equal(store.readAppSettings().theme, 'light')
+    // Migrate only valid legacy settings, preserving every other preference.
+    const settingsPath = join(directory, 'settings.json')
+    const legacy = { ...store.readAppSettings(), theme: 'system', textMiB: 17 }
+    writeFileSync(settingsPath, JSON.stringify(legacy))
+    assert.deepEqual(store.readAppSettings(), { ...legacy, theme: 'light' })
+    assert.deepEqual(JSON.parse(readFileSync(settingsPath, 'utf8')), { ...legacy, theme: 'light' })
+    assert.equal(store.readAppSettings().textMiB, 17)
+    for (const invalid of [{ ...legacy, textMiB: 0 }, { ...legacy, theme: 'unknown' }]) {
+      const contents = JSON.stringify(invalid)
+      writeFileSync(settingsPath, contents)
+      assert.throws(() => store.readAppSettings())
+      assert.equal(readFileSync(settingsPath, 'utf8'), contents)
+    }
+    store.writeAppSettings({ ...legacy, theme: 'light' })
+    assert.throws(() => store.writeAppSettings(legacy))
+    theme.registerSettingsIpc()
     theme.applyTheme('light')
     await window.loadURL(server.resolvedUrls.local[0] + '__theme_test')
     const js = source => window.webContents.executeJavaScript(source)
@@ -58,7 +80,7 @@ app.whenReady().then(async () => {
       }
       throw new Error('Fixture did not become ready: ' + source)
     }
-    await waitFor('Boolean(window.showScene)')
+    await waitFor('Boolean(window.showScene && window.settingsLoaded)')
     window.webContents.debugger.attach('1.3')
     const devtools = (command, params) => window.webContents.debugger.sendCommand(command, params)
     await devtools('DOM.enable')
@@ -71,14 +93,44 @@ app.whenReady().then(async () => {
     }
     const screenshots = process.env.THEME_SCREENSHOT_DIR
     if (screenshots) mkdirSync(screenshots, { recursive: true })
-    for (const mode of ['light', 'dark']) {
-      const saved = store.writeAppSettings({ ...store.readAppSettings(), theme: mode })
-      theme.applyTheme(saved.theme)
+    const backgrounds = { light: '#f2f2f2', dark: '#111111', cream: '#f6f1e7' }
+    const chooseTheme = async mode => {
+      await js('window.openSettings()')
+      await waitFor('Boolean(document.querySelector(".settings-theme-options"))')
+      assert.deepEqual(await js('Array.from(document.querySelectorAll(".settings-theme-options button"), button => button.textContent.trim())'), ['银砂白', '石墨黑', '米白'])
+      await js(`document.querySelectorAll('.settings-theme-options button')[${['light', 'dark', 'cream'].indexOf(mode)}].click()`)
+      await waitFor(`document.documentElement.dataset.theme === '${mode}'`)
+    }
+    for (const mode of ['light', 'dark', 'cream']) {
+      await chooseTheme(mode)
+      await tick()
+      assert.equal(await js('document.querySelectorAll(".settings-theme-options button[aria-pressed=true]").length'), 1)
+      assert.deepEqual(await js(`(${checkTheme.toString()})()`), [], `${mode}/settings`)
+      if (screenshots) {
+        // Reopen after switching to avoid stale composited controls in hidden-window captures.
+        await js('document.querySelector("[aria-label=关闭设置]").click()')
+        await waitFor('!document.querySelector(".settings-theme-options")')
+        await js('window.openSettings()')
+        await waitFor('Boolean(document.querySelector(".settings-theme-options"))')
+        await devtools('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+        assert.equal(await js('getComputedStyle(document.querySelector(".settings-theme-options [aria-pressed=true]")).backgroundColor'), {
+          light: 'rgb(225, 225, 225)', dark: 'rgb(43, 43, 43)', cream: 'rgb(226, 217, 200)',
+        }[mode])
+        await window.webContents.capturePage(undefined, { stayHidden: true })
+        await tick()
+        writeFileSync(join(screenshots, `${mode}-settings.png`), (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
+        await devtools('Emulation.setEmulatedMedia', { features: [] })
+      }
+      await js('document.querySelector("[aria-label=关闭设置]").click()')
       assert.equal(JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8')).theme, mode)
       assert.equal(store.readAppSettings().theme, mode)
       await tick()
-      assert.equal(window.getBackgroundColor().toLowerCase(), mode === 'light' ? '#f2f2f2' : '#111111')
+      assert.equal(window.getBackgroundColor().toLowerCase(), backgrounds[mode])
       assert.equal(await js('matchMedia("(prefers-color-scheme: dark)").matches'), mode === 'dark')
+      nativeTheme.emit('updated')
+      await tick()
+      assert.equal(nativeTheme.themeSource, mode === 'dark' ? 'dark' : 'light')
+      assert.equal(window.getBackgroundColor().toLowerCase(), backgrounds[mode])
       for (const scene of ['home', 'files', 'grid', 'menu', 'feedback', 'performance-ready', 'terminal']) {
         await js(`window.showScene(${JSON.stringify(scene)})`)
         await tick()
@@ -116,7 +168,8 @@ app.whenReady().then(async () => {
       await js('window.originalTerminal = window.terminal; window.originalScreen = document.querySelector(".xterm-screen"); window.terminal.scrollToTop()')
       const buffer = await js('window.terminal.buffer.active.length')
       const scroll = await js('window.terminal.buffer.active.viewportY')
-      theme.applyTheme(mode === 'light' ? 'dark' : 'light')
+      await chooseTheme(mode === 'light' ? 'dark' : 'light')
+      await js('document.querySelector("[aria-label=关闭设置]").click()')
       await tick()
       assert.equal(await js('window.terminal === window.originalTerminal && document.querySelector(".xterm-screen") === window.originalScreen && window.outputSubscriptions === 1'), true)
       assert.equal(await js('window.terminal.buffer.active.length'), buffer)
@@ -125,13 +178,28 @@ app.whenReady().then(async () => {
       await js('window.terminal.input("pwd\\r")')
       assert.deepEqual(await js('window.terminalWrites.slice(-1)'), ['pwd\r'])
     }
-    // Native system mode and OS-theme notification use the same production update listener.
-    store.writeAppSettings({ ...store.readAppSettings(), theme: 'system' })
-    theme.applyTheme(store.readAppSettings().theme)
+    // Failed saves restore the selected option without changing the rendered palette.
+    await chooseTheme('cream')
+    await js('window.rejectSettingsSave = true; document.querySelectorAll(".settings-theme-options button")[1].click()')
+    await waitFor('Boolean(window.lastToast && document.querySelectorAll(".settings-theme-options button")[2].getAttribute("aria-pressed") === "true")')
+    assert.equal(await js('document.documentElement.dataset.theme'), 'cream')
+    assert.equal(store.readAppSettings().theme, 'cream')
+    await js('window.rejectSettingsSave = false; document.querySelector("[aria-label=关闭设置]").click()')
+    await assert.rejects(js('window.settingsApi.updateAppSettings({ theme: "system" })'))
+    // Restart the main theme module and reload the renderer using the persisted settings.
+    delete require.cache[require.resolve(mainBundle)]
+    const restarted = require(mainBundle)
+    restarted.configureStateFiles(join(directory, 'servers.json'), join(directory, 'settings.json'))
+    restarted.setMainWindow(window)
+    restarted.applyTheme(restarted.readAppSettings().theme)
+    await window.reload()
+    await waitFor('Boolean(window.settingsLoaded) && document.documentElement.dataset.theme === "cream"')
+    assert.equal(window.getBackgroundColor().toLowerCase(), backgrounds.cream)
     nativeTheme.emit('updated')
     await tick()
-    assert.equal(await js('matchMedia("(prefers-color-scheme: dark)").matches'), nativeTheme.shouldUseDarkColors)
-    assert.equal(window.getBackgroundColor().toLowerCase(), nativeTheme.shouldUseDarkColors ? '#111111' : '#f2f2f2')
+    assert.equal(nativeTheme.themeSource, 'light')
+    assert.equal(await js('document.documentElement.dataset.theme'), 'cream')
+    assert.equal(window.getBackgroundColor().toLowerCase(), backgrounds.cream)
     await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
     await js('window.showScene("files")')
     await tick()
@@ -151,6 +219,7 @@ function checkTheme() {
   const failures = []
   const style = getComputedStyle(document.documentElement)
   const token = name => style.getPropertyValue('--' + name).trim()
+  const cream = document.documentElement.dataset.theme === 'cream'
   const neutralTokens = [
     'canvas', 'surface', 'surface-soft', 'surface-raised', 'surface-hover', 'surface-selected', 'surface-selected-strong',
     'text-strong', 'text-primary', 'text-secondary', 'text-subtle', 'text-accent', 'text-info',
@@ -158,12 +227,12 @@ function checkTheme() {
     'line', 'line-strong', 'border-info', 'surface-info', 'focus-outline', 'focus-surface', 'surface-output', 'surface-media',
     'terminal-background', 'terminal-foreground', 'terminal-muted', 'terminal-cursor', 'terminal-selection-background',
   ]
-  for (const name of neutralTokens) {
+  for (const name of neutralTokens.filter(name => !cream || name.startsWith('terminal-') || name === 'text-on-accent')) {
     const channels = token(name).match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i)
     if (!channels || channels[1] !== channels[2] || channels[2] !== channels[3]) failures.push(`${name} is not neutral: ${token(name)}`)
   }
   const base = getComputedStyle(document.querySelector('.main-area')).backgroundColor
-  const expected = matchMedia('(prefers-color-scheme: dark)').matches ? 'rgb(17, 17, 17)' : 'rgb(242, 242, 242)'
+  const expected = cream ? 'rgb(246, 241, 231)' : matchMedia('(prefers-color-scheme: dark)').matches ? 'rgb(17, 17, 17)' : 'rgb(242, 242, 242)'
   if (base !== expected) failures.push(`Unexpected main background: ${base}`)
   for (const selector of ['.topbar', '.session-tabbar', '.main-area']) {
     const surface = getComputedStyle(document.querySelector(selector))
