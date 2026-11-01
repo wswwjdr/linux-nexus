@@ -67,7 +67,7 @@ test('uploads bytes through SSH stdin to a temporary file before the selected mv
         strategy: 'skip',
         modifiedAtMs: attributes.mtimeMs,
       })
-    assert.ok(command.includes('mktemp --'))
+    assert.ok(command.includes('mktemp -d --'))
     assert.ok(command.includes('head -c'))
     assert.ok(command.includes('mv -nT -- "$temporary" "$destination"'))
     assert.deepEqual(Buffer.concat(channel!.input).subarray(0, payload.length), payload)

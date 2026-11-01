@@ -1,12 +1,12 @@
 import { createReadStream } from 'node:fs'
 import { open, link, stat as localStat, unlink } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
-import { commitRecord, receiveStagedFile } from '../staged-write'
+import { commitRecord } from '../staged-write'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Client } from 'ssh2'
 import type { OperationExecutionStrategy } from '@shared/types'
 import { runRemoteCommand } from '../ssh-commands'
-import { uploadMoveFlag } from './upload-strategy'
+import { buildUploadCommand } from './upload-command'
 
 export const TRANSFER_CHUNK_SIZE = 256 * 1024
 
@@ -58,24 +58,9 @@ export async function transferFileStream(
       signal.throwIfAborted()
       yield commitRecord(hash.digest('hex'))
     }
-    const moveFlag = uploadMoveFlag(uploadOptions.strategy)
     try {
-      await runRemoteCommand(client, [
-        'set -eu',
-        'destination=$1',
-        'directory=$(dirname -- "$destination")',
-        'name=$(basename -- "$destination")',
-        'temporary=$(mktemp -- "$directory/.$name.linux-nexus.XXXXXX")',
-        'trap \'rm -f -- "$temporary"\' EXIT',
-        'trap \'exit 129\' HUP',
-        'trap \'exit 130\' INT',
-        'trap \'exit 143\' TERM',
-        receiveStagedFile('$3'),
-        'touch -d "@$2" -- "$temporary"',
-        `mv ${moveFlag} -- "$temporary" "$destination"`,
-        '[[ ! -e "$temporary" ]] || rm -f -- "$temporary"',
-        'trap - EXIT HUP INT TERM',
-      ].join('\n'), [destinationPath, String(uploadOptions.modifiedAtMs / 1000), String(size)], {
+      await runRemoteCommand(client, buildUploadCommand(uploadOptions.strategy),
+        [destinationPath, String(uploadOptions.modifiedAtMs / 1000), String(size)], {
         signal, timeoutMs: 86_400_000,
         stdin: chunks(),
         collectStdout: false,
