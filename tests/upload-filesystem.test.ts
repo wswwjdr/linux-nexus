@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import test, { type TestContext } from 'node:test'
@@ -20,12 +20,16 @@ const payload = Buffer.from('uploaded content\n')
 const input = Buffer.concat([payload, commitRecord(createHash('sha256').update(payload).digest('hex'))])
 const modifiedAt = 1_700_000_000
 
-function fixture(t: TestContext) {
+function fixture(t: TestContext, name = 'remote file.txt') {
   const directory = mkdtempSync(join(tmpdir(), 'nexus-upload-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
-  const path = join(directory, 'remote file.txt')
+  const path = join(directory, name)
   const remote = path.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, drive: string) => '/' + drive.toLowerCase())
-  const shell = (script: string, args = [remote], data?: Buffer) => spawnSync(bash, ['-c', script, '--', ...args], { input: data, timeout: 10_000 })
+  // Git Bash cannot apply POSIX directory modes on NTFS; real mode/ACL checks run on POSIX only.
+  const shellPrefix = process.platform === 'win32'
+    ? 'mkdir() { if [[ $1 == -m ]]; then shift 2; fi; command mkdir "$@"; }\n'
+    : ''
+  const shell = (script: string, args = [remote], data?: Buffer) => spawnSync(bash, ['-c', shellPrefix + script, '--', ...args], { input: data, timeout: 10_000 })
   const run = (strategy: OperationExecutionStrategy = 'force', prefix = 'umask 022\n', data = input) =>
     shell(prefix + buildUploadCommand(strategy), [remote, String(modifiedAt), String(payload.length)], data)
   const inspect = (script: string) => {
@@ -33,8 +37,38 @@ function fixture(t: TestContext) {
     assert.equal(result.status, 0, result.stderr?.toString())
     return result.stdout.toString().trim()
   }
-  const clean = () => assert.deepEqual(readdirSync(directory), ['remote file.txt'])
+  const clean = () => assert.deepEqual(readdirSync(directory), [name])
   return { directory, path, shell, run, inspect, clean }
+}
+
+test('Chinese filenames use exactly .filename.uploading until publication', shellRequired, t => {
+  const f = fixture(t, '音乐专辑.mp4')
+  const result = f.run('force', `umask 022
+head() {
+  [[ -d "$directory/.音乐专辑.mp4.uploading" ]] || return 42
+  [[ ! -e "$destination" ]] || return 43
+  command head "$@"
+}
+`)
+  assert.equal(result.status, 0, result.stderr.toString())
+  assert.deepEqual(readFileSync(f.path), payload)
+  f.clean()
+})
+
+for (const kind of ['directory', 'file'] as const) {
+  test(`an existing staging ${kind} is neither reused nor cleaned`, shellRequired, t => {
+    const f = fixture(t)
+    writeFileSync(f.path, 'original')
+    const staging = join(f.directory, '.remote file.txt.uploading')
+    if (kind === 'directory') mkdirSync(staging)
+    const existing = kind === 'directory' ? join(staging, 'content') : staging
+    writeFileSync(existing, 'another upload')
+    const result = f.run()
+    assert.notEqual(result.status, 0)
+    assert.equal(readFileSync(existing, 'utf8'), 'another upload')
+    assert.equal(readFileSync(f.path, 'utf8'), 'original')
+    assert.deepEqual(readdirSync(f.directory).sort(), ['.remote file.txt.uploading', 'remote file.txt'])
+  })
 }
 
 for (const strategy of ['force', 'skip', 'update'] as const) {

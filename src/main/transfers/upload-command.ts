@@ -12,7 +12,8 @@ export function buildUploadCommand(strategy: OperationExecutionStrategy): string
 destination=$1
 directory=$(dirname -- "$destination")
 name=$(basename -- "$destination")
-staging=$(mktemp -d -- "$directory/.$name.linux-nexus.XXXXXX")
+staging=$directory/.$name.uploading
+mkdir -m 700 -- "$staging"
 temporary=$staging/content
 trap 'rm -f -- "$temporary"; rmdir -- "$staging"' EXIT
 trap 'exit 129' HUP
