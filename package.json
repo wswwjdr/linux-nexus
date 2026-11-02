@@ -1,6 +1,6 @@
 {
   "name": "linux-nexus",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Linux Nexus, a Windows desktop client for managing Linux server files through SSH commands",
   "main": "./out/main/index.js",
