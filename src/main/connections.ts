@@ -4,7 +4,7 @@ import { posix } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { Client } from 'ssh2'
 import type { ConnectResult, RemoteEntry, SessionKind } from '@shared/types'
-import { shellQuote } from '@shared/shell'
+import { shellQuoteIfNeeded } from '@shared/shell'
 import { cancelNameSearchesForSession, failNameSearchesForSession } from './name-search'
 import { cancelContentSearchesForSession, failContentSearchesForSession } from './content-search'
 import { cancelScriptExecutionsForSession, failScriptExecutionsForSession } from './script-execution-runtime'
@@ -143,7 +143,7 @@ export function connectProfile(
             }
           })
           shell.on('error', (shellError: Error) => failActiveSession(activeSession, shellError.message))
-          if (startPath) shell.write('cd -- ' + shellQuote(posix.resolve('/', startPath)) + '\n')
+          if (startPath) shell.write('cd ' + shellQuoteIfNeeded(posix.resolve('/', startPath)) + '\n')
         }
         finish({ ok: true, path: kind === 'files' ? '/' : startPath })
       }
