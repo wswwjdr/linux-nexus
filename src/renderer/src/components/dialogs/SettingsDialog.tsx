@@ -124,7 +124,7 @@ export function SettingsDialog(props: Pick<DialogLayerProps, "settingsForm" | "p
                         {previewLimitFields.map(({ key, label }) => (
                           <label className="field" key={key}>
                             <span>{label}</span>
-                            <input required type="number" min="1" max="1024" step="1" value={settingsForm[key]} onChange={(event) => onUpdateSettings(key, event.target.value)} />
+                            <input required type="number" min="1" step="1" value={settingsForm[key]} onChange={(event) => onUpdateSettings(key, event.target.value)} />
                           </label>
                         ))}
                       </div>

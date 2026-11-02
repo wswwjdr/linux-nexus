@@ -194,7 +194,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
     const numericValue = Number(value)
     const maximum = key === 'transferFileConcurrency' ? 16
       : key === 'performanceSampleIntervalSeconds' ? 300
-        : 1024
+        : Infinity
     const settingsKey = key as keyof AppSettings
     if (Number.isInteger(numericValue) && numericValue >= 1 && numericValue <= maximum) {
       persistSetting(settingsKey, { [settingsKey]: numericValue })

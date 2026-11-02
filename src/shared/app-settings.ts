@@ -45,7 +45,6 @@ export const DEFAULT_APP_SETTINGS = defaultAppSettings()
 const appSettingsKeys = [...Object.keys(DEFAULT_PREVIEW_LIMITS), 'theme', 'defaultView', 'fileTypeExtensions', 'startupConnection', 'transferFileConcurrency', 'performanceSampleIntervalSeconds', 'performanceThresholds']
 const performanceThresholdKeys = ['cpu', 'memory', 'disk', 'loadPerCore'] as const
 
-const MAX_PREVIEW_LIMIT_MIB = 1024
 const MIN_TRANSFER_FILE_CONCURRENCY = 1
 const MAX_TRANSFER_FILE_CONCURRENCY = 16
 const MIN_PERFORMANCE_SAMPLE_INTERVAL_SECONDS = 1
@@ -68,8 +67,8 @@ export function validateAppSettings(value: unknown): AppSettings {
   if (value.defaultView !== 'icons' && value.defaultView !== 'details') throw new Error('默认文件视图设置无效')
   for (const key of limitKeys) {
     const limit = value[key]
-    if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > MAX_PREVIEW_LIMIT_MIB) {
-      throw new Error('预览设置 ' + key + ' 必须是 1 到 ' + MAX_PREVIEW_LIMIT_MIB + ' 之间的整数')
+    if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1) {
+      throw new Error('预览设置 ' + key + ' 必须是正整数')
     }
   }
   const transferFileConcurrency = value.transferFileConcurrency
