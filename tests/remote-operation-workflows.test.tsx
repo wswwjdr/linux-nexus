@@ -84,6 +84,7 @@ async function mountWorkflow({ hold = false, failure = '', holdRefresh = false }
       modalOpen: false,
       workspaceOpenSessionIds: new Set(), browserContextMenu: null, sessionContextMenu: null,
       sortedEntries: sources, canPasteRemote: operations.canPasteRemote,
+      onRefresh: () => { refreshed.push(activeSession.id) },
       onSelectedPathsChange: (selectedPaths) => {
         sessionsRef.current[0] = { ...sessionsRef.current[0], selectedPaths }
       },

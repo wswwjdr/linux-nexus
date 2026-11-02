@@ -11,6 +11,7 @@ interface UseRemoteFileShortcutsOptions {
   sessionContextMenu: SessionContextMenuState | null
   sortedEntries: RemoteEntry[]
   canPasteRemote: boolean
+  onRefresh: () => void
   onSelectedPathsChange: (paths: string[]) => void
   copyRemoteSelection: (entries: RemoteEntry[]) => void
   cutRemoteSelection: (entries: RemoteEntry[]) => void
@@ -26,6 +27,7 @@ export function useRemoteFileShortcuts({
   sessionContextMenu,
   sortedEntries,
   canPasteRemote,
+  onRefresh,
   onSelectedPathsChange,
   copyRemoteSelection,
   cutRemoteSelection,
@@ -37,6 +39,13 @@ export function useRemoteFileShortcuts({
         || (activeSessionId && workspaceOpenSessionIds.has(activeSessionId))
         || sessionContextMenu) return
       if (!activeSession || activeSession.kind !== 'files' || activeSession.status !== 'connected') return
+
+      if (event.key === 'F5' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+        event.preventDefault()
+        if (!activeSession.loading && !event.repeat && !browserContextMenu) onRefresh()
+        return
+      }
+
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
 
       const key = event.key.toLowerCase()
@@ -79,6 +88,7 @@ export function useRemoteFileShortcuts({
     copyRemoteSelection,
     cutRemoteSelection,
     modalOpen,
+    onRefresh,
     onSelectedPathsChange,
     pasteRemoteEntries,
     sessionContextMenu,

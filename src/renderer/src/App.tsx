@@ -477,6 +477,10 @@ export default function App() {
       || sessionChooserOpen || shortcutGuideOpen,
   )
 
+  const refreshDirectory = () => {
+    if (connectedSessionId) void loadDirectory(connectedSessionId, currentPath)
+  }
+
   useRemoteFileShortcuts({
     activeSession,
     activeSessionId,
@@ -486,6 +490,7 @@ export default function App() {
     sessionContextMenu,
     sortedEntries,
     canPasteRemote,
+    onRefresh: refreshDirectory,
     onSelectedPathsChange: (selectedPaths) => {
       if (activeSession) patchSession(activeSession.id, { selectedPaths })
     },
@@ -600,7 +605,7 @@ export default function App() {
                 <button className="text-button upload-button" title="上传文件夹到当前目录" aria-label="上传文件夹到当前目录" onClick={() => uploadFolder()}>
                   <FolderUp size={15} /> 上传文件夹
                 </button>
-                <button className="icon-button toolbar-button" title="刷新目录" aria-label="刷新目录" disabled={loading} onClick={() => void loadDirectory(connectedSessionId, currentPath)}>
+                <button className="icon-button toolbar-button" title="刷新目录 (F5)" aria-label="刷新目录" aria-keyshortcuts="F5" disabled={loading} onClick={refreshDirectory}>
                   <RefreshCw className={loading ? 'spin' : ''} size={17} />
                 </button>
               </>
