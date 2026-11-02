@@ -12,6 +12,7 @@ app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
   const directory = mkdtempSync(join(tmpdir(), 'nexus-rich-preview-'))
   const window = new BrowserWindow({ show: false, width: 1050, height: 728, webPreferences: { sandbox: true, backgroundThrottling: false } })
+  window.webContents.debugger.attach('1.3')
   window.webContents.setAudioMuted(true)
   const execute = (code) => window.webContents.executeJavaScript(code, true)
   const until = async (condition) => {
@@ -29,6 +30,46 @@ app.whenReady().then(async () => {
     await window.webContents.capturePage(undefined, { stayHidden: true })
     await new Promise((resolve) => setTimeout(resolve, 200))
     writeFileSync(join(process.env.RICH_PREVIEW_SCREENSHOT_DIR, name + '.png'), (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
+  }
+  const verifyVideoTimeline = async () => {
+    await execute('document.querySelector("video").pause()')
+    await until('!document.querySelector("video").seeking')
+    const time = await execute('document.querySelector("video").currentTime')
+    const duration = await execute('document.querySelector("video").duration')
+    const format = (seconds) => `0:${String(Math.floor(seconds)).padStart(2, '0')}`
+    await window.webContents.capturePage(undefined, { stayHidden: true })
+    await until(`document.querySelector('.vjs-current-time-display').textContent.endsWith('${format(time)}')`)
+    await until(`document.querySelector('.vjs-remaining-time-display').textContent.endsWith('${format(Math.floor(duration) - Math.floor(time))}')`)
+    assert.equal(await execute(`(() => {
+      const current = document.querySelector('.vjs-current-time'), progress = document.querySelector('.vjs-progress-control'), remaining = document.querySelector('.vjs-remaining-time');
+      return getComputedStyle(current).display !== 'none' && getComputedStyle(remaining).display !== 'none'
+        && current.getBoundingClientRect().right <= progress.getBoundingClientRect().left + 1
+        && progress.getBoundingClientRect().right <= remaining.getBoundingClientRect().left + 1;
+    })()`), true, 'current and remaining times are visible on opposite sides of the timeline: ' + await execute(`JSON.stringify(['.vjs-current-time', '.vjs-progress-control', '.vjs-remaining-time'].map(selector => { const el = document.querySelector(selector); return {selector, display:getComputedStyle(el).display, rect:el.getBoundingClientRect().toJSON()}; }))`))
+    assert.equal(await execute('document.querySelectorAll(".vjs-progress-control .vjs-time-tooltip").length'), 1)
+    assert.equal(await execute('matchMedia("(any-hover: hover)").matches'), true)
+    const wasTouchEnabled = await execute('document.querySelector(".video-js").classList.contains("vjs-touch-enabled")')
+    for (const touchEnabled of [false, true]) {
+      // Exercise the skin rule used by touch-capable Windows computers with a mouse.
+      await execute(`document.querySelector('.video-js').classList.toggle('vjs-touch-enabled', ${touchEnabled})`)
+      for (const fraction of [.25, .75]) {
+        // Video.js drops mouse moves within its throttle interval without a trailing update.
+        await new Promise((resolve) => setTimeout(resolve, 80))
+        const rect = await execute('document.querySelector(".vjs-progress-holder").getBoundingClientRect().toJSON()')
+        // Use viewport coordinates so hidden-window fullscreen can be exercised too.
+        await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(rect.x + rect.width * fraction), y: Math.round(rect.y + rect.height / 2) })
+        await window.webContents.capturePage(undefined, { stayHidden: true })
+        await until(`document.querySelector('.vjs-progress-control .vjs-mouse-display .vjs-time-tooltip').textContent === '${format(duration * fraction)}'`)
+        await until(`(() => {
+          const style = getComputedStyle(document.querySelector('.vjs-progress-control .vjs-mouse-display'));
+          return style.display !== 'none' && style.visibility === 'visible' && style.opacity === '1';
+        })()`)
+        assert.equal(await execute('document.querySelector("video").currentTime'), time, 'hover does not seek')
+      }
+    }
+    await execute(`document.querySelector('.video-js').classList.toggle('vjs-touch-enabled', ${wasTouchEnabled})`)
+    await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 })
+    await until('getComputedStyle(document.querySelector(".vjs-progress-control .vjs-mouse-display")).display === "none"')
   }
   const { createServer } = await import('vite')
   const { default: react } = await import('@vitejs/plugin-react')
@@ -49,7 +90,7 @@ app.whenReady().then(async () => {
     const bytes = await execute(`(async () => {
       const canvas = document.querySelector('canvas'), ctx = canvas.getContext('2d');
       ctx.fillStyle = '#5e5ce6'; ctx.fillRect(0,0,320,180);
-      const stream = canvas.captureStream(10), recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
+      const stream = canvas.captureStream(10), recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8', videoKeyFrameIntervalCount: 1 });
       const chunks = []; recorder.ondataavailable = event => chunks.push(event.data);
       const done = new Promise(resolve => recorder.onstop = resolve); recorder.start();
       let frame = 0;
@@ -102,6 +143,7 @@ app.whenReady().then(async () => {
     key('Right'); key('Right', 'keyUp')
     await until('document.querySelector("video").currentTime > 5')
     assert.ok(Math.abs(await execute('document.querySelector("video").currentTime') - 5.3) < .1)
+    await verifyVideoTimeline()
     const progress = await execute('document.querySelector(".vjs-progress-holder").getBoundingClientRect().toJSON()')
     const pointer = (type, fraction) => window.webContents.sendInputEvent({ type,
       x: Math.round(progress.x + progress.width * fraction), y: Math.round(progress.y + progress.height / 2), button: 'left', clickCount: 1,
@@ -112,6 +154,7 @@ app.whenReady().then(async () => {
     await new Promise((resolve) => setTimeout(resolve, 80))
     pointer('mouseUp', .5)
     await until('document.querySelector("video").currentTime > 2 && document.querySelector("video").currentTime < 4')
+    await verifyVideoTimeline()
     await execute('document.querySelector(".vp-modal").focus()')
     await execute('document.querySelector("video").playbackRate = 1.5')
     key('Right'); await new Promise((resolve) => setTimeout(resolve, 600))
@@ -129,6 +172,7 @@ app.whenReady().then(async () => {
     await execute('document.querySelector(".vp-modal").focus()')
     key('F'); key('F', 'keyUp')
     await until('Boolean(document.fullscreenElement)')
+    await verifyVideoTimeline()
     key('Escape'); key('Escape', 'keyUp')
     await until('!document.fullscreenElement')
     assert.equal(await execute('Boolean(document.querySelector("video"))'), true)
@@ -144,7 +188,7 @@ app.whenReady().then(async () => {
         for (const kind of ['video', 'image', 'markdown']) {
           await execute(`window.fixtureOpen('${kind}')`)
           await until(`Boolean(document.querySelector('.${kind === 'video' ? 'vp-modal' : kind === 'image' ? 'ip-dialog' : 'md-dialog'}'))`)
-          if (kind === 'video') { await until('Boolean(document.querySelector("video"))'); await execute('document.querySelector("video").pause()'); await click('[aria-label="快捷键"]') }
+          if (kind === 'video') { await until('document.querySelector("video")?.readyState >= 1'); await verifyVideoTimeline(); await click('[aria-label="快捷键"]') }
           if (kind === 'markdown') await click('[aria-label="目录"]')
           await window.webContents.capturePage(undefined, { stayHidden: true })
           await new Promise((resolve) => setTimeout(resolve, 400))
@@ -164,7 +208,7 @@ app.whenReady().then(async () => {
     key('K'); key('K', 'keyUp')
     await until('!document.querySelector("video").paused')
     assert.equal(await execute('document.querySelector(".vp-notice")'), null)
-    console.log(`rich preview browser checks passed (${layouts} layouts, video playback/fullscreen/long-press/session pause, pointer image transforms, Markdown catalog)`)
+    console.log(`rich preview browser checks passed (${layouts} layouts, video timeline hover/current/remaining time, video playback/fullscreen/long-press/session pause, pointer image transforms, Markdown catalog)`)
   } finally {
     window.destroy(); clearPreviewAssets(); await server.close(); rmSync(directory, { recursive: true, force: true })
   }

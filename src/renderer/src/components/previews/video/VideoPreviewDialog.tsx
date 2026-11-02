@@ -59,6 +59,9 @@ export default function VideoPreviewDialog({ result, active, onClose }: {
     const player = videojs(element, {
       controls: true, autoplay: false, preload: 'metadata', fluid: false, fill: true, language: 'zh-CN',
       playbackRates: [.5, 1, 1.5, 2], userActions: { hotkeys: false },
+      controlBar: {
+        progressControl: { seekBar: { playProgressBar: { children: [] } } },
+      },
       sources: [{ src: result.url, type: previewMimeType('video', result.name) }],
     })
     playerRef.current = player

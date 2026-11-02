@@ -5,6 +5,14 @@
 .vp-player-container .video-js { width: 100%; height: 100%; font-family: inherit; }
 .vp-player-container .vjs-tech { object-fit: contain; }
 .vp-player-container .video-js.vjs-fullscreen { max-height: none; }
+.vp-player-container .video-js:not(.vjs-live) .vjs-current-time { display: block; }
+@media (any-hover: hover) {
+  .vp-player-container .video-js:not(.vjs-user-inactive) .vjs-progress-control:hover .vjs-mouse-display {
+    visibility: visible;
+    opacity: 1;
+    transition: none;
+  }
+}
 .vp-notice { margin: 0; padding: 10px 20px; color: var(--ap-text); background: rgba(var(--ap-bg), .95); font-size: 13px; overflow-wrap: anywhere; }
 
 .modal-backdrop.ip-overlay { padding: 0; background: #000b; backdrop-filter: blur(4px); }
