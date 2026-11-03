@@ -16,6 +16,7 @@ import { cancelRemoteOperationsForSession } from './remote-operations'
 import { removePerformanceMonitorForSession } from './performance-monitor'
 import { cancelClientTasks, runRemoteCommand } from './ssh-commands'
 import { listRemoteDirectory } from './remote-fs'
+import { verifyFileSessionCapabilities } from './file-session-capabilities'
 
 const pendingConnections = new Map<string, { profileId: string; client: Client; cancel: () => void }>()
 const SSH_KEEPALIVE_INTERVAL_MS = 15_000
@@ -283,22 +284,5 @@ export async function deleteRemoteEntries(sessionId: string, remotePaths: string
     'set -eu; for path in "$@"; do [[ ! -L "$path" && ( -f "$path" || -d "$path" ) ]] || { printf "只能删除普通文件或文件夹: %s\\n" "$path" >&2; exit 1; }; done; rm -r -- "$@"',
     paths,
   )
-}
-
-async function verifyFileSessionCapabilities(client: Client): Promise<void> {
-  const script = [
-    'set -eu',
-    'for tool in bash cp mv rm mkdir find grep tar sha256sum dd tail mktemp stat; do',
-    '  command -v "$tool" >/dev/null || { printf "缺少服务器命令: %s\\n" "$tool" >&2; exit 1; }',
-    'done',
-    'find --version | grep -q "GNU find" || { printf "%s\\n" "需要 GNU findutils" >&2; exit 1; }',
-    'cp --version | grep -q "GNU coreutils" || { printf "%s\\n" "需要 GNU coreutils" >&2; exit 1; }',
-    '. /etc/os-release',
-    'case "$ID:$VERSION_ID" in',
-    '  ubuntu:*|debian:*|centos:8*|centos:9*|centos:10*|rhel:8*|rhel:9*|rhel:10*) ;;',
-    '  *) printf "不支持的服务器发行版: %s %s\\n" "$ID" "$VERSION_ID" >&2; exit 1 ;;',
-    'esac',
-  ].join('\n')
-  await runRemoteCommand(client, script)
 }
 
