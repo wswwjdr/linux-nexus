@@ -156,7 +156,7 @@ test('supported archive files expose extraction while ordinary compressed stream
   assert.equal(actions(unsupportedNodes).some(({ id }) => id === 'extract-archive'), false)
 })
 
-test('paste keeps force and skip while upload retains all four strategies', () => {
+test('background paste and upload expose only overwrite and skip strategies', () => {
   const nodes = resolveFileContextMenu({
     kind: 'directory-background', directory: '/target', canPaste: true,
     sort: { column: 'name', direction: 'ascending' },
@@ -167,8 +167,14 @@ test('paste keeps force and skip while upload retains all four strategies', () =
   ])
   assert.deepEqual(commands.filter((action) => action.type === 'upload'), [
     { type: 'upload', strategy: 'force' }, { type: 'upload', strategy: 'skip' },
-    { type: 'upload', strategy: 'update' }, { type: 'upload', strategy: 'confirm' },
   ])
+  for (const id of ['paste-strategy', 'upload-strategy']) {
+    const menu = nodes.find((node) => node.id === id)
+    assert.equal(menu?.kind, 'submenu')
+    if (menu?.kind === 'submenu') {
+      assert.deepEqual(menu.children.map((node) => node.kind === 'action' && node.label), ['覆盖同名文件', '跳过同名文件'])
+    }
+  }
 })
 
 test('archive actions from search results always use the active browser directory', () => {

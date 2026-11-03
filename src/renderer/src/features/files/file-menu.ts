@@ -4,7 +4,7 @@ import { classifyFileTypeCategories, fileTypeDefinition } from '@shared/file-typ
 import { previewTypesForFile, previewTypeLabels } from '@shared/preview-file-type'
 import { archiveBaseName, archiveFormatForName } from '@shared/archive'
 import type { SortColumn, SortDirection } from '@/app-types'
-import type { OperationExecutionStrategy, OperationStrategy, PasteStrategy } from '@shared/types'
+import type { OperationExecutionStrategy, PasteStrategy } from '@shared/types'
 
 export type FileMenuIcon =
   | 'arrow-down'
@@ -42,7 +42,7 @@ export type FileMenuAction =
   | { type: 'sort-column'; column: SortColumn }
   | { type: 'sort-direction'; direction: SortDirection }
   | { type: 'create-directory' }
-  | { type: 'upload'; strategy: OperationStrategy }
+  | { type: 'upload'; strategy: PasteStrategy }
   | { type: 'open-location' }
   | { type: 'properties' }
 
@@ -83,18 +83,9 @@ const action = (
   options: Pick<FileMenuActionNode, 'disabled' | 'disabledReason' | 'description' | 'checked'> = {},
 ): FileMenuActionNode => ({ kind: 'action', id, label, icon, action: menuAction, ...options })
 
-const executionStrategies: Array<{ strategy: OperationExecutionStrategy; label: string; description: string }> = [
+const overwriteAndSkipStrategies: Array<{ strategy: PasteStrategy; label: string; description: string }> = [
   { strategy: 'force', label: '覆盖同名文件', description: '替换目标位置的同名文件。' },
   { strategy: 'skip', label: '跳过同名文件', description: '保留已有文件，处理其余文件。' },
-  { strategy: 'update', label: '仅更新较旧文件', description: '处理不存在的文件，以及目标中修改时间更早的同名文件。' },
-]
-
-const overwriteAndSkipStrategies: Array<{ strategy: PasteStrategy; label: string; description: string }> = executionStrategies
-  .filter((item): item is typeof item & { strategy: PasteStrategy } => item.strategy !== 'update')
-
-const uploadStrategies: Array<{ strategy: OperationStrategy; label: string; description: string }> = [
-  ...executionStrategies,
-  { strategy: 'confirm', label: '同名时询问', description: '有同名文件时询问是否覆盖，否则直接上传。' },
 ]
 
 function pasteStrategyMenu(disabled: boolean): FileMenuNode {
@@ -121,7 +112,7 @@ function uploadStrategyMenu(): FileMenuNode {
     id: 'upload-strategy',
     label: '上传',
     icon: 'upload',
-    children: uploadStrategies.map(({ strategy, label, description }) => action(
+    children: overwriteAndSkipStrategies.map(({ strategy, label, description }) => action(
       'upload-' + strategy,
       label,
       undefined,
