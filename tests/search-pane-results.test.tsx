@@ -30,6 +30,14 @@ Object.defineProperties(globalThis, {
   },
 })
 
+// JSDOM has no layout; provide a visible viewport for the measured virtual list.
+Object.defineProperties(dom.window.HTMLElement.prototype, {
+  offsetHeight: { configurable: true, get() { return this.classList.contains('content-search-results-list') ? 600 : 120 } },
+  offsetWidth: { configurable: true, get() { return 800 } },
+  clientHeight: { configurable: true, get() { return 600 } },
+  clientWidth: { configurable: true, get() { return 800 } },
+})
+
 test('clicking a filename result opens its menu while the click target is still available', async () => {
   const [{ createRoot }, { NameSearchPane }] = await Promise.all([
     import('react-dom/client'),
@@ -181,7 +189,7 @@ test('clicking a content result opens its menu while the click target is still a
           path: '/home/user/notes.txt',
           type: 'file',
           size: 16,
-          matches: [{ lineNumber: 1, text: 'needle' }],
+          matches: [{ lineNumber: 1, text: '<b>NEEDLE</b> needle a.b' }],
         }],
       })
       listener!({
@@ -203,6 +211,10 @@ test('clicking a content result opens its menu while the click target is still a
       })
     })
 
+    const code = host.querySelector('.search-match-line.hit code')!
+    assert.equal(code.textContent, '<b>NEEDLE</b> needle a.b')
+    assert.deepEqual(Array.from(code.querySelectorAll('mark'), node => node.textContent), ['NEEDLE', 'needle'])
+    assert.equal(code.querySelector('b'), null)
     act(() => host.querySelector<HTMLButtonElement>('.content-search-result')!.click())
     assert.ok(host.querySelector('[role="menu"][aria-label="notes.txt的操作"]'))
     assert.ok(Array.from(host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))

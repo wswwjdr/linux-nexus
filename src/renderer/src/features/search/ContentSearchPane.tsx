@@ -1,25 +1,10 @@
-import { useVirtualRows } from '@/hooks/useVirtualRows'
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent, type RefObject } from 'react'
-import { AlertTriangle, File, LoaderCircle, Search } from 'lucide-react'
-import type {
-  ContentSearchEvent,
-  ContentSearchProgress,
-  ContentSearchRequest,
-  ContentSearchResult,
-  FileTypeExtensions,
-  NameSearchEvent,
-  NameSearchMatchMode,
-  NameSearchProgress,
-  NameSearchRequest,
-  NameSearchResult,
-  SearchResultTarget,
-} from '@shared/types'
-import FileContextMenu from '@/features/files/FileContextMenu'
-import { SearchHistory, SearchScopeControl, type SearchScopeConditions, isNormalizedAbsoluteRemotePath, readSearchHistory } from './SearchShared'
-import type { FileContextMenuContext, FileMenuAction } from '@/features/files/file-menu'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type FormEvent } from 'react'
+import { AlertTriangle, LoaderCircle, Search } from 'lucide-react'
+import type { ContentSearchEvent, ContentSearchProgress, ContentSearchRequest, ContentSearchResult } from '@shared/types'
+import { SearchHistory, SearchScopeControl, isNormalizedAbsoluteRemotePath, readSearchHistory } from './SearchShared'
 import { errorMessage, formatSize } from '@/app-utils'
-
-import { NameVirtualResults, ResultMenu, emptyNameProgress, emptyContentProgress, historyScopeLabel, initialNameConditions, initialContentConditions, isNameConditions, isContentConditions, openMenu, statusLabel, MAX_QUERY_LENGTH, NAME_HISTORY_KEY, CONTENT_HISTORY_KEY, DEFAULT_MAX_FILE_SIZE_MIB, type NameConditions, type ContentConditions, type ResultMenuState, type SearchPaneHandle, type SearchPaneProps, type SearchStatus } from './SearchPaneShared'
+import { ContentSearchResults } from './ContentSearchResults'
+import { ResultMenu, emptyContentProgress, historyScopeLabel, initialContentConditions, isContentConditions, openMenu, statusLabel, MAX_QUERY_LENGTH, CONTENT_HISTORY_KEY, type ContentConditions, type ResultMenuState, type SearchPaneHandle, type SearchPaneProps, type SearchStatus } from './SearchPaneShared'
 
 export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(function ContentSearchPane({
   sessionId,
@@ -34,9 +19,7 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
   const historyKey = CONTENT_HISTORY_KEY + profileId
   const [conditions, setConditions] = useState(() => initialContentConditions(currentPath))
   const [history, setHistory] = useState(() => readSearchHistory(historyKey, isContentConditions))
-  const resultsViewportRef = useRef<HTMLDivElement>(null)
   const [results, setResults] = useState<ContentSearchResult[]>([])
-  const virtual = useVirtualRows(resultsViewportRef, results.length, 220)
   const [menu, setMenu] = useState<ResultMenuState | null>(null)
   const [progress, setProgress] = useState<ContentSearchProgress>(emptyContentProgress)
   const [status, setStatus] = useState<SearchStatus>('idle')
@@ -277,44 +260,16 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
           </div>
           {progress.currentPath && <div className="search-progress-path" title={progress.currentPath}>{progress.currentPath}</div>}
         </div>
-        <div ref={resultsViewportRef} className="search-results-list content-search-results-list" aria-live="off" onScroll={() => setMenu(null)}>
-          {virtual.before > 0 && <div aria-hidden="true" style={{ height: virtual.before, flexShrink: 0 }} />}
-          {results.slice(virtual.first, virtual.last).map((result) => (
-            <button
-              className="search-result content-search-result"
-              style={{ height: 213, minHeight: 213, flexShrink: 0, overflow: 'auto' }}
-              key={result.path}
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={menu?.result.path === result.path}
-              onClick={(event) => setMenu(menu?.result.path === result.path ? null : openMenu(event, result))}
-              title={'操作 ' + result.path}
-            >
-              <span className="search-result-heading">
-                <span className="search-result-icon"><File size={15} /></span>
-                <span className="search-result-title">{result.name}</span>
-                <span className="search-result-size">{formatSize(result.size)}</span>
-              </span>
-              <span className="search-result-path">{result.path}</span>
-              <span className="search-result-matches">
-                {result.matches.map((match, index) => (
-                  <span className="search-match-block" key={match.lineNumber + ':' + index}>
-                    {match.before && <span className="search-match-line context"><span>{match.before.lineNumber}</span><code>{match.before.text || ' '}</code></span>}
-                    <span className="search-match-line hit"><span>{match.lineNumber}</span><code>{match.text || ' '}</code></span>
-                    {match.after && <span className="search-match-line context"><span>{match.after.lineNumber}</span><code>{match.after.text || ' '}</code></span>}
-                  </span>
-                ))}
-              </span>
-            </button>
-          ))}
-          {virtual.after > 0 && <div aria-hidden="true" style={{ height: virtual.after, flexShrink: 0 }} />}
-          {results.length === 0 && (
-            <div className="search-results-empty">
-              {running ? <LoaderCircle className="spin" size={20} /> : <Search size={20} />}
-              <span>{running ? '等待匹配结果' : status === 'completed' ? '没有找到匹配内容' : '提交搜索后显示结果'}</span>
-            </div>
-          )}
-        </div>
+        <ContentSearchResults
+          results={results}
+          query={conditions.query}
+          ignoreCase={conditions.ignoreCase}
+          running={running}
+          status={status}
+          menu={menu}
+          onOpenMenu={(event, result) => setMenu(menu?.result.path === result.path ? null : openMenu(event, result))}
+          onScroll={() => setMenu(null)}
+        />
       </section>
       <ResultMenu
         menu={menu}

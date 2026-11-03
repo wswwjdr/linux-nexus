@@ -3,7 +3,7 @@ import test from 'node:test'
 import { act, createElement, useState } from 'react'
 import { JSDOM } from 'jsdom'
 import TextPreviewPanel from '../src/renderer/src/components/previews/TextPreviewPanel.tsx'
-import { findTextMatches } from '../src/renderer/src/components/previews/text-search.ts'
+import { findTextMatches } from '../src/renderer/src/text-search.ts'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })
 Object.defineProperties(globalThis, {

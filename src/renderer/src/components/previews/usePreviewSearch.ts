@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { findTextMatches } from './text-search'
+import { findTextMatches } from '../../text-search'
 
 export interface PreviewSearchHandle {
   openSearch: () => void
