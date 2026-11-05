@@ -21,6 +21,10 @@ export default defineConfig({
   },
   renderer: {
     base: './',
+    server: {
+      port: 50001,
+      strictPort: true,
+    },
     plugins: [react(), {
       name: 'application-csp',
       transformIndexHtml(_html, context) {

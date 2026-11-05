@@ -24,6 +24,8 @@ npm install
 npm run dev
 ```
 
+开发服务固定使用 `50001` 端口；端口被占用时启动会报错，不会自动切换端口。
+
 生成 x64 NSIS 安装包：
 
 ```powershell
