@@ -15,8 +15,9 @@ import { clearPreviewAssetsForSession } from './previews'
 import { cancelRemoteOperationsForSession } from './remote-operations'
 import { removePerformanceMonitorForSession } from './performance-monitor'
 import { cancelClientTasks, runRemoteCommand } from './ssh-commands'
-import { listRemoteDirectory } from './remote-fs'
+import { filesSession, listRemoteDirectory } from './remote-fs'
 import { verifyFileSessionCapabilities } from './file-session-capabilities'
+import { initializeFileIdentity, revokeFileIdentity } from './file-identity'
 
 const pendingConnections = new Map<string, { profileId: string; client: Client; cancel: () => void }>()
 const SSH_KEEPALIVE_INTERVAL_MS = 15_000
@@ -32,6 +33,7 @@ function sendConnectionClosed(sessionId: string, profileId: string, message: str
 function failActiveSession(activeSession: ActiveSession, message: string): void {
   if (sessions.get(activeSession.sessionId) !== activeSession) return
   sessions.delete(activeSession.sessionId)
+  void revokeFileIdentity(activeSession)
   removePerformanceMonitorForSession(activeSession.sessionId)
   void cancelRemoteOperationsForSession(activeSession.sessionId)
   failScriptExecutionsForSession(activeSession.sessionId, message)
@@ -55,8 +57,9 @@ export function stopSession(sessionId: string): Promise<void> {
   const activeSession = sessions.get(sessionId)
   if (!activeSession) return Promise.resolve()
   const commands = cancelClientTasks(activeSession.client)
+  const fileCommands = revokeFileIdentity(activeSession)
   sessions.delete(sessionId)
-  return Promise.all([commands, remoteOperations, ...transfers.map((transfer) => transfer.settled)])
+  return Promise.all([commands, fileCommands, remoteOperations, ...transfers.map((transfer) => transfer.settled)])
     .then(() => { activeSession.client.end() })
 }
 
@@ -116,12 +119,13 @@ export function connectProfile(
         finish({ ok: false, reason: 'other', message: '连接已取消' })
         return
       }
-      const activate = (shell?: ActiveSession['shell']) => {
+      const activate = (shell?: ActiveSession['shell'], effectiveUid?: number) => {
         if (!isCurrentAttempt()) {
           finish({ ok: false, reason: 'other', message: '连接已取消' })
           return
         }
         const activeSession: ActiveSession = { sessionId, client, kind, profileId, shell }
+        const fileIdentity = effectiveUid === undefined ? undefined : initializeFileIdentity(activeSession, effectiveUid)
         sessions.set(sessionId, activeSession)
         if (shell) {
           const stdoutDecoder = new StringDecoder('utf8')
@@ -146,12 +150,19 @@ export function connectProfile(
           shell.on('error', (shellError: Error) => failActiveSession(activeSession, shellError.message))
           if (startPath) shell.write('cd ' + shellQuoteIfNeeded(posix.resolve('/', startPath)) + '\n')
         }
-        finish({ ok: true, path: kind === 'files' ? '/' : startPath })
+        finish({ ok: true, path: kind === 'files' ? '/' : startPath, fileIdentity })
       }
 
       if (kind === 'files') {
-        void verifyFileSessionCapabilities(client).then(
-          () => activate(),
+        void verifyFileSessionCapabilities(client).then(() => runRemoteCommand(client, 'printf "%s" "$EUID"')).then(
+          ({ stdout }) => {
+            const uid = stdout.toString('ascii')
+            if (!/^\d+$/.test(uid)) {
+              finish({ ok: false, reason: 'other', message: '服务器返回了无效的登录 UID' })
+              return
+            }
+            activate(undefined, Number(uid))
+          },
           (error: unknown) => finish({ ok: false, reason: 'other', message: error instanceof Error ? error.message : String(error) }),
         )
       } else {
@@ -229,12 +240,6 @@ export function connectProfile(
   })
 }
 
-function getFilesSession(sessionId: string): ActiveSession {
-  const activeSession = sessions.get(sessionId)
-  if (!activeSession || activeSession.kind !== 'files') throw new Error('文件会话未连接')
-  return activeSession
-}
-
 export function writeTerminal(sessionId: string, data: string): void {
   const shell = sessions.get(sessionId)?.shell
   if (!shell || shell.destroyed) throw new Error('SSH 终端未连接')
@@ -248,12 +253,11 @@ export function resizeTerminal(sessionId: string, cols: number, rows: number): v
 }
 
 export function listDirectory(sessionId: string, remotePath: string): Promise<RemoteEntry[]> {
-  const activeSession = getFilesSession(sessionId)
-  return listRemoteDirectory(activeSession.client, remotePath)
+  return listRemoteDirectory(filesSession(sessionId).commands, remotePath)
 }
 
 export function copyRemotePath(sessionId: string, remotePath: string): void {
-  getFilesSession(sessionId)
+  filesSession(sessionId)
   clipboard.writeText(posix.resolve('/', remotePath))
 }
 
@@ -262,17 +266,17 @@ export async function createRemoteDirectory(
   remoteDirectory: string,
   name: string,
 ): Promise<void> {
-  const activeSession = getFilesSession(sessionId)
+  const { commands } = filesSession(sessionId)
   if (typeof name !== 'string' || !name || name === '.' || name === '..' || name.includes('/') || name.includes('\0')) {
     throw new Error('名称无效：不能包含路径分隔符，也不能是 . 或 ..')
   }
   const parentPath = posix.resolve('/', remoteDirectory)
   const targetPath = posix.join(parentPath, name)
-  await runRemoteCommand(activeSession.client, 'mkdir -- "$1"', [targetPath])
+  await runRemoteCommand(commands, 'mkdir -- "$1"', [targetPath])
 }
 
 export async function deleteRemoteEntries(sessionId: string, remotePaths: string[]): Promise<void> {
-  const activeSession = getFilesSession(sessionId)
+  const { commands } = filesSession(sessionId)
   if (!Array.isArray(remotePaths) || remotePaths.length === 0) throw new Error('至少选择一个远程项目')
   const paths = remotePaths.map((remotePath) => {
     if (typeof remotePath !== 'string' || !remotePath || remotePath.includes('\0')) throw new Error('删除路径无效')
@@ -280,7 +284,7 @@ export async function deleteRemoteEntries(sessionId: string, remotePaths: string
   })
   if (paths.includes('/')) throw new Error('不能删除服务器根目录')
   if (new Set(paths).size !== paths.length) throw new Error('删除列表包含重复路径')
-  await runRemoteCommand(activeSession.client,
+  await runRemoteCommand(commands,
     'set -eu; for path in "$@"; do [[ ! -L "$path" && ( -f "$path" || -d "$path" ) ]] || { printf "只能删除普通文件或文件夹: %s\\n" "$path" >&2; exit 1; }; done; rm -r -- "$@"',
     paths,
   )

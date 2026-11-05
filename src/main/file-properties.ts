@@ -25,7 +25,7 @@ function timestamp(value: string): string {
 export async function getRemoteEntryProperties(sessionId: string, remotePath: string): Promise<RemoteEntryProperties> {
   const session = filesSession(sessionId)
   const path = normalizedRemotePath(remotePath)
-  const { stdout } = await runRemoteCommand(session.client, [
+  const { stdout } = await runRemoteCommand(session.commands, [
     'set -eu',
     'export LC_ALL=C',
     'stat --printf=\'%f\\0%s\\0%a\\0%A\\0%u\\0%U\\0%g\\0%G\\0%X\\0%Y\\0%Z\\0%W\\0\' -- "$1"',
@@ -52,7 +52,7 @@ export async function getRemoteEntryProperties(sessionId: string, remotePath: st
 export async function getRemoteDirectoryDiskUsage(sessionId: string, remotePath: string): Promise<number> {
   const session = filesSession(sessionId)
   const path = normalizedRemotePath(remotePath)
-  const { stdout } = await runRemoteCommand(session.client, [
+  const { stdout } = await runRemoteCommand(session.commands, [
     'set -eu',
     'export LC_ALL=C',
     '[[ ! -L "$1" && -d "$1" ]] || { printf "%s\\n" "只能计算文件夹的占用空间，目标可能已发生变化" >&2; exit 1; }',

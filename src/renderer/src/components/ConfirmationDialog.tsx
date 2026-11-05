@@ -1,4 +1,4 @@
-import { useEffect, useId } from 'react'
+import { useEffect, useId, type ReactNode } from 'react'
 import { AlertTriangle, LoaderCircle, Trash2, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 
@@ -9,6 +9,9 @@ interface ConfirmationDialogProps {
   details?: { label: string; value: string }[]
   tone: 'danger' | 'warning'
   confirmLabel: string
+  confirmDisabled?: boolean
+  focusCancel?: boolean
+  children?: ReactNode
   busyLabel?: string
   cancelLabel?: string
   error?: string | null
@@ -27,6 +30,9 @@ export default function ConfirmationDialog({
   details = [],
   tone,
   confirmLabel,
+  confirmDisabled = false,
+  focusCancel = false,
+  children,
   busyLabel = '处理中',
   cancelLabel = '取消',
   error,
@@ -74,11 +80,12 @@ export default function ConfirmationDialog({
           </dl>
         )}
         <p id={id + '-description'} className="confirmation-description">{description}</p>
+        {children}
         {error && <div className="confirmation-error" role="alert">{errorLabel}：{error}</div>}
         <div className="modal-footer">
-          <button type="button" className="secondary-button" autoFocus={busy} disabled={busy} onClick={onCancel}>{cancelLabel}</button>
+          <button type="button" className="secondary-button" autoFocus={focusCancel && !busy} disabled={busy} onClick={onCancel}>{cancelLabel}</button>
           {secondaryActionLabel && <button type="button" className="secondary-button" disabled={busy} onClick={onSecondaryAction}>{secondaryActionLabel}</button>}
-          <button type="button" className={tone === 'danger' ? 'danger-button' : 'warning-button'} autoFocus={!busy} disabled={busy} onClick={onConfirm}>
+          <button type="button" className={tone === 'danger' ? 'danger-button' : 'warning-button'} autoFocus={!busy && !confirmDisabled && !focusCancel} disabled={busy || confirmDisabled} onClick={onConfirm}>
             {busy ? <LoaderCircle className="spin" size={15} /> : <Icon size={15} />}
             {busy ? busyLabel : confirmLabel}
           </button>

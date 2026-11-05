@@ -7,6 +7,7 @@ import { filesSession, normalizedRemotePath } from '../../remote-fs'
 import { runRemoteCommand, RemoteCommandError } from '../../ssh-commands'
 import { readPreviewLimits } from '../../state-store'
 import { type PreviewStrategy } from '../preview-strategy'
+import { missingTextSavePackages, requireTextSaveDependencies } from '../text-save-dependencies'
 
 type TextPreviewResult = Extract<PreviewResult, { type: 'text' | 'markdown' }>
 const hashPattern = /^[a-f0-9]{64}$/
@@ -47,7 +48,7 @@ destination=$1
 expected_hash=$2
 expected_identity=$3
 force=$4
-for tool in getfacl getfattr cp stat sha256sum; do command -v "$tool" >/dev/null || { printf '保全文件元数据需要命令: %s\\n' "$tool" >&2; exit 1; }; done
+${requireTextSaveDependencies}
 [[ -f "$destination" && ! -L "$destination" && $(stat -c %h -- "$destination") == 1 ]] || { printf '%s\\n' '目标不是单硬链接普通文件' >&2; exit 1; }
 metadata() {
   stat -c '%u:%g:%a' -- "$1" || return
@@ -124,12 +125,14 @@ export async function saveTextFile(sessionId: string, remotePath: string, conten
   const bytes = encodeEditedText(content, lineEnding, options.encoding, options.bom)
   if (bytes.length > readPreviewLimits().textMiB * 1024 * 1024) throw new Error('保存后的文本超过预览上限')
   try {
-    const { stdout } = await runRemoteCommand(session.client, buildTextSaveCommand(), [path, options.version.hash, options.version.identity, options.force ? '1' : '0', String(bytes.length)], { stdin: [bytes, commitRecord(createHash('sha256').update(bytes).digest('hex'))], maxStdoutBytes: 1024 })
+    const { stdout } = await runRemoteCommand(session.commands, buildTextSaveCommand(), [path, options.version.hash, options.version.identity, options.force ? '1' : '0', String(bytes.length)], { stdin: [bytes, commitRecord(createHash('sha256').update(bytes).digest('hex'))], maxStdoutBytes: 1024 })
     const [hash, identity] = stdout.toString().trimEnd().split('\n')
     const version = parseVersion(hash, identity)
     if (version.hash !== createHash('sha256').update(bytes).digest('hex')) throw new Error('保存命令结束后文件再次变化，请重新加载；草稿已保留')
     return { status: 'saved', version }
   } catch (error) {
+    const packages = missingTextSavePackages(error)
+    if (packages) return { status: 'missing-dependencies', packages }
     if (error instanceof RemoteCommandError && error.exitCode === 73 && error.stderr.startsWith('LINUX_NEXUS_TEXT_CONFLICT:')) return { status: 'conflict' }
     throw error
   }

@@ -5,7 +5,7 @@ import { runRemoteCommand } from '../ssh-commands'
 
 const LOG_PREVIEW_PAGE_BYTES = 256 * 1024
 
-async function readRemoteRange(client: ReturnType<typeof filesSession>['client'], remotePath: string, startOffset: number, endOffset: number): Promise<Buffer> {
+async function readRemoteRange(client: ReturnType<typeof filesSession>['commands'], remotePath: string, startOffset: number, endOffset: number): Promise<Buffer> {
   if (startOffset >= endOffset) return Buffer.alloc(0)
   const length = endOffset - startOffset
   const { stdout } = await runRemoteCommand(client,
@@ -42,9 +42,9 @@ export async function readLogPreview(
 
   const session = filesSession(sessionId)
   const normalizedPath = normalizedRemotePath(remotePath)
-  if (await remotePathType(session.client, normalizedPath) !== 'file') throw new Error('只能预览普通文件')
+  if (await remotePathType(session.commands, normalizedPath) !== 'file') throw new Error('只能预览普通文件')
 
-  const currentSize = await remoteFileSize(session.client, normalizedPath)
+  const currentSize = await remoteFileSize(session.commands, normalizedPath)
   if (!Number.isSafeInteger(currentSize) || currentSize < 0) throw new Error('日志文件大小无效')
   const fileSize = snapshotSize ?? currentSize
   if (fileSize > currentSize) throw new Error('日志文件已变化，请重新打开预览')
@@ -58,7 +58,7 @@ export async function readLogPreview(
 
   const pageBytes = Math.min(LOG_PREVIEW_PAGE_BYTES, remainingBytes, endOffset)
   const candidateStart = endOffset - pageBytes
-  const range = await readRemoteRange(session.client, normalizedPath, candidateStart, endOffset)
+  const range = await readRemoteRange(session.commands, normalizedPath, candidateStart, endOffset)
   let skip = 0
   if (candidateStart > 0) {
     const firstLineBreak = range.indexOf(0x0a)

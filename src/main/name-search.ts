@@ -1,5 +1,6 @@
 import { posix } from 'node:path'
 import { executeRemoteCommand, RemoteCommandError, RemoteTerminationError } from './ssh-commands'
+import { fileCommands } from './file-identity'
 import type {
   NameSearchEvent,
   NameSearchProgress,
@@ -154,6 +155,7 @@ export function startNameSearch(input: NameSearchRequest): void {
   if (activeSearches.has(request.requestId)) throw new Error('文件名搜索请求编号已在使用')
   const session = sessions.get(request.sessionId)
   if (!session || session.kind !== 'files' || session.profileId !== request.profileId) throw new Error('文件会话未连接')
+  const commands = fileCommands(session)
 
   const task: NameSearchTask = {
     request,
@@ -174,7 +176,7 @@ export function startNameSearch(input: NameSearchRequest): void {
   emitProgress(task, true)
 
 
-  void executeRemoteCommand(session.client, buildNameSearchCommand(request), {
+  void executeRemoteCommand(commands, buildNameSearchCommand(request), {
     signal: task.controller.signal, collectStdout: false, keepStdinOpen: true, timeoutMs: 86_400_000,
     maxStdoutBytes: 32 * 1024 * 1024,
     onStdout: (chunk) => {

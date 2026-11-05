@@ -5,6 +5,7 @@ import { previewTypesForFile } from '@shared/preview-file-type'
 import ConfirmationDialog from '@/components/ConfirmationDialog'
 import LogPreviewDialog from '@/components/previews/LogPreviewDialog'
 import PreviewDialog from '@/components/previews/PreviewDialog'
+import TextSaveInstallDialog from '@/components/previews/TextSaveInstallDialog'
 import type { PreviewSearchHandle } from '@/components/previews/usePreviewSearch'
 import SearchDialog from '@/features/search/SearchDialog'
 import { usePreview } from '@/hooks/usePreview'
@@ -239,14 +240,26 @@ export default function FileSessionWorkspace({
         />
       )}
 
-      {active && preview.textSaveConfirmation && (
+      {active && preview.textSaveConfirmation?.kind === 'install' && (
+        <TextSaveInstallDialog
+          path={preview.textSaveConfirmation.path}
+          packages={preview.textSaveConfirmation.packages}
+          passwordRequired={preview.textSaveConfirmation.passwordRequired}
+          busy={preview.textSaving}
+          error={preview.textSaveError}
+          onConfirm={preview.confirmTextSave}
+          onCancel={preview.cancelTextSave}
+        />
+      )}
+
+      {active && preview.textSaveConfirmation && preview.textSaveConfirmation.kind !== 'install' && (
         <ConfirmationDialog
           eyebrow="保存远程文件"
           title={`保存对 ${preview.textSaveConfirmation.name} 的修改？`}
           details={[{ label: '远程路径', value: preview.textSaveConfirmation.path }]}
           description="保存将用当前编辑的内容替换服务器上的文件。"
           tone="warning"
-          confirmLabel={preview.textConflict ? "强制覆盖服务器文件" : "保存修改"}
+          confirmLabel={preview.textSaveConfirmation.kind === 'conflict' ? '强制覆盖服务器文件' : '保存修改'}
           busyLabel="正在保存"
           error={preview.textSaveError}
           errorLabel="保存失败"

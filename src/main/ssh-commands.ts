@@ -1,5 +1,6 @@
 import type { Client, ClientChannel } from 'ssh2'
 import { shellQuote } from '../shared/shell.ts'
+import { randomUUID } from 'node:crypto'
 
 interface ClientTasks {
   controllers: Set<AbortController>
@@ -62,6 +63,17 @@ export interface RemoteCommandOptions {
   keepStdinOpen?: boolean
 }
 export interface RemoteCommandResult { stdout: Buffer; stderr: string; exitCode: number | null }
+export interface RemoteCommandExecutor {
+  execute(command: string, options?: RemoteCommandOptions): Promise<RemoteCommandResult>
+}
+export type RemoteCommandTarget = Client | RemoteCommandExecutor
+
+export class SudoAuthenticationError extends Error {
+  constructor(readonly passwordRequired: boolean, message: string) {
+    super(message)
+    this.name = 'SudoAuthenticationError'
+  }
+}
 export class RemoteCommandError extends Error {
   constructor(readonly exitCode: number | null, readonly stderr: string) {
     super(stderr || (exitCode === null ? 'SSH 连接中断，未收到命令退出码；远端状态未知' : `远程命令失败（退出码 ${exitCode}）`))
@@ -76,7 +88,28 @@ export class RemoteTerminationError extends Error {
 export function buildRemoteCommand(script: string, args: readonly string[] = []): string {
   return `bash -c ${shellQuote(script)} --${args.length ? ' ' + args.map(shellQuote).join(' ') : ''}`
 }
-export function executeRemoteCommand(client: Client, command: string, options: RemoteCommandOptions = {}): Promise<RemoteCommandResult> {
+export function executeRemoteCommand(target: RemoteCommandTarget, command: string, options?: RemoteCommandOptions): Promise<RemoteCommandResult> {
+  return 'execute' in target ? target.execute(command, options) : executeSshCommand(target, command, options)
+}
+
+export function executeSudoCommand(client: Client, command: string, password: Buffer | undefined, options: RemoteCommandOptions): Promise<RemoteCommandResult> {
+  const id = randomUUID()
+  const prompt = `LINUX_NEXUS_SUDO_${id}:`
+  const ready = `LINUX_NEXUS_ROOT_${id}\n`
+  const bootstrap = [
+    '[[ $EUID == 0 ]] || exit 1',
+    'printf "%s" "$1"',
+    'exec -c /usr/bin/env PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME="$HOME" USER=root LOGNAME=root /bin/bash -p -c "$2"',
+  ].join('\n')
+  const args = [prompt, bootstrap, ready, command].map(shellQuote)
+  return executeSshCommand(client,
+    `exec /usr/bin/sudo -H -S -p ${args[0]} -u root -- /bin/bash -p -c ${args[1]} -- ${args[2]} ${args[3]}`,
+    options, { prompt, ready: Buffer.from(ready), password })
+}
+
+function executeSshCommand(client: Client, command: string, options: RemoteCommandOptions = {},
+  authentication?: { prompt: string; ready: Buffer; password?: Buffer },
+): Promise<RemoteCommandResult> {
   return new Promise((resolve, reject) => {
     const controller = new AbortController()
     let releaseOwner = () => {}
@@ -91,13 +124,17 @@ export function executeRemoteCommand(client: Client, command: string, options: R
     const stdout: Buffer[] = [], stderr: Buffer[] = []
     let pending: Promise<void> | null = null
     let cancelInputWait: (() => void) | undefined
-    let timer: NodeJS.Timeout | undefined, grace: NodeJS.Timeout | undefined
+    let timer: NodeJS.Timeout | undefined, grace: NodeJS.Timeout | undefined, authTimer: NodeJS.Timeout | undefined
+    let authenticated = !authentication
+    let sentPassword = false
+    let readyBytes = Buffer.alloc(0)
+    let authStderr = ''
     const asError = (value: unknown) => value instanceof Error ? value : new Error(String(value))
     const finish = (error?: Error) => {
       if (settled) return
       settled = true
       cancelInputWait?.()
-      clearTimeout(timer); clearTimeout(grace)
+      clearTimeout(timer); clearTimeout(grace); clearTimeout(authTimer)
       releaseOwner()
       options.signal?.removeEventListener('abort', abortParent)
       controller.signal.removeEventListener('abort', cancel)
@@ -105,12 +142,18 @@ export function executeRemoteCommand(client: Client, command: string, options: R
       stream?.removeListener('error', onError); stream?.stderr.removeListener('error', onError)
       stream?.removeListener('exit', onExit); stream?.removeListener('close', onClose)
       const result = { stdout: options.collectStdout === false ? Buffer.alloc(0) : Buffer.concat(stdout), stderr: Buffer.concat(stderr).toString('utf8') + (truncated ? '\n[stderr 已截断]' : ''), exitCode }
+      if (!error && authentication && !authenticated && exitCode !== null) {
+        error = new SudoAuthenticationError(false, sentPassword
+          ? 'sudo 密码验证失败或服务器拒绝了提权'
+          : authStderr.trim() || '服务器拒绝了非交互式 sudo 提权')
+      }
       error ??= exitCode === 0 ? undefined : new RemoteCommandError(exitCode, result.stderr)
       options.onComplete?.(error, result)
       if (error) reject(error); else resolve(result)
     }
     const stop = (why: 'cancelled' | 'timeout') => {
       reason ??= why
+      clearTimeout(authTimer)
       if (!stream) { finish(new RemoteTerminationError(reason, 'unknown')); return }
       if (grace) return
       // Arm before sending: peers and test transports may acknowledge synchronously.
@@ -125,7 +168,22 @@ export function executeRemoteCommand(client: Client, command: string, options: R
       stream?.close()
     }
     const onData = (chunk: Buffer) => {
-      const bytes = Buffer.from(chunk)
+      let bytes = Buffer.from(chunk)
+      if (authentication && !authenticated) {
+        if (reason) return
+        const needed = authentication.ready.length - readyBytes.length
+        readyBytes = Buffer.concat([readyBytes, bytes.subarray(0, needed)])
+        if (!authentication.ready.subarray(0, readyBytes.length).equals(readyBytes)) {
+          onError(new SudoAuthenticationError(false, '服务器返回了无效的 sudo 启动标记'))
+          return
+        }
+        if (readyBytes.length < authentication.ready.length) return
+        authenticated = true
+        clearTimeout(authTimer)
+        queueMicrotask(() => { if (!settled && !reason) startInput() })
+        bytes = bytes.subarray(needed)
+        if (!bytes.length) return
+      }
       outputBytes += bytes.length
       if (outputBytes > (options.maxStdoutBytes ?? (options.collectStdout === false ? Infinity : 64 * 1024 * 1024))) {
         onError(new Error('服务器命令输出超过允许大小；远端状态未知')); return
@@ -141,6 +199,25 @@ export function executeRemoteCommand(client: Client, command: string, options: R
       } catch (error) { onError(asError(error)) }
     }
     const onStderr = (chunk: Buffer) => {
+      if (authentication && !authenticated) {
+        if (reason) return
+        authStderr += chunk.toString('utf8')
+        if (authStderr.includes(authentication.prompt)) {
+          if (!authentication.password) {
+            onError(new SudoAuthenticationError(true, '服务器要求 sudo 密码'))
+          } else if (sentPassword) {
+            onError(new SudoAuthenticationError(false, 'sudo 密码错误或服务器需要多步认证'))
+          } else {
+            sentPassword = true
+            authStderr = ''
+            try { stream!.write(authentication.password) }
+            catch { onError(new SudoAuthenticationError(false, '无法向远端 sudo 发送认证数据')) }
+          }
+        } else if (authStderr.length > 8192) {
+          onError(new SudoAuthenticationError(false, '服务器返回了无法识别的 sudo 认证提示'))
+        }
+        return
+      }
       try { options.onStderr?.(chunk) } catch (error) { onError(asError(error)); return }
       const remaining = (options.maxStderrBytes ?? 256 * 1024) - errorBytes
       if (chunk.length > remaining) truncated = true
@@ -154,18 +231,8 @@ export function executeRemoteCommand(client: Client, command: string, options: R
       }
       if (pending) void pending.then(complete, error => finish(asError(error))); else complete()
     }
-    releaseOwner = ownTask(client, controller, finish)
-    controller.signal.addEventListener('abort', cancel, { once: true })
-    if (options.signal?.aborted) { cancel(); return }
-    timer = setTimeout(() => stop('timeout'), options.timeoutMs ?? 30_000)
-    try {
-      client.exec(command, (error, channel) => {
-        if (error) { finish(error); return }
-        stream = channel
-        if (settled) { try { channel.signal('TERM') } catch {} channel.destroy(); return }
-        channel.on('data', onData); channel.stderr.on('data', onStderr)
-        channel.once('error', onError); channel.stderr.once('error', onError)
-        channel.once('exit', onExit); channel.once('close', onClose)
+    const startInput = () => {
+        const channel = stream!
         if (options.stdin) void (async () => {
           try {
             for await (const value of options.stdin!) {
@@ -187,10 +254,27 @@ export function executeRemoteCommand(client: Client, command: string, options: R
           } catch (error) { onError(asError(error)) }
         })()
         else if (!options.keepStdinOpen) channel.end()
+    }
+    releaseOwner = ownTask(client, controller, finish)
+    controller.signal.addEventListener('abort', cancel, { once: true })
+    if (options.signal?.aborted) { cancel(); return }
+    timer = setTimeout(() => stop('timeout'), options.timeoutMs ?? 30_000)
+    if (authentication) authTimer = setTimeout(() => {
+      onError(new SudoAuthenticationError(false, 'sudo 认证超时，请检查服务器的认证策略'))
+    }, 15_000)
+    try {
+      client.exec(command, (error, channel) => {
+        if (error) { finish(error); return }
+        stream = channel
+        if (settled) { try { channel.signal('TERM') } catch {} channel.destroy(); return }
+        channel.once('error', onError); channel.stderr.once('error', onError)
+        channel.once('exit', onExit); channel.once('close', onClose)
+        channel.stderr.on('data', onStderr); channel.on('data', onData)
+        if (!authentication) startInput()
       })
     } catch (error) { finish(asError(error)) }
   })
 }
-export function runRemoteCommand(client: Client, script: string, args: readonly string[] = [], options: RemoteCommandOptions = {}): Promise<RemoteCommandResult> {
+export function runRemoteCommand(client: RemoteCommandTarget, script: string, args: readonly string[] = [], options: RemoteCommandOptions = {}): Promise<RemoteCommandResult> {
   return executeRemoteCommand(client, buildRemoteCommand(script, args), options)
 }

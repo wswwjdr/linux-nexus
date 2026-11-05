@@ -133,7 +133,7 @@ export function useSessionOperations({
         }
         return
       }
-      patchSession(session.id, { status: 'connected', error: null })
+      patchSession(session.id, { status: 'connected', error: null, fileIdentity: result.fileIdentity })
       setRecentConnections((current) => [
         { profileId: profile.id, connectedAt: Date.now() },
         ...current.filter((connection) => connection.profileId !== profile.id),

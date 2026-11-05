@@ -1,12 +1,11 @@
 import { posix } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
-import type { Client } from 'ssh2'
 import type { ScriptExecutionEvent, ScriptExecutionRequest } from '../shared/types.ts'
-import { executeRemoteCommand, RemoteCommandError, RemoteTerminationError } from './ssh-commands'
+import { executeRemoteCommand, RemoteCommandError, RemoteTerminationError, type RemoteCommandTarget } from './ssh-commands'
 import { shellQuote } from '../shared/shell.ts'
 
 interface ScriptExecutionSession {
-  client: Client
+  client: RemoteCommandTarget
   kind: 'files' | 'terminal'
 }
 

@@ -3,9 +3,8 @@ import { open, link, stat as localStat, unlink } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { commitRecord } from '../staged-write'
 import { createHash, randomUUID } from 'node:crypto'
-import type { Client } from 'ssh2'
 import type { OperationExecutionStrategy } from '@shared/types'
-import { runRemoteCommand } from '../ssh-commands'
+import { runRemoteCommand, type RemoteCommandTarget } from '../ssh-commands'
 import { buildUploadCommand } from './upload-command'
 
 export const TRANSFER_CHUNK_SIZE = 256 * 1024
@@ -28,7 +27,7 @@ async function writeAll(file: Awaited<ReturnType<typeof open>>, chunk: Buffer): 
 
 export async function transferFileStream(
   direction: Direction,
-  client: Client,
+  client: RemoteCommandTarget,
   sourcePath: string,
   destinationPath: string,
   size: number,

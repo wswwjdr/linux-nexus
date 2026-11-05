@@ -3,13 +3,18 @@ import type { TextEncoding, TextSaveOptions, ContentSearchRequest, NameSearchReq
 import { copyRemotePath, createRemoteDirectory, deleteRemoteEntries, listDirectory } from '../connections'
 import { cancelTransfer, downloadEntries, executeSelectedUpload, selectUploadSources, uploadSelectionContext, cancelUploadSelection, validateDownloadPaths, withTransferLock } from '../transfers'
 import { previewFile, readLogPreview, releasePreview, saveTextFile } from '../previews'
+import { installTextSaveDependencies } from '../previews/text-save-dependencies'
 import { cancelNameSearch, startNameSearch } from '../name-search'
 import { cancelContentSearch, startContentSearch } from '../content-search'
 import { cancelScriptExecution, startScriptExecution } from '../script-execution-runtime'
 import { filesSession, renameRemoteEntry } from '../remote-fs'
 import { getRemoteEntryProperties, getRemoteDirectoryDiskUsage } from '../file-properties'
+import { cancelFileRootEntry, enterFileRoot, leaveFileRoot } from '../file-identity'
 
 export function registerFilesIpc(): void {
+  ipcMain.handle('files:root-enter', (_event, sessionId: unknown, password?: unknown) => enterFileRoot(sessionId, password))
+  ipcMain.handle('files:root-cancel', (_event, sessionId: unknown) => cancelFileRootEntry(sessionId))
+  ipcMain.handle('files:root-leave', (_event, sessionId: unknown) => leaveFileRoot(sessionId))
   ipcMain.handle('files:properties', (_event, sessionId: string, remotePath: string) =>
     getRemoteEntryProperties(sessionId, remotePath))
   ipcMain.handle('files:directory-disk-usage', (_event, sessionId: string, remotePath: string) =>
@@ -25,9 +30,6 @@ export function registerFilesIpc(): void {
     if (typeof requestId !== 'string' || !requestId) throw new Error('脚本执行请求编号无效')
     return cancelScriptExecution(requestId)
   })
-  const transferSession = (sessionId: string) => {
-    return filesSession(sessionId)
-  }
   ipcMain.handle('files:upload-select', (_event, request: unknown) => selectUploadSources(request))
   ipcMain.handle('files:upload-execute', (event, request: unknown) => {
     if (typeof request !== 'object' || request === null || !('selectionId' in request)
@@ -36,10 +38,10 @@ export function registerFilesIpc(): void {
     if (!['force', 'skip', 'update'].includes(request.strategy)) throw new Error('上传策略无效')
     const uploadRequest = request as unknown as UploadExecutionRequest
     const selectionId = uploadRequest.selectionId
-    const { requestId, sessionId, profileId } = uploadSelectionContext(selectionId)
-    return withTransferLock(profileId, sessionId, requestId,
+    const { requestId, sessionId, profileId, commands } = uploadSelectionContext(selectionId)
+    return commands.track(withTransferLock(profileId, sessionId, requestId,
       (signal) => executeSelectedUpload(event, selectionId, uploadRequest.strategy as OperationExecutionStrategy, signal),
-      () => { if (!event.sender.isDestroyed()) event.sender.send('files:transfer-queued', { requestId }) })
+      () => { if (!event.sender.isDestroyed()) event.sender.send('files:transfer-queued', { requestId }) }))
   })
   ipcMain.handle('files:upload-selection-cancel', (_event, selectionId: unknown) => {
     if (typeof selectionId !== 'string' || !selectionId) throw new Error('上传选择编号无效')
@@ -47,10 +49,10 @@ export function registerFilesIpc(): void {
   })
   ipcMain.handle('files:download', (event, requestId: string, sessionId: string, remotePaths: unknown) => {
     const paths = validateDownloadPaths(remotePaths)
-    const { profileId } = transferSession(sessionId)
-    return withTransferLock(profileId, sessionId, requestId,
-      (signal) => downloadEntries(event, requestId, sessionId, profileId, paths, signal),
-      () => { if (!event.sender.isDestroyed()) event.sender.send('files:transfer-queued', { requestId }) })
+    const session = filesSession(sessionId)
+    return session.commands.track(withTransferLock(session.profileId, sessionId, requestId,
+      (signal) => downloadEntries(event, requestId, session, paths, signal),
+      () => { if (!event.sender.isDestroyed()) event.sender.send('files:transfer-queued', { requestId }) }))
   })
   ipcMain.handle('files:transfer-cancel', (_event, requestId: string) => cancelTransfer(requestId))
   ipcMain.handle('files:create-directory', (_event, sessionId: string, remoteDirectory: string, name: string) =>
@@ -68,6 +70,8 @@ export function registerFilesIpc(): void {
     previewFile(sessionId, remotePath, type, encoding))
   ipcMain.handle('files:text-save', (_event, sessionId: string, remotePath: string, content: string, lineEnding: unknown, options: TextSaveOptions) =>
     saveTextFile(sessionId, remotePath, content, lineEnding, options))
+  ipcMain.handle('files:text-save-install-dependencies', (_event, sessionId: string, packages: unknown, password: unknown) =>
+    installTextSaveDependencies(sessionId, packages, password))
   ipcMain.handle('files:preview-log', (_event, sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number) =>
     readLogPreview(sessionId, remotePath, beforeOffset, snapshotSize))
   ipcMain.handle('files:preview-release', (_event, token: string) => releasePreview(token))

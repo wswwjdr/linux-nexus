@@ -166,7 +166,7 @@ export function executeRemoteOperation(value: OperationExecutionRequest): Promis
   const session = filesSession(intent.sessionId)
   const command = buildOperationCommand(intent, value.strategy)
   const controller = new AbortController()
-  const promise = executeRemoteCommand(session.client, command, { signal: controller.signal, timeoutMs: 86_400_000, collectStdout: false })
+  const promise = executeRemoteCommand(session.commands, command, { signal: controller.signal, timeoutMs: 86_400_000, collectStdout: false })
     .then((): OperationExecutionResult => ({ status: 'completed', requestId: value.requestId, operation: intent.operation, command }))
     .catch((error: unknown): OperationExecutionResult => {
       if (controller.signal.aborted) return { status: 'cancelled', requestId: value.requestId, operation: intent.operation, command }

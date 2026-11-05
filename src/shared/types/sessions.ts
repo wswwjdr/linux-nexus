@@ -1,5 +1,5 @@
 export type ConnectResult =
-  | { ok: true; path: string }
+  | { ok: true; path: string; fileIdentity?: FileIdentity }
   | {
       ok: false
       reason: 'host-key-unknown'
@@ -24,6 +24,17 @@ export interface TrustHostKeyInput {
 }
 
 export type SessionKind = 'files' | 'terminal'
+
+export type FileIdentity = 'login' | 'sudo-root' | 'root-login'
+export type FileElevationResult =
+  | { status: 'entered'; identity: FileIdentity }
+  | { status: 'password-required' }
+  | { status: 'cancelled' }
+
+export interface FileRootExpiredEvent {
+  sessionId: string
+  remoteStateUnknown: boolean
+}
 
 export interface TerminalOutputEvent {
   sessionId: string

@@ -2,7 +2,12 @@ export type TextLineEnding = '\n' | '\r\n' | '\r' | null
 export type TextEncoding = 'utf8' | 'gbk'
 export interface TextFileVersion { hash: string; identity: string }
 export interface TextSaveOptions { version: TextFileVersion; encoding: TextEncoding; bom: boolean; force: boolean }
-export type TextSaveResult = { status: 'saved'; version: TextFileVersion } | { status: 'conflict' }
+export type TextSavePackage = 'acl' | 'attr'
+export type TextSaveResult =
+  | { status: 'saved'; version: TextFileVersion }
+  | { status: 'conflict' }
+  | { status: 'missing-dependencies'; packages: TextSavePackage[] }
+export type TextSaveInstallResult = { status: 'installed' } | { status: 'password-required' }
 
 export type PreviewResult =
   | { type: 'text'; name: string; content: string; lineEnding: TextLineEnding; encoding: TextEncoding; bom: boolean; version: TextFileVersion }

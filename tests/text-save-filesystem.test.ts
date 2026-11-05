@@ -6,11 +6,19 @@ import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import { buildTextSaveCommand } from '../src/main/previews/strategies/text-preview.ts'
+import { missingTextSavePackages } from '../src/main/previews/text-save-dependencies.ts'
+import { RemoteCommandError } from '../src/main/ssh-commands.ts'
 import { commitRecord } from '../src/main/staged-write.ts'
 const git = process.platform === 'win32' ? spawnSync('where.exe', ['git'], { encoding: 'utf8' }).stdout?.trim().split(/\r?\n/)[0] : undefined
 const bash = process.env.LINUX_NEXUS_TEST_BASH ?? (git ? resolve(dirname(git), '../bin/bash.exe') : 'bash')
 const available = spawnSync(bash, ['-c', 'command -v getfacl && command -v getfattr'], { encoding: 'utf8' }).status === 0
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
+
+test('reports all missing packages before validating or writing the destination', { skip: spawnSync(bash, ['--version']).status !== 0 }, () => {
+  const simulateMissingTools = 'command() { [[ "$2" != getfacl && "$2" != getfattr ]]; };\n'
+  const result = spawnSync(bash, ['-c', simulateMissingTools + buildTextSaveCommand(), '--', '/nonexistent/destination', '', '', '0', '0'], { encoding: 'utf8' })
+  assert.deepEqual(missingTextSavePackages(new RemoteCommandError(result.status, result.stderr)), ['acl', 'attr'])
+})
 
 test('real metadata-preserving save refuses conflicts, truncated input and hardlinks, then commits explicitly', { skip: !available && 'GNU Bash, acl and attr tools required' }, () => {
   const directory = mkdtempSync(join(tmpdir(), 'nexus-text-save-'))

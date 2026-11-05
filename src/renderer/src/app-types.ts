@@ -1,4 +1,4 @@
-import type { CommandAlias, LogPreviewPage, PerformanceThresholds, FileTypeExtensions, PreviewLimits, PreviewResult, RemoteEntry, ScriptExecutionRequest, ServerProfile, SessionKind, ThemeMode, TransferFailure, TransferFileProgress } from '@shared/types'
+import type { CommandAlias, FileIdentity, LogPreviewPage, PerformanceThresholds, FileTypeExtensions, PreviewLimits, PreviewResult, RemoteEntry, ScriptExecutionRequest, ServerProfile, SessionKind, ThemeMode, TransferFailure, TransferFileProgress } from '@shared/types'
 import type { FileContextMenuContext } from './features/files/file-menu'
 
 export interface ProfileForm {
@@ -49,6 +49,7 @@ export interface SessionTab {
   id: string
   profileId: string
   kind: SessionKind
+  fileIdentity?: FileIdentity
   status: 'connecting' | 'connected' | 'disconnected' | 'awaiting-trust'
   currentPath: string
   startPath: string

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   ConnectionClosedEvent,
+  FileRootExpiredEvent,
   CommandAliasOperationResult,
   CommandAliasSnapshot,
   DroppedUploadEntry,
@@ -41,6 +42,14 @@ const api: RemoteFilesApi = {
     ipcRenderer.invoke('connection:connect', sessionId, profileId, kind, cols, rows, startPath),
   trustHostKey: (input: TrustHostKeyInput) => ipcRenderer.invoke('host-key:trust', input),
   disconnect: (sessionId: string) => ipcRenderer.invoke('connection:disconnect', sessionId),
+  enterFileRoot: (sessionId, password) => ipcRenderer.invoke('files:root-enter', sessionId, password),
+  cancelFileRootEntry: (sessionId) => ipcRenderer.invoke('files:root-cancel', sessionId),
+  leaveFileRoot: (sessionId) => ipcRenderer.invoke('files:root-leave', sessionId),
+  onFileRootExpired: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: FileRootExpiredEvent) => callback(state)
+    ipcRenderer.on('files:root-expired', listener)
+    return () => ipcRenderer.removeListener('files:root-expired', listener)
+  },
   writeTerminal: (sessionId: string, data: string) => ipcRenderer.invoke('terminal:write', sessionId, data),
   resizeTerminal: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
   getPerformanceMonitorState: (sessionId: string): Promise<PerformanceMonitorState> => ipcRenderer.invoke('performance:state', sessionId),
@@ -89,6 +98,8 @@ const api: RemoteFilesApi = {
   openExternalUrl: (url: string): Promise<void> => ipcRenderer.invoke('shell:open-external', url),
   saveTextFile: (sessionId: string, remotePath: string, content: string, lineEnding, options: TextSaveOptions) =>
     ipcRenderer.invoke('files:text-save', sessionId, remotePath, content, lineEnding, options),
+  installTextSaveDependencies: (sessionId, packages, password) =>
+    ipcRenderer.invoke('files:text-save-install-dependencies', sessionId, packages, password),
   readLogPreview: (sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number): Promise<LogPreviewPage> =>
     ipcRenderer.invoke('files:preview-log', sessionId, remotePath, beforeOffset, snapshotSize),
   releasePreview: (token: string) => ipcRenderer.invoke('files:preview-release', token),

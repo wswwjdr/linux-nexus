@@ -1,11 +1,11 @@
 import type { RemoteEntry, SaveProfileInput, ServerProfile, CommandAliasOperationResult, CommandAliasSnapshot } from './profiles'
 import type { NameSearchRequest, ContentSearchRequest, NameSearchEvent, ContentSearchEvent } from './search'
 import type { ScriptExecutionRequest, ScriptExecutionEvent } from './script-executions'
-import type { ConnectResult, TrustHostKeyInput, SessionKind, TerminalOutputEvent, ConnectionClosedEvent } from './sessions'
+import type { ConnectResult, TrustHostKeyInput, SessionKind, TerminalOutputEvent, ConnectionClosedEvent, FileElevationResult, FileRootExpiredEvent } from './sessions'
 import type { PerformanceMonitorState } from './performance'
 import type { AppSettings, AppSettingsPatch } from './settings'
 import type { DroppedUploadEntry, TransferResult, OperationExecutionRequest, OperationExecutionResult, UploadSelectionRequest, UploadSelection, UploadExecutionRequest, TransferProgress, TransferQueuedEvent } from './transfers'
-import type { PreviewResult, TextLineEnding, LogPreviewPage, TextEncoding, TextSaveOptions, TextSaveResult } from './previews'
+import type { PreviewResult, TextLineEnding, LogPreviewPage, TextEncoding, TextSaveOptions, TextSaveResult, TextSavePackage, TextSaveInstallResult } from './previews'
 import type { PreviewType } from '../file-type-registry'
 import type { RemoteEntryProperties } from './file-properties'
 
@@ -17,6 +17,10 @@ export interface RemoteFilesApi {
   connect(sessionId: string, profileId: string, kind: SessionKind, cols: number, rows: number, startPath: string): Promise<ConnectResult>
   trustHostKey(input: TrustHostKeyInput): Promise<void>
   disconnect(sessionId: string): Promise<void>
+  enterFileRoot(sessionId: string, password?: string): Promise<FileElevationResult>
+  cancelFileRootEntry(sessionId: string): Promise<void>
+  leaveFileRoot(sessionId: string): Promise<{ remoteStateUnknown: boolean }>
+  onFileRootExpired(callback: (event: FileRootExpiredEvent) => void): () => void
   writeTerminal(sessionId: string, data: string): Promise<void>
   resizeTerminal(sessionId: string, cols: number, rows: number): Promise<void>
   getPerformanceMonitorState(sessionId: string): Promise<PerformanceMonitorState>
@@ -59,6 +63,7 @@ export interface RemoteFilesApi {
     lineEnding: TextLineEnding,
     options: TextSaveOptions,
   ): Promise<TextSaveResult>
+  installTextSaveDependencies(sessionId: string, packages: TextSavePackage[], password?: string): Promise<TextSaveInstallResult>
   readLogPreview(
     sessionId: string,
     remotePath: string,

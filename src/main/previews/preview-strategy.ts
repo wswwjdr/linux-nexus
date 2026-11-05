@@ -1,4 +1,4 @@
-import type { Client } from 'ssh2'
+import type { RemoteCommandTarget } from '../ssh-commands'
 import type { PreviewResult, TextEncoding } from '@shared/types'
 
 export type PreviewType = PreviewResult['type']
@@ -7,7 +7,7 @@ export interface PreviewRequest {
   type: PreviewType
   sessionId: string
   profileId: string
-  client: Client
+  client: RemoteCommandTarget
   remotePath: string
   name: string
   size: number

@@ -48,15 +48,14 @@ function hasChildFile(items: TransferItem[], relativePath: string): boolean {
 async function downloadRemoteItems(
   event: Electron.IpcMainInvokeEvent,
   requestId: string,
-  sessionId: string,
-  profileId: string,
+  session: ReturnType<typeof filesSession>,
   remoteRootPath: string,
   items: TransferItem[],
   sourceFailures: TransferFailure[],
   destinationRoot: string,
   signal: AbortSignal,
 ): Promise<TransferResult> {
-  const session = filesSession(sessionId)
+  const { sessionId, profileId } = session
   const blockedDirectories = new Map<string, string>()
   const collisionFailures: TransferFailure[] = []
   const collidingItems = new Set<TransferItem>()
@@ -134,7 +133,7 @@ async function downloadRemoteItems(
         if (attrs && !attrs.isFile()) throw new Error('目标文件夹与待下载文件重名')
         signal.throwIfAborted()
         await mkdir(dirname(destination), { recursive: true })
-        await transferFileStream('download', session.client, item.remotePath!, destination, item.size, signal, onProgress)
+        await transferFileStream('download', session.commands, item.remotePath!, destination, item.size, signal, onProgress)
       },
     }))
 
@@ -167,13 +166,11 @@ async function chooseDownloadDirectory(signal: AbortSignal): Promise<string | nu
 export async function downloadEntries(
   event: Electron.IpcMainInvokeEvent,
   requestId: string,
-  sessionId: string,
-  profileId: string,
+  session: ReturnType<typeof filesSession>,
   remotePaths: string[],
   signal: AbortSignal,
 ): Promise<TransferResult> {
   signal.throwIfAborted()
-  const session = filesSession(sessionId)
   const destination = await chooseDownloadDirectory(signal)
   if (!destination) return { status: 'not-started' }
 
@@ -187,9 +184,9 @@ export async function downloadEntries(
       assertWindowsPath(originalName)
       let name = await uniqueDownloadName(destination, originalName, reservedNames)
       reservedNames.add(name.toLowerCase())
-      const type = await remotePathType(session.client, remotePath)
+      const type = await remotePathType(session.commands, remotePath)
       if (type === 'file') {
-        items.push({ relativePath: name, type, size: await remoteFileSize(session.client, remotePath), remotePath })
+        items.push({ relativePath: name, type, size: await remoteFileSize(session.commands, remotePath), remotePath })
         continue
       }
       if (type === 'directory') {
@@ -202,7 +199,7 @@ export async function downloadEntries(
             reservedNames.add(name.toLowerCase())
           }
         }
-        for await (const item of iterateRemoteTree(session.client, remotePath, signal)) {
+        for await (const item of iterateRemoteTree(session.commands, remotePath, signal)) {
           if (item.type === 'file' || item.type === 'directory') items.push({ ...item, type: item.type, relativePath: item.relativePath ? posix.join(name, item.relativePath) : name })
           else failures.push({ path: item.remotePath, message: item.type === 'symlink' ? '目录包含符号链接，无法下载' : '目录包含暂不支持的文件类型' })
         }
@@ -221,8 +218,7 @@ export async function downloadEntries(
   return downloadRemoteItems(
     event,
     requestId,
-    sessionId,
-    profileId,
+    session,
     remotePaths.length === 1 ? remotePaths[0] : `已选 ${remotePaths.length} 项`,
     items,
     failures,

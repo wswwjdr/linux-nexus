@@ -241,7 +241,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
           const scriptCommandDialog = scriptCommandDialogs.get(session.id)
           return (
             <FileSessionWorkspace
-              key={session.id}
+              key={session.id + ':' + (session.fileIdentity ?? 'login')}
               propertiesOpen={state.entryPropertiesSessionId === session.id}
               session={session}
               active={activeSessionId === session.id}

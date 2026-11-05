@@ -37,6 +37,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .topbar { height: 62px; flex: 0 0 62px; display: flex; align-items: center; justify-content: space-between; padding: 0 27px; border-bottom:1px solid var(--line); background:var(--surface); }
 .topbar-left, .topbar-actions { display: flex; align-items: center; gap: 14px; }
 .topbar-actions { gap: 8px; }
+.file-root-identity, .text-button.file-root-identity { color: var(--text-warning); white-space: nowrap; }
 .topbar-separator { width: 1px; height: 17px; background:var(--line-strong); }
 .connected-host { display: flex; align-items: center; gap: 6px; color:var(--text-primary); font-size: 12px; }
 .connected-host svg { color:var(--text-info); }

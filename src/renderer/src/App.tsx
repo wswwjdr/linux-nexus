@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Cloud, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, RefreshCw, Search, Settings, Terminal, Upload } from 'lucide-react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
+import { Cloud, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, RefreshCw, Search, Settings, Shield, Terminal, Upload } from 'lucide-react'
 import GlobalToast from './GlobalToast'
 import type { SessionFileWorkspaceActions } from './features/files/FileSessionWorkspace'
 import { useScriptExecution } from './features/files/useScriptExecution'
@@ -7,6 +7,7 @@ import { useFileMenuActions } from './features/files/useFileMenuActions'
 import SessionWorkspaceView from './features/sessions/SessionWorkspaceView'
 import DialogLayer from './components/DialogLayer'
 import ConfirmationDialog from './components/ConfirmationDialog'
+import FileRootPasswordDialog from './components/dialogs/FileRootPasswordDialog'
 import UploadConfirmDialog from './components/UploadConfirmDialog'
 import { RemoteArchiveDialogs } from './components/RemoteArchiveDialogs'
 import RemoteEntryRenameDialog from './components/RemoteEntryRenameDialog'
@@ -25,6 +26,7 @@ import { useRemoteFileShortcuts } from './features/files/useRemoteFileShortcuts'
 import { useFileListing } from './features/files/useFileListing'
 import type {
   FileTypeExtensions,
+  FileIdentity,
   PerformanceThresholds,
   RemoteEntry,
   ServerProfile,
@@ -51,6 +53,11 @@ export default function App() {
   const [sessionChooserOpen, setSessionChooserOpen] = useState(false)
   const [shortcutGuideOpen, setShortcutGuideOpen] = useState(false)
   const [entryProperties, setEntryProperties] = useState<{ sessionId: string; path: string; anchor: HTMLElement | null } | null>(null)
+  const [rootRequest, setRootRequest] = useState<{
+    sessionId: string
+    phase: 'entering' | 'password' | 'verifying' | 'leaving'
+    error?: string
+  } | null>(null)
   const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>('details')
   const [performanceThresholds, setPerformanceThresholds] = useState<PerformanceThresholds>(DEFAULT_PERFORMANCE_THRESHOLDS)
   const [fileTypeExtensions, setFileTypeExtensions] = useState<FileTypeExtensions>(defaultFileTypeExtensions)
@@ -271,7 +278,8 @@ export default function App() {
       if (!session) return
       removeScriptSessionStates([event.sessionId])
       removeSessionPerformanceState([event.sessionId])
-      patchSession(event.sessionId, { status: 'disconnected', error: event.message, loading: false })
+      setRootRequest((current) => current?.sessionId === event.sessionId ? null : current)
+      patchSession(event.sessionId, { status: 'disconnected', error: event.message, loading: false, fileIdentity: undefined })
       if (activeSessionId === event.sessionId) showToast('error', `连接已断开：${event.message}`)
     })
     return removeClosedListener
@@ -303,7 +311,7 @@ export default function App() {
     }
   }, [sessionContextMenu])
 
-  const loadDirectory = async (sessionId: string, remotePath: string) => {
+  const loadDirectory = async (sessionId: string, remotePath: string, quiet = false) => {
     if (!sessionsRef.current.some((session) => session.id === sessionId && session.status === 'connected')) return false
     const requestId = (directoryLoadIdsRef.current.get(sessionId) ?? 0) + 1
     directoryLoadIdsRef.current.set(sessionId, requestId)
@@ -326,7 +334,7 @@ export default function App() {
       if (directoryLoadIdsRef.current.get(sessionId) === requestId
         && sessionsRef.current.some((session) => session.id === sessionId && session.status === 'connected')) {
         patchSession(sessionId, { loading: false })
-        if (activeSessionId === sessionId) showToast('error', errorMessage(error))
+        if (!quiet && activeSessionId === sessionId) showToast('error', errorMessage(error))
       }
       return false
     }
@@ -391,6 +399,69 @@ export default function App() {
     showToast,
     setBrowserContextMenu,
   })
+
+  const applyFileIdentity = async (sessionId: string, identity: FileIdentity) => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (session?.status !== 'connected') return
+    patchSession(sessionId, { fileIdentity: identity, entries: [], selectedPaths: [], highlightedPath: null })
+    setSearchOpen(sessionId, false)
+    closeScriptCommandDialog(sessionId)
+    if (activeSessionId === sessionId) {
+      setBrowserContextMenu(null)
+      setCreateDirectoryDialog(null)
+    }
+    setEntryProperties((current) => current?.sessionId === sessionId ? null : current)
+    if (renameEntryDialog?.sessionId === sessionId) cancelRemoteEntryRename()
+    if (remoteEntryDeleteDialog?.sessionId === sessionId) cancelRemoteEntryDeletion()
+    if (archiveDestinationDialog?.sessionId === sessionId) setArchiveDestinationDialog(null)
+    if (uploadSelection?.sessionId === sessionId) cancelUploadSelection()
+    if (identity === 'login' && session.currentPath !== '/') {
+      if (await loadDirectory(sessionId, session.currentPath, true)) return
+      if (await loadDirectory(sessionId, '/')) patchSession(sessionId, { history: ['/'], historyIndex: 0 })
+    } else {
+      await loadDirectory(sessionId, session.currentPath)
+    }
+  }
+
+  const handleRootExpired = useEffectEvent((event: { sessionId: string; remoteStateUnknown: boolean }) => {
+    showToast('error', event.remoteStateUnknown
+      ? 'sudo 权限已失效，已退出 root 模式。部分远端任务状态未知。'
+      : 'sudo 权限已失效，已退出 root 模式。')
+    void applyFileIdentity(event.sessionId, 'login')
+  })
+  useEffect(() => window.remoteFiles.onFileRootExpired((event) => handleRootExpired(event)), [])
+
+  const enterFileRoot = async (sessionId: string, password?: string) => {
+    setRootRequest({ sessionId, phase: password === undefined ? 'entering' : 'verifying' })
+    try {
+      const result = await window.remoteFiles.enterFileRoot(sessionId, password)
+      if (result.status === 'password-required') {
+        setRootRequest({ sessionId, phase: 'password' })
+        return
+      }
+      if (result.status === 'entered') await applyFileIdentity(sessionId, result.identity)
+    } catch (error) {
+      if (password !== undefined) {
+        setRootRequest({ sessionId, phase: 'password', error: errorMessage(error) })
+        return
+      }
+      showToast('error', errorMessage(error))
+    }
+    setRootRequest(null)
+  }
+
+  const leaveFileRoot = async (sessionId: string) => {
+    setRootRequest({ sessionId, phase: 'leaving' })
+    try {
+      const { remoteStateUnknown } = await window.remoteFiles.leaveFileRoot(sessionId)
+      if (remoteStateUnknown) showToast('info', '已退出 root 模式。部分远端任务状态未知。')
+      await applyFileIdentity(sessionId, 'login')
+    } catch (error) {
+      showToast('error', errorMessage(error))
+    } finally {
+      setRootRequest(null)
+    }
+  }
 
   const pendingHostKey = pendingHostKeys[0] ?? null
   const {
@@ -472,7 +543,7 @@ export default function App() {
     profileDialog || profileDeleteDialog || createDirectoryDialog || renameEntryDialog || entryProperties || settingsForm
       || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
       || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || uploadSelection
-      || archiveDestinationDialog
+      || archiveDestinationDialog || rootRequest?.phase === 'password' || rootRequest?.phase === 'verifying'
       || (activeSessionId && workspaceBlockingSessionIds.has(activeSessionId))
       || sessionChooserOpen || shortcutGuideOpen,
   )
@@ -593,6 +664,25 @@ export default function App() {
             )}
             {activeSession?.kind === 'files' && connectedSessionId ? (
               <>
+                {activeSession.fileIdentity === 'root-login' ? (
+                  <span className="file-root-identity" role="status">root 登录</span>
+                ) : (
+                  <button
+                    className={'text-button' + (activeSession.fileIdentity === 'sudo-root' ? ' file-root-identity' : '')}
+                    disabled={rootRequest !== null && !(rootRequest.phase === 'entering' && rootRequest.sessionId === connectedSessionId)}
+                    onClick={() => {
+                      if (rootRequest?.phase === 'entering') {
+                        void window.remoteFiles.cancelFileRootEntry(connectedSessionId).catch((error) => showToast('error', errorMessage(error)))
+                      } else if (activeSession.fileIdentity === 'sudo-root') void leaveFileRoot(connectedSessionId)
+                      else void enterFileRoot(connectedSessionId)
+                    }}
+                  >
+                    <Shield size={15} />
+                    {rootRequest?.sessionId === connectedSessionId && rootRequest.phase === 'entering' ? '取消提权'
+                      : rootRequest?.sessionId === connectedSessionId && rootRequest.phase === 'leaving' ? '正在退出 root'
+                        : activeSession.fileIdentity === 'sudo-root' ? '退出 root 模式' : '进入 root 模式'}
+                  </button>
+                )}
                 <button className="icon-button toolbar-button" title="搜索文件" aria-label="搜索文件" onClick={openSearch}>
                   <Search size={16} />
                 </button>
@@ -716,6 +806,14 @@ export default function App() {
       />
 
       {shortcutGuideOpen && <ShortcutGuideDialog onClose={closeShortcutGuide} />}
+      {rootRequest && (rootRequest.phase === 'password' || rootRequest.phase === 'verifying') && (
+        <FileRootPasswordDialog
+          busy={rootRequest.phase === 'verifying'}
+          error={rootRequest.error}
+          onSubmit={(password) => void enterFileRoot(rootRequest.sessionId, password)}
+          onCancel={() => setRootRequest(null)}
+        />
+      )}
 
       <DialogLayer
         profileDialog={profileDialog}

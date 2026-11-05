@@ -100,6 +100,7 @@ async function prepareDroppedItems(entries: unknown, signal: AbortSignal): Promi
 
 interface StoredUploadSelection {
   selection: UploadSelection
+  commands: ReturnType<typeof filesSession>['commands']
   items: TransferItem[]
   expiresAt: number
 }
@@ -117,7 +118,7 @@ const UPLOAD_SELECTION_TTL_MS = 10 * 60_000
 function pruneUploadSelections(): void {
   const now = Date.now()
   for (const [id, selection] of uploadSelections) {
-    if (selection.expiresAt <= now) uploadSelections.delete(id)
+    if (selection.expiresAt <= now || selection.commands.signal.aborted) uploadSelections.delete(id)
   }
 }
 
@@ -182,7 +183,11 @@ export async function selectUploadSources(value: unknown): Promise<UploadSelecti
     throw new Error('上传请求编号重复')
   }
   const session = filesSession(request.sessionId)
-  const sources = await collectUploadSources(request, new AbortController().signal)
+  return session.commands.track(prepareUploadSelection(request, session))
+}
+
+async function prepareUploadSelection(request: UploadSelectionRequest, session: ReturnType<typeof filesSession>): Promise<UploadSelection | null> {
+  const sources = await collectUploadSources(request, session.commands.signal)
   if (!sources) return null
   if (sources.items.length === 0 && sources.failures.length === 0) throw new Error('没有可上传的文件')
   const remoteDirectory = normalizedRemotePath(request.remoteDirectory || '/')
@@ -191,7 +196,7 @@ export async function selectUploadSources(value: unknown): Promise<UploadSelecti
     .map((item) => item.relativePath ? posix.join(remoteRoot, item.relativePath) : remoteRoot)
   let conflicts: string[] = []
   if (request.strategy === 'confirm' && targets.length > 0) {
-    const { stdout } = await runRemoteCommand(session.client, [
+    const { stdout } = await runRemoteCommand(session.commands, [
       'set -eu',
       'while IFS= read -r -d "" target; do',
       '  if [[ -e "$target" || -L "$target" ]]; then printf "%s\\0" "$target"; fi',
@@ -216,19 +221,23 @@ export async function selectUploadSources(value: unknown): Promise<UploadSelecti
     failures: sources.failures,
     conflicts,
   }
+  session.commands.signal.throwIfAborted()
   uploadSelections.set(selection.selectionId, {
     selection,
+    commands: session.commands,
     items: sources.items,
     expiresAt: Date.now() + UPLOAD_SELECTION_TTL_MS,
   })
   return selection
 }
 
-export function uploadSelectionContext(selectionId: string): Pick<UploadSelection, 'requestId' | 'sessionId' | 'profileId'> {
+export function uploadSelectionContext(selectionId: string) {
   pruneUploadSelections()
   const stored = uploadSelections.get(selectionId)
   if (!stored) throw new Error('上传来源选择已过期，请重新选择')
-  return stored.selection
+  const { requestId, sessionId, profileId } = stored.selection
+  if (filesSession(sessionId).commands !== stored.commands) throw new Error('文件会话身份已变更，请重新选择上传来源')
+  return { requestId, sessionId, profileId, commands: stored.commands }
 }
 
 export function cancelUploadSelection(selectionId: string): boolean {
@@ -240,6 +249,7 @@ async function uploadItems(
   requestId: string,
   sessionId: string,
   profileId: string,
+  commands: StoredUploadSelection['commands'],
   remoteRoot: string,
   items: TransferItem[],
   sourceFailures: TransferFailure[],
@@ -247,7 +257,6 @@ async function uploadItems(
   signal: AbortSignal,
 ): Promise<TransferResult> {
   signal.throwIfAborted()
-  const session = filesSession(sessionId)
   const fileConcurrency = readAppSettings().transferFileConcurrency
   const collisionFailures: TransferFailure[] = []
   const collidingItems = new Set<TransferItem>()
@@ -274,7 +283,7 @@ async function uploadItems(
     .map((item) => item.relativePath ? posix.join(remoteRoot, item.relativePath) : remoteRoot)
   try {
     if (directories.length) {
-      await runRemoteCommand(session.client, [
+      await runRemoteCommand(commands, [
         'set -eu',
         'mkdir -p -- "$@"',
       ].join('\n'), directories, { signal, collectStdout: false })
@@ -286,7 +295,7 @@ async function uploadItems(
         size: item.size,
         transfer: async (onProgress: (bytes: number) => void) => {
           signal.throwIfAborted()
-          await transferFileStream('upload', session.client, item.localPath!, destination, item.size, signal, onProgress, {
+          await transferFileStream('upload', commands, item.localPath!, destination, item.size, signal, onProgress, {
             strategy,
             modifiedAtMs: item.modifiedAtMs!,
           })
@@ -313,12 +322,12 @@ export async function executeSelectedUpload(
 ): Promise<TransferResult> {
   if (!['force', 'skip', 'update'].includes(strategy)) throw new Error('上传策略无效')
   const stored = uploadSelections.get(selectionId)
-  if (!stored || stored.expiresAt <= Date.now()) {
+  if (!stored || stored.expiresAt <= Date.now() || stored.commands.signal.aborted) {
     uploadSelections.delete(selectionId)
     throw new Error('上传来源选择已过期，请重新选择')
   }
   if (stored.selection.strategy !== 'confirm' && stored.selection.strategy !== strategy) throw new Error('上传策略与所选策略不一致')
   uploadSelections.delete(selectionId)
-  return uploadItems(event, stored.selection.requestId, stored.selection.sessionId, stored.selection.profileId,
+  return uploadItems(event, stored.selection.requestId, stored.selection.sessionId, stored.selection.profileId, stored.commands,
     stored.selection.remoteRoot, stored.items, stored.selection.failures, strategy, signal)
 }

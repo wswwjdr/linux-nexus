@@ -1,6 +1,7 @@
 import { posix } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { executeRemoteCommand, RemoteCommandError, RemoteTerminationError } from './ssh-commands'
+import { fileCommands } from './file-identity'
 import type {
   ContentSearchEvent,
   ContentSearchLineMatch,
@@ -277,6 +278,7 @@ export function startContentSearch(input: ContentSearchRequest): void {
   if (activeSearches.has(request.requestId)) throw new Error('文本内容搜索请求编号已在使用')
   const session = sessions.get(request.sessionId)
   if (!session || session.kind !== 'files' || session.profileId !== request.profileId) throw new Error('文件会话未连接')
+  const commands = fileCommands(session)
 
   const task: ContentSearchTask = {
     request,
@@ -314,7 +316,7 @@ export function startContentSearch(input: ContentSearchRequest): void {
       .map(shellQuote).join(' ')
 
 
-  void executeRemoteCommand(session.client, command, {
+  void executeRemoteCommand(commands, command, {
     signal: task.controller.signal, collectStdout: false, keepStdinOpen: true, timeoutMs: 86_400_000,
     maxStdoutBytes: 32 * 1024 * 1024,
     onStdout: (chunk) => {

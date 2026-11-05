@@ -1,12 +1,13 @@
 import { posix } from 'node:path'
 import type { RemoteEntry } from '@shared/types'
-import { sessions, type ActiveSession } from './runtime'
-import { runRemoteCommand } from './ssh-commands'
+import { sessions } from './runtime'
+import { fileCommands } from './file-identity'
+import { runRemoteCommand, type RemoteCommandTarget } from './ssh-commands'
 
-export function filesSession(sessionId: string): ActiveSession {
+export function filesSession(sessionId: string) {
   const activeSession = sessions.get(sessionId)
   if (!activeSession || activeSession.kind !== 'files') throw new Error('文件会话未连接')
-  return activeSession
+  return { sessionId, profileId: activeSession.profileId, commands: fileCommands(activeSession) }
 }
 
 export function normalizedRemotePath(remotePath: string): string {
@@ -23,7 +24,7 @@ export async function renameRemoteEntry(sessionId: string, remotePath: string, n
   }
   const targetPath = posix.join(posix.dirname(sourcePath), name)
   if (targetPath === sourcePath) return targetPath
-  await runRemoteCommand(session.client, [
+  await runRemoteCommand(session.commands, [
     'set -eu',
     '[[ ! -L "$1" && ( -f "$1" || -d "$1" ) ]] || { printf "%s\\n" "只能重命名普通文件或文件夹，来源可能已不存在" >&2; exit 1; }',
     '[[ ! -e "$2" && ! -L "$2" ]] || { printf "%s\\n" "同名文件或文件夹已存在" >&2; exit 1; }',
@@ -51,7 +52,7 @@ function remoteType(kind: string): RemoteEntry['type'] {
   return kind === 'd' ? 'directory' : kind === 'f' ? 'file' : kind === 'l' ? 'symlink' : 'other'
 }
 
-export async function listRemoteDirectory(client: ActiveSession['client'], remotePath: string): Promise<RemoteEntry[]> {
+export async function listRemoteDirectory(client: RemoteCommandTarget, remotePath: string): Promise<RemoteEntry[]> {
   const normalizedPath = normalizedRemotePath(remotePath)
   const { stdout } = await runRemoteCommand(client,
     'find -- "$1" -mindepth 1 -maxdepth 1 -printf \'%f\\0%y\\0%s\\0%T@\\0%m\\0\'',
@@ -80,7 +81,7 @@ export async function listRemoteDirectory(client: ActiveSession['client'], remot
   })
 }
 
-export async function* iterateRemoteTree(client: ActiveSession['client'], remoteRoot: string, signal?: AbortSignal): AsyncGenerator<RemoteTreeEntry> {
+export async function* iterateRemoteTree(client: RemoteCommandTarget, remoteRoot: string, signal?: AbortSignal): AsyncGenerator<RemoteTreeEntry> {
   const root = normalizedRemotePath(remoteRoot)
   const controller = new AbortController()
   const abort = () => controller.abort()
@@ -125,13 +126,13 @@ export async function* iterateRemoteTree(client: ActiveSession['client'], remote
     controller.abort(); drain?.(); signal?.removeEventListener('abort', abort); await task
   }
 }
-export async function collectRemoteTree(client: ActiveSession['client'], remoteRoot: string, signal?: AbortSignal): Promise<RemoteTreeEntry[]> {
+export async function collectRemoteTree(client: RemoteCommandTarget, remoteRoot: string, signal?: AbortSignal): Promise<RemoteTreeEntry[]> {
   const entries: RemoteTreeEntry[] = []
   for await (const entry of iterateRemoteTree(client, remoteRoot, signal)) entries.push(entry)
   return entries
 }
 
-export async function remotePathType(client: ActiveSession['client'], remotePath: string): Promise<RemoteEntry['type']> {
+export async function remotePathType(client: RemoteCommandTarget, remotePath: string): Promise<RemoteEntry['type']> {
   const normalizedPath = normalizedRemotePath(remotePath)
   const { stdout } = await runRemoteCommand(client,
     'if [[ -L "$1" ]]; then printf l; elif [[ -d "$1" ]]; then printf d; elif [[ -f "$1" ]]; then printf f; else printf o; fi',
@@ -140,7 +141,7 @@ export async function remotePathType(client: ActiveSession['client'], remotePath
   return remoteType(stdout.toString('ascii'))
 }
 
-export async function remoteFileSize(client: ActiveSession['client'], remotePath: string): Promise<number> {
+export async function remoteFileSize(client: RemoteCommandTarget, remotePath: string): Promise<number> {
   const normalizedPath = normalizedRemotePath(remotePath)
   const { stdout } = await runRemoteCommand(client, 'stat -c %s -- "$1"', [normalizedPath])
   const size = Number(stdout.toString('ascii').trim())
@@ -148,7 +149,7 @@ export async function remoteFileSize(client: ActiveSession['client'], remotePath
   return size
 }
 
-export async function remotePathExists(client: ActiveSession['client'], remotePath: string): Promise<boolean> {
+export async function remotePathExists(client: RemoteCommandTarget, remotePath: string): Promise<boolean> {
   const normalizedPath = normalizedRemotePath(remotePath)
   const { stdout } = await runRemoteCommand(client,
     'if [[ -e "$1" || -L "$1" ]]; then printf 1; else printf 0; fi',

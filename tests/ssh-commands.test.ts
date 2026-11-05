@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import test from 'node:test'
 import type { Client, ClientChannel } from 'ssh2'
-import { buildRemoteCommand, executeRemoteCommand, RemoteCommandError, cancelClientTasks, runRemoteCommand } from '../src/main/ssh-commands.ts'
+import { buildRemoteCommand, executeRemoteCommand, executeSudoCommand, RemoteCommandError, SudoAuthenticationError, cancelClientTasks, runRemoteCommand } from '../src/main/ssh-commands.ts'
 import { shellQuote } from '../src/shared/shell.ts'
 
 class MockChannel extends EventEmitter {
@@ -67,6 +67,65 @@ function mockClient(createChannel: (command: string) => MockChannel): Client {
   }
   return client
 }
+
+test('sudo keeps password, ready marker and binary file bytes separate', async () => {
+  const password = Buffer.from('test sudo credential\n')
+  const binary = Buffer.from([0x00, 0x0a, 0xff, 0x0d])
+  const sent: Buffer[] = []
+  const client = mockClient((command) => {
+    assert.match(command, /^exec \/usr\/bin\/sudo -H -S -p /)
+    assert.ok(!command.includes(password.toString().trim()))
+    const prompt = command.match(/LINUX_NEXUS_SUDO_[\da-f-]+:/)![0]
+    const ready = command.match(/LINUX_NEXUS_ROOT_[\da-f-]+\n/)![0]
+    const channel = new MockChannel()
+    channel.onEnd = (current) => current.complete()
+    queueMicrotask(() => {
+      assert.deepEqual(channel.input, [])
+      channel.stderr.emit('data', Buffer.from(prompt.slice(0, 12)))
+      assert.deepEqual(channel.input, [])
+      channel.stderr.emit('data', Buffer.from(prompt.slice(12)))
+      assert.deepEqual(channel.input, [password])
+      channel.emit('data', Buffer.from(ready.slice(0, 12)))
+      assert.deepEqual(channel.input, [password])
+      channel.emit('data', Buffer.concat([Buffer.from(ready.slice(12)), binary]))
+    })
+    return channel
+  })
+  const result = await executeSudoCommand(client, 'cat', password, {
+    stdin: [binary],
+    onStdin: (chunk) => sent.push(chunk),
+    onStderr: () => assert.fail('authentication prompt reached a file callback'),
+  })
+  assert.deepEqual(result.stdout, binary)
+  assert.deepEqual(sent, [binary])
+})
+
+test('passwordless sudo never sends a supplied password to the root process', async () => {
+  const client = mockClient((command) => {
+    const channel = new MockChannel()
+    channel.onEnd = (current) => {
+      assert.deepEqual(current.input, [Buffer.from('file')])
+      current.complete()
+    }
+    const ready = command.match(/LINUX_NEXUS_ROOT_[\da-f-]+\n/)![0]
+    queueMicrotask(() => channel.emit('data', Buffer.from(ready)))
+    return channel
+  })
+  await executeSudoCommand(client, 'cat', Buffer.from('unused\n'), { stdin: [Buffer.from('file')] })
+})
+
+test('sudo requests a password without starting the file input or passing through its prompt', async () => {
+  const client = mockClient((command) => {
+    const channel = new MockChannel()
+    const prompt = command.match(/LINUX_NEXUS_SUDO_[\da-f-]+:/)![0]
+    queueMicrotask(() => channel.stderr.emit('data', Buffer.from(prompt)))
+    return channel
+  })
+  await assert.rejects(executeSudoCommand(client, 'cat', undefined, {
+    stdin: { *[Symbol.iterator]() { assert.fail('file input started before root authentication') } },
+    onStderr: () => assert.fail('authentication prompt reached a file callback'),
+  }), (error) => error instanceof SudoAuthenticationError && error.passwordRequired)
+})
 
 test('builds SSH command arguments without losing spaces, quotes, newlines or Unicode', () => {
   const values = ["space name", "single'quote", 'line\nbreak', '中文目录']

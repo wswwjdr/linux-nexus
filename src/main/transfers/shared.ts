@@ -6,6 +6,7 @@ import { activeTransfers, messageFromError, sessions, type TransferItem } from '
 import { collectRemoteTree as collectRemoteTreeEntries } from '../remote-fs'
 import type { Client } from 'ssh2'
 import type { TransferProgressReporter } from './progress'
+import { waitWithSignal } from '../stream-utils'
 
 const transferQueues = new Map<string, Promise<void>>()
 
@@ -167,12 +168,14 @@ export async function withTransferLock(
 
   const operationPromise = (async () => {
     try {
-      await previous
+      await waitWithSignal(previous, transfer.controller.signal)
       transfer.controller.signal.throwIfAborted()
       return await operation(transfer.controller.signal)
     } finally {
       releaseTurn()
-      if (transferQueues.get(profileId) === queueTail) transferQueues.delete(profileId)
+      void queueTail.then(() => {
+        if (transferQueues.get(profileId) === queueTail) transferQueues.delete(profileId)
+      })
     }
   })()
   transfer.settled = operationPromise.then(() => undefined, () => undefined)

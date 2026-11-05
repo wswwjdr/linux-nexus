@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { FileTypeExtensions, RemoteEntry, TextEncoding, TextFileVersion, TextLineEnding } from '@shared/types'
+import type { FileTypeExtensions, RemoteEntry, TextEncoding, TextFileVersion, TextLineEnding, TextSavePackage } from '@shared/types'
 import type { PreviewType } from '@shared/file-type-registry'
 import { previewTypesForFile } from '@shared/preview-file-type'
 import type { LogPreviewDialog, PreviewDialog } from '@/app-types'
@@ -23,16 +23,20 @@ interface TextPreviewContext {
   version: TextFileVersion
 }
 
+type TextSaveConfirmation = { name: string; path: string } & (
+  | { kind: 'save' | 'conflict' }
+  | { kind: 'install'; packages: TextSavePackage[]; passwordRequired: boolean; force: boolean }
+)
+
 export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePreviewOptions) {
   const [previewDialog, setPreviewDialog] = useState<PreviewDialog | null>(null)
   const [logPreviewDialog, setLogPreviewDialog] = useState<LogPreviewDialog | null>(null)
   const [textDraft, setTextDraft] = useState('')
   const [textEncoding, setTextEncoding] = useState<TextEncoding>('utf8')
-  const [textConflict, setTextConflict] = useState(false)
   const [textReloading, setTextReloading] = useState(false)
   const [textDirty, setTextDirty] = useState(false)
   const [textSaving, setTextSaving] = useState(false)
-  const [textSaveConfirmation, setTextSaveConfirmation] = useState<{ name: string; path: string } | null>(null)
+  const [textSaveConfirmation, setTextSaveConfirmation] = useState<TextSaveConfirmation | null>(null)
   const [textSaveError, setTextSaveError] = useState<string | null>(null)
   const previewTokenRef = useRef<string | null>(null)
   const previewRequestRef = useRef(0)
@@ -87,7 +91,6 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     setTextReloading(false)
     setTextSaveConfirmation(null)
     setTextSaveError(null)
-    setTextConflict(false)
     if (token) window.setTimeout(() => void window.remoteFiles.releasePreview(token), 0)
   }, [])
 
@@ -210,8 +213,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     const context = textPreviewRef.current
     if (!context || textSaving || textDraftRef.current === context.originalContent && textEncoding === context.encoding) return
     setTextSaveError(null)
-    setTextConflict(false)
-    setTextSaveConfirmation({ name: context.name, path: context.path })
+    setTextSaveConfirmation({ name: context.name, path: context.path, kind: 'save' })
   }
 
   const cancelTextSave = () => {
@@ -220,45 +222,67 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     setTextSaveError(null)
   }
 
-  const confirmTextSave = async () => {
+  const confirmTextSave = async (password?: string) => {
     const context = textPreviewRef.current
-    if (!context || textSaving || !textSaveConfirmation) return
+    const confirmation = textSaveConfirmation
+    if (!context || textSaving || !confirmation) return
+    if (confirmation.kind === 'install' && confirmation.passwordRequired && !password) return
     const content = textDraftRef.current
     if (content === context.originalContent && textEncoding === context.encoding) {
       setTextSaveConfirmation(null)
       return
     }
 
+    const requestId = previewRequestRef.current
+    const isCurrent = () => requestId === previewRequestRef.current && textPreviewRef.current === context
+    const file = { name: context.name, path: context.path }
+    const force = confirmation.kind === 'install' ? confirmation.force : confirmation.kind === 'conflict'
     setTextSaving(true)
     setTextSaveError(null)
     try {
+      if (confirmation.kind === 'install') {
+        const install = await window.remoteFiles.installTextSaveDependencies(context.sessionId, confirmation.packages, password)
+        if (!isCurrent()) return
+        if (install.status === 'password-required') {
+          setTextSaveConfirmation({ ...confirmation, passwordRequired: true })
+          return
+        }
+        setTextSaveConfirmation({ ...file, kind: force ? 'conflict' : 'save' })
+      }
       const result = await window.remoteFiles.saveTextFile(context.sessionId, context.path, content, context.lineEnding, {
-        version: context.version, encoding: textEncoding, bom: textEncoding === 'utf8' && context.bom, force: textConflict,
+        version: context.version, encoding: textEncoding, bom: textEncoding === 'utf8' && context.bom, force,
       })
+      if (!isCurrent()) return
+      if (result.status === 'missing-dependencies') {
+        if (confirmation.kind === 'install' && result.packages.some(packageName => confirmation.packages.includes(packageName))) {
+          setTextSaveError(`安装后，远程 SSH 会话仍找不到 ${result.packages.join('、')} 提供的命令。请检查远程 PATH 后重试。`)
+          return
+        }
+        setTextSaveConfirmation({ ...file, kind: 'install', packages: result.packages, passwordRequired: false, force })
+        return
+      }
       if (result.status === 'conflict') {
-        setTextConflict(true)
+        setTextSaveConfirmation({ ...file, kind: 'conflict' })
         setTextSaveError('服务器文件已变化。可取消后重新加载，或明确选择强制覆盖。当前草稿已保留。')
         return
       }
       context.version = result.version
       context.encoding = textEncoding
       context.bom = textEncoding === 'utf8' && context.bom
-      if (textPreviewRef.current !== context) return
       context.originalContent = content
       setTextDirty(textDraftRef.current !== content)
       setTextSaveConfirmation(null)
       showToast('info', '文件已保存')
     } catch (error) {
-      if (textPreviewRef.current === context) setTextSaveError(errorMessage(error))
+      if (isCurrent()) setTextSaveError(errorMessage(error))
     } finally {
-      if (textPreviewRef.current === context) setTextSaving(false)
+      if (isCurrent()) setTextSaving(false)
     }
   }
 
   return {
     textEncoding,
     textReloading,
-    textConflict,
     convertTextToUtf8: () => {
       setTextEncoding('utf8')
       const context = textPreviewRef.current
@@ -278,7 +302,6 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
         setTextDraft(result.content)
         setTextEncoding(result.encoding)
         setTextDirty(false)
-        setTextConflict(false)
         setPreviewDialog({ kind: 'ready', result })
       } catch (error) { showToast('error', '重新读取失败：' + errorMessage(error)) }
       finally { if (previewRequestRef.current === requestId) setTextReloading(false) }

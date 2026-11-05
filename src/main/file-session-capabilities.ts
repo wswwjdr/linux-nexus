@@ -1,12 +1,8 @@
 import type { Client } from 'ssh2'
 import { runRemoteCommand } from './ssh-commands.ts'
 
-// Keep the distribution policy and the command contract in one admission check.
 // os-release is data: never source it or evaluate its field values as shell code.
-export function buildFileSessionCapabilityScript(): string {
-  return `set -eu
-export LC_ALL=C
-id=''
+export const detectServerDistribution = `id=''
 version=''
 while IFS='=' read -r key value || [[ -n "$key" ]]; do
   case "$key" in
@@ -25,9 +21,16 @@ done < /etc/os-release
 }
 major=\${version%%.*}
 case "$id:$major" in
-  ubuntu:*|debian:*|centos:7|centos:8|centos:9|centos:10|rhel:8|rhel:9|rhel:10) ;;
+  ubuntu:*|debian:*) package_manager=apt-get ;;
+  centos:7) package_manager=yum ;;
+  centos:8|centos:9|centos:10|rhel:8|rhel:9|rhel:10) package_manager=dnf ;;
   *) printf '不支持的服务器发行版: %s %s\\n' "$id" "$version" >&2; exit 1 ;;
-esac
+esac`
+
+export function buildFileSessionCapabilityScript(): string {
+  return `set -eu
+export LC_ALL=C
+${detectServerDistribution}
 for tool in bash cat cp mv rm mkdir rmdir find grep tar sha256sum dd tail head mktemp stat touch chmod readlink du base64 dirname basename sed; do
   command -v "$tool" >/dev/null || { printf '缺少服务器命令: %s\\n' "$tool" >&2; exit 1; }
 done

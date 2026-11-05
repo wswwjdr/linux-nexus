@@ -15,7 +15,7 @@ type ImagePreviewResult = Extract<PreviewResult, { type: 'image' }>
 
 export const imagePreviewStrategy: PreviewStrategy<ImagePreviewResult> = {
   types: ['image'],
-  async preview({ client, remotePath, name, limitBytes, limitMiB }) {
+  async preview({ client, sessionId, remotePath, name, limitBytes, limitMiB }) {
     const token = randomUUID()
     const extension = extname(remotePath).toLowerCase()
     const directory = join(app.getPath('temp'), 'linux-nexus-preview')
@@ -42,7 +42,7 @@ export const imagePreviewStrategy: PreviewStrategy<ImagePreviewResult> = {
       await unlink(filePath).catch(() => undefined)
       throw error
     }
-    registerLocalPreviewAsset(token, filePath, previewMimeType('image', remotePath))
+    registerLocalPreviewAsset(token, filePath, previewMimeType('image', remotePath), sessionId)
     return { type: 'image', name, url: previewUrl(token, name), token }
   },
 }
