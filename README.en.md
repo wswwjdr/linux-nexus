@@ -1,21 +1,55 @@
-# Linux Nexus
+# Linux Nexus · Windows SSH File Manager & Terminal
 
 [简体中文](README.md) | English
 
-**Manage Linux server files from a Windows desktop interface and run remote SSH commands directly.**
+**A Windows desktop app for managing multiple Linux servers over SSH: file manager, terminal, transfers, previews, and monitoring.**
+
+Linux Nexus brings remote file management and an SSH terminal into one desktop application for developers and system administrators. It runs on your Windows PC and invokes native server commands over SSH, with no resident helper to install on the server.
+
+[**Download for Windows x64**](https://github.com/wswwjdr/linux-nexus/releases/latest) · [Quick start](#quick-start) · [Documentation](#documentation) · [More screenshots](#screenshots)
+
+![Linux Nexus: Linux server file manager on the Windows desktop](docs/系统功能截图/列表视图.png)
 
 ## Features
 
-- File management: browse directories, search, upload, download, copy, move, rename, delete, and extract archives.
-- SSH sessions: file manager and terminal tabs, with simultaneous connections to multiple servers.
-- Previews and tools: text, Markdown, images, PDF, audio, video, and logs, plus remote script execution, command aliases, and performance monitoring.
+| Feature | What you can do |
+| --- | --- |
+| Remote file manager | Browse list and icon views, search filenames and contents, copy, move, rename, delete, and extract archives |
+| SSH terminal and multiple servers | Connect to multiple servers and switch between file manager and terminal tabs |
+| Uploads and downloads | Transfer files and folders, track progress, cancel tasks, and configure concurrency |
+| Previews and editing | Edit text files; preview Markdown, images, PDF, audio, video, and logs |
+| Scripts and commands | Run remote scripts, manage Bash command aliases, and enable sudo root mode for an individual file session |
+| Performance monitoring | View server metrics and configure sampling intervals and alert thresholds |
 
-Markdown previews provide read-only formatting, a table of contents, syntax highlighting, code copying, and images from the server or the web. Image previews support zooming, dragging, rotation, and flipping. Audio and video support keyboard shortcuts; video also supports fullscreen and temporary faster playback while holding a key. See [File previews (Chinese)](docs/文件预览.md) for controls and limitations.
+File management and transfers use **SSH command channels**. Remote copies and moves run through the server's `cp` and `mv` commands without routing file contents through Windows.
 
-## Design principles
+Markdown previews include a table of contents, syntax highlighting, and code copying. Image previews support zooming, dragging, rotation, and flipping. Audio and video support keyboard shortcuts; video also supports fullscreen and temporary faster playback while holding a key. See [File previews (Chinese)](docs/文件预览.md) for controls and format limitations.
 
-The file manager collects parameters through its interface and invokes native server commands over SSH. Remote file copies and moves do not route file contents through Windows.
-Multi-step operations retain known inputs, collect any remaining parameters through the interface, then generate and execute the command over SSH.
+## Download and install
+
+Open [GitHub Releases](https://github.com/wswwjdr/linux-nexus/releases/latest) and download the Windows x64 `.exe` installer under **Assets**. Run it and follow the installation wizard. Node.js and npm are not required to use the installer.
+
+This README describes the current source code. For features included in a published installer, see its release notes.
+
+### System requirements
+
+| Environment | Requirement |
+| --- | --- |
+| Local PC | Windows x64; the current build target is an x64 NSIS installer |
+| Connection | A reachable SSH server with username and password authentication; default port `22` |
+| File sessions | Ubuntu, Debian, CentOS 7/8, CentOS Stream 8/9/10, or RHEL 8/9/10, passing command capability checks at connection time |
+| Server tools | Bash, GNU coreutils, GNU findutils, GNU grep, GNU tar, and sed; archive extraction requires tools for the selected format |
+| Download destination | A local file system with hard-link support, such as NTFS |
+| Remote text saves | The server needs `acl` and `attr` tools; the app can install missing packages after confirmation |
+
+SSH terminal sessions are not restricted to the file-session distribution list above. See [Server connections and security (Chinese)](docs/服务器连接与安全.md) for capability checks, permissions, and sudo requirements. Checks still pending on real systems are tracked in [Pending verification (Chinese)](docs/待处理.md).
+
+## Quick start
+
+1. Launch the app and add a server with a connection name, host, SSH port, username, and password.
+2. Open a file manager or SSH terminal session. On first connection, verify the server's host fingerprint before trusting it.
+3. Browse remote directories, drag in local files to upload, or use the context menu to download, preview, and manage files.
+4. Open tabs for other servers and switch between file manager and terminal sessions.
 
 ## Interface language
 
@@ -23,7 +57,7 @@ Simplified Chinese and English are included with the application and work offlin
 In application settings, choose **Follow system**, **简体中文**, or **English**. Changes take effect immediately and are saved automatically, without interrupting connections, transfers, or previews.
 Filenames, commands, terminal output, and remote file contents remain in their original language. Windows native controls follow the operating system language.
 
-## Running locally
+## Local development and packaging
 
 Development requires Windows, Node.js 22.12+, and npm:
 
@@ -39,6 +73,8 @@ Build an x64 NSIS installer:
 ```powershell
 npm run dist:win
 ```
+
+Build artifacts are written to `release/`.
 
 ## Documentation
 
@@ -61,7 +97,7 @@ npm test
 npm run build
 ```
 
-See [Pending verification (Chinese)](docs/待处理.md) for the remaining checks on real systems. Download destinations must support hard links. Preserving metadata when editing remote files requires the server's `acl` and `attr` tools.
+See [Pending verification (Chinese)](docs/待处理.md) for the remaining checks on real systems.
 
 ## Screenshots
 
@@ -70,10 +106,6 @@ The screenshots below show the Chinese interface.
 ### Home
 
 ![Home](docs/系统功能截图/首页.png)
-
-### Details view
-
-![Details view](docs/系统功能截图/列表视图.png)
 
 ### Icon view
 
@@ -138,3 +170,4 @@ The screenshots below show the Chinese interface.
 ### Settings
 
 ![Settings](docs/系统功能截图/设置.png)
+
