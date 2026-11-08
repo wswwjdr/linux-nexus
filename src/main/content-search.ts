@@ -1,3 +1,4 @@
+import { type MessageValue, messageFromUnknown, diagnosticMessage, msg, LocalizedError } from '../shared/i18n/messages'
 import { posix } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { executeRemoteCommand, RemoteCommandError, RemoteTerminationError } from './ssh-commands'
@@ -69,11 +70,11 @@ function validateRequest(value: ContentSearchRequest): ContentSearchRequest {
     || typeof value.ignoreCase !== 'boolean'
     || typeof value.maxFileSizeMiB !== 'number' || !Number.isInteger(value.maxFileSizeMiB)
     || value.maxFileSizeMiB < 1 || value.maxFileSizeMiB > MAX_FILE_SIZE_MIB) {
-    throw new Error('文本内容搜索条件无效')
+    throw new LocalizedError(msg('errors.invalidContentSearchCriteria'))
   }
   const rootPath = normalizedRemotePath(value.rootPath)
   if (!value.rootPath.startsWith('/') || rootPath !== value.rootPath) {
-    throw new Error('搜索范围必须是规范化的绝对远端路径')
+    throw new LocalizedError(msg('errors.searchScopeMustBeANormalizedAbsoluteRemotePath'))
   }
   return value
 }
@@ -141,7 +142,7 @@ function queueResult(task: ContentSearchTask, result: ContentSearchResult): void
   else if (!task.flushTimer) task.flushTimer = setTimeout(() => flushResults(task), 200)
 }
 
-function finishSearch(task: ContentSearchTask, status: SearchRunStatus, message?: string): void {
+function finishSearch(task: ContentSearchTask, status: SearchRunStatus, message?: MessageValue): void {
   if (task.finished) return
   task.finished = true
   if (task.progressTimer) clearTimeout(task.progressTimer)
@@ -177,9 +178,9 @@ function decodeBase64(value: string): string {
 }
 
 function protocolInteger(value: string): number {
-  if (!/^(0|[1-9]\d*)$/.test(value)) throw new Error('远端内容搜索响应格式无效')
+  if (!/^(0|[1-9]\d*)$/.test(value)) throw new LocalizedError(msg('errors.invalidRemoteContentSearchResponse'))
   const parsed = Number(value)
-  if (!Number.isSafeInteger(parsed)) throw new Error('远端内容搜索计数超出支持范围')
+  if (!Number.isSafeInteger(parsed)) throw new LocalizedError(msg('errors.remoteContentSearchCountExceedsTheSupportedRange'))
   return parsed
 }
 
@@ -211,7 +212,7 @@ function processField(task: ContentSearchTask, field: string): void {
   const fieldCount = marker === 'P' ? 9 : marker === 'R' ? 3 : marker === 'L' || marker === 'F' ? 2 : marker === 'Z' ? 1 : marker === 'D' ? 8 : 0
   if (!fieldCount) {
     task.fields = []
-    throw new Error('远端内容搜索响应格式无效')
+    throw new LocalizedError(msg('errors.invalidRemoteContentSearchResponse'))
   }
   if (task.fields.length < fieldCount) return
   const fields = task.fields
@@ -230,7 +231,7 @@ function processField(task: ContentSearchTask, field: string): void {
     return
   }
   if (marker === 'R') {
-    if (task.currentEntry) throw new Error('远端内容搜索结果未正确结束')
+    if (task.currentEntry) throw new LocalizedError(msg('errors.remoteContentSearchResultDidNotEndCorrectly'))
     const path = decodeBase64(fields[2])
     task.currentEntry = {
       name: posix.basename(path),
@@ -247,17 +248,17 @@ function processField(task: ContentSearchTask, field: string): void {
     const line = decodeBase64(fields[1])
     if (!task.contextLines) return
     const match = /^(\d+)([:\-])(.*)$/.exec(line)
-    if (!match) throw new Error('远端内容搜索行响应格式无效')
+    if (!match) throw new LocalizedError(msg('errors.invalidRemoteContentSearchLineResponse'))
     task.contextLines.set(Number(match[1]), { text: match[3], matched: match[2] === ':' })
     return
   }
   if (marker === 'Z') {
-    if (!task.currentEntry) throw new Error('远端内容搜索结果缺少当前文件')
+    if (!task.currentEntry) throw new LocalizedError(msg('errors.remoteContentSearchResultHasNoCurrentFile'))
     completeCurrentResult(task)
     return
   }
   if (marker === 'D') {
-    if (task.currentEntry) throw new Error('远端内容搜索结果未正确结束')
+    if (task.currentEntry) throw new LocalizedError(msg('errors.remoteContentSearchResultDidNotEndCorrectly'))
     task.processedFiles = protocolInteger(fields[1])
     task.processedBytes = protocolInteger(fields[2])
     task.matchedFiles = protocolInteger(fields[3])
@@ -270,14 +271,14 @@ function processField(task: ContentSearchTask, field: string): void {
     task.remoteDone = true
     return
   }
-  if (marker === 'F') finishSearch(task, 'failed', decodeBase64(fields[1]) || '远端内容搜索失败')
+  if (marker === 'F') finishSearch(task, 'failed', diagnosticMessage(decodeBase64(fields[1])) || msg('errors.remoteContentSearchFailed'))
 }
 
 export function startContentSearch(input: ContentSearchRequest): void {
   const request = validateRequest(input)
-  if (activeSearches.has(request.requestId)) throw new Error('文本内容搜索请求编号已在使用')
+  if (activeSearches.has(request.requestId)) throw new LocalizedError(msg('errors.contentSearchRequestIdIsAlreadyInUse'))
   const session = sessions.get(request.sessionId)
-  if (!session || session.kind !== 'files' || session.profileId !== request.profileId) throw new Error('文件会话未连接')
+  if (!session || session.kind !== 'files' || session.profileId !== request.profileId) throw new LocalizedError(msg('errors.fileSessionIsNotConnected'))
   const commands = fileCommands(session)
 
   const task: ContentSearchTask = {
@@ -315,13 +316,12 @@ export function startContentSearch(input: ContentSearchRequest): void {
     + ' ' + [request.rootPath, request.query, request.ignoreCase ? '1' : '0', String(request.maxFileSizeMiB * 1024 * 1024)]
       .map(shellQuote).join(' ')
 
-
   void executeRemoteCommand(commands, command, {
     signal: task.controller.signal, collectStdout: false, keepStdinOpen: true, timeoutMs: 86_400_000,
     maxStdoutBytes: 32 * 1024 * 1024,
     onStdout: (chunk) => {
       task.pending = Buffer.concat([task.pending, chunk])
-      if (task.pending.length > 2 * 1024 * 1024) throw new Error('搜索记录超过大小限制')
+      if (task.pending.length > 2 * 1024 * 1024) throw new LocalizedError(msg('errors.searchRecordExceedsTheSizeLimit'))
       let delimiter = task.pending.indexOf(0)
       while (delimiter >= 0 && !task.finished) {
         const field = task.pending.subarray(0, delimiter).toString('utf8')
@@ -331,15 +331,15 @@ export function startContentSearch(input: ContentSearchRequest): void {
       }
     },
     onStderr: (chunk) => {
-      if (task.stderrRemainder.length + chunk.length > 256 * 1024) throw new Error('搜索错误输出超过大小限制')
+      if (task.stderrRemainder.length + chunk.length > 256 * 1024) throw new LocalizedError(msg('errors.searchErrorOutputExceedsTheSizeLimit'))
       addStderr(task, chunk)
     },
     onComplete: (error) => {
       if (task.finished) return
       addStderr(task, Buffer.alloc(0), true)
-      if (error instanceof RemoteTerminationError && task.cancelled) finishSearch(task, 'cancelled', error.message)
+      if (error instanceof RemoteTerminationError && task.cancelled) finishSearch(task, 'cancelled', messageFromUnknown(error))
       else if (task.remoteDone && !task.pending.length && (!error || (error instanceof RemoteCommandError && error.exitCode === 1 && task.incomplete))) finishSearch(task, 'completed')
-      else { task.incomplete = true; finishSearch(task, 'failed', error?.message ?? '远端内容搜索结果不完整') }
+      else { task.incomplete = true; finishSearch(task, 'failed', error ? messageFromUnknown(error) : msg('errors.remoteContentSearchResultsAreIncomplete')) }
     },
   }).catch(() => undefined)
 
@@ -359,7 +359,7 @@ export function cancelContentSearchesForSession(sessionId: string): void {
   }
 }
 
-export function failContentSearchesForSession(sessionId: string, message: string): void {
+export function failContentSearchesForSession(sessionId: string, message: MessageValue): void {
   for (const task of activeSearches.values()) {
     if (task.request.sessionId === sessionId) { finishSearch(task, 'failed', message); task.controller.abort() }
   }

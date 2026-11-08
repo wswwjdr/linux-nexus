@@ -1,3 +1,5 @@
+import { type MessageValue, msg, renderMessage, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, CircleX, LoaderCircle, Square, X } from 'lucide-react'
 import type { ScriptExecutionDialogState } from '@/app-types'
@@ -9,16 +11,17 @@ interface ScriptExecutionDialogProps {
   onStop: () => void
 }
 
-const statusLabels: Record<ScriptExecutionDialogState['status'], string> = {
-  starting: '正在启动',
-  running: '运行中',
-  cancelling: '正在停止',
-  completed: '已完成',
-  cancelled: '已停止',
-  failed: '执行失败',
+const statusLabels: Record<ScriptExecutionDialogState['status'], MessageValue> = {
+  starting: msg('common.starting'),
+  running: msg('common.running'),
+  cancelling: msg('common.stopping'),
+  completed: msg('common.completed'),
+  cancelled: msg('common.stopped'),
+  failed: msg('common.executionFailed'),
 }
 
 export default function ScriptExecutionDialog({ active, execution, onClose, onStop }: ScriptExecutionDialogProps) {
+  useLanguage()
   const outputRef = useRef<HTMLPreElement>(null)
   const onCloseRef = useRef(onClose)
   const followOutputRef = useRef(true)
@@ -58,37 +61,36 @@ export default function ScriptExecutionDialog({ active, execution, onClose, onSt
             <h2 id={`script-execution-title-${execution.request.sessionId}`}>{execution.name}</h2>
             <div className="script-command-file" title={execution.request.scriptPath}>{execution.request.scriptPath}</div>
           </div>
-          <button className="icon-button modal-close" title="关闭" aria-label="关闭执行窗口" onClick={onClose}><X size={18} /></button>
+          <button className="icon-button modal-close" title={tr('common.close')} aria-label={tr('common.closeExecutionWindow')} onClick={onClose}><X size={18} /></button>
         </div>
 
         <div className="script-execution-command">
-          <span>命令</span>
+          <span>{tr('common.command')}</span>
           <code>{execution.request.command}</code>
         </div>
 
         <div className={'script-execution-status ' + execution.status} role="status">
           {isRunning ? <LoaderCircle className="spin" size={15} /> : execution.status === 'completed' ? <CheckCircle2 size={15} /> : <CircleX size={15} />}
-          <span>{statusLabels[execution.status]}</span>
-          {execution.message && <span className="script-execution-message">{execution.message}</span>}
+          <span>{renderMessage(statusLabels[execution.status])}</span>
+          {execution.message && <span className="script-execution-message">{renderMessage(execution.message)}</span>}
         </div>
 
         <pre
           ref={outputRef}
           className="script-execution-output"
-          aria-label="脚本输出"
+          aria-label={tr('common.scriptOutput')}
           onScroll={updateFollowState}
         >{execution.output.length
           ? execution.output.map((chunk, index) => <span className={chunk.stream === 'stderr' ? 'stderr' : undefined} key={index}>{chunk.data}</span>)
-          : <span className="script-execution-empty">{isRunning ? '等待脚本输出…' : '脚本没有输出'}</span>}</pre>
+          : <span className="script-execution-empty">{isRunning ? tr('common.waitingForScriptOutput') : tr('common.scriptProducedNoOutput')}</span>}</pre>
 
         <div className="modal-footer script-execution-footer">
           {isRunning && (
             <button type="button" className="danger-button" disabled={execution.status === 'cancelling'} onClick={onStop}>
-              <Square size={14} /> 停止执行
-            </button>
+              <Square size={14} />{tr('common.stopExecution')}</button>
           )}
-          {!atBottom && <span className="script-output-follow-hint">输出已暂停跟随</span>}
-          <button type="button" className="secondary-button" onClick={onClose}>{isRunning ? '关闭并停止' : '关闭'}</button>
+          {!atBottom && <span className="script-output-follow-hint">{tr('common.outputAutoScrollPaused')}</span>}
+          <button type="button" className="secondary-button" onClick={onClose}>{isRunning ? tr('common.closeAndStop') : tr('common.close')}</button>
         </div>
       </section>
     </div>

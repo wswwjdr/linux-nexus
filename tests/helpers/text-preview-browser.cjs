@@ -2,12 +2,14 @@ const { app, BrowserWindow, nativeTheme } = require('electron')
 const assert = require('node:assert/strict')
 const { writeFileSync } = require('node:fs')
 
+app.setPath('userData', require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'nexus-browser-')))
+app.on('window-all-closed', () => {})
 app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
   const { createServer } = await import('vite')
   const { default: react } = await import('@vitejs/plugin-react')
   const server = await createServer({
-    configFile: false,
+    configFile: false, cacheDir: require('node:path').join(app.getPath('userData'), 'vite-cache'), resolve: { alias: { '@': require('node:path').resolve('src/renderer/src'), '@shared': require('node:path').resolve('src/shared') } },
     plugins: [react(), {
       name: 'text-preview-test-page',
       configureServer(server) {
@@ -18,6 +20,7 @@ app.whenReady().then(async () => {
               <div class="modal-heading"><h2>文本搜索验证.txt</h2></div><div id="root" style="display:contents"></div>
             </section></div>
             <script type="module">
+import { setLanguage } from '/src/shared/i18n/messages.ts'; setLanguage('zh-CN');
               import React, { useRef, useState } from 'react';
               import { createRoot } from 'react-dom/client';
               import TextPreviewPanel from '/src/renderer/src/components/previews/TextPreviewPanel.tsx';
@@ -49,6 +52,7 @@ app.whenReady().then(async () => {
     server: { host: '127.0.0.1', port: 0, watch: null },
   })
   const window = new BrowserWindow({ show: false, width: 640, height: 480, webPreferences: { sandbox: true, backgroundThrottling: false } })
+  window.webContents.on('console-message', details => { if (details.level === 'error') console.error(details.message) })
   try {
     await server.listen()
     await window.loadURL(server.resolvedUrls.local[0] + '__text_preview_test')

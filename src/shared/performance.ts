@@ -1,3 +1,4 @@
+import { type MessageValue, msg, LocalizedError } from './i18n/messages'
 import type { PerformanceSnapshot, PerformanceThreshold, PerformanceThresholds } from './types'
 
 export interface RawPerformanceMetrics {
@@ -47,10 +48,10 @@ export function performanceTrendPaths(
 
 const requiredFields = ['cpu', 'mem', 'load', 'uptime', 'cores', 'disk']
 
-function parseNumber(value: string, label: string, integer = false): number {
+function parseNumber(value: string, label: MessageValue, integer = false): number {
   const number = Number(value)
   if (!Number.isFinite(number) || number < 0 || (integer && !Number.isInteger(number))) {
-    throw new Error('远端性能数据无效：' + label)
+    throw new LocalizedError(msg('errors.invalidRemotePerformanceData', { "label": label }))
   }
   return number
 }
@@ -63,42 +64,42 @@ export function parsePerformanceReport(output: string): RawPerformanceMetrics {
     if (separator < 0) continue
     const key = trimmed.slice(0, separator)
     if (!requiredFields.includes(key)) continue
-    if (fields.has(key)) throw new Error('远端性能数据包含重复字段：' + key)
+    if (fields.has(key)) throw new LocalizedError(msg('errors.duplicateFieldInRemotePerformanceData', { "key": key }))
     fields.set(key, trimmed.slice(separator + 1).trim().split(/\s+/))
   }
 
   for (const key of requiredFields) {
-    if (!fields.has(key)) throw new Error('远端性能数据缺少字段：' + key)
+    if (!fields.has(key)) throw new LocalizedError(msg('errors.missingFieldInRemotePerformanceData', { "key": key }))
   }
 
   const cpuValues = fields.get('cpu')!
-  if (cpuValues.length !== 8) throw new Error('远端 CPU 数据格式无效')
+  if (cpuValues.length !== 8) throw new LocalizedError(msg('errors.invalidRemoteCpuDataFormat'))
   const cpuTicks = cpuValues.map((value) => parseNumber(value, 'CPU'))
 
   const memoryValues = fields.get('mem')!
-  if (memoryValues.length !== 2) throw new Error('远端内存数据格式无效')
-  const memoryTotalKiB = parseNumber(memoryValues[0], '内存总量')
-  const memoryAvailableKiB = parseNumber(memoryValues[1], '可用内存')
-  if (memoryTotalKiB <= 0 || memoryAvailableKiB > memoryTotalKiB) throw new Error('远端内存数据超出有效范围')
+  if (memoryValues.length !== 2) throw new LocalizedError(msg('errors.invalidRemoteMemoryDataFormat'))
+  const memoryTotalKiB = parseNumber(memoryValues[0], msg('errors.totalMemory'))
+  const memoryAvailableKiB = parseNumber(memoryValues[1], msg('errors.availableMemory'))
+  if (memoryTotalKiB <= 0 || memoryAvailableKiB > memoryTotalKiB) throw new LocalizedError(msg('errors.remoteMemoryDataIsOutOfRange'))
 
   const loadValues = fields.get('load')!
-  if (loadValues.length !== 3) throw new Error('远端负载数据格式无效')
-  const loadAverage = loadValues.map((value) => parseNumber(value, '系统负载')) as [number, number, number]
+  if (loadValues.length !== 3) throw new LocalizedError(msg('errors.invalidRemoteLoadDataFormat'))
+  const loadAverage = loadValues.map((value) => parseNumber(value, msg('common.systemLoad'))) as [number, number, number]
 
   const uptimeValues = fields.get('uptime')!
   const coresValues = fields.get('cores')!
-  if (uptimeValues.length !== 1 || coresValues.length !== 1) throw new Error('远端运行时长或 CPU 核数格式无效')
-  const uptimeSeconds = parseNumber(uptimeValues[0], '运行时长')
-  const cpuCores = parseNumber(coresValues[0], 'CPU 核数', true)
-  if (cpuCores < 1) throw new Error('远端 CPU 核数无效')
+  if (uptimeValues.length !== 1 || coresValues.length !== 1) throw new LocalizedError(msg('errors.invalidRemoteUptimeOrCpuCoreCountFormat'))
+  const uptimeSeconds = parseNumber(uptimeValues[0], msg('common.uptime'))
+  const cpuCores = parseNumber(coresValues[0], msg('errors.cpuCoreCount'), true)
+  if (cpuCores < 1) throw new LocalizedError(msg('errors.invalidRemoteCpuCoreCount'))
 
   const diskValues = fields.get('disk')!
-  if (diskValues.length !== 4 || !/^\d+%$/.test(diskValues[3])) throw new Error('远端根分区数据格式无效')
-  const diskTotalBytes = parseNumber(diskValues[0], '根分区总量', true)
-  const diskUsedBytes = parseNumber(diskValues[1], '根分区已用量', true)
-  const diskAvailableBytes = parseNumber(diskValues[2], '根分区可用量', true)
+  if (diskValues.length !== 4 || !/^\d+%$/.test(diskValues[3])) throw new LocalizedError(msg('errors.invalidRemoteRootPartitionDataFormat'))
+  const diskTotalBytes = parseNumber(diskValues[0], msg('errors.rootPartitionTotalSize'), true)
+  const diskUsedBytes = parseNumber(diskValues[1], msg('errors.rootPartitionUsedSpace'), true)
+  const diskAvailableBytes = parseNumber(diskValues[2], msg('errors.rootPartitionAvailableSpace'), true)
   if (diskTotalBytes <= 0 || diskUsedBytes > diskTotalBytes || diskAvailableBytes > diskTotalBytes) {
-    throw new Error('远端根分区数据超出有效范围')
+    throw new LocalizedError(msg('errors.remoteRootPartitionDataIsOutOfRange'))
   }
 
   return {
@@ -120,7 +121,7 @@ export function createPerformanceSnapshot(
 ): PerformanceSnapshot {
   let cpuPercent: number | null = null
   if (previousCpuTicks) {
-    if (previousCpuTicks.length !== raw.cpuTicks.length) throw new Error('远端 CPU 计数器结构发生变化')
+    if (previousCpuTicks.length !== raw.cpuTicks.length) throw new LocalizedError(msg('errors.remoteCpuCounterStructureChanged'))
     const differences = raw.cpuTicks.map((value, index) => value - previousCpuTicks[index])
     const reset = differences.some((difference) => difference < 0)
     const total = reset ? 0 : differences.reduce((sum, value) => sum + value, 0)

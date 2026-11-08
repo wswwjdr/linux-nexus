@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from '../shared/i18n/messages'
 import { posix } from 'node:path'
 import type { RemoteEntryProperties } from '@shared/types'
 import { filesSession, normalizedRemotePath } from './remote-fs'
@@ -6,7 +7,7 @@ import { runRemoteCommand } from './ssh-commands'
 const commandOptions = { timeoutMs: 30_000, maxStdoutBytes: 1024 * 1024 }
 
 function invalidProperties(): never {
-  throw new Error('服务器返回的文件属性格式无效')
+  throw new LocalizedError(msg('errors.serverReturnedInvalidFileProperties'))
 }
 
 function integer(value: string, nonnegative = true): number {
@@ -55,16 +56,16 @@ export async function getRemoteDirectoryDiskUsage(sessionId: string, remotePath:
   const { stdout } = await runRemoteCommand(session.commands, [
     'set -eu',
     'export LC_ALL=C',
-    '[[ ! -L "$1" && -d "$1" ]] || { printf "%s\\n" "只能计算文件夹的占用空间，目标可能已发生变化" >&2; exit 1; }',
+    '[[ ! -L "$1" && -d "$1" ]] || { printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:diskUsageType" >&2; exit 1; }',
     'du -s -B1 --null -- "$1"',
   ].join('\n'), [path], commandOptions)
   const output = stdout.toString('utf8')
   const separator = output.indexOf('\t')
   if (separator < 1 || output.slice(separator + 1) !== path + '\0') {
-    throw new Error('服务器返回的目录占用空间格式无效')
+    throw new LocalizedError(msg('errors.serverReturnedInvalidDirectoryDiskUsageData'))
   }
   const rawSize = output.slice(0, separator)
   const size = Number(rawSize)
-  if (!/^\d+$/.test(rawSize) || !Number.isSafeInteger(size)) throw new Error('服务器返回的目录占用空间无效')
+  if (!/^\d+$/.test(rawSize) || !Number.isSafeInteger(size)) throw new LocalizedError(msg('errors.serverReturnedInvalidDirectoryDiskUsage'))
   return size
 }

@@ -1,3 +1,4 @@
+import { type MessageValue } from '../i18n/messages'
 export type ConnectResult =
   | { ok: true; path: string; fileIdentity?: FileIdentity }
   | {
@@ -14,7 +15,7 @@ export type ConnectResult =
   | {
       ok: false
       reason: 'auth-failed' | 'unreachable' | 'other'
-      message: string
+      message: MessageValue
     }
 
 export interface TrustHostKeyInput {
@@ -44,5 +45,5 @@ export interface TerminalOutputEvent {
 export interface ConnectionClosedEvent {
   sessionId: string
   profileId: string
-  message: string
+  message: MessageValue
 }

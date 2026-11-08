@@ -1,3 +1,5 @@
+import { useLanguage } from '@/i18n'
+import { tr } from '@shared/i18n/messages'
 import { Fragment, useCallback, useEffect, useRef, type MouseEvent } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { File, LoaderCircle, Search } from 'lucide-react'
@@ -18,12 +20,13 @@ interface ContentSearchResultsProps {
 }
 
 export function ContentSearchResults(props: ContentSearchResultsProps) {
+  useLanguage()
   if (props.results.length === 0) {
     return (
       <div className="search-results-list content-search-results-list" aria-live="off">
         <div className="search-results-empty">
           {props.running ? <LoaderCircle className="spin" size={20} /> : <Search size={20} />}
-          <span>{props.running ? '等待匹配结果' : props.status === 'completed' ? '没有找到匹配内容' : '提交搜索后显示结果'}</span>
+          <span>{props.running ? tr('search.waitingForMatches') : props.status === 'completed' ? tr('search.noMatchingContent') : tr('search.resultsAppearAfterYouSubmitASearch')}</span>
         </div>
       </div>
     )
@@ -32,6 +35,7 @@ export function ContentSearchResults(props: ContentSearchResultsProps) {
 }
 
 function MeasuredContentSearchResults({ results, query, ignoreCase, menu, onOpenMenu, onScroll }: ContentSearchResultsProps) {
+  useLanguage()
   const viewportRef = useRef<HTMLDivElement>(null)
   const getItemKey = useCallback((index: number) => results[index].path, [results])
   const virtual = useVirtualizer<HTMLDivElement, HTMLDivElement>({
@@ -71,7 +75,7 @@ function MeasuredContentSearchResults({ results, query, ignoreCase, menu, onOpen
                 aria-haspopup="menu"
                 aria-expanded={menu?.result.path === result.path}
                 onClick={(event) => onOpenMenu(event, result)}
-                title={'操作 ' + result.path}
+                title={tr('search.actionsFor', { "path": result.path })}
               >
                 <span className="search-result-heading">
                   <span className="search-result-icon"><File size={15} /></span>
@@ -98,6 +102,7 @@ function MeasuredContentSearchResults({ results, query, ignoreCase, menu, onOpen
 }
 
 function HighlightedText({ text, query, ignoreCase }: { text: string; query: string; ignoreCase: boolean }) {
+  useLanguage()
   const offsets = findTextMatches(text, query, !ignoreCase)
   let end = 0
   return <>{offsets.map((offset) => {

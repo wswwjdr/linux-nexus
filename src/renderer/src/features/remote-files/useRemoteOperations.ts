@@ -1,3 +1,4 @@
+import { msg, type MessageValue } from '@shared/i18n/messages'
 import { useRef, useState, type Dispatch, type FormEvent, type MutableRefObject, type SetStateAction } from 'react'
 import type {
   OperationExecutionRequest,
@@ -49,7 +50,7 @@ interface UseRemoteOperationsOptions {
   sessionsRef: MutableRefObject<SessionTab[]>
   updateSession: (sessionId: string, update: (session: SessionTab) => SessionTab) => void
   loadDirectory: (sessionId: string, remotePath: string) => Promise<boolean>
-  showToast: (kind: 'info' | 'error', message: string, action?: { label: string; onClick: () => void }) => void
+  showToast: (kind: 'info' | 'error', message: MessageValue, action?: { label: string; onClick: () => void }) => void
   setBrowserContextMenu: Dispatch<SetStateAction<BrowserContextMenu | null>>
 }
 
@@ -65,7 +66,7 @@ export function useRemoteOperations({
   setBrowserContextMenu,
 }: UseRemoteOperationsOptions) {
   const [remoteEntryDeleteDialog, setRemoteEntryDeleteDialog] = useState<RemoteEntryDeleteDialog | null>(null)
-  const [remoteEntryDeleteError, setRemoteEntryDeleteError] = useState<string | null>(null)
+  const [remoteEntryDeleteError, setRemoteEntryDeleteError] = useState<MessageValue | null>(null)
   const [remoteEntryDeleting, setRemoteEntryDeleting] = useState(false)
   const [remoteClipboard, setRemoteClipboard] = useState<RemoteClipboard | null>(null)
   const [activeOperation, setActiveOperation] = useState<ActiveOperation | null>(null)
@@ -96,7 +97,7 @@ export function useRemoteOperations({
       sourcePaths: selectedEntries.map((entry) => entry.path),
     })
     setBrowserContextMenu(null)
-    showToast('info', `已选择 ${selectedEntries.length} 项用于${mode === 'copy' ? '复制' : '移动'}，请在目标目录粘贴`)
+    showToast('info', msg('files.itemsSelectedForPasteInTheDestinationDirectory', { "count": selectedEntries.length, "value2": mode === 'copy' ? msg('common.copy') : msg('common.move') }))
   }
 
   const copyRemoteSelection = (selectedEntries: RemoteEntry[]) => setRemoteSelectionClipboard(selectedEntries, 'copy')
@@ -112,9 +113,9 @@ export function useRemoteOperations({
     try {
       await window.remoteFiles.createRemoteDirectory(sessionId, directory, name)
       setCreateDirectoryDialog(null)
-      if (await loadDirectory(sessionId, directory)) showToast('info', '文件夹已创建')
+      if (await loadDirectory(sessionId, directory)) showToast('info', msg('files.folderCreated'))
     } catch (error) {
-      showToast('error', `创建文件夹失败：${errorMessage(error)}`)
+      showToast('error', msg('files.couldNotCreateFolder', { "value1": errorMessage(error) }))
     } finally {
       setCreatingDirectory(false)
     }
@@ -161,7 +162,7 @@ export function useRemoteOperations({
     setRemoteClipboard((current) => current?.profile.id === profileId
       ? { ...current, sourcePaths: current.sourcePaths.map(remapPath) } : current)
     setRenameEntryDialog(null)
-    showToast('info', '已重命名')
+    showToast('info', msg('files.renamed'))
 
     const directory = getParentPath(entry.path)
     try {
@@ -170,7 +171,7 @@ export function useRemoteOperations({
           && (session.currentPath === directory || remapPath(session.currentPath) !== session.currentPath))
         .map((session) => loadDirectory(session.id, remapPath(session.currentPath))))
     } catch (error) {
-      showToast('error', `目录刷新失败：${errorMessage(error)}`)
+      showToast('error', msg('files.couldNotRefreshDirectory', { "value1": errorMessage(error) }))
     }
   }
 
@@ -256,7 +257,7 @@ export function useRemoteOperations({
 
     setRemoteEntryDeleteDialog(null)
     setRemoteEntryDeleteError(null)
-    showToast('info', `已删除 ${entries.length} 项`)
+    showToast('info', msg('files.deletedItems', { "count": entries.length }))
   }
 
   const startRemoteOperation = async (
@@ -284,10 +285,10 @@ export function useRemoteOperations({
     activeOperationRef.current = running
     setActiveOperation(running)
     const clipboardAtStart = remoteClipboard
-    const label = operation === 'copy' ? '复制' : operation === 'move' ? '移动' : '解压'
+    const label = operation === 'copy' ? msg('common.copy') : operation === 'move' ? msg('common.move') : msg('common.extract')
     try {
       const result = await window.remoteFiles.executeOperation(request)
-      showToast('info', result.status === 'cancelled' ? `${label}已取消，已完成部分不会回滚，远端进程状态未确认` : `${label}已完成`)
+      showToast('info', result.status === 'cancelled' ? msg('files.cancelledCompletedChangesWillNotBeRolledBackRemoteProcess', { "label": label }) : msg('files.completed', { "label": label }))
       if (result.status === 'completed' && operation === 'move' && strategy === 'force') {
         setRemoteClipboard((current) => current === clipboardAtStart && current?.mode === 'cut'
           && current.profile.id === session.profileId
@@ -295,7 +296,7 @@ export function useRemoteOperations({
           && current.sourcePaths.every((path, index) => path === request.sourcePaths[index]) ? null : current)
       }
     } catch (error) {
-      showToast('error', `${label}失败：${errorMessage(error)}`)
+      showToast('error', msg('files.failed', { "label": label, "value2": errorMessage(error) }))
     } finally {
       activeOperationRef.current = null
       setActiveOperation(null)
@@ -310,7 +311,7 @@ export function useRemoteOperations({
       try {
         await Promise.all(refreshSessions.map((candidate) => loadDirectory(candidate.id, candidate.currentPath)))
       } catch (error) {
-        showToast('error', `目录刷新失败：${errorMessage(error)}`)
+        showToast('error', msg('files.couldNotRefreshDirectory', { "value1": errorMessage(error) }))
       }
     }
   }
@@ -327,7 +328,7 @@ export function useRemoteOperations({
 
   const cancelActiveOperation = () => {
     if (activeOperationRef.current) {
-      void window.remoteFiles.cancelOperation(activeOperationRef.current.requestId).catch((error) => showToast('error', `取消操作失败：${errorMessage(error)}`))
+      void window.remoteFiles.cancelOperation(activeOperationRef.current.requestId).catch((error) => showToast('error', msg('files.couldNotCancelOperation', { "value1": errorMessage(error) })))
     }
   }
 

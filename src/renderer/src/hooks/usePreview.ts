@@ -1,3 +1,4 @@
+import { msg, type MessageValue, tr } from '@shared/i18n/messages'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { FileTypeExtensions, RemoteEntry, TextEncoding, TextFileVersion, TextLineEnding, TextSavePackage } from '@shared/types'
 import type { PreviewType } from '@shared/file-type-registry'
@@ -9,7 +10,7 @@ import { errorMessage } from '@/app-utils'
 interface UsePreviewOptions {
   sessionId: string | null
   fileTypeExtensions: FileTypeExtensions
-  showToast: (kind: ToastNotice['kind'], message: string) => void
+  showToast: (kind: ToastNotice['kind'], message: MessageValue) => void
 }
 
 interface TextPreviewContext {
@@ -37,7 +38,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
   const [textDirty, setTextDirty] = useState(false)
   const [textSaving, setTextSaving] = useState(false)
   const [textSaveConfirmation, setTextSaveConfirmation] = useState<TextSaveConfirmation | null>(null)
-  const [textSaveError, setTextSaveError] = useState<string | null>(null)
+  const [textSaveError, setTextSaveError] = useState<MessageValue | null>(null)
   const previewTokenRef = useRef<string | null>(null)
   const previewRequestRef = useRef(0)
   const textPreviewRef = useRef<TextPreviewContext | null>(null)
@@ -97,7 +98,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
   const previewFile = useCallback(async (entry: Pick<RemoteEntry, 'name' | 'path'>, type: PreviewType) => {
     closePreview()
     if (!previewTypesForFile(entry.name, fileTypeExtensions).includes(type)) {
-      showToast('info', '暂不支持的文件类型：' + entry.name)
+      showToast('info', msg('connections.unsupportedFileType', { "name": entry.name }))
       return
     }
     if (!sessionId) return
@@ -129,7 +130,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     } catch (error) {
       if (requestId === previewRequestRef.current) {
         setPreviewDialog(null)
-        showToast('error', '预览失败：' + errorMessage(error))
+        showToast('error', msg('previews.previewFailed', { "value1": errorMessage(error) }))
       }
     }
   }, [closePreview, fileTypeExtensions, sessionId, showToast])
@@ -155,7 +156,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     } catch (error) {
       if (requestId === previewRequestRef.current) {
         updateLogPreview(null)
-        showToast('error', '倒序预览失败：' + errorMessage(error))
+        showToast('error', msg('previews.reversePreviewFailed', { "value1": errorMessage(error) }))
       }
     }
   }, [closePreview, sessionId, showToast])
@@ -191,7 +192,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
       if (requestId === previewRequestRef.current) {
         const latest = logPreviewRef.current
         if (latest?.kind === 'ready') updateLogPreview({ ...latest, loadingEarlier: false })
-        showToast('error', '读取更早日志失败：' + errorMessage(error))
+        showToast('error', msg('previews.couldNotReadEarlierLogEntries', { "value1": errorMessage(error) }))
       }
     }
   }
@@ -255,7 +256,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
       if (!isCurrent()) return
       if (result.status === 'missing-dependencies') {
         if (confirmation.kind === 'install' && result.packages.some(packageName => confirmation.packages.includes(packageName))) {
-          setTextSaveError(`安装后，远程 SSH 会话仍找不到 ${result.packages.join('、')} 提供的命令。请检查远程 PATH 后重试。`)
+          setTextSaveError(msg('previews.afterInstallationTheSshSessionStillCannotFindCommandsProvided', { "value1": result.packages.join('、') }))
           return
         }
         setTextSaveConfirmation({ ...file, kind: 'install', packages: result.packages, passwordRequired: false, force })
@@ -263,7 +264,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
       }
       if (result.status === 'conflict') {
         setTextSaveConfirmation({ ...file, kind: 'conflict' })
-        setTextSaveError('服务器文件已变化。可取消后重新加载，或明确选择强制覆盖。当前草稿已保留。')
+        setTextSaveError(msg('previews.theServerFileChangedCancelAndReloadOrExplicitlyChoose'))
         return
       }
       context.version = result.version
@@ -272,7 +273,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
       context.originalContent = content
       setTextDirty(textDraftRef.current !== content)
       setTextSaveConfirmation(null)
-      showToast('info', '文件已保存')
+      showToast('info', msg('previews.fileSaved'))
     } catch (error) {
       if (isCurrent()) setTextSaveError(errorMessage(error))
     } finally {
@@ -291,7 +292,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     reopenText: async (encoding: TextEncoding) => {
       const context = textPreviewRef.current
       if (!context || textSaving || textReloading) return
-      if (textDirty && !window.confirm('重新加载将放弃当前草稿，是否继续？')) return
+      if (textDirty && !window.confirm(tr('previews.reloadingDiscardsTheCurrentDraftContinue'))) return
       const requestId = ++previewRequestRef.current
       setTextReloading(true)
       try {
@@ -303,7 +304,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
         setTextEncoding(result.encoding)
         setTextDirty(false)
         setPreviewDialog({ kind: 'ready', result })
-      } catch (error) { showToast('error', '重新读取失败：' + errorMessage(error)) }
+      } catch (error) { showToast('error', msg('previews.couldNotReload', { "value1": errorMessage(error) })) }
       finally { if (previewRequestRef.current === requestId) setTextReloading(false) }
     },
     previewDialog,

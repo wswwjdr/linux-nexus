@@ -1,3 +1,4 @@
+import { type MessageValue, messageFromUnknown } from '../shared/i18n/messages'
 import type { BrowserWindow } from 'electron'
 import type { Client, ClientChannel } from 'ssh2'
 export { clearPreviewAssets } from './previews/preview-assets.ts'
@@ -39,6 +40,6 @@ export function setMainWindow(window: BrowserWindow | null): void {
   mainWindow = window
 }
 
-export function messageFromError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+export function messageFromError(error: unknown): MessageValue {
+  return messageFromUnknown(error)
 }

@@ -1,3 +1,4 @@
+import { renderMessage, type MessageValue } from '../src/shared/i18n/messages'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import test from 'node:test'
@@ -172,7 +173,7 @@ test('filename search retains streamed matches and reports an SSH interruption',
     assert.deepEqual(results.map(({ path }) => path), ['/root/start.sh'])
     const finished = setup.events.find((event) => event.type === 'finished')
     assert.equal(finished?.status, 'failed')
-    assert.match(finished?.message ?? '', /SSH 连接中断/)
+    assert.match(renderMessage(finished?.message), /SSH 连接中断/)
   } finally {
     setup.cleanup()
   }
@@ -350,7 +351,7 @@ test('content search retains streamed matches and reports an SSH interruption', 
     assert.equal(results[0]?.matches[0]?.text, 'needle')
     const finished = setup.events.find((event) => event.type === 'finished')
     assert.equal(finished?.status, 'failed')
-    assert.match(finished?.message ?? '', /SSH 连接中断/)
+    assert.match(renderMessage(finished?.message), /SSH 连接中断/)
   } finally {
     setup.cleanup()
   }

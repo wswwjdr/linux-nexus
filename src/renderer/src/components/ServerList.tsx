@@ -1,3 +1,5 @@
+import { useLanguage } from '@/i18n'
+import { tr } from '@shared/i18n/messages'
 import { FolderOpen, ChevronRight, HardDrive, LoaderCircle, Pencil, Pin, Plus, Server, Terminal, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { ServerProfile, SessionKind } from '@shared/types'
@@ -28,6 +30,7 @@ export default function ServerList({
   onSetPinned,
   onDelete,
 }: ServerListProps) {
+  useLanguage()
   const [contextMenu, setContextMenu] = useState<ServerContextMenuState | null>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
 
@@ -76,11 +79,10 @@ export default function ServerList({
         <div className="server-list-heading">
           <div className="server-list-title-group">
             <div className="server-list-heading-icon"><Server size={18} /></div>
-            <h1 id="server-connections-title">服务器</h1>
+            <h1 id="server-connections-title">{tr('settings.server')}</h1>
           </div>
           <button className="primary-button" onClick={onAdd}>
-            <Plus size={16} /> 添加服务器
-          </button>
+            <Plus size={16} />{tr('connections.addServer')}</button>
         </div>
         {profiles.length ? (
           <div className="server-list">
@@ -98,24 +100,24 @@ export default function ServerList({
                     <span className="server-entry-address">{profile.username}@{profile.host}:{profile.port}</span>
                   </span>
                   <span className="server-entry-connected-at">
-                    {connectedAt === undefined ? '尚未连接' : formatDate(new Date(connectedAt).toISOString())}
+                    {connectedAt === undefined ? tr('connections.notConnected') : formatDate(new Date(connectedAt).toISOString())}
                   </span>
                   <ChevronRight className="server-entry-chevron" size={16} />
                 </button>
                 <div className="server-entry-actions">
                   <button
                     className={'icon-button subtle server-entry-pin' + (profile.pinned ? ' is-pinned' : '')}
-                    title={profile.pinned ? '取消置顶' : '置顶服务器'}
-                    aria-label={profile.pinned ? '取消置顶 ' + profile.name : '置顶 ' + profile.name}
+                    title={profile.pinned ? tr('connections.unpin') : tr('connections.pinServer')}
+                    aria-label={profile.pinned ? tr('connections.unpin2', { "name": profile.name }) : tr('connections.pin', { "name": profile.name })}
                     aria-pressed={profile.pinned}
                     onClick={() => onSetPinned(profile, !profile.pinned)}
                   >
                     <Pin size={14} />
                   </button>
-                  <button className="icon-button subtle" title="编辑连接" aria-label={'编辑 ' + profile.name} onClick={() => onEdit(profile)}>
+                  <button className="icon-button subtle" title={tr('connections.editConnection')} aria-label={tr('connections.edit', { "name": profile.name })} onClick={() => onEdit(profile)}>
                     <Pencil size={14} />
                   </button>
-                  <button className="icon-button subtle danger-hover" title="删除连接" aria-label={'删除 ' + profile.name} onClick={() => onDelete(profile)}>
+                  <button className="icon-button subtle danger-hover" title={tr('connections.deleteConnection')} aria-label={tr('settings.delete', { "name": profile.name })} onClick={() => onDelete(profile)}>
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -125,27 +127,25 @@ export default function ServerList({
         ) : (
           <div className="empty-server-list">
             <div className="welcome-icon"><HardDrive size={25} /></div>
-            <h2>还没有服务器配置</h2>
-            <p>添加 SSH 连接信息以开始浏览远程目录</p>
+            <h2>{tr('connections.noServersConfigured')}</h2>
+            <p>{tr('connections.addSshConnectionDetailsToBrowseRemoteDirectories')}</p>
           </div>
         )}
-        {connectionPending && <div className="welcome-loading"><LoaderCircle className="spin" size={16} /> 正在连接</div>}
+        {connectionPending && <div className="welcome-loading"><LoaderCircle className="spin" size={16} />{tr('connections.connecting')}</div>}
       </section>
       {contextMenu && (
         <div
           className="browser-context-menu"
           ref={contextMenuRef}
           role="menu"
-          aria-label={`${contextMenu.profile.name}的连接方式`}
+          aria-label={tr('connections.connectionTypeFor', { "name": contextMenu.profile.name })}
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onContextMenu={(event) => event.preventDefault()}
         >
           <button className="entry-context-action" role="menuitem" onClick={() => onConnect(contextMenu.profile, 'files')}>
-            <FolderOpen size={16} /> 文件管理
-          </button>
+            <FolderOpen size={16} />{tr('common.fileManager')}</button>
           <button className="entry-context-action" role="menuitem" onClick={() => onConnect(contextMenu.profile, 'terminal')}>
-            <Terminal size={16} /> SSH 终端
-          </button>
+            <Terminal size={16} />{tr('settings.sshTerminal')}</button>
         </div>
       )}
     </div>

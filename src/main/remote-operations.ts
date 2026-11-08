@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from '../shared/i18n/messages'
 import { posix } from 'node:path'
 import type {
   OperationExecutionRequest,
@@ -23,24 +24,24 @@ function validateRequest(value: OperationExecutionRequest): OperationExecutionRe
     || !['copy', 'move', 'extract'].includes(value.operation)
     || !['force', 'skip', 'update'].includes(value.strategy)
     || !Array.isArray(value.sourcePaths)
-    || value.sourcePaths.some((path) => typeof path !== 'string')) throw new Error('远端操作参数无效')
+    || value.sourcePaths.some((path) => typeof path !== 'string')) throw new LocalizedError(msg('errors.invalidRemoteOperationParameters'))
   const sourcePaths = value.sourcePaths.map(normalizedRemotePath)
   const targetDirectory = normalizedRemotePath(value.targetDirectory)
   if (value.operation === 'extract') {
     if (sourcePaths.length !== 0 || typeof value.archivePath !== 'string' || !value.archivePath
-      || typeof value.wrapInDirectory !== 'boolean') throw new Error('解压参数无效')
+      || typeof value.wrapInDirectory !== 'boolean') throw new LocalizedError(msg('errors.invalidExtractionParameters'))
     const archivePath = normalizedRemotePath(value.archivePath)
-    if (!archiveFormatForName(archivePath)) throw new Error('不支持的压缩包格式')
+    if (!archiveFormatForName(archivePath)) throw new LocalizedError(msg('errors.unsupportedArchiveFormat'))
     const outputDirectory = value.wrapInDirectory
       ? posix.join(targetDirectory, archiveBaseName(posix.basename(archivePath)))
       : targetDirectory
     return { ...value, sourcePaths, targetDirectory, archivePath, outputDirectory }
   }
-  if (value.strategy === 'update') throw new Error('复制和移动仅支持覆盖或跳过策略')
+  if (value.strategy === 'update') throw new LocalizedError(msg('errors.copyAndMoveOnlySupportOverwriteOrSkip'))
   if (sourcePaths.length === 0 || value.archivePath !== undefined || sourcePaths.includes('/')
-    || new Set(sourcePaths).size !== sourcePaths.length) throw new Error('远端操作来源路径无效')
+    || new Set(sourcePaths).size !== sourcePaths.length) throw new LocalizedError(msg('errors.invalidRemoteOperationSourcePaths'))
   if (sourcePaths.some((sourcePath) => targetDirectory === sourcePath || targetDirectory.startsWith(sourcePath + '/'))) {
-    throw new Error('不能将文件夹复制或移动到自身或其子文件夹中')
+    throw new LocalizedError(msg('errors.cannotCopyOrMoveAFolderIntoItselfOrA'))
   }
   return { ...value, sourcePaths, targetDirectory }
 }
@@ -64,7 +65,7 @@ copy_in_place() {
       extension=.\${name##*.}
     fi
   else
-    printf '%s\\n' "只能复制普通文件或文件夹，来源可能已不存在：$source" >&2
+    printf '%s\\n' "LINUX_NEXUS_DIAGNOSTIC:copyType：$source" >&2
     exit 1
   fi
   while :; do
@@ -114,8 +115,8 @@ function operationCommandParts(
       script: [
         'set -eu',
         'target=$1; shift',
-        '[[ -d "$target" ]] || { printf "%s\\n" "目标不是可用目录" >&2; exit 1; }',
-        'for source in "$@"; do [[ ! -L "$source" && ( -f "$source" || -d "$source" ) ]] || { printf "来源不是普通文件或目录: %s\\n" "$source" >&2; exit 1; }; done',
+        '[[ -d "$target" ]] || { printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:targetDirectory" >&2; exit 1; }',
+        'for source in "$@"; do [[ ! -L "$source" && ( -f "$source" || -d "$source" ) ]] || { printf "LINUX_NEXUS_DIAGNOSTIC:sourceType: %s\\n" "$source" >&2; exit 1; }; done',
         ...(intent.operation === 'copy' ? [copyInPlaceScript] : []),
         'pending=()',
         'for source in "$@"; do',
@@ -123,7 +124,7 @@ function operationCommandParts(
         // Compare directory identities too, so aliases through symlinks behave like the original path.
         '  if [[ "$target" -ef "$parent" ]]; then',
         ...(intent.operation === 'copy' ? ['    copy_in_place "$source"'] : [
-          '    [[ -e "$source" || -L "$source" ]] || { printf "%s\\n" "移动来源已不存在：$source" >&2; exit 1; }',
+          '    [[ -e "$source" || -L "$source" ]] || { printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:moveMissing：$source" >&2; exit 1; }',
         ]),
         '  else',
         '    pending+=("$source")',
@@ -138,9 +139,9 @@ function operationCommandParts(
     }
   }
 
-  if (!intent.archivePath || !intent.outputDirectory) throw new Error('解压参数缺少目标路径')
+  if (!intent.archivePath || !intent.outputDirectory) throw new LocalizedError(msg('errors.extractionParametersAreMissingTheDestinationPath'))
   const format = archiveFormatForName(intent.archivePath)
-  if (!format) throw new Error('不支持的压缩包格式')
+  if (!format) throw new LocalizedError(msg('errors.unsupportedArchiveFormat'))
   return {
     script: [
       'set -euo pipefail',
@@ -162,7 +163,7 @@ function buildOperationCommand(
 
 export function executeRemoteOperation(value: OperationExecutionRequest): Promise<OperationExecutionResult> {
   const intent = validateRequest(value)
-  if (activeOperations.has(intent.requestId)) throw new Error('远端操作编号重复')
+  if (activeOperations.has(intent.requestId)) throw new LocalizedError(msg('errors.duplicateRemoteOperationId'))
   const session = filesSession(intent.sessionId)
   const command = buildOperationCommand(intent, value.strategy)
   const controller = new AbortController()

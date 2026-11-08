@@ -1,3 +1,4 @@
+import { type MessageValue, msg } from '@shared/i18n/messages'
 import { useCallback, useEffect, useState, type MutableRefObject } from 'react'
 import type { PerformanceMonitorState } from '@shared/types'
 import type { SessionTab } from '@/app-types'
@@ -7,7 +8,7 @@ import { errorMessage } from '@/app-utils'
 interface UsePerformanceMonitoringOptions {
   connectedSessionId: string | null
   sessionsRef: MutableRefObject<SessionTab[]>
-  showToast: (kind: ToastNotice['kind'], message: string, action?: ToastNotice['action']) => void
+  showToast: (kind: ToastNotice['kind'], message: MessageValue, action?: ToastNotice['action']) => void
 }
 
 export function usePerformanceMonitoring({ connectedSessionId, sessionsRef, showToast }: UsePerformanceMonitoringOptions) {
@@ -41,12 +42,12 @@ export function usePerformanceMonitoring({ connectedSessionId, sessionsRef, show
         })
       })
       .catch((error: unknown) => {
-        if (!cancelled) showToast('error', '启动性能监控失败：' + errorMessage(error))
+        if (!cancelled) showToast('error', msg('common.couldNotStartPerformanceMonitoring', { "value1": errorMessage(error) }))
       })
     return () => {
       cancelled = true
       void window.remoteFiles.deactivatePerformanceMonitor(sessionId).catch((error: unknown) => {
-        showToast('error', '停止性能监控失败：' + errorMessage(error))
+        showToast('error', msg('common.couldNotStopPerformanceMonitoring', { "value1": errorMessage(error) }))
       })
     }
   }, [connectedSessionId, showToast])
@@ -61,7 +62,7 @@ export function usePerformanceMonitoring({ connectedSessionId, sessionsRef, show
 
   const refresh = useCallback((sessionId: string) => {
     void window.remoteFiles.refreshPerformanceMonitor(sessionId).catch((error: unknown) => {
-      showToast('error', '刷新性能监控失败：' + errorMessage(error))
+      showToast('error', msg('common.couldNotRefreshPerformanceMonitoring', { "value1": errorMessage(error) }))
     })
   }, [showToast])
 

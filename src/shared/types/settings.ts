@@ -1,3 +1,4 @@
+import { type LanguagePreference, type SupportedLanguage } from '../i18n/languages'
 import type { FileTypeExtensions } from '../file-type-registry'
 import type { PerformanceThresholds } from './performance'
 import type { SessionKind } from './sessions'
@@ -18,6 +19,7 @@ export interface StartupConnection {
 export type ThemeMode = 'light' | 'dark' | 'cream'
 
 export interface AppSettings extends PreviewLimits {
+  language: LanguagePreference
   theme: ThemeMode
   defaultView: 'icons' | 'details'
   fileTypeExtensions: FileTypeExtensions
@@ -28,3 +30,8 @@ export interface AppSettings extends PreviewLimits {
 }
 
 export type AppSettingsPatch = Partial<AppSettings>
+
+export interface AppBootstrap {
+  settings: AppSettings
+  systemLanguage: SupportedLanguage
+}

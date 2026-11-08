@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from '../../shared/i18n/messages'
 import { ipcMain } from './trusted-ipc'
 import type { TextEncoding, TextSaveOptions, ContentSearchRequest, NameSearchRequest, OperationExecutionStrategy, ScriptExecutionRequest, UploadExecutionRequest } from '@shared/types'
 import { copyRemotePath, createRemoteDirectory, deleteRemoteEntries, listDirectory } from '../connections'
@@ -27,15 +28,15 @@ export function registerFilesIpc(): void {
   ipcMain.handle('files:content-search-cancel', (_event, requestId: string) => cancelContentSearch(requestId))
   ipcMain.handle('files:script-execution-start', (_event, request: ScriptExecutionRequest) => startScriptExecution(request))
   ipcMain.handle('files:script-execution-cancel', (_event, requestId: unknown) => {
-    if (typeof requestId !== 'string' || !requestId) throw new Error('脚本执行请求编号无效')
+    if (typeof requestId !== 'string' || !requestId) throw new LocalizedError(msg('errors.invalidScriptExecutionRequestId'))
     return cancelScriptExecution(requestId)
   })
   ipcMain.handle('files:upload-select', (_event, request: unknown) => selectUploadSources(request))
   ipcMain.handle('files:upload-execute', (event, request: unknown) => {
     if (typeof request !== 'object' || request === null || !('selectionId' in request)
       || typeof request.selectionId !== 'string' || !request.selectionId
-      || !('strategy' in request) || typeof request.strategy !== 'string') throw new Error('上传执行参数无效')
-    if (!['force', 'skip', 'update'].includes(request.strategy)) throw new Error('上传策略无效')
+      || !('strategy' in request) || typeof request.strategy !== 'string') throw new LocalizedError(msg('errors.invalidUploadExecutionParameters'))
+    if (!['force', 'skip', 'update'].includes(request.strategy)) throw new LocalizedError(msg('errors.invalidUploadStrategy'))
     const uploadRequest = request as unknown as UploadExecutionRequest
     const selectionId = uploadRequest.selectionId
     const { requestId, sessionId, profileId, commands } = uploadSelectionContext(selectionId)
@@ -44,7 +45,7 @@ export function registerFilesIpc(): void {
       () => { if (!event.sender.isDestroyed()) event.sender.send('files:transfer-queued', { requestId }) }))
   })
   ipcMain.handle('files:upload-selection-cancel', (_event, selectionId: unknown) => {
-    if (typeof selectionId !== 'string' || !selectionId) throw new Error('上传选择编号无效')
+    if (typeof selectionId !== 'string' || !selectionId) throw new LocalizedError(msg('errors.invalidUploadSelectionId'))
     return cancelUploadSelection(selectionId)
   })
   ipcMain.handle('files:download', (event, requestId: string, sessionId: string, remotePaths: unknown) => {
@@ -62,7 +63,7 @@ export function registerFilesIpc(): void {
   ipcMain.handle('files:path-copy', (_event, sessionId: string, remotePath: string) => copyRemotePath(sessionId, remotePath))
   ipcMain.handle('files:delete', (_event, sessionId: string, remotePaths: unknown) => {
     if (!Array.isArray(remotePaths) || remotePaths.some((remotePath) => typeof remotePath !== 'string')) {
-      throw new Error('删除路径无效')
+      throw new LocalizedError(msg('errors.invalidDeletionPath'))
     }
     return deleteRemoteEntries(sessionId, remotePaths as string[])
   })

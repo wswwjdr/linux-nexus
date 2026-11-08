@@ -6,6 +6,8 @@ const { join } = require('node:path')
 protocol.registerSchemesAsPrivileged([{
   scheme: 'remote-preview', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
 }])
+app.setPath('userData', require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'nexus-browser-')))
+app.on('window-all-closed', () => {})
 app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
   // A real PCM WAV exercises Chromium decoding and seek through the custom scheme.
@@ -28,7 +30,7 @@ app.whenReady().then(async () => {
   const { createServer } = await import('vite')
   const { default: react } = await import('@vitejs/plugin-react')
   const server = await createServer({
-    configFile: false, plugins: [react(), {
+    configFile: false, cacheDir: require('node:path').join(app.getPath('userData'), 'vite-cache'), resolve: { alias: { '@': require('node:path').resolve('src/renderer/src'), '@shared': require('node:path').resolve('src/shared') } }, plugins: [react(), {
       name: 'audio-preview-fixture', configureServer(server) {
         server.middlewares.use('/__audio_preview_test', async (_request, response) => {
           response.setHeader('Content-Type', 'text/html')
@@ -38,6 +40,7 @@ app.whenReady().then(async () => {
     }], server: { host: '127.0.0.1', port: 0, watch: null },
   })
   const window = new BrowserWindow({ show: false, width: 1050, height: 728, webPreferences: { sandbox: true, backgroundThrottling: false } })
+  window.webContents.on('console-message', details => { if (details.level === 'error') console.error(details.message) })
   window.webContents.setAudioMuted(true)
   const execute = (code) => window.webContents.executeJavaScript(code)
   const until = async (condition) => {

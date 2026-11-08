@@ -1,3 +1,5 @@
+import { useLanguage } from '@/i18n'
+import { tr } from '@shared/i18n/messages'
 import { Clock3, Trash2 } from 'lucide-react'
 import type { SearchScope } from '@shared/types'
 
@@ -26,19 +28,18 @@ export function isNormalizedAbsoluteRemotePath(path: string): boolean {
 }
 
 export function SearchScopeControl({ scope, rootPath, currentPath, disabled, onScopeChange, onRootPathChange }: SearchScopeControlProps) {
+  useLanguage()
   const validCustomPath = scope !== 'custom' || isNormalizedAbsoluteRemotePath(rootPath)
   return (
     <fieldset className="settings-view-field search-option-field">
-      <legend>搜索范围</legend>
+      <legend>{tr('search.searchScope')}</legend>
       <div className="settings-view-options search-scope-options">
-        <button type="button" className="settings-view-option" disabled={disabled} aria-pressed={scope === 'current'} onClick={() => onScopeChange('current', currentPath)}>当前目录</button>
-        <button type="button" className="settings-view-option" disabled={disabled} aria-pressed={scope === 'root'} onClick={() => onScopeChange('root', '/')}>系统根目录</button>
-        <button type="button" className="settings-view-option" disabled={disabled} aria-pressed={scope === 'custom'} onClick={() => onScopeChange('custom', scope === 'custom' ? rootPath : currentPath)}>自定义</button>
+        <button type="button" className="settings-view-option" disabled={disabled} aria-pressed={scope === 'current'} onClick={() => onScopeChange('current', currentPath)}>{tr('search.currentDirectory')}</button>
+        <button type="button" className="settings-view-option" disabled={disabled} aria-pressed={scope === 'root'} onClick={() => onScopeChange('root', '/')}>{tr('search.systemRootDirectory')}</button>
+        <button type="button" className="settings-view-option" disabled={disabled} aria-pressed={scope === 'custom'} onClick={() => onScopeChange('custom', scope === 'custom' ? rootPath : currentPath)}>{tr('search.custom2')}</button>
       </div>
       {scope === 'custom' ? (
-        <label className="field search-custom-path-field">
-          远端绝对路径
-          <input
+        <label className="field search-custom-path-field">{tr('search.absoluteRemotePath')}<input
             type="text"
             value={rootPath}
             disabled={disabled}
@@ -47,7 +48,7 @@ export function SearchScopeControl({ scope, rootPath, currentPath, disabled, onS
             autoComplete="off"
             spellCheck={false}
           />
-          {!validCustomPath && <span className="search-field-error">请输入以 / 开头的完整路径，例如 /home/user，不要包含 .、.. 或多余的 /</span>}
+          {!validCustomPath && <span className="search-field-error">{tr('search.enterAFullPathStartingWithEGHomeUser')}</span>}
         </label>
       ) : (
         <div className="search-scope-path" title={rootPath}>{rootPath}</div>
@@ -84,11 +85,12 @@ export function SearchHistory<T>({
   onClear: () => void
   onSelect: (item: T) => void
 }) {
+  useLanguage()
   return (
-    <section className="search-history" aria-label="最近搜索">
+    <section className="search-history" aria-label={tr('search.recentSearches')}>
       <div className="search-history-heading">
-        <h3><Clock3 size={14} /> 最近搜索</h3>
-        {history.length > 0 && <button className="icon-button subtle" type="button" disabled={disabled} title="清空搜索历史" aria-label="清空搜索历史" onClick={onClear}><Trash2 size={14} /></button>}
+        <h3><Clock3 size={14} />{tr('search.recentSearches')}</h3>
+        {history.length > 0 && <button className="icon-button subtle" type="button" disabled={disabled} title={tr('search.clearSearchHistory')} aria-label={tr('search.clearSearchHistory')} onClick={onClear}><Trash2 size={14} /></button>}
       </div>
       {history.length ? (
         <div className="search-history-list">
@@ -102,7 +104,7 @@ export function SearchHistory<T>({
             )
           })}
         </div>
-      ) : <p className="search-history-empty">暂无搜索历史</p>}
+      ) : <p className="search-history-empty">{tr('search.noSearchHistory')}</p>}
     </section>
   )
 }

@@ -1,8 +1,11 @@
+import { useLanguage } from '@/i18n'
+import { tr } from '@shared/i18n/messages'
 import { ShieldCheck } from 'lucide-react'
 import ConfirmationDialog from '../ConfirmationDialog'
 import type { DialogLayerProps } from './types'
 
 export function SecurityDialogs(props: Pick<DialogLayerProps, "pendingHostKey" | "pendingAliasHostKey" | "aliasOverwriteConfirmation" | "aliasDeleteConfirmation" | "aliasOperationBusy" | "onTrustHostKey" | "onDismissHostKey" | "onTrustAliasHostKey" | "onDismissAliasHostKey" | "onConfirmAliasOverwrite" | "onCancelAliasOverwrite" | "onConfirmAliasDelete" | "onCancelAliasDelete">) {
+  useLanguage()
   const { pendingHostKey, pendingAliasHostKey, aliasOverwriteConfirmation, aliasDeleteConfirmation, aliasOperationBusy, onTrustHostKey, onDismissHostKey, onTrustAliasHostKey, onDismissAliasHostKey, onConfirmAliasOverwrite, onCancelAliasOverwrite, onConfirmAliasDelete, onCancelAliasDelete } = props
   const visibleHostKey = pendingHostKey ?? pendingAliasHostKey
   const aliasHostKeyVisible = !pendingHostKey && Boolean(pendingAliasHostKey)
@@ -12,22 +15,22 @@ export function SecurityDialogs(props: Pick<DialogLayerProps, "pendingHostKey" |
               <div className="modal-backdrop">
                 <section className="modal fingerprint-modal" role="dialog" aria-modal="true" aria-labelledby="fingerprint-title">
                   <div className="fingerprint-icon"><ShieldCheck size={24} /></div>
-                  <div className="modal-kicker centered">服务器身份校验</div>
-                  <h2 id="fingerprint-title">{visibleHostKey.previousFingerprint ? '服务器指纹已变化' : '确认服务器指纹'}</h2>
+                  <div className="modal-kicker centered">{tr('connections.serverIdentityVerification')}</div>
+                  <h2 id="fingerprint-title">{visibleHostKey.previousFingerprint ? tr('connections.serverFingerprintChanged') : tr('connections.verifyServerFingerprint')}</h2>
                   <p className="fingerprint-host">{visibleHostKey.profile.username}@{visibleHostKey.profile.host}:{visibleHostKey.profile.port}</p>
                   {visibleHostKey.previousFingerprint && (
                     <div className="fingerprint-compare">
-                      <span>已保存</span><code>{visibleHostKey.previousFingerprint}</code>
+                      <span>{tr('connections.saved')}</span><code>{visibleHostKey.previousFingerprint}</code>
                     </div>
                   )}
                   <div className="fingerprint-compare new-fingerprint">
-                    <span>当前指纹</span><code>{visibleHostKey.fingerprint}</code>
+                    <span>{tr('connections.currentFingerprint')}</span><code>{visibleHostKey.fingerprint}</code>
                   </div>
-                  <p className="fingerprint-note">请与服务器管理员提供的指纹核对后再继续。</p>
+                  <p className="fingerprint-note">{tr('connections.verifyThisFingerprintWithTheServerAdministratorBeforeContinuing')}</p>
                   <div className="modal-footer">
-                    <button className="secondary-button" onClick={aliasHostKeyVisible ? onDismissAliasHostKey : onDismissHostKey}>取消</button>
+                    <button className="secondary-button" onClick={aliasHostKeyVisible ? onDismissAliasHostKey : onDismissHostKey}>{tr('common.cancel')}</button>
                     <button className="primary-button" onClick={aliasHostKeyVisible ? onTrustAliasHostKey : onTrustHostKey}>
-                      <ShieldCheck size={15} /> {visibleHostKey.previousFingerprint ? '更新并重试' : '信任并重试'}
+                      <ShieldCheck size={15} /> {visibleHostKey.previousFingerprint ? tr('connections.updateAndRetry') : tr('connections.trustAndRetry')}
                     </button>
                   </div>
                 </section>
@@ -35,16 +38,16 @@ export function SecurityDialogs(props: Pick<DialogLayerProps, "pendingHostKey" |
             )}
       {aliasOverwriteConfirmation && (
               <ConfirmationDialog
-                eyebrow="命令别名冲突"
-                title={`覆盖 ${aliasOverwriteConfirmation.name}？`}
+                eyebrow={tr('connections.commandAliasConflict')}
+                title={tr('connections.overwrite', { "name": aliasOverwriteConfirmation.name })}
                 details={[
-                  { label: '当前命令', value: aliasOverwriteConfirmation.existingCommand },
-                  { label: '新命令', value: aliasOverwriteConfirmation.command ?? '' },
+                  { label: tr('connections.currentCommand'), value: aliasOverwriteConfirmation.existingCommand },
+                  { label: tr('connections.newCommand'), value: aliasOverwriteConfirmation.command ?? '' },
                 ]}
-                description="将替换服务器 ~/.bashrc 中的此别名，新命令会在新开的终端中生效。"
+                description={tr('connections.thisReplacesTheAliasInTheServerSBashrcThe')}
                 tone="warning"
-                confirmLabel="覆盖别名"
-                busyLabel="正在写入"
+                confirmLabel={tr('connections.overwriteAlias')}
+                busyLabel={tr('connections.writing')}
                 busy={aliasOperationBusy}
                 onConfirm={onConfirmAliasOverwrite}
                 onCancel={onCancelAliasOverwrite}
@@ -52,15 +55,15 @@ export function SecurityDialogs(props: Pick<DialogLayerProps, "pendingHostKey" |
             )}
       {aliasDeleteConfirmation && (
               <ConfirmationDialog
-                eyebrow="删除命令别名"
-                title={`删除 ${aliasDeleteConfirmation.name}？`}
+                eyebrow={tr('connections.deleteCommandAlias')}
+                title={tr('connections.delete', { "name": aliasDeleteConfirmation.name })}
                 details={[
-                  { label: '实际命令', value: aliasDeleteConfirmation.existingCommand },
+                  { label: tr('connections.actualCommand'), value: aliasDeleteConfirmation.existingCommand },
                 ]}
-                description="将从服务器的 ~/.bashrc 中删除此别名。此更改会在新开的终端中生效。"
+                description={tr('connections.thisRemovesTheAliasFromTheServerSBashrcThe')}
                 tone="danger"
-                confirmLabel="删除别名"
-                busyLabel="正在删除"
+                confirmLabel={tr('connections.deleteAlias')}
+                busyLabel={tr('common.deleting')}
                 busy={aliasOperationBusy}
                 onConfirm={onConfirmAliasDelete}
                 onCancel={onCancelAliasDelete}

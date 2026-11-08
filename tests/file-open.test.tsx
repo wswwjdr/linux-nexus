@@ -1,3 +1,4 @@
+import { renderMessage, type MessageValue } from '../src/shared/i18n/messages'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { act, createElement, Fragment, useState } from 'react'
@@ -60,7 +61,7 @@ async function mount(viewMode: 'details' | 'icons' = 'details') {
     releasePreview: async () => {},
   } as unknown as RemoteFilesApi
   const register = (id: string, value: SessionFileWorkspaceActions | null) => { if (value) actions.set(id, value); else actions.delete(id) }
-  const showToast = (_kind: string, message: string) => { notices.push(message) }
+  const showToast = (_kind: string, message: MessageValue) => { notices.push(renderMessage(message)) }
   function Browser() {
     const [selectedPaths, setSelectedPaths] = useState<string[]>([])
     return createElement(FileBrowser, {

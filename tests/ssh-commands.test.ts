@@ -226,7 +226,7 @@ test('bounds stderr and exposes truncation without changing the exit status', as
   })
   await assert.rejects(executeRemoteCommand(client, 'true', { maxStderrBytes: 16 }), error => {
     assert.ok(error instanceof RemoteCommandError)
-    assert.equal(error.stderr, 'A'.repeat(16) + '\n[stderr 已截断]')
+    assert.equal(error.stderr, 'A'.repeat(16) + '\n[stderr truncated]')
     return true
   })
 })

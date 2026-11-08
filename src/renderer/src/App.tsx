@@ -1,3 +1,5 @@
+import { type MessageValue, msg, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { Cloud, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, RefreshCw, Search, Settings, Shield, Terminal, Upload } from 'lucide-react'
 import GlobalToast from './GlobalToast'
@@ -25,6 +27,7 @@ import { usePerformanceMonitoring } from './features/performance/usePerformanceM
 import { useRemoteFileShortcuts } from './features/files/useRemoteFileShortcuts'
 import { useFileListing } from './features/files/useFileListing'
 import type {
+  AppSettings,
   FileTypeExtensions,
   FileIdentity,
   PerformanceThresholds,
@@ -47,7 +50,8 @@ import {
   readRecentConnections,
 } from './app-utils'
 
-export default function App() {
+export default function App({ initialSettings }: { initialSettings: AppSettings }) {
+  useLanguage()
   const [sessions, setSessions] = useState<SessionTab[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [sessionChooserOpen, setSessionChooserOpen] = useState(false)
@@ -56,7 +60,7 @@ export default function App() {
   const [rootRequest, setRootRequest] = useState<{
     sessionId: string
     phase: 'entering' | 'password' | 'verifying' | 'leaving'
-    error?: string
+    error?: MessageValue
   } | null>(null)
   const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>('details')
   const [performanceThresholds, setPerformanceThresholds] = useState<PerformanceThresholds>(DEFAULT_PERFORMANCE_THRESHOLDS)
@@ -193,18 +197,20 @@ export default function App() {
     resetFileTypeExtensions,
     updateDefaultView,
     updateTheme,
+    updateLanguage,
     updateStartupProfile,
     updateStartupKind,
     closeProfileDialog,
     closeSettingsDialog,
   } = useProfileManagement({
+    initialSettings,
     showToast,
     onProfileSaved: (profile) => {
       const affectedSessions = sessionsRef.current.filter((session) => session.profileId === profile.id)
       removeScriptSessionStates(affectedSessions.map(({ id }) => id))
       setPendingHostKeys((current) => current.filter((pending) => pending.profile.id !== profile.id))
       for (const session of affectedSessions) {
-        patchSession(session.id, { status: 'disconnected', error: '服务器配置已更新', loading: false })
+        patchSession(session.id, { status: 'disconnected', error: msg('errors.serverConfigurationUpdated'), loading: false })
       }
       removeSessionWorkspaceState(affectedSessions.map(({ id }) => id))
     },
@@ -280,7 +286,7 @@ export default function App() {
       removeSessionPerformanceState([event.sessionId])
       setRootRequest((current) => current?.sessionId === event.sessionId ? null : current)
       patchSession(event.sessionId, { status: 'disconnected', error: event.message, loading: false, fileIdentity: undefined })
-      if (activeSessionId === event.sessionId) showToast('error', `连接已断开：${event.message}`)
+      if (activeSessionId === event.sessionId) showToast('error', msg('common.connectionDisconnected', { "message": event.message }))
     })
     return removeClosedListener
   }, [activeSessionId, patchSession, removeScriptSessionStates, removeSessionPerformanceState, showToast])
@@ -425,8 +431,8 @@ export default function App() {
 
   const handleRootExpired = useEffectEvent((event: { sessionId: string; remoteStateUnknown: boolean }) => {
     showToast('error', event.remoteStateUnknown
-      ? 'sudo 权限已失效，已退出 root 模式。部分远端任务状态未知。'
-      : 'sudo 权限已失效，已退出 root 模式。')
+      ? msg('common.sudoPrivilegesExpiredRootModeEndedSomeRemoteTaskStates')
+      : msg('common.sudoPrivilegesExpiredRootModeEnded'))
     void applyFileIdentity(event.sessionId, 'login')
   })
   useEffect(() => window.remoteFiles.onFileRootExpired((event) => handleRootExpired(event)), [])
@@ -454,7 +460,7 @@ export default function App() {
     setRootRequest({ sessionId, phase: 'leaving' })
     try {
       const { remoteStateUnknown } = await window.remoteFiles.leaveFileRoot(sessionId)
-      if (remoteStateUnknown) showToast('info', '已退出 root 模式。部分远端任务状态未知。')
+      if (remoteStateUnknown) showToast('info', msg('common.rootModeEndedSomeRemoteTaskStatesAreUnknown'))
       await applyFileIdentity(sessionId, 'login')
     } catch (error) {
       showToast('error', errorMessage(error))
@@ -590,8 +596,8 @@ export default function App() {
     if (connectedProfile) openSession(connectedProfile, 'files')
   }
 
-  const reportTerminalError = useCallback((message: string) => {
-    showToast('error', '终端操作失败：' + message)
+  const reportTerminalError = useCallback((message: MessageValue) => {
+    showToast('error', msg('common.terminalOperationFailed', { "message": message }))
   }, [showToast])
 
   if (!profileDataLoaded
@@ -599,7 +605,7 @@ export default function App() {
     return (
       <div className="app-shell startup-shell">
         <main className="main-area">
-          <div className="startup-loading" role="status" aria-label="正在启动">
+          <div className="startup-loading" role="status" aria-label={tr('common.starting')}>
             <LoaderCircle className="spin" size={22} />
           </div>
         </main>
@@ -618,8 +624,8 @@ export default function App() {
           <div className="topbar-left">
             <button
               className="icon-button toolbar-button"
-              title="首页"
-              aria-label="首页"
+              title={tr('common.home')}
+              aria-label={tr('common.home')}
               disabled={!activeSession}
               onClick={goHome}
             >
@@ -627,8 +633,8 @@ export default function App() {
             </button>
             <button
               className="icon-button toolbar-button"
-              title="设置"
-              aria-label="设置"
+              title={tr('common.settings')}
+              aria-label={tr('common.settings')}
               disabled={settingsLoading}
               onClick={openSettings}
             >
@@ -636,8 +642,8 @@ export default function App() {
             </button>
             <button
               className="icon-button toolbar-button"
-              title="快捷键说明"
-              aria-label="快捷键说明"
+              title={tr('common.keyboardShortcuts')}
+              aria-label={tr('common.keyboardShortcuts')}
               onClick={() => setShortcutGuideOpen(true)}
             >
               <Keyboard size={16} />
@@ -646,9 +652,9 @@ export default function App() {
             {connectedProfile && <span className="connected-host"><Cloud size={14} /> {connectedProfile.username}@{connectedProfile.host}</span>}
             {activeSession && activeSession.status !== 'connected' && (
               <span className={'active-session-status ' + activeSession.status}>
-                {activeSession.status === 'connecting' ? '连接中'
-                  : activeSession.status === 'awaiting-trust' ? '等待确认指纹'
-                    : '已断开'}
+                {activeSession.status === 'connecting' ? tr('common.connecting')
+                  : activeSession.status === 'awaiting-trust' ? tr('common.awaitingFingerprintVerification')
+                    : tr('common.disconnected')}
               </span>
             )}
           </div>
@@ -665,7 +671,7 @@ export default function App() {
             {activeSession?.kind === 'files' && connectedSessionId ? (
               <>
                 {activeSession.fileIdentity === 'root-login' ? (
-                  <span className="file-root-identity" role="status">root 登录</span>
+                  <span className="file-root-identity" role="status">{tr('common.rootLogin')}</span>
                 ) : (
                   <button
                     className={'text-button' + (activeSession.fileIdentity === 'sudo-root' ? ' file-root-identity' : '')}
@@ -678,31 +684,29 @@ export default function App() {
                     }}
                   >
                     <Shield size={15} />
-                    {rootRequest?.sessionId === connectedSessionId && rootRequest.phase === 'entering' ? '取消提权'
-                      : rootRequest?.sessionId === connectedSessionId && rootRequest.phase === 'leaving' ? '正在退出 root'
-                        : activeSession.fileIdentity === 'sudo-root' ? '退出 root 模式' : '进入 root 模式'}
+                    {rootRequest?.sessionId === connectedSessionId && rootRequest.phase === 'entering' ? tr('common.cancelElevation')
+                      : rootRequest?.sessionId === connectedSessionId && rootRequest.phase === 'leaving' ? tr('common.leavingRootMode')
+                        : activeSession.fileIdentity === 'sudo-root' ? tr('common.leaveRootMode') : tr('common.enterRootMode')}
                   </button>
                 )}
-                <button className="icon-button toolbar-button" title="搜索文件" aria-label="搜索文件" onClick={openSearch}>
+                <button className="icon-button toolbar-button" title={tr('common.searchFiles')} aria-label={tr('common.searchFiles')} onClick={openSearch}>
                   <Search size={16} />
                 </button>
-                <button className="icon-button toolbar-button" title="新建 SSH 终端" aria-label="新建 SSH 终端" onClick={openTerminalForCurrentPath}>
+                <button className="icon-button toolbar-button" title={tr('common.newSshTerminal')} aria-label={tr('common.newSshTerminal')} onClick={openTerminalForCurrentPath}>
                   <Terminal size={16} />
                 </button>
-                <button className="text-button upload-button" title="上传文件到当前目录" aria-label="上传文件到当前目录" onClick={() => uploadFiles()}>
-                  <Upload size={15} /> 上传文件
-                </button>
-                <button className="text-button upload-button" title="上传文件夹到当前目录" aria-label="上传文件夹到当前目录" onClick={() => uploadFolder()}>
-                  <FolderUp size={15} /> 上传文件夹
-                </button>
-                <button className="icon-button toolbar-button" title="刷新目录 (F5)" aria-label="刷新目录" aria-keyshortcuts="F5" disabled={loading} onClick={refreshDirectory}>
+                <button className="text-button upload-button" title={tr('common.uploadFilesToTheCurrentDirectory')} aria-label={tr('common.uploadFilesToTheCurrentDirectory')} onClick={() => uploadFiles()}>
+                  <Upload size={15} />{tr('common.uploadFiles')}</button>
+                <button className="text-button upload-button" title={tr('common.uploadAFolderToTheCurrentDirectory')} aria-label={tr('common.uploadAFolderToTheCurrentDirectory')} onClick={() => uploadFolder()}>
+                  <FolderUp size={15} />{tr('common.uploadFolder')}</button>
+                <button className="icon-button toolbar-button" title={tr('common.refreshDirectoryF5')} aria-label={tr('common.refreshDirectory')} aria-keyshortcuts="F5" disabled={loading} onClick={refreshDirectory}>
                   <RefreshCw className={loading ? 'spin' : ''} size={17} />
                 </button>
               </>
             ) : activeSession?.kind === 'terminal' && connectedSessionId ? (
-              <button className="text-button" onClick={openFileForCurrentProfile}><FolderOpen size={15} /> 文件管理</button>
+              <button className="text-button" onClick={openFileForCurrentProfile}><FolderOpen size={15} />{tr('common.fileManager')}</button>
             ) : activeSession?.status === 'disconnected' ? (
-              <button className="text-button" onClick={() => reconnectSession(activeSession.id)}><RefreshCw size={14} /> 重连</button>
+              <button className="text-button" onClick={() => reconnectSession(activeSession.id)}><RefreshCw size={14} />{tr('common.reconnect')}</button>
             ) : activeSession?.status === 'connecting' ? <LoaderCircle className="spin" size={17} /> : null}
           </div>
         </header>
@@ -780,7 +784,7 @@ export default function App() {
               onStopScriptExecution: stopScriptExecution,
               onMenuAction: dispatchFileMenuAction,
               onOpenExternalLink: (url) => {
-                void window.remoteFiles.openExternalUrl(url).catch((error) => showToast('error', '无法打开链接：' + errorMessage(error)))
+                void window.remoteFiles.openExternalUrl(url).catch((error) => showToast('error', msg('common.cannotOpenLink', { "value1": errorMessage(error) })))
               },
             },
             loadDirectory,
@@ -800,7 +804,7 @@ export default function App() {
         notices={notices}
         onDismiss={dismissToast}
         progress={activeOperation ? {
-          message: `正在${activeOperation.operation === 'copy' ? '复制' : activeOperation.operation === 'move' ? '移动' : '解压'}…`,
+          message: msg('common.message', { "value1": activeOperation.operation === 'copy' ? msg('common.copy') : activeOperation.operation === 'move' ? msg('common.move') : msg('common.extract') }),
           onCancel: cancelActiveOperation,
         } : null}
       />
@@ -850,6 +854,7 @@ export default function App() {
         onResetFileTypeExtensions={resetFileTypeExtensions}
         onUpdateDefaultView={updateDefaultView}
         onUpdateTheme={updateTheme}
+        onUpdateLanguage={updateLanguage}
         onUpdateStartupProfile={updateStartupProfile}
         onUpdateStartupKind={updateStartupKind}
         onTrustHostKey={() => void trustAndReconnect()}
@@ -887,41 +892,40 @@ export default function App() {
 
       {remoteEntryDeleteDialog && (
         <ConfirmationDialog
-          eyebrow="远程文件操作"
+          eyebrow={tr('common.remoteFileOperation')}
           title={remoteEntryDeleteDialog.entries.length > 1
-            ? `删除 ${remoteEntryDeleteDialog.entries.length} 个远程项目？`
-            : remoteEntryDeleteDialog.entries[0].type === 'directory' ? '删除远程文件夹？' : '删除远程文件？'}
+            ? tr('common.deleteRemoteItems', { "count": remoteEntryDeleteDialog.entries.length })
+            : remoteEntryDeleteDialog.entries[0].type === 'directory' ? tr('common.deleteRemoteFolder') : tr('common.deleteRemoteFile')}
           details={remoteEntryDeleteDialog.entries.length > 1
             ? [
-                { label: '选中项目', value: `${remoteEntryDeleteDialog.entries.length} 项` },
+                { label: tr('common.selectedItems'), value: tr('common.items', { "count": remoteEntryDeleteDialog.entries.length }) },
                 {
-                  label: '名称',
+                  label: tr('common.name'),
                   value: remoteEntryDeleteDialog.entries.slice(0, 4).map((entry) => entry.name).join('、')
-                    + (remoteEntryDeleteDialog.entries.length > 4 ? ' 等' : ''),
+                    + (remoteEntryDeleteDialog.entries.length > 4 ? tr('common.andOthers') : ''),
                 },
               ]
             : [
-                { label: '名称', value: remoteEntryDeleteDialog.entries[0].name },
-                { label: '远程路径', value: remoteEntryDeleteDialog.entries[0].path },
+                { label: tr('common.name'), value: remoteEntryDeleteDialog.entries[0].name },
+                { label: tr('common.remotePath'), value: remoteEntryDeleteDialog.entries[0].path },
               ]}
           description={remoteEntryDeleteDialog.entries.length > 1
-            ? '此操作无法撤销。选中的文件夹及其所有内容也会一并删除。'
+            ? tr('common.thisCannotBeUndoneSelectedFoldersAndAllTheirContents')
             : remoteEntryDeleteDialog.entries[0].type === 'directory'
-              ? '此操作无法撤销，文件夹中的所有内容也会一并删除。'
-              : '此操作无法撤销，远程文件将被永久删除。'}
+              ? tr('common.thisCannotBeUndoneAllContentsOfTheFolderWill')
+              : tr('common.thisCannotBeUndoneTheRemoteFileWillBePermanently')}
           tone="danger"
           confirmLabel={remoteEntryDeleteDialog.entries.length > 1
-            ? `删除 ${remoteEntryDeleteDialog.entries.length} 项`
-            : remoteEntryDeleteDialog.entries[0].type === 'directory' ? '删除文件夹' : '删除文件'}
-          busyLabel="正在删除"
+            ? tr('common.deleteItems', { "count": remoteEntryDeleteDialog.entries.length })
+            : remoteEntryDeleteDialog.entries[0].type === 'directory' ? tr('common.deleteFolder') : tr('common.deleteFile')}
+          busyLabel={tr('common.deleting')}
           error={remoteEntryDeleteError}
-          errorLabel={remoteEntryDeleteDialog.entries.length > 1 ? '以下项目删除失败' : '删除失败'}
+          errorLabel={remoteEntryDeleteDialog.entries.length > 1 ? tr('common.theseItemsCouldNotBeDeleted') : tr('common.deletionFailed')}
           busy={remoteEntryDeleting}
           onConfirm={() => void confirmRemoteEntryDeletion()}
           onCancel={cancelRemoteEntryDeletion}
         />
       )}
-
 
       {uploadSelection && <UploadConfirmDialog
         selection={uploadSelection}

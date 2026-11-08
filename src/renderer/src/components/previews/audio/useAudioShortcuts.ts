@@ -1,21 +1,22 @@
+import { msg } from '@shared/i18n/messages'
 import { useEffect, type RefObject } from 'react'
 import { allowsMediaShortcut, applyMediaShortcut } from '../media/media-controls'
 
 export const audioShortcutGroups = [
-  { title: '常用控制', items: [
-    { keys: ['Space', 'K'], description: '暂停 / 播放' },
-    { keys: ['M'], description: '静音 / 取消静音' },
-    { keys: ['Esc'], description: '退出播放' },
+  { title: msg('previews.playbackControls'), items: [
+    { keys: ['Space', 'K'], description: msg('previews.pausePlay') },
+    { keys: ['M'], description: msg('previews.muteUnmute') },
+    { keys: ['Esc'], description: msg('previews.exitPlayback') },
   ] },
-  { title: '进度调整', items: [
-    { keys: ['←', '→'], description: '后退 / 前进 5s' },
-    { keys: ['J', 'L'], description: '后退 / 前进 10s' },
-    { keys: ['Home'], description: '跳至开头' },
-    { keys: ['End'], description: '跳至结尾' },
+  { title: msg('previews.seeking'), items: [
+    { keys: ['←', '→'], description: msg('previews.backForward5s') },
+    { keys: ['J', 'L'], description: msg('previews.backForward10s') },
+    { keys: ['Home'], description: msg('previews.goToStart') },
+    { keys: ['End'], description: msg('previews.goToEnd') },
   ] },
-  { title: '音量与速度', items: [
-    { keys: ['↑', '↓'], description: '音量增 / 减' },
-    { keys: ['<', '>'], description: '减速 / 加速 0.25x' },
+  { title: msg('previews.volumeAndSpeed'), items: [
+    { keys: ['↑', '↓'], description: msg('previews.volumeUpDown') },
+    { keys: ['<', '>'], description: msg('previews.slowerFasterBy025x') },
   ] },
 ]
 

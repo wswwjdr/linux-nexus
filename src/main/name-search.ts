@@ -1,3 +1,4 @@
+import { type MessageValue, messageFromUnknown, msg, LocalizedError } from '../shared/i18n/messages'
 import { posix } from 'node:path'
 import { executeRemoteCommand, RemoteCommandError, RemoteTerminationError } from './ssh-commands'
 import { fileCommands } from './file-identity'
@@ -48,11 +49,11 @@ function validateRequest(value: NameSearchRequest): NameSearchRequest {
     || value.query.includes('\0') || value.query.includes('\n') || value.query.includes('\r')
     || (value.matchMode !== 'exact' && value.matchMode !== 'contains')
     || typeof value.ignoreCase !== 'boolean') {
-    throw new Error('文件名搜索条件无效')
+    throw new LocalizedError(msg('errors.invalidFilenameSearchCriteria'))
   }
   const rootPath = normalizedRemotePath(value.rootPath)
   if (!value.rootPath.startsWith('/') || rootPath !== value.rootPath) {
-    throw new Error('搜索范围必须是规范化的绝对远端路径')
+    throw new LocalizedError(msg('errors.searchScopeMustBeANormalizedAbsoluteRemotePath'))
   }
   return value
 }
@@ -112,7 +113,7 @@ function queueResult(task: NameSearchTask, path: string): void {
   emitProgress(task)
 }
 
-function finishSearch(task: NameSearchTask, status: SearchRunStatus, message?: string): void {
+function finishSearch(task: NameSearchTask, status: SearchRunStatus, message?: MessageValue): void {
   if (task.finished) return
   task.finished = true
   if (task.progressTimer) clearTimeout(task.progressTimer)
@@ -152,9 +153,9 @@ export function buildNameSearchCommand(request: NameSearchRequest): string {
 
 export function startNameSearch(input: NameSearchRequest): void {
   const request = validateRequest(input)
-  if (activeSearches.has(request.requestId)) throw new Error('文件名搜索请求编号已在使用')
+  if (activeSearches.has(request.requestId)) throw new LocalizedError(msg('errors.filenameSearchRequestIdIsAlreadyInUse'))
   const session = sessions.get(request.sessionId)
-  if (!session || session.kind !== 'files' || session.profileId !== request.profileId) throw new Error('文件会话未连接')
+  if (!session || session.kind !== 'files' || session.profileId !== request.profileId) throw new LocalizedError(msg('errors.fileSessionIsNotConnected'))
   const commands = fileCommands(session)
 
   const task: NameSearchTask = {
@@ -175,16 +176,15 @@ export function startNameSearch(input: NameSearchRequest): void {
   activeSearches.set(request.requestId, task)
   emitProgress(task, true)
 
-
   void executeRemoteCommand(commands, buildNameSearchCommand(request), {
     signal: task.controller.signal, collectStdout: false, keepStdinOpen: true, timeoutMs: 86_400_000,
     maxStdoutBytes: 32 * 1024 * 1024,
     onStdout: (chunk) => {
       task.pending = Buffer.concat([task.pending, chunk])
-      if (task.pending.length > 1024 * 1024) throw new Error('搜索记录超过大小限制')
+      if (task.pending.length > 1024 * 1024) throw new LocalizedError(msg('errors.searchRecordExceedsTheSizeLimit'))
       let delimiter = task.pending.indexOf(0)
       while (delimiter >= 0) {
-        if (!delimiter) throw new Error('远端文件名搜索返回了空路径')
+        if (!delimiter) throw new LocalizedError(msg('errors.remoteFilenameSearchReturnedAnEmptyPath'))
         queueResult(task, task.pending.subarray(0, delimiter).toString('utf8'))
         task.pending = task.pending.subarray(delimiter + 1)
         delimiter = task.pending.indexOf(0)
@@ -193,10 +193,10 @@ export function startNameSearch(input: NameSearchRequest): void {
     onStderr: () => markReadError(task),
     onComplete: (error) => {
       if (task.finished) return
-      if (error instanceof RemoteTerminationError && task.cancelled) finishSearch(task, 'cancelled', error.message)
-      else if (task.pending.length) finishSearch(task, 'failed', '远端文件名搜索结果格式无效')
+      if (error instanceof RemoteTerminationError && task.cancelled) finishSearch(task, 'cancelled', messageFromUnknown(error))
+      else if (task.pending.length) finishSearch(task, 'failed', msg('errors.invalidRemoteFilenameSearchResult'))
       else if (!error || (error instanceof RemoteCommandError && error.exitCode === 1 && task.hasReadErrors)) finishSearch(task, 'completed')
-      else { task.incomplete = true; finishSearch(task, 'failed', error.message) }
+      else { task.incomplete = true; finishSearch(task, 'failed', messageFromUnknown(error)) }
     },
   }).catch(() => undefined)
 
@@ -216,7 +216,7 @@ export function cancelNameSearchesForSession(sessionId: string): void {
   }
 }
 
-export function failNameSearchesForSession(sessionId: string, message: string): void {
+export function failNameSearchesForSession(sessionId: string, message: MessageValue): void {
   for (const task of activeSearches.values()) {
     if (task.request.sessionId === sessionId) { finishSearch(task, 'failed', message); task.controller.abort() }
   }

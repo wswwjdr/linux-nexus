@@ -1,15 +1,17 @@
+import { type IpcResult } from '../i18n/messages'
 import type { RemoteEntry, SaveProfileInput, ServerProfile, CommandAliasOperationResult, CommandAliasSnapshot } from './profiles'
 import type { NameSearchRequest, ContentSearchRequest, NameSearchEvent, ContentSearchEvent } from './search'
 import type { ScriptExecutionRequest, ScriptExecutionEvent } from './script-executions'
 import type { ConnectResult, TrustHostKeyInput, SessionKind, TerminalOutputEvent, ConnectionClosedEvent, FileElevationResult, FileRootExpiredEvent } from './sessions'
 import type { PerformanceMonitorState } from './performance'
-import type { AppSettings, AppSettingsPatch } from './settings'
+import type { AppSettings, AppSettingsPatch, AppBootstrap } from './settings'
 import type { DroppedUploadEntry, TransferResult, OperationExecutionRequest, OperationExecutionResult, UploadSelectionRequest, UploadSelection, UploadExecutionRequest, TransferProgress, TransferQueuedEvent } from './transfers'
 import type { PreviewResult, TextLineEnding, LogPreviewPage, TextEncoding, TextSaveOptions, TextSaveResult, TextSavePackage, TextSaveInstallResult } from './previews'
 import type { PreviewType } from '../file-type-registry'
 import type { RemoteEntryProperties } from './file-properties'
 
 export interface RemoteFilesApi {
+  getBootstrap(): Promise<AppBootstrap>
   listProfiles(): Promise<ServerProfile[]>
   saveProfile(input: SaveProfileInput): Promise<ServerProfile>
   setProfilePinned(profileId: string, pinned: boolean): Promise<ServerProfile>
@@ -79,4 +81,10 @@ export interface RemoteFilesApi {
   onConnectionClosed(callback: (event: ConnectionClosedEvent) => void): () => void
   onTerminalOutput(callback: (event: TerminalOutputEvent) => void): () => void
   onPerformanceUpdate(callback: (event: PerformanceMonitorState) => void): () => void
+}
+
+export type RemoteFilesTransport = {
+  [K in keyof RemoteFilesApi]: RemoteFilesApi[K] extends (...args: infer A) => Promise<infer R>
+    ? (...args: A) => Promise<IpcResult<R>>
+    : RemoteFilesApi[K]
 }

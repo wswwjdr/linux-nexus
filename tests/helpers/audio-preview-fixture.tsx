@@ -1,3 +1,4 @@
+import { setLanguage } from '../../src/shared/i18n/messages'
 import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import AudioPreviewDialog from '../../src/renderer/src/components/previews/audio/AudioPreviewDialog'
@@ -24,4 +25,5 @@ function Fixture() {
   </main></div>
 }
 
+setLanguage('zh-CN')
 createRoot(document.getElementById('root')!).render(<Fixture />)

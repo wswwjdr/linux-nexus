@@ -1,3 +1,5 @@
+import { useLanguage } from '@/i18n'
+import { tr } from '@shared/i18n/messages'
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent } from 'react'
 import { FlipHorizontal2, FlipVertical2, ImageOff, LoaderCircle, Maximize, RotateCcw, RotateCw, X, ZoomIn, ZoomOut } from 'lucide-react'
 import type { PreviewResult } from '@shared/types'
@@ -6,6 +8,7 @@ import { imageFitScale, zoomAt, type Point, type Size } from './image-transform'
 export default function ImagePreviewDialog({ result, active, onClose }: {
   result: Extract<PreviewResult, { type: 'image' }>; active: boolean; onClose: () => void
 }) {
+  useLanguage()
   const titleId = useId()
   const dialogRef = useRef<HTMLElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -83,28 +86,28 @@ export default function ImagePreviewDialog({ result, active, onClose }: {
   return <div className="modal-backdrop preview-backdrop ip-overlay" role="presentation">
     <section className="ip-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} inert={!active}>
       <header className="ip-header"><div className="ip-info"><h2 id={titleId} title={result.name}>{result.name}</h2>{image && <span>{image.width} × {image.height}</span>}</div>
-        <button className="ip-close" aria-label="关闭预览" title="关闭 (Esc)" onClick={onClose}><X size={24} /></button>
+        <button className="ip-close" aria-label={tr('previews.closePreview')} title={tr('previews.closeEsc')} onClick={onClose}><X size={24} /></button>
       </header>
       <div className={'ip-viewport' + (dragging ? ' dragging' : '')} ref={viewportRef} onPointerDown={down} onPointerMove={move} onPointerUp={up}
         onPointerCancel={() => { drag.current = null; setDragging(false) }} onLostPointerCapture={() => { drag.current = null; setDragging(false) }}>
-        {status === 'loading' && <div className="ip-status" role="status"><LoaderCircle size={42} className="spin" /><span>加载中</span></div>}
-        {status === 'error' ? <div className="ip-status" role="alert"><ImageOff size={48} /><span>图片加载失败</span><button onClick={() => { setStatus('loading'); setAttempt(attempt + 1) }}>重试</button></div>
+        {status === 'loading' && <div className="ip-status" role="status"><LoaderCircle size={42} className="spin" /><span>{tr('previews.loading')}</span></div>}
+        {status === 'error' ? <div className="ip-status" role="alert"><ImageOff size={48} /><span>{tr('previews.imageCouldNotBeLoaded')}</span><button onClick={() => { setStatus('loading'); setAttempt(attempt + 1) }}>{tr('previews.retry')}</button></div>
           : <div className="ip-translation" data-image-content style={{ transform: `translate(-50%, -50%) translate(${view.pan.x}px, ${view.pan.y}px) scale(${scale})`, transition: dragging ? 'none' : undefined }}>
             <img key={attempt} className="ip-image" src={result.url} alt={result.name} draggable={false} style={{ visibility: status === 'ready' ? 'visible' : 'hidden', transform: `rotate(${rotation}deg) scale(${flip.x}, ${flip.y})` }}
               onLoad={(event) => { setImage({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight }); setStatus('ready') }} onError={() => setStatus('error')} />
           </div>}
       </div>
-      <div className="ip-toolbar" role="toolbar" aria-label="图片操作">
-        <button title="缩小" aria-label="缩小" disabled={status !== 'ready' || view.zoom <= .1} onClick={() => zoom(-.15)}><ZoomOut size={20} /></button>
+      <div className="ip-toolbar" role="toolbar" aria-label={tr('previews.imageControls')}>
+        <button title={tr('previews.zoomOut')} aria-label={tr('previews.zoomOut')} disabled={status !== 'ready' || view.zoom <= .1} onClick={() => zoom(-.15)}><ZoomOut size={20} /></button>
         <span className="ip-scale" aria-live="polite">{Math.round(view.zoom * 100)}%</span>
-        <button title="放大" aria-label="放大" disabled={status !== 'ready' || view.zoom >= 10} onClick={() => zoom(.15)}><ZoomIn size={20} /></button>
+        <button title={tr('previews.zoomIn')} aria-label={tr('previews.zoomIn')} disabled={status !== 'ready' || view.zoom >= 10} onClick={() => zoom(.15)}><ZoomIn size={20} /></button>
         <span className="ip-divider" />
-        <button title="适应窗口" aria-label="适应窗口" disabled={status !== 'ready'} onClick={() => setView({ zoom: 1, pan: { x: 0, y: 0 } })}><Maximize size={20} /></button>
+        <button title={tr('previews.fitToWindow')} aria-label={tr('previews.fitToWindow')} disabled={status !== 'ready'} onClick={() => setView({ zoom: 1, pan: { x: 0, y: 0 } })}><Maximize size={20} /></button>
         <span className="ip-divider" />
-        <button title="逆时针旋转" aria-label="逆时针旋转" disabled={status !== 'ready'} onClick={() => setRotation(rotation - 90)}><RotateCcw size={20} /></button>
-        <button title="顺时针旋转" aria-label="顺时针旋转" disabled={status !== 'ready'} onClick={() => setRotation(rotation + 90)}><RotateCw size={20} /></button>
-        <button title="水平翻转" aria-label="水平翻转" disabled={status !== 'ready'} onClick={() => setFlip({ ...flip, x: -flip.x })}><FlipHorizontal2 size={20} /></button>
-        <button title="垂直翻转" aria-label="垂直翻转" disabled={status !== 'ready'} onClick={() => setFlip({ ...flip, y: -flip.y })}><FlipVertical2 size={20} /></button>
+        <button title={tr('previews.rotateCounterclockwise')} aria-label={tr('previews.rotateCounterclockwise')} disabled={status !== 'ready'} onClick={() => setRotation(rotation - 90)}><RotateCcw size={20} /></button>
+        <button title={tr('previews.rotateClockwise')} aria-label={tr('previews.rotateClockwise')} disabled={status !== 'ready'} onClick={() => setRotation(rotation + 90)}><RotateCw size={20} /></button>
+        <button title={tr('previews.flipHorizontally')} aria-label={tr('previews.flipHorizontally')} disabled={status !== 'ready'} onClick={() => setFlip({ ...flip, x: -flip.x })}><FlipHorizontal2 size={20} /></button>
+        <button title={tr('previews.flipVertically')} aria-label={tr('previews.flipVertically')} disabled={status !== 'ready'} onClick={() => setFlip({ ...flip, y: -flip.y })}><FlipVertical2 size={20} /></button>
       </div>
     </section>
   </div>

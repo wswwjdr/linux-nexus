@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from '../../shared/i18n/messages'
 import type { TextSaveInstallResult, TextSavePackage } from '@shared/types'
 import { detectServerDistribution } from '../file-session-capabilities'
 import { filesSession } from '../remote-fs'
@@ -42,14 +43,14 @@ if [[ ! \${missing[0]+set} ]]; then exit 0; fi
 ${detectServerDistribution}
 manager=/usr/bin/$package_manager
 if [[ ! -x "$manager" ]]; then
-  printf '服务器缺少包管理器 %s\\n' "$manager" >&2
+  printf 'LINUX_NEXUS_DIAGNOSTIC:packageManager %s\\n' "$manager" >&2
   exit 1
 fi
 if (( EUID == 0 )); then
   exec "$manager" -y install "\${missing[@]}" </dev/null
 fi
 if ! command -v sudo >/dev/null; then
-  printf '%s\\n' '安装需要 root 权限，当前 SSH 会话找不到 sudo' >&2
+  printf '%s\\n' 'LINUX_NEXUS_DIAGNOSTIC:installSudo' >&2
   exit 1
 fi
 exec sudo -S -p '${sudoPrompt}' -- "$manager" -y install "\${missing[@]}"`
@@ -58,10 +59,10 @@ export async function installTextSaveDependencies(sessionId: string, packages: u
   const requested = Array.isArray(packages) ? [...new Set(packages)] : []
   if (!requested.length || !requested.every(isTextSavePackage)
     || (password !== undefined && (typeof password !== 'string' || !password || /[\0\r\n]/.test(password)))) {
-    throw new Error('远程保存依赖安装参数无效')
+    throw new LocalizedError(msg('errors.invalidRemoteSaveDependencyInstallationParameters'))
   }
   const { commands, profileId } = filesSession(sessionId)
-  if (activeInstalls.has(profileId)) throw new Error('此连接正在安装远程保存依赖，请稍后重试')
+  if (activeInstalls.has(profileId)) throw new LocalizedError(msg('errors.thisConnectionIsInstallingRemoteSaveDependenciesTryAgainLater'))
   activeInstalls.add(profileId)
 
   let resolvePrompt!: (prompted: boolean) => void
@@ -91,8 +92,9 @@ export async function installTextSaveDependencies(sessionId: string, packages: u
   } catch (error) {
     if (!(error instanceof RemoteCommandError) || error.exitCode === null) throw error
     if (prompted && password === undefined) return { status: 'password-required' }
-    const detail = error.stderr.replaceAll(sudoPrompt, '').trim() || stdoutTail.trim() || error.message
-    throw new Error(detail)
+    const detail = error.stderr.replaceAll(sudoPrompt, '').trim() || stdoutTail.trim()
+    if (detail) throw new LocalizedError(detail)
+    throw error
   } finally {
     resolvePrompt(false)
     activeInstalls.delete(profileId)

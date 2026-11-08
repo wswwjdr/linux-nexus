@@ -1,3 +1,5 @@
+import { type MessageValue, msg, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import type { FileTypeExtensions, RemoteEntry } from '@shared/types'
 import type { PreviewType } from '@shared/file-type-registry'
@@ -30,7 +32,7 @@ interface FileSessionWorkspaceProps {
   scriptCommandDialog: { name: string; command: string } | null
   scriptExecutionDialog: ScriptExecutionDialogState | null
   fileTypeExtensions: FileTypeExtensions
-  showToast: (kind: ToastNotice['kind'], message: string) => void
+  showToast: (kind: ToastNotice['kind'], message: MessageValue) => void
   onSearchOpenChange: (sessionId: string, open: boolean) => void
   onWorkspaceOpenChange: (sessionId: string, open: boolean) => void
   onBlockingChange: (sessionId: string, blocking: boolean) => void
@@ -65,6 +67,7 @@ export default function FileSessionWorkspace({
   onMenuAction,
   onOpenExternalLink,
 }: FileSessionWorkspaceProps) {
+  useLanguage()
   const preview = usePreview({
     sessionId: session.status === 'connected' ? session.id : null,
     fileTypeExtensions,
@@ -79,7 +82,7 @@ export default function FileSessionWorkspace({
   const openFile = useCallback((entry: Pick<RemoteEntry, 'name' | 'path'>) => {
     if (!active || session.status !== 'connected' || previewOpen || fileToOpen || confirmDiscardForSearch) return
     const types = previewTypesForFile(entry.name, fileTypeExtensions)
-    if (types.length === 0) showToast('info', '暂不支持的文件类型：' + entry.name)
+    if (types.length === 0) showToast('info', msg('connections.unsupportedFileType', { "name": entry.name }))
     else if (types.length === 1) void preview.previewFile(entry, types[0])
     else setFileToOpen({ name: entry.name, path: entry.path })
   }, [active, session.status, previewOpen, fileToOpen, confirmDiscardForSearch, fileTypeExtensions, showToast, preview.previewFile])
@@ -227,11 +230,11 @@ export default function FileSessionWorkspace({
 
       {active && confirmDiscardForSearch && (
         <ConfirmationDialog
-          title="放弃未保存的修改？"
-          description="关闭预览将丢弃尚未保存的修改。"
+          title={tr('connections.discardUnsavedChanges')}
+          description={tr('connections.closingThePreviewDiscardsUnsavedChanges')}
           tone="warning"
-          confirmLabel="放弃修改并搜索"
-          cancelLabel="继续编辑"
+          confirmLabel={tr('connections.discardChangesAndSearch')}
+          cancelLabel={tr('connections.continueEditing')}
           onConfirm={() => { setConfirmDiscardForSearch(false); openSearch() }}
           onCancel={() => {
             setConfirmDiscardForSearch(false)
@@ -254,15 +257,15 @@ export default function FileSessionWorkspace({
 
       {active && preview.textSaveConfirmation && preview.textSaveConfirmation.kind !== 'install' && (
         <ConfirmationDialog
-          eyebrow="保存远程文件"
-          title={`保存对 ${preview.textSaveConfirmation.name} 的修改？`}
-          details={[{ label: '远程路径', value: preview.textSaveConfirmation.path }]}
-          description="保存将用当前编辑的内容替换服务器上的文件。"
+          eyebrow={tr('previews.saveRemoteFile')}
+          title={tr('connections.saveChangesTo', { "name": preview.textSaveConfirmation.name })}
+          details={[{ label: tr('common.remotePath'), value: preview.textSaveConfirmation.path }]}
+          description={tr('connections.savingReplacesTheFileOnTheServerWithTheEdited')}
           tone="warning"
-          confirmLabel={preview.textSaveConfirmation.kind === 'conflict' ? '强制覆盖服务器文件' : '保存修改'}
-          busyLabel="正在保存"
+          confirmLabel={preview.textSaveConfirmation.kind === 'conflict' ? tr('connections.forceOverwriteServerFile') : tr('connections.saveChanges')}
+          busyLabel={tr('previews.saving')}
           error={preview.textSaveError}
-          errorLabel="保存失败"
+          errorLabel={tr('connections.saveFailed')}
           busy={preview.textSaving}
           onConfirm={() => void preview.confirmTextSave()}
           onCancel={preview.cancelTextSave}

@@ -1,3 +1,4 @@
+import { type MessageValue, msg, tr, LocalizedError } from '../../shared/i18n/messages'
 import { dialog } from 'electron'
 import { lstat as localLstat, mkdir } from 'node:fs/promises'
 import { basename, dirname, join, posix } from 'node:path'
@@ -19,18 +20,18 @@ function isLocalNotFound(error: unknown): boolean {
 }
 
 export function validateDownloadPaths(value: unknown): string[] {
-  if (!Array.isArray(value) || value.length === 0) throw new Error('至少选择一个远程文件或文件夹')
+  if (!Array.isArray(value) || value.length === 0) throw new LocalizedError(msg('errors.selectAtLeastOneRemoteFileOrFolder'))
   const paths = value.map((candidate) => {
-    if (typeof candidate !== 'string' || !candidate.startsWith('/')) throw new Error('下载路径必须是绝对路径')
+    if (typeof candidate !== 'string' || !candidate.startsWith('/')) throw new LocalizedError(msg('errors.downloadPathsMustBeAbsolute'))
     const path = posix.resolve('/', candidate)
-    if (path === '/') throw new Error('暂不支持下载服务器根目录')
+    if (path === '/') throw new LocalizedError(msg('errors.downloadingTheServerRootDirectoryIsNotSupported'))
     return path
   })
-  if (new Set(paths).size !== paths.length) throw new Error('下载列表包含重复路径')
+  if (new Set(paths).size !== paths.length) throw new LocalizedError(msg('errors.downloadListContainsDuplicatePaths'))
   return paths
 }
 
-function failedParent(relativePath: string, blocked: Map<string, string>): string | undefined {
+function failedParent(relativePath: string, blocked: Map<string, MessageValue>): MessageValue | undefined {
   let current = relativePath
   while (current && current !== '.') {
     const failure = blocked.get(current)
@@ -56,11 +57,11 @@ async function downloadRemoteItems(
   signal: AbortSignal,
 ): Promise<TransferResult> {
   const { sessionId, profileId } = session
-  const blockedDirectories = new Map<string, string>()
+  const blockedDirectories = new Map<string, MessageValue>()
   const collisionFailures: TransferFailure[] = []
   const collidingItems = new Set<TransferItem>()
   for (const group of findPathCollisions(items, (item) => item.relativePath.toLowerCase())) {
-    const message = '服务器中存在 Windows 无法区分的同名路径'
+    const message = msg('errors.serverContainsPathsThatWindowsCannotDistinguish')
     for (const item of group) {
       collidingItems.add(item)
       collisionFailures.push({ path: item.remotePath ?? item.relativePath, message })
@@ -103,8 +104,8 @@ async function downloadRemoteItems(
           if (!isLocalNotFound(error)) throw error
         }
         signal.throwIfAborted()
-        if (attrs?.isSymbolicLink()) throw new Error('目标位置包含符号链接')
-        if (attrs && !attrs.isDirectory()) throw new Error('目标位置已存在同名文件')
+        if (attrs?.isSymbolicLink()) throw new LocalizedError(msg('errors.destinationContainsASymbolicLink'))
+        if (attrs && !attrs.isDirectory()) throw new LocalizedError(msg('errors.aFileWithTheSameNameAlreadyExistsAtThe'))
         if (!attrs) await mkdir(destination, { recursive: true })
       } catch (error) {
         if (signal.aborted) throw error
@@ -120,7 +121,7 @@ async function downloadRemoteItems(
       transfer: async (onProgress: (bytes: number) => void) => {
         signal.throwIfAborted()
         const parentFailure = failedParent(posix.dirname(item.relativePath), blockedDirectories)
-        if (parentFailure) throw new Error('目标目录不可用：' + parentFailure)
+        if (parentFailure) throw new LocalizedError(msg('errors.destinationDirectoryIsUnavailable', { "parentFailure": parentFailure }))
         assertWindowsPath(item.relativePath)
         const destination = localDestination(destinationRoot, item.relativePath)
         let attrs: Awaited<ReturnType<typeof localLstat>> | undefined
@@ -129,8 +130,8 @@ async function downloadRemoteItems(
         } catch (error) {
           if (!isLocalNotFound(error)) throw error
         }
-        if (attrs?.isSymbolicLink()) throw new Error('目标位置包含符号链接')
-        if (attrs && !attrs.isFile()) throw new Error('目标文件夹与待下载文件重名')
+        if (attrs?.isSymbolicLink()) throw new LocalizedError(msg('errors.destinationContainsASymbolicLink'))
+        if (attrs && !attrs.isFile()) throw new LocalizedError(msg('errors.destinationFolderHasTheSameNameAsAFileBeing'))
         signal.throwIfAborted()
         await mkdir(dirname(destination), { recursive: true })
         await transferFileStream('download', session.commands, item.remotePath!, destination, item.size, signal, onProgress)
@@ -152,7 +153,7 @@ async function downloadRemoteItems(
 
 async function chooseDownloadDirectory(signal: AbortSignal): Promise<string | null> {
   const options: Electron.OpenDialogOptions = {
-    title: '选择下载位置',
+    title: tr('errors.chooseDownloadLocation'),
     properties: ['openDirectory'],
   }
   const window = getMainWindow()
@@ -201,13 +202,13 @@ export async function downloadEntries(
         }
         for await (const item of iterateRemoteTree(session.commands, remotePath, signal)) {
           if (item.type === 'file' || item.type === 'directory') items.push({ ...item, type: item.type, relativePath: item.relativePath ? posix.join(name, item.relativePath) : name })
-          else failures.push({ path: item.remotePath, message: item.type === 'symlink' ? '目录包含符号链接，无法下载' : '目录包含暂不支持的文件类型' })
+          else failures.push({ path: item.remotePath, message: item.type === 'symlink' ? msg('errors.folderContainsSymbolicLinksAndCannotBeDownloaded') : msg('errors.folderContainsUnsupportedFileTypes') })
         }
         continue
       }
       failures.push({
         path: remotePath,
-        message: type === 'symlink' ? '不能下载符号链接' : '只能下载普通文件或文件夹',
+        message: type === 'symlink' ? msg('errors.cannotDownloadSymbolicLinks') : msg('errors.onlyRegularFilesOrFoldersCanBeDownloaded'),
       })
     } catch (error) {
       if (signal.aborted) throw error
@@ -219,7 +220,7 @@ export async function downloadEntries(
     event,
     requestId,
     session,
-    remotePaths.length === 1 ? remotePaths[0] : `已选 ${remotePaths.length} 项`,
+    remotePaths[0],
     items,
     failures,
     destination,

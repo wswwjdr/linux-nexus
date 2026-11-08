@@ -1,3 +1,5 @@
+import { useLanguage } from '@/i18n'
+import { tr } from '@shared/i18n/messages'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent, type RefObject } from 'react'
 import { AlertTriangle, File, LoaderCircle, Search } from 'lucide-react'
 import type {
@@ -103,17 +105,17 @@ export function emptyContentProgress(): ContentSearchProgress {
 }
 
 export function statusLabel(status: SearchStatus): string {
-  return status === 'running' ? '正在搜索'
-    : status === 'cancelling' ? '正在取消'
-      : status === 'completed' ? '搜索完成'
-        : status === 'cancelled' ? '搜索已取消（远端进程状态未确认）'
-          : status === 'failed' ? '搜索失败'
-            : '等待开始'
+  return status === 'running' ? tr('search.searching')
+    : status === 'cancelling' ? tr('transfers.cancelling')
+      : status === 'completed' ? tr('search.searchCompleted')
+        : status === 'cancelled' ? tr('search.searchCancelledRemoteProcessStateUnconfirmed')
+          : status === 'failed' ? tr('search.searchFailed')
+            : tr('search.waitingToStart')
 }
 
 export function historyScopeLabel(conditions: SearchScopeConditions): string {
-  if (conditions.scope === 'root') return '系统根目录'
-  if (conditions.scope === 'custom') return '自定义 · ' + conditions.rootPath
+  if (conditions.scope === 'root') return tr('search.systemRootDirectory')
+  if (conditions.scope === 'custom') return tr('search.custom', { "rootPath": conditions.rootPath })
   return conditions.rootPath
 }
 
@@ -130,6 +132,7 @@ export function ResultMenu({
   onAction: (action: FileMenuAction, context: FileContextMenuContext) => void
   onClose: () => void
 }) {
+  useLanguage()
   if (!menu) return null
   return (
     <FileContextMenu
@@ -172,6 +175,7 @@ export function NameVirtualResults({
   onOpenMenu: (event: ReactMouseEvent<HTMLButtonElement>, result: NameSearchResult) => void
   onScroll: () => void
 }) {
+  useLanguage()
   const viewportRef = useRef<HTMLDivElement>(null)
   const [viewportHeight, setViewportHeight] = useState(0)
   const [scrollTop, setScrollTop] = useState(0)
@@ -219,7 +223,7 @@ export function NameVirtualResults({
                 aria-haspopup="menu"
                 aria-expanded={menu?.result.path === result.path}
                 onClick={(event) => onOpenMenu(event, result)}
-                title={'操作 ' + result.path}
+                title={tr('search.actionsFor', { "path": result.path })}
                 style={{ top: index * rowHeight, height: rowHeight - 5 }}
               >
                 <span className="search-result-heading">
@@ -234,7 +238,7 @@ export function NameVirtualResults({
       ) : (
         <div className="search-results-empty">
           {running ? <LoaderCircle className="spin" size={20} /> : <Search size={20} />}
-          <span>{running ? '正在查找文件' : status === 'completed' ? '没有找到匹配文件' : '提交搜索后显示结果'}</span>
+          <span>{running ? tr('search.findingFiles') : status === 'completed' ? tr('search.noMatchingFiles') : tr('search.resultsAppearAfterYouSubmitASearch')}</span>
         </div>
       )}
     </div>

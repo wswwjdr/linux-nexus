@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from '../shared/i18n/messages'
 import type { Writable } from 'node:stream'
 
 export function waitWithSignal<T>(task: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -17,8 +18,8 @@ export function waitForDrain(stream: Writable, signal?: AbortSignal): Promise<vo
     const cleanup = () => { stream.removeListener('drain', drain); stream.removeListener('close', close); stream.removeListener('error', error); signal?.removeEventListener('abort', abort) }
     const drain = () => { cleanup(); resolve() }
     const error = (value: Error) => { cleanup(); reject(value) }
-    const close = () => error(new Error('输出流已关闭'))
-    const abort = () => error(new Error('输出流已取消'))
+    const close = () => error(new LocalizedError(msg('errors.outputStreamClosed')))
+    const abort = () => error(new LocalizedError(msg('errors.outputStreamCancelled')))
     stream.once('drain', drain); stream.once('close', close); stream.once('error', error); signal?.addEventListener('abort', abort, { once: true })
     if (stream.destroyed || signal?.aborted) close()
   })

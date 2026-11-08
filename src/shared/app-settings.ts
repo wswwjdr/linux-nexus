@@ -1,3 +1,5 @@
+import { isLanguagePreference } from './i18n/languages'
+import { msg, LocalizedError } from './i18n/messages'
 import type { AppSettings, PerformanceThresholds, FileTypeExtensions, PreviewLimits, SessionKind, StartupConnection } from './types'
 import { DEFAULT_FILE_TYPE_EXTENSIONS, fileTypeRegistry, normalizeFileTypeExtension } from './file-type-registry'
 
@@ -26,6 +28,7 @@ export function defaultFileTypeExtensions(): FileTypeExtensions {
 export function defaultAppSettings(): AppSettings {
   return {
     ...DEFAULT_PREVIEW_LIMITS,
+    language: 'system',
     theme: 'light',
     defaultView: 'details',
     fileTypeExtensions: defaultFileTypeExtensions(),
@@ -42,7 +45,7 @@ export function defaultAppSettings(): AppSettings {
 }
 
 export const DEFAULT_APP_SETTINGS = defaultAppSettings()
-const appSettingsKeys = [...Object.keys(DEFAULT_PREVIEW_LIMITS), 'theme', 'defaultView', 'fileTypeExtensions', 'startupConnection', 'transferFileConcurrency', 'performanceSampleIntervalSeconds', 'performanceThresholds']
+const appSettingsKeys = [...Object.keys(DEFAULT_PREVIEW_LIMITS), 'language', 'theme', 'defaultView', 'fileTypeExtensions', 'startupConnection', 'transferFileConcurrency', 'performanceSampleIntervalSeconds', 'performanceThresholds']
 const performanceThresholdKeys = ['cpu', 'memory', 'disk', 'loadPerCore'] as const
 
 const MIN_TRANSFER_FILE_CONCURRENCY = 1
@@ -60,53 +63,54 @@ function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
 
 export function validateAppSettings(value: unknown): AppSettings {
   const limitKeys = Object.keys(DEFAULT_PREVIEW_LIMITS)
-  if (!isRecord(value) || !hasExactKeys(value, appSettingsKeys)) throw new Error('应用设置结构无效')
+  if (!isRecord(value) || !hasExactKeys(value, appSettingsKeys)) throw new LocalizedError(msg('errors.invalidApplicationSettingsStructure'))
+  if (!isLanguagePreference(value.language)) throw new LocalizedError(msg('settings.invalidLanguage'))
   if (value.theme !== 'light' && value.theme !== 'dark' && value.theme !== 'cream') {
-    throw new Error('外观主题设置无效')
+    throw new LocalizedError(msg('errors.invalidAppearanceThemeSetting'))
   }
-  if (value.defaultView !== 'icons' && value.defaultView !== 'details') throw new Error('默认文件视图设置无效')
+  if (value.defaultView !== 'icons' && value.defaultView !== 'details') throw new LocalizedError(msg('errors.invalidDefaultFileViewSetting'))
   for (const key of limitKeys) {
     const limit = value[key]
     if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1) {
-      throw new Error('预览设置 ' + key + ' 必须是正整数')
+      throw new LocalizedError(msg('errors.previewSettingMustBeAPositiveInteger', { "key": key }))
     }
   }
   const transferFileConcurrency = value.transferFileConcurrency
   if (typeof transferFileConcurrency !== 'number' || !Number.isInteger(transferFileConcurrency)
     || transferFileConcurrency < MIN_TRANSFER_FILE_CONCURRENCY || transferFileConcurrency > MAX_TRANSFER_FILE_CONCURRENCY) {
-    throw new Error('同时传输文件数必须是 1 到 16 之间的整数')
+    throw new LocalizedError(msg('errors.concurrentFileTransfersMustBeAnIntegerFrom1To'))
   }
   const performanceSampleIntervalSeconds = value.performanceSampleIntervalSeconds
   if (typeof performanceSampleIntervalSeconds !== 'number' || !Number.isInteger(performanceSampleIntervalSeconds)
     || performanceSampleIntervalSeconds < MIN_PERFORMANCE_SAMPLE_INTERVAL_SECONDS
     || performanceSampleIntervalSeconds > MAX_PERFORMANCE_SAMPLE_INTERVAL_SECONDS) {
-    throw new Error('性能监控采样间隔必须是 1 到 300 秒之间的整数')
+    throw new LocalizedError(msg('errors.performanceSamplingIntervalMustBeAnIntegerFrom1To'))
   }
   const configuredThresholds = value.performanceThresholds
   if (!isRecord(configuredThresholds) || !hasExactKeys(configuredThresholds, [...performanceThresholdKeys])) {
-    throw new Error('性能监控阈值结构无效')
+    throw new LocalizedError(msg('errors.invalidPerformanceThresholdStructure'))
   }
   const performanceThresholds = Object.fromEntries(performanceThresholdKeys.map((key) => {
     const configured = configuredThresholds[key]
     if (!isRecord(configured) || !hasExactKeys(configured, ['warning', 'critical'])) {
-      throw new Error('性能监控阈值结构无效：' + key)
+      throw new LocalizedError(msg('errors.invalidPerformanceThresholdStructure2', { "key": key }))
     }
     const { warning, critical } = configured
     if (typeof warning !== 'number' || !Number.isFinite(warning) || warning < 0 || warning > 100
       || typeof critical !== 'number' || !Number.isFinite(critical) || critical < 0 || critical > 100
       || warning >= critical) {
-      throw new Error('性能监控阈值无效：' + key + ' 的注意值必须小于严重值，且均须在 0 到 100 之间')
+      throw new LocalizedError(msg('errors.invalidPerformanceThresholdsWarningMustBeBelowCriticalAndBoth', { "key": key }))
     }
     return [key, { warning, critical }]
   })) as unknown as PerformanceThresholds
   const configuredExtensions = value.fileTypeExtensions
   if (!isRecord(configuredExtensions) || !hasExactKeys(configuredExtensions, fileTypeRegistry.map(({ id }) => id))) {
-    throw new Error('文件类型分类设置结构无效')
+    throw new LocalizedError(msg('errors.invalidFileTypeCategorySettingsStructure'))
   }
   const fileTypeExtensions = Object.fromEntries(fileTypeRegistry.map(({ id: category }) => {
     const extensions = configuredExtensions[category]
     if (!Array.isArray(extensions) || extensions.some((extension) => typeof extension !== 'string')) {
-      throw new Error('文件类型分类设置无效：' + category)
+      throw new LocalizedError(msg('errors.invalidFileTypeCategorySetting', { "category": category }))
     }
     return [category, [...new Set(extensions.map((extension) => normalizeFileTypeExtension(extension as string)))]]
   })) as FileTypeExtensions
@@ -116,12 +120,13 @@ export function validateAppSettings(value: unknown): AppSettings {
     if (!isRecord(connection) || !hasExactKeys(connection, ['profileId', 'kind'])
       || typeof connection.profileId !== 'string' || !connection.profileId
       || (connection.kind !== 'files' && connection.kind !== 'terminal')) {
-      throw new Error('启动连接设置无效')
+      throw new LocalizedError(msg('errors.invalidStartupConnectionSetting'))
     }
     startupConnection = { profileId: connection.profileId, kind: connection.kind as SessionKind }
   }
   return {
     ...value as unknown as PreviewLimits,
+    language: value.language,
     theme: value.theme,
     defaultView: value.defaultView,
     fileTypeExtensions,
@@ -134,7 +139,7 @@ export function validateAppSettings(value: unknown): AppSettings {
 
 export function applyAppSettingsPatch(current: AppSettings, patch: unknown): AppSettings {
   if (!isRecord(patch) || Object.keys(patch).length === 0 || Object.keys(patch).some((key) => !appSettingsKeys.includes(key))) {
-    throw new Error('应用设置更新无效')
+    throw new LocalizedError(msg('errors.invalidApplicationSettingsUpdate'))
   }
   return validateAppSettings({ ...current, ...patch })
 }

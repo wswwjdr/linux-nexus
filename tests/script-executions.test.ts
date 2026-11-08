@@ -1,3 +1,4 @@
+import { renderMessage, type MessageValue } from '../src/shared/i18n/messages'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import test from 'node:test'
@@ -119,7 +120,7 @@ test('cancels a channel that opens after cancellation and fails tasks on session
   disconnected.client.emit('close')
   channel.emit('close')
   assert.deepEqual(disconnected.events.map((event) => event.type), ['failed'])
-  assert.deepEqual(disconnected.events[0], {
+  assert.deepEqual({ ...disconnected.events[0], message: renderMessage((disconnected.events[0] as any).message) }, {
     type: 'failed', requestId: disconnected.request.requestId, sessionId: disconnected.request.sessionId,
     message: 'SSH 连接中断：连接已关闭',
   })

@@ -1,3 +1,5 @@
+import { type LanguagePreference } from '@shared/i18n/languages'
+import { type MessageValue } from '@shared/i18n/messages'
 import type { CommandAlias, FileIdentity, LogPreviewPage, PerformanceThresholds, FileTypeExtensions, PreviewLimits, PreviewResult, RemoteEntry, ScriptExecutionRequest, ServerProfile, SessionKind, ThemeMode, TransferFailure, TransferFileProgress } from '@shared/types'
 import type { FileContextMenuContext } from './features/files/file-menu'
 
@@ -33,7 +35,7 @@ export interface CommandAliasConfirmation {
 export interface TransferJob {
   sessionId: string
   profileName: string
-  name: string
+  name: MessageValue
   direction: 'upload' | 'download'
   transferred: number
   total: number
@@ -61,7 +63,7 @@ export interface SessionTab {
   highlightedPath: string | null
   history: string[]
   historyIndex: number
-  error: string | null
+  error: MessageValue | null
 }
 
 export interface ScriptExecutionOutputChunk {
@@ -74,9 +76,8 @@ export interface ScriptExecutionDialogState {
   name: string
   status: 'starting' | 'running' | 'cancelling' | 'completed' | 'cancelled' | 'failed'
   output: ScriptExecutionOutputChunk[]
-  message: string | null
+  message: MessageValue | null
 }
-
 
 export interface RecentConnection {
   profileId: string
@@ -110,6 +111,7 @@ export type SortDirection = 'ascending' | 'descending'
 export type PreviewLimitKey = keyof PreviewLimits
 export type PreviewLimitsForm = Record<PreviewLimitKey, string>
 export interface SettingsForm extends PreviewLimitsForm {
+  language: LanguagePreference
   theme: ThemeMode
   fileTypeExtensions: FileTypeExtensions
   transferFileConcurrency: string

@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from '../../shared/i18n/messages'
 import { posix } from 'node:path'
 import type { PreviewLimits, PreviewResult, TextEncoding } from '@shared/types'
 import { previewTypes, previewTypesForFile } from '@shared/preview-file-type'
@@ -29,31 +30,31 @@ const previewStrategies: readonly PreviewStrategy[] = [
 const strategyByType = new Map<PreviewType, PreviewStrategy>()
 for (const strategy of previewStrategies) {
   for (const type of strategy.types) {
-    if (strategyByType.has(type)) throw new Error('预览策略重复注册：' + type)
+    if (strategyByType.has(type)) throw new LocalizedError(msg('errors.previewStrategyRegisteredTwice', { "type": type }))
     strategyByType.set(type, strategy)
   }
 }
 
 function previewStrategyFor(type: PreviewType): PreviewStrategy {
   const strategy = strategyByType.get(type)
-  if (!strategy) throw new Error('未找到预览策略：' + type)
+  if (!strategy) throw new LocalizedError(msg('errors.previewStrategyNotFound', { "type": type }))
   return strategy
 }
 
 export async function previewFile(sessionId: string, remotePath: string, type: PreviewType, encoding?: TextEncoding): Promise<PreviewResult> {
-  if (encoding !== undefined && encoding !== 'utf8' && encoding !== 'gbk') throw new Error('文本编码无效')
+  if (encoding !== undefined && encoding !== 'utf8' && encoding !== 'gbk') throw new LocalizedError(msg('errors.invalidTextEncoding'))
   const session = filesSession(sessionId)
   return session.commands.track(previewInSession(session, remotePath, type, encoding))
 }
 
 async function previewInSession(session: ReturnType<typeof filesSession>, remotePath: string, type: PreviewType, encoding?: TextEncoding): Promise<PreviewResult> {
-  if (!previewTypes.includes(type)) throw new Error('预览类型无效')
+  if (!previewTypes.includes(type)) throw new LocalizedError(msg('errors.invalidPreviewType'))
   const normalizedPath = normalizedRemotePath(remotePath)
   const settings = readAppSettings()
   if (!previewTypesForFile(normalizedPath, settings.fileTypeExtensions).includes(type)) {
-    throw new Error('此文件未配置该预览类型')
+    throw new LocalizedError(msg('errors.thisPreviewTypeIsNotConfiguredForTheFile'))
   }
-  if (await remotePathType(session.commands, normalizedPath) !== 'file') throw new Error('只能预览普通文件')
+  if (await remotePathType(session.commands, normalizedPath) !== 'file') throw new LocalizedError(msg('errors.onlyRegularFilesCanBePreviewed'))
 
   const limits: PreviewLimits = settings
   const limitMiB = limits[previewLimitKeyByType[type]]

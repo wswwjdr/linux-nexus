@@ -1,3 +1,4 @@
+import { msg, renderMessage, type MessageValue, tr } from '@shared/i18n/messages'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent, type RefObject } from 'react'
 import { AlertTriangle, File, LoaderCircle, Search } from 'lucide-react'
 import type {
@@ -17,7 +18,6 @@ import FileContextMenu from '@/features/files/FileContextMenu'
 import { SearchHistory, SearchScopeControl, type SearchScopeConditions, isNormalizedAbsoluteRemotePath, readSearchHistory } from './SearchShared'
 import type { FileContextMenuContext, FileMenuAction } from '@/features/files/file-menu'
 import { errorMessage, formatSize } from '@/app-utils'
-
 import { NameVirtualResults, ResultMenu, emptyNameProgress, emptyContentProgress, historyScopeLabel, initialNameConditions, initialContentConditions, isNameConditions, isContentConditions, openMenu, statusLabel, MAX_QUERY_LENGTH, NAME_HISTORY_KEY, CONTENT_HISTORY_KEY, DEFAULT_MAX_FILE_SIZE_MIB, type NameConditions, type ContentConditions, type ResultMenuState, type SearchPaneHandle, type SearchPaneProps, type SearchStatus } from './SearchPaneShared'
 
 export const NameSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(function NameSearchPane({
@@ -38,7 +38,7 @@ export const NameSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(func
   const [progress, setProgress] = useState<NameSearchProgress>(emptyNameProgress)
   const [status, setStatus] = useState<SearchStatus>('idle')
   const [clockNow, setClockNow] = useState(Date.now())
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<MessageValue | null>(null)
   const queryRef = useRef<HTMLInputElement>(null)
   const activeRequestRef = useRef<string | null>(null)
   const menuAnchorRef = useRef<HTMLElement | null>(null)
@@ -70,7 +70,7 @@ export const NameSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(func
       if (event.type === 'finished') {
         activeRequestRef.current = null
         setStatus(event.status)
-        setError(event.status === 'failed' ? event.message ?? '文件名搜索失败' : null)
+        setError(event.status === 'failed' ? event.message ?? msg('search.filenameSearchFailed') : null)
       }
     })
     return () => {
@@ -157,35 +157,33 @@ export const NameSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(func
   }
   const elapsedMs = progress.elapsedMs + (running ? Math.max(0, clockNow - receivedAtRef.current) : 0)
   const seconds = Math.floor(elapsedMs / 1000)
-  const elapsedLabel = seconds >= 60 ? Math.floor(seconds / 60) + '分' + String(seconds % 60).padStart(2, '0') + '秒' : seconds + '秒'
+  const elapsedLabel = seconds >= 60 ? tr('search.mS', { "value1": Math.floor(seconds / 60), "value2": String(seconds % 60).padStart(2, '0') }) : tr('search.s', { "seconds": seconds })
 
   return (
     <div className="search-dialog-body">
       <aside className="search-controls">
         <form onSubmit={(event) => void startSearch(event)}>
-          <label className="field search-query-field">
-            文件名
-            <input
+          <label className="field search-query-field">{tr('search.filename')}<input
               ref={queryRef}
               value={conditions.query}
               disabled={running}
               maxLength={MAX_QUERY_LENGTH}
               onChange={(event) => update('query', event.target.value)}
-              placeholder="输入要查找的文件名"
+              placeholder={tr('search.enterAFilenameToFind')}
               autoComplete="off"
               spellCheck={false}
             />
           </label>
           <fieldset className="settings-view-field search-option-field">
-            <legend>匹配方式</legend>
+            <legend>{tr('search.matchMode')}</legend>
             <div className="settings-view-options">
-              <button type="button" className="settings-view-option" disabled={running} aria-pressed={conditions.matchMode === 'exact'} onClick={() => update('matchMode', 'exact')}>精确文件名</button>
-              <button type="button" className="settings-view-option" disabled={running} aria-pressed={conditions.matchMode === 'contains'} onClick={() => update('matchMode', 'contains')}>名称包含</button>
+              <button type="button" className="settings-view-option" disabled={running} aria-pressed={conditions.matchMode === 'exact'} onClick={() => update('matchMode', 'exact')}>{tr('search.exactFilename')}</button>
+              <button type="button" className="settings-view-option" disabled={running} aria-pressed={conditions.matchMode === 'contains'} onClick={() => update('matchMode', 'contains')}>{tr('search.nameContains')}</button>
             </div>
           </fieldset>
           <label className="search-checkbox search-case-option">
             <input type="checkbox" disabled={running} checked={conditions.ignoreCase} onChange={(event) => update('ignoreCase', event.target.checked)} />
-            <span>忽略大小写</span>
+            <span>{tr('search.ignoreCase')}</span>
           </label>
           <SearchScopeControl
             scope={conditions.scope}
@@ -202,12 +200,11 @@ export const NameSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(func
             {running ? (
               <button type="button" className="secondary-button search-cancel-button" disabled={status === 'cancelling'} onClick={cancelSearch}>
                 {status === 'cancelling' ? <LoaderCircle className="spin" size={14} /> : <span aria-hidden="true">×</span>}
-                {status === 'cancelling' ? '正在取消' : '取消搜索'}
+                {status === 'cancelling' ? tr('transfers.cancelling') : tr('search.cancelSearch')}
               </button>
             ) : (
               <button type="submit" className="primary-button" disabled={!conditions.query || invalidPath}>
-                <Search size={14} /> 搜索
-              </button>
+                <Search size={14} />{tr('search.search')}</button>
             )}
           </div>
         </form>
@@ -216,39 +213,39 @@ export const NameSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(func
           disabled={running}
           label={(item) => ({
             query: item.query,
-            detail: historyScopeLabel(item) + ' · ' + (item.matchMode === 'exact' ? '精确' : '包含') + ' · ' + (item.ignoreCase ? '忽略大小写' : '区分大小写'),
+            detail: historyScopeLabel(item) + ' · ' + (item.matchMode === 'exact' ? tr('search.exact') : tr('search.contains')) + ' · ' + (item.ignoreCase ? tr('search.ignoreCase') : tr('search.caseSensitive')),
           })}
           onClear={clearHistory}
           onSelect={replayHistory}
         />
       </aside>
 
-      <section className="search-results-panel" aria-label="文件名搜索结果">
+      <section className="search-results-panel" aria-label={tr('search.filenameSearchResults')}>
         <div className="search-results-header">
           <div>
-            <h3>搜索结果</h3>
+            <h3>{tr('search.searchResults')}</h3>
             <div className="search-status-line" aria-live="polite">
               {running && <LoaderCircle className="spin" size={13} />}
               <span>{statusLabel(status)}</span>
             </div>
           </div>
           <div className="search-counters">
-            <span className="search-counter"><strong>{progress.matchedFiles.toLocaleString()}</strong> 个文件</span>
-            <span className="search-counter"><strong>{elapsedLabel}</strong> 耗时</span>
+            <span className="search-counter"><strong>{tr('search.matchedFiles', { count: progress.matchedFiles })}</strong></span>
+            <span className="search-counter">{tr('search.elapsedSummary', { duration: elapsedLabel })}</span>
           </div>
         </div>
         {progress.hasReadErrors && (
-          <div className="search-incomplete-notice"><AlertTriangle size={14} /> 部分路径无法读取，结果可能不完整</div>
+          <div className="search-incomplete-notice"><AlertTriangle size={14} />{tr('search.somePathsCouldNotBeReadResultsMayBeIncomplete')}</div>
         )}
         {progress.incomplete && !progress.hasReadErrors && (
-          <div className="search-incomplete-notice"><AlertTriangle size={14} /> 搜索结果可能不完整</div>
+          <div className="search-incomplete-notice"><AlertTriangle size={14} />{tr('search.searchResultsMayBeIncomplete')}</div>
         )}
-        {error && <div className="search-error-notice" role="alert">{error}</div>}
+        {error && <div className="search-error-notice" role="alert">{renderMessage(error)}</div>}
         <div className="search-progress-panel" aria-live="polite">
           <div className="search-progress-track"><div className={'search-progress-fill' + (running ? ' indeterminate' : '')} style={running ? undefined : { width: status === 'completed' ? '100%' : '0%' }} /></div>
           <div className="search-progress-summary">
-            <span>{running ? '正在查找文件' : conditions.matchMode === 'exact' ? '精确匹配文件名' : '匹配文件名中的文字'}</span>
-            <span>{conditions.ignoreCase ? '忽略大小写' : '区分大小写'}</span>
+            <span>{running ? tr('search.findingFiles') : conditions.matchMode === 'exact' ? tr('search.matchTheExactFilename') : tr('search.matchTextWithinFilenames')}</span>
+            <span>{conditions.ignoreCase ? tr('search.ignoreCase') : tr('search.caseSensitive')}</span>
           </div>
         </div>
         <NameVirtualResults

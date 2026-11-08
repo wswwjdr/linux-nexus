@@ -1,3 +1,4 @@
+import { msg, renderMessage, type MessageValue, tr } from '@shared/i18n/messages'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type FormEvent } from 'react'
 import { AlertTriangle, LoaderCircle, Search } from 'lucide-react'
 import type { ContentSearchEvent, ContentSearchProgress, ContentSearchRequest, ContentSearchResult } from '@shared/types'
@@ -24,7 +25,7 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
   const [progress, setProgress] = useState<ContentSearchProgress>(emptyContentProgress)
   const [status, setStatus] = useState<SearchStatus>('idle')
   const [clockNow, setClockNow] = useState(Date.now())
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<MessageValue | null>(null)
   const queryRef = useRef<HTMLInputElement>(null)
   const activeRequestRef = useRef<string | null>(null)
   const menuAnchorRef = useRef<HTMLElement | null>(null)
@@ -63,7 +64,7 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
       if (event.type === 'finished') {
         activeRequestRef.current = null
         setStatus(event.status)
-        setError(event.status === 'failed' ? event.message ?? '文本内容搜索失败' : null)
+        setError(event.status === 'failed' ? event.message ?? msg('search.contentSearchFailed') : null)
       }
     })
     return () => {
@@ -151,28 +152,26 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
   const elapsedMs = progress.elapsedMs + (running ? Math.max(0, clockNow - receivedAtRef.current) : 0)
   const bytesPerSecond = elapsedMs > 0 ? progress.processedBytes / (elapsedMs / 1000) : 0
   const seconds = Math.floor(elapsedMs / 1000)
-  const elapsedLabel = seconds >= 60 ? Math.floor(seconds / 60) + '分' + String(seconds % 60).padStart(2, '0') + '秒' : seconds + '秒'
+  const elapsedLabel = seconds >= 60 ? tr('search.mS', { "value1": Math.floor(seconds / 60), "value2": String(seconds % 60).padStart(2, '0') }) : tr('search.s', { "seconds": seconds })
 
   return (
     <div className="search-dialog-body">
       <aside className="search-controls">
         <form onSubmit={(event) => void startSearch(event)}>
-          <label className="field search-query-field">
-            文本内容
-            <input
+          <label className="field search-query-field">{tr('previews.textContent')}<input
               ref={queryRef}
               value={conditions.query}
               disabled={running}
               maxLength={MAX_QUERY_LENGTH}
               onChange={(event) => update('query', event.target.value)}
-              placeholder="输入要查找的文本片段"
+              placeholder={tr('search.enterTextToFind')}
               autoComplete="off"
               spellCheck={false}
             />
           </label>
           <label className="search-checkbox search-case-option">
             <input type="checkbox" disabled={running} checked={conditions.ignoreCase} onChange={(event) => update('ignoreCase', event.target.checked)} />
-            <span>忽略大小写</span>
+            <span>{tr('search.ignoreCase')}</span>
           </label>
           <SearchScopeControl
             scope={conditions.scope}
@@ -186,11 +185,9 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
             onRootPathChange={(rootPath) => update('rootPath', rootPath)}
           />
           <details className="search-advanced" open>
-            <summary>扫描选项</summary>
+            <summary>{tr('search.scanOptions')}</summary>
             <div className="search-advanced-options">
-              <label className="field search-size-field">
-                文件大小上限（MiB）
-                <input
+              <label className="field search-size-field">{tr('search.fileSizeLimitMib')}<input
                   type="number"
                   min="1"
                   max="102400"
@@ -199,7 +196,7 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
                   disabled={running}
                   onChange={(event) => update('maxFileSizeMiB', event.target.value === '' ? 0 : Number(event.target.value))}
                 />
-                {invalidFileSize && <span className="search-field-error">请输入 1 到 102400 之间的整数</span>}
+                {invalidFileSize && <span className="search-field-error">{tr('search.enterAnIntegerFrom1To102400')}</span>}
               </label>
             </div>
           </details>
@@ -207,12 +204,11 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
             {running ? (
               <button type="button" className="secondary-button search-cancel-button" disabled={status === 'cancelling'} onClick={cancelSearch}>
                 {status === 'cancelling' ? <LoaderCircle className="spin" size={14} /> : <span aria-hidden="true">×</span>}
-                {status === 'cancelling' ? '正在取消' : '取消搜索'}
+                {status === 'cancelling' ? tr('transfers.cancelling') : tr('search.cancelSearch')}
               </button>
             ) : (
               <button type="submit" className="primary-button" disabled={!conditions.query || invalidFileSize || invalidPath}>
-                <Search size={14} /> 搜索
-              </button>
+                <Search size={14} />{tr('search.search')}</button>
             )}
           </div>
         </form>
@@ -221,41 +217,41 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
           disabled={running}
           label={(item) => ({
             query: item.query,
-            detail: historyScopeLabel(item) + ' · ' + (item.ignoreCase ? '忽略大小写' : '区分大小写') + ' · 上限 ' + item.maxFileSizeMiB + ' MiB',
+            detail: tr('search.limitMib', { "value1": historyScopeLabel(item), "value2": item.ignoreCase ? tr('search.ignoreCase') : tr('search.caseSensitive'), "maxFileSizeMiB": item.maxFileSizeMiB }),
           })}
           onClear={clearHistory}
           onSelect={replayHistory}
         />
       </aside>
 
-      <section className="search-results-panel" aria-label="文本内容搜索结果">
+      <section className="search-results-panel" aria-label={tr('search.contentSearchResults')}>
         <div className="search-results-header">
           <div>
-            <h3>搜索结果</h3>
+            <h3>{tr('search.searchResults')}</h3>
             <div className="search-status-line" aria-live="polite">
               {running && <LoaderCircle className="spin" size={13} />}
               <span>{statusLabel(status)}</span>
             </div>
           </div>
           <div className="search-counters">
-            <span className="search-counter"><strong>{progress.matchedFiles.toLocaleString()}</strong> 个文件</span>
-            <span className="search-counter"><strong>{progress.matchedLines.toLocaleString()}</strong> 行</span>
-            <span className="search-counter"><strong>{progress.processedFiles.toLocaleString()}</strong> 已扫描</span>
-            <span className="search-counter"><strong>{elapsedLabel}</strong> 耗时</span>
+            <span className="search-counter"><strong>{tr('search.matchedFiles', { count: progress.matchedFiles })}</strong></span>
+            <span className="search-counter"><strong>{tr('search.matchedLines', { count: progress.matchedLines })}</strong></span>
+            <span className="search-counter"><strong>{tr('search.filesScanned', { count: progress.processedFiles })}</strong></span>
+            <span className="search-counter">{tr('search.elapsedSummary', { duration: elapsedLabel })}</span>
           </div>
         </div>
         {(progress.skippedLargeFiles > 0 || progress.skippedBinaryFiles > 0 || progress.readErrors > 0) && (
           <div className="search-incomplete-notice search-content-notices">
-            {progress.skippedLargeFiles > 0 && <span><AlertTriangle size={14} /> 已跳过 {progress.skippedLargeFiles.toLocaleString()} 个超出大小上限的文件</span>}
-            {progress.skippedBinaryFiles > 0 && <span><AlertTriangle size={14} /> 已跳过 {progress.skippedBinaryFiles.toLocaleString()} 个包含匹配内容的二进制文件</span>}
-            {progress.readErrors > 0 && <span><AlertTriangle size={14} /> {progress.readErrors.toLocaleString()} 个路径读取失败，结果可能不完整</span>}
+            {progress.skippedLargeFiles > 0 && <span><AlertTriangle size={14} />{tr('search.skippedLarge', { count: progress.skippedLargeFiles })}</span>}
+            {progress.skippedBinaryFiles > 0 && <span><AlertTriangle size={14} />{tr('search.skippedBinary', { count: progress.skippedBinaryFiles })}</span>}
+            {progress.readErrors > 0 && <span><AlertTriangle size={14} /> {tr('search.readFailures', { count: progress.readErrors })}</span>}
           </div>
         )}
-        {error && <div className="search-error-notice" role="alert">{error}</div>}
+        {error && <div className="search-error-notice" role="alert">{renderMessage(error)}</div>}
         <div className="search-progress-panel" aria-live="polite">
           <div className="search-progress-track"><div className={'search-progress-fill' + (running ? ' indeterminate' : '')} style={running ? undefined : { width: status === 'completed' ? '100%' : '0%' }} /></div>
           <div className="search-progress-summary">
-            <span>{formatSize(progress.processedBytes)} scanned · {elapsedLabel}</span>
+            <span>{tr('search.scannedSummary', { size: formatSize(progress.processedBytes), elapsed: elapsedLabel })}</span>
             <span>{running ? formatByteRate(bytesPerSecond) : statusLabel(status)}</span>
           </div>
           {progress.currentPath && <div className="search-progress-path" title={progress.currentPath}>{progress.currentPath}</div>}

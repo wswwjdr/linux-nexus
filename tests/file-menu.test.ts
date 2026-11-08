@@ -1,3 +1,4 @@
+import { renderMessage, type MessageValue } from '../src/shared/i18n/messages'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RemoteEntry, SearchResultTarget } from '../src/shared/types.ts'
@@ -29,7 +30,7 @@ test('single file composes preview, reverse-preview and script strategies before
   ])
   const scriptMenu = nodes.find((node) => node.kind === 'submenu' && node.id === 'script-execution')
   assert.equal(scriptMenu?.kind, 'submenu')
-  if (scriptMenu?.kind === 'submenu') assert.deepEqual(scriptMenu.children.map(({ label }) => label), ['执行', '调整并执行'])
+  if (scriptMenu?.kind === 'submenu') assert.deepEqual(scriptMenu.children.map(({ label }) => renderMessage(label)), ['执行', '调整并执行'])
   const pasteMenu = nodes.find((node) => node.kind === 'submenu' && node.id === 'paste-strategy')
   assert.equal(pasteMenu?.kind, 'submenu')
   if (pasteMenu?.kind === 'submenu') assert.equal(pasteMenu.children.every((node) => node.kind === 'action' && node.disabled), true)
@@ -43,7 +44,7 @@ test('Markdown combines text and Markdown preview modes and gets reverse-preview
   assert.deepEqual(nodes.slice(0, 2).map((node) => node.id), ['preview', 'preview-log'])
   const previewMenu = nodes[0]
   assert.equal(previewMenu.kind, 'submenu')
-  if (previewMenu.kind === 'submenu') assert.deepEqual(previewMenu.children.map(({ label }) => label), ['文本预览', 'Markdown 预览'])
+  if (previewMenu.kind === 'submenu') assert.deepEqual(previewMenu.children.map(({ label }) => renderMessage(label)), ['文本预览', 'Markdown 预览'])
 })
 
 test('file suffix settings immediately control menu capabilities and exact multi-part matches', () => {
@@ -128,7 +129,7 @@ test('supported archive files expose extraction while ordinary compressed stream
   const archiveMenu = archiveNodes.find((node) => node.kind === 'submenu' && node.id === 'extract-archive')
   assert.equal(archiveMenu?.kind, 'submenu')
   if (archiveMenu?.kind === 'submenu') {
-    const labels = archiveMenu.children.filter((node) => node.kind === 'action').map(({ label }) => label)
+    const labels = archiveMenu.children.filter((node) => node.kind === 'action').map(({ label }) => renderMessage(label))
     assert.equal(archiveMenu.children.filter((node) => node.kind === 'separator').length, 2)
     assert.ok(labels.includes('release/ · 覆盖同名文件'))
     assert.equal(labels.length, 6)
@@ -172,7 +173,7 @@ test('background paste and upload expose only overwrite and skip strategies', ()
     const menu = nodes.find((node) => node.id === id)
     assert.equal(menu?.kind, 'submenu')
     if (menu?.kind === 'submenu') {
-      assert.deepEqual(menu.children.map((node) => node.kind === 'action' && node.label), ['覆盖同名文件', '跳过同名文件'])
+      assert.deepEqual(menu.children.map((node) => node.kind === 'action' && renderMessage(node.label)), ['覆盖同名文件', '跳过同名文件'])
     }
   }
 })

@@ -1,14 +1,17 @@
+import { type MessageValue, renderMessage, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { useEffect, useRef } from 'react'
 import ConfirmationDialog from '../ConfirmationDialog'
 
 interface FileRootPasswordDialogProps {
   busy: boolean
-  error?: string
+  error?: MessageValue
   onSubmit: (password: string) => void
   onCancel: () => void
 }
 
 export default function FileRootPasswordDialog({ busy, error, onSubmit, onCancel }: FileRootPasswordDialogProps) {
+  useLanguage()
   const input = useRef<HTMLInputElement>(null)
   useEffect(() => {
     if (!busy) input.current?.focus()
@@ -21,18 +24,18 @@ export default function FileRootPasswordDialog({ busy, error, onSubmit, onCancel
   }
   return (
     <ConfirmationDialog
-      title="验证 sudo 权限"
-      description="输入服务器要求的 sudo 密码，以 root 身份操作当前文件标签。"
+      title={tr('files.verifySudoPrivileges')}
+      description={tr('files.enterTheSudoPasswordRequiredByTheServerToUse')}
       tone="warning"
-      confirmLabel="验证并进入"
+      confirmLabel={tr('files.verifyAndEnter')}
       busy={busy}
-      busyLabel="正在验证"
-      error={error}
+      busyLabel={tr('files.verifying')}
+      error={renderMessage(error)}
       onConfirm={submit}
       onCancel={onCancel}
     >
       <label className="field">
-        <span>sudo 密码</span>
+        <span>{tr('files.sudoPassword')}</span>
         <input ref={input} type="password" autoComplete="off" disabled={busy}
           onKeyDown={(event) => {
             if (event.key === 'Enter') { event.preventDefault(); submit() }

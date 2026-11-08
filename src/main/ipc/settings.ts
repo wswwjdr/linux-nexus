@@ -1,3 +1,6 @@
+import { msg, LocalizedError } from '../../shared/i18n/messages'
+import { applyLanguage, systemLanguage } from '../language'
+
 import { shell } from 'electron'
 import { ipcMain } from './trusted-ipc'
 import type { AppSettingsPatch } from '@shared/types'
@@ -8,15 +11,17 @@ import { readAppSettings, readState, writeAppSettings } from '../state-store'
 import { applyTheme } from '../theme'
 
 export function registerSettingsIpc(): void {
+  ipcMain.handle('app:bootstrap', () => ({ settings: readAppSettings(), systemLanguage: systemLanguage() }))
   ipcMain.handle('settings:get', () => readAppSettings())
   ipcMain.handle('settings:update', (_event, input: AppSettingsPatch) => {
     const currentSettings = readAppSettings()
     const settings = applyAppSettingsPatch(currentSettings, input)
     if (settings.startupConnection
       && !readState().profiles.some((profile) => profile.id === settings.startupConnection?.profileId)) {
-      throw new Error('启动连接所选服务器不存在')
+      throw new LocalizedError(msg('errors.theServerSelectedForStartupConnectionDoesNotExist'))
     }
     const savedSettings = writeAppSettings(settings)
+    applyLanguage(savedSettings.language)
     applyTheme(savedSettings.theme)
     if (savedSettings.performanceSampleIntervalSeconds !== currentSettings.performanceSampleIntervalSeconds) {
       configurePerformanceMonitorInterval(savedSettings.performanceSampleIntervalSeconds)

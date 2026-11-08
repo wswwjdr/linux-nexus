@@ -1,3 +1,5 @@
+import { renderMessage, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { Archive, ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronRight, ClipboardPaste, Copy, Eye, FileText, FolderOpen, FolderPlus, Info, Pencil, Play, Scissors, Terminal, Trash2, Upload, type LucideIcon } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from 'react'
 import type { FileTypeExtensions } from '@shared/types'
@@ -43,10 +45,10 @@ const icons: Record<FileMenuIcon, LucideIcon> = {
 }
 
 function menuLabel(context: FileContextMenuContext): string {
-  if (context.kind === 'single-entry') return context.entry.name + '的操作'
-  if (context.kind === 'multiple-entries') return context.entries.length + ' 个已选项目的操作'
-  if (context.kind === 'search-result') return context.result.name + '的操作'
-  return '当前目录的操作'
+  if (context.kind === 'single-entry') return tr('files.actionsFor', { "name": context.entry.name })
+  if (context.kind === 'multiple-entries') return tr('files.actionsForSelectedItems', { "count": context.entries.length })
+  if (context.kind === 'search-result') return tr('files.actionsFor', { "name": context.result.name })
+  return tr('files.currentDirectoryActions')
 }
 
 function MenuAction({
@@ -58,6 +60,7 @@ function MenuAction({
   className: string
   onAction: (action: FileMenuAction) => void
 }) {
+  useLanguage()
   const Icon = node.icon ? icons[node.icon] : null
   const role = node.checked === undefined ? 'menuitem' : 'menuitemradio'
   return (
@@ -66,25 +69,26 @@ function MenuAction({
       className={className + (node.action.type === 'delete' ? ' danger-action' : '') + (node.action.type === 'preview' ? ' preview-action' : '') + (node.action.type === 'preview-log' ? ' log-preview-action' : '')}
       role={role}
       aria-checked={node.checked}
-      aria-label={node.disabledReason ? `${node.label}，${node.disabledReason}` : undefined}
-      title={node.disabledReason ?? node.description ?? node.label}
+      aria-label={node.disabledReason ? tr('common.disabledAction', { action: node.label, reason: node.disabledReason }) : undefined}
+      title={renderMessage(node.disabledReason ?? node.description ?? node.label)}
       disabled={node.disabled}
       onClick={() => onAction(node.action)}
     >
       <span className="context-menu-action-icon">{Icon && <Icon size={16} />}</span>
-      <span className="context-menu-label">{node.label}</span>
+      <span className="context-menu-label">{renderMessage(node.label)}</span>
     </button>
   )
 }
 
 export default function FileContextMenu({ context, fileTypeExtensions, position, anchorRef, onAction, onClose, label }: FileContextMenuProps) {
+  const language = useLanguage()
   const rootRef = useRef<HTMLDivElement>(null)
   const openSubmenuTriggerRef = useRef<HTMLButtonElement>(null)
   const pendingSubmenuFocusRef = useRef<string | null>(null)
   const [menuPosition, setMenuPosition] = useState(position)
   const [openSubmenu, setOpenSubmenu] = useState<string | null>(null)
   const [submenuPosition, setSubmenuPosition] = useState<ContextMenuPosition>({ x: 0, y: 0 })
-  const nodes = useMemo(() => resolveFileContextMenu(context, fileTypeExtensions), [context, fileTypeExtensions])
+  const nodes = useMemo(() => resolveFileContextMenu(context, fileTypeExtensions), [context, fileTypeExtensions, language])
 
   useLayoutEffect(() => {
     const root = rootRef.current
@@ -228,14 +232,14 @@ export default function FileContextMenu({ context, fileTypeExtensions, position,
           role="menuitem"
           aria-haspopup="menu"
           aria-expanded={isOpen}
-          aria-label={node.disabledReason ? `${node.label}，${node.disabledReason}` : undefined}
-          title={node.disabledReason ?? node.label}
+          aria-label={node.disabledReason ? `${renderMessage(node.label)}，${node.disabledReason}` : undefined}
+          title={renderMessage(node.disabledReason ?? node.label)}
           disabled={node.disabled}
           data-submenu-trigger={node.id}
           onFocus={(event) => { openSubmenuTriggerRef.current = event.currentTarget }}
           onClick={() => { if (!node.disabled) setOpenSubmenu(node.id) }}
         >
-          <span className="submenu-trigger-label"><Icon size={16} /> {node.label}</span>
+          <span className="submenu-trigger-label"><Icon size={16} /> {renderMessage(node.label)}</span>
           <ChevronRight size={14} aria-hidden="true" />
         </button>
         {isOpen && (
@@ -243,7 +247,7 @@ export default function FileContextMenu({ context, fileTypeExtensions, position,
             className="file-context-submenu-panel"
             data-submenu-panel={node.id}
             role="menu"
-            aria-label={node.label}
+            aria-label={renderMessage(node.label)}
             style={{ position: 'fixed', left: submenuPosition.x, top: submenuPosition.y }}
           >
             {node.children.map((child) => renderNode(child, 'file-context-submenu-item'))}

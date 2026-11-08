@@ -1,3 +1,4 @@
+import { type MessageValue } from '../i18n/messages'
 export type SearchScope = 'current' | 'root' | 'custom'
 export type NameSearchMatchMode = 'exact' | 'contains'
 
@@ -56,7 +57,7 @@ export interface NameSearchProgress {
 export type NameSearchEvent =
   | ({ type: 'progress' } & NameSearchProgress)
   | ({ type: 'results'; results: NameSearchResult[] } & NameSearchProgress)
-  | ({ type: 'finished'; status: SearchRunStatus; message?: string } & NameSearchProgress)
+  | ({ type: 'finished'; status: SearchRunStatus; message?: MessageValue } & NameSearchProgress)
 
 export interface ContentSearchProgress {
   requestId: string
@@ -77,4 +78,4 @@ export interface ContentSearchProgress {
 export type ContentSearchEvent =
   | ({ type: 'progress' } & ContentSearchProgress)
   | ({ type: 'results'; results: ContentSearchResult[] } & ContentSearchProgress)
-  | ({ type: 'finished'; status: SearchRunStatus; message?: string } & ContentSearchProgress)
+  | ({ type: 'finished'; status: SearchRunStatus; message?: MessageValue } & ContentSearchProgress)

@@ -1,3 +1,4 @@
+import { type MessageValue, msg, renderMessage, tr } from '@shared/i18n/messages'
 import type { FileTypeExtensions, RemoteEntry, SearchResultTarget } from '@shared/types'
 import type { PreviewType } from '@shared/file-type-registry'
 import { classifyFileTypeCategories, fileTypeDefinition } from '@shared/file-type-registry'
@@ -49,17 +50,17 @@ export type FileMenuAction =
 export type FileMenuActionNode = {
   kind: 'action'
   id: string
-  label: string
+  label: MessageValue
   icon?: FileMenuIcon
   action: FileMenuAction
   disabled?: boolean
-  disabledReason?: string
-  description?: string
+  disabledReason?: MessageValue
+  description?: MessageValue
   checked?: boolean
 }
 
 export type FileMenuNode = FileMenuActionNode
-  | { kind: 'submenu'; id: string; label: string; icon: FileMenuIcon; children: FileMenuNode[]; disabled?: boolean; disabledReason?: string }
+  | { kind: 'submenu'; id: string; label: MessageValue; icon: FileMenuIcon; children: FileMenuNode[]; disabled?: boolean; disabledReason?: MessageValue }
   | { kind: 'separator'; id: string }
 
 export type FileContextMenuContext =
@@ -77,31 +78,31 @@ export interface FileContextMenuStrategy {
 
 const action = (
   id: string,
-  label: string,
+  label: MessageValue,
   icon: FileMenuIcon | undefined,
   menuAction: FileMenuAction,
   options: Pick<FileMenuActionNode, 'disabled' | 'disabledReason' | 'description' | 'checked'> = {},
 ): FileMenuActionNode => ({ kind: 'action', id, label, icon, action: menuAction, ...options })
 
-const overwriteAndSkipStrategies: Array<{ strategy: PasteStrategy; label: string; description: string }> = [
-  { strategy: 'force', label: '覆盖同名文件', description: '替换目标位置的同名文件。' },
-  { strategy: 'skip', label: '跳过同名文件', description: '保留已有文件，处理其余文件。' },
+const overwriteAndSkipStrategies: Array<{ strategy: PasteStrategy; label: MessageValue; description: MessageValue }> = [
+  { strategy: 'force', label: msg('files.overwriteExistingFiles'), description: msg('files.replaceFilesWithTheSameNameAtTheDestination') },
+  { strategy: 'skip', label: msg('files.skipExistingFiles'), description: msg('files.keepExistingFilesAndProcessTheRemainingFiles') },
 ]
 
 function pasteStrategyMenu(disabled: boolean): FileMenuNode {
   return {
     kind: 'submenu',
     id: 'paste-strategy',
-    label: '粘贴',
+    label: tr('connections.paste'),
     icon: 'clipboard-paste',
     disabled,
-    disabledReason: disabled ? '当前无法粘贴' : undefined,
+    disabledReason: disabled ? tr('files.cannotPasteHere') : undefined,
     children: overwriteAndSkipStrategies.map(({ strategy, label, description }) => action(
       'paste-' + strategy,
       label,
       undefined,
       { type: 'paste', strategy },
-      { disabled, disabledReason: disabled ? '当前无法粘贴' : undefined, description },
+      { disabled, disabledReason: disabled ? tr('files.cannotPasteHere') : undefined, description },
     )),
   }
 }
@@ -110,7 +111,7 @@ function uploadStrategyMenu(): FileMenuNode {
   return {
     kind: 'submenu',
     id: 'upload-strategy',
-    label: '上传',
+    label: tr('transfers.upload'),
     icon: 'upload',
     children: overwriteAndSkipStrategies.map(({ strategy, label, description }) => action(
       'upload-' + strategy,
@@ -146,15 +147,15 @@ const previewStrategy: FileContextMenuStrategy = {
     const entry = fileForContext(context)
     if (!entry || entry.type !== 'file') return []
     const types = previewTypesForFile(entry.name, fileTypeExtensions)
-    if (types.length === 1) return [action('preview', '预览', 'eye', { type: 'preview', previewType: types[0] })]
+    if (types.length === 1) return [action('preview', tr('files.preview'), 'eye', { type: 'preview', previewType: types[0] })]
     return [{
       kind: 'submenu',
       id: 'preview',
-      label: '预览',
+      label: tr('files.preview'),
       icon: 'eye',
       children: types.map((previewType) => action(
         'preview-' + previewType,
-        previewTypeLabels[previewType],
+        renderMessage(previewTypeLabels[previewType]),
         'eye',
         { type: 'preview', previewType },
       )),
@@ -169,7 +170,7 @@ const reversePreviewStrategy: FileContextMenuStrategy = {
     return matchingCapabilities(context, fileTypeExtensions).has('reverse-preview')
   },
   contribute() {
-    return [action('preview-log', '倒序预览', 'file-text', { type: 'preview-log' })]
+    return [action('preview-log', tr('files.reversePreview'), 'file-text', { type: 'preview-log' })]
   },
 }
 
@@ -183,11 +184,11 @@ const scriptExecutionStrategy: FileContextMenuStrategy = {
     return [{
       kind: 'submenu',
       id: 'script-execution',
-      label: '执行',
+      label: tr('files.run'),
       icon: 'terminal',
       children: [
-        action('run-script', '执行', 'play', { type: 'run-script' }),
-        action('adjust-run-script', '调整并执行', 'pencil', { type: 'adjust-script-command' }),
+        action('run-script', tr('files.run'), 'play', { type: 'run-script' }),
+        action('adjust-run-script', tr('files.editAndRun'), 'pencil', { type: 'adjust-script-command' }),
       ],
     }]
   },
@@ -204,20 +205,20 @@ const archiveExtractionStrategy: FileContextMenuStrategy = {
     const entry = fileForContext(context)
     if (!entry) return []
     const destinations = [
-      { target: 'current-directory' as const, id: 'current-directory', label: '当前路径' },
+      { target: 'current-directory' as const, id: 'current-directory', label: tr('files.currentPath') },
       { target: 'archive-directory' as const, id: 'archive-directory', label: archiveBaseName(entry.name) + '/' },
-      { target: 'choose-directory' as const, id: 'choose-directory', label: '选择目录' },
+      { target: 'choose-directory' as const, id: 'choose-directory', label: tr('files.chooseDirectory') },
     ]
     return [{
       kind: 'submenu',
       id: 'extract-archive',
-      label: '解压',
+      label: tr('common.extract'),
       icon: 'archive',
       children: destinations.flatMap((destination, index) => [
         ...(index ? [{ kind: 'separator' as const, id: 'extract-' + destination.id + '-separator' }] : []),
         ...overwriteAndSkipStrategies.map(({ strategy, label }) => action(
           'extract-' + destination.id + '-' + strategy,
-          destination.label + ' · ' + label,
+          msg('common.destinationAction', { destination: destination.label, action: label }),
           undefined,
           { type: 'extract-archive', target: destination.target, strategy },
         )),
@@ -234,17 +235,17 @@ const singleEntryStrategy: FileContextMenuStrategy = {
     if (context.kind !== 'single-entry') return []
     const { entry } = context
     if (entry.type !== 'file' && entry.type !== 'directory') {
-      return [action('copy-path', '复制路径', 'copy', { type: 'copy-path' })]
+      return [action('copy-path', tr('files.copyPath'), 'copy', { type: 'copy-path' })]
     }
     const isDirectory = entry.type === 'directory'
     return [
-      action('download', isDirectory ? '下载文件夹' : '下载文件', 'arrow-down', { type: 'download' }),
-      action('copy', '复制', 'copy', { type: 'copy' }),
-      action('cut', '剪切', 'scissors', { type: 'cut' }),
+      action('download', isDirectory ? tr('files.downloadFolder') : tr('files.downloadFile'), 'arrow-down', { type: 'download' }),
+      action('copy', tr('common.copy'), 'copy', { type: 'copy' }),
+      action('cut', tr('files.cut'), 'scissors', { type: 'cut' }),
       pasteStrategyMenu(!context.canPaste),
-      action('copy-path', '复制路径', 'copy', { type: 'copy-path' }),
-      action('rename', '重命名', 'pencil', { type: 'rename' }),
-      action('delete', '删除', 'trash', { type: 'delete' }),
+      action('copy-path', tr('files.copyPath'), 'copy', { type: 'copy-path' }),
+      action('rename', tr('files.rename'), 'pencil', { type: 'rename' }),
+      action('delete', tr('files.delete'), 'trash', { type: 'delete' }),
     ]
   },
 }
@@ -261,23 +262,23 @@ const multipleEntriesStrategy: FileContextMenuStrategy = {
     const nodes: FileMenuNode[] = []
     if (allEntriesSupported) {
       nodes.push(
-        action('download', `下载 ${count} 项`, 'arrow-down', { type: 'download' }),
-        action('copy', `复制 ${count} 项`, 'copy', { type: 'copy' }),
-        action('cut', `剪切 ${count} 项`, 'scissors', { type: 'cut' }),
+        action('download', tr('files.downloadItems', { "count": count }), 'arrow-down', { type: 'download' }),
+        action('copy', tr('files.copyItems', { "count": count }), 'copy', { type: 'copy' }),
+        action('cut', tr('files.cutItems', { "count": count }), 'scissors', { type: 'cut' }),
       )
     }
     nodes.push(pasteStrategyMenu(!context.canPaste))
-    if (allEntriesSupported) nodes.push(action('delete', `删除 ${count} 项`, 'trash', { type: 'delete' }))
+    if (allEntriesSupported) nodes.push(action('delete', tr('files.deleteItems', { "count": count }), 'trash', { type: 'delete' }))
     return nodes
   },
 }
 
-const sortColumns: { column: SortColumn; label: string }[] = [
-  { column: 'name', label: '名称' },
-  { column: 'modifiedAt', label: '修改日期' },
-  { column: 'type', label: '类型' },
-  { column: 'size', label: '大小' },
-  { column: 'permissions', label: '权限' },
+const sortColumns: { column: SortColumn; label: MessageValue }[] = [
+  { column: 'name', label: msg('common.name') },
+  { column: 'modifiedAt', label: msg('files.dateModified') },
+  { column: 'type', label: msg('files.type') },
+  { column: 'size', label: msg('files.size') },
+  { column: 'permissions', label: msg('files.permissions') },
 ]
 
 const directoryBackgroundStrategy: FileContextMenuStrategy = {
@@ -290,7 +291,7 @@ const directoryBackgroundStrategy: FileContextMenuStrategy = {
       {
         kind: 'submenu',
         id: 'sort',
-        label: '排序方式',
+        label: tr('files.sortBy'),
         icon: 'arrow-up-down',
         children: [
           ...sortColumns.map(({ column, label }) => action(
@@ -301,17 +302,17 @@ const directoryBackgroundStrategy: FileContextMenuStrategy = {
             { checked: context.sort.column === column },
           )),
           { kind: 'separator', id: 'sort-direction-separator' },
-          action('sort-ascending', '递增', context.sort.direction === 'ascending' ? 'check' : undefined, { type: 'sort-direction', direction: 'ascending' }, {
+          action('sort-ascending', tr('files.ascending'), context.sort.direction === 'ascending' ? 'check' : undefined, { type: 'sort-direction', direction: 'ascending' }, {
             checked: context.sort.direction === 'ascending',
           }),
-          action('sort-descending', '递减', context.sort.direction === 'descending' ? 'check' : undefined, { type: 'sort-direction', direction: 'descending' }, {
+          action('sort-descending', tr('files.descending'), context.sort.direction === 'descending' ? 'check' : undefined, { type: 'sort-direction', direction: 'descending' }, {
             checked: context.sort.direction === 'descending',
           }),
         ],
       },
-      action('copy-path', '复制路径', 'copy', { type: 'copy-path' }),
+      action('copy-path', tr('files.copyPath'), 'copy', { type: 'copy-path' }),
       pasteStrategyMenu(!context.canPaste),
-      action('create-directory', '新建文件夹', 'folder-plus', { type: 'create-directory' }),
+      action('create-directory', tr('common.newFolder'), 'folder-plus', { type: 'create-directory' }),
       uploadStrategyMenu(),
     ]
   },
@@ -323,7 +324,7 @@ const searchResultStrategy: FileContextMenuStrategy = {
   matches: (context) => context.kind === 'search-result',
   contribute(context) {
     if (context.kind !== 'search-result') return []
-    return [action('open-location', '打开所在目录', 'folder-open', { type: 'open-location' })]
+    return [action('open-location', tr('files.openContainingDirectory'), 'folder-open', { type: 'open-location' })]
   },
 }
 
@@ -331,7 +332,7 @@ const entryPropertiesStrategy: FileContextMenuStrategy = {
   id: 'entry-properties',
   group: 'common',
   matches: (context) => context.kind === 'single-entry' || context.kind === 'search-result',
-  contribute: () => [action('properties', '属性', 'info', { type: 'properties' })],
+  contribute: () => [action('properties', tr('files.properties'), 'info', { type: 'properties' })],
 }
 
 export const fileContextMenuStrategies: readonly FileContextMenuStrategy[] = [

@@ -1,3 +1,6 @@
+import { type MessageValue, msg, renderMessage } from '../shared/i18n/messages'
+import { applyLanguage } from './language'
+
 import { app, BrowserWindow, dialog, Menu, protocol } from 'electron'
 import { mkdir, rm } from 'node:fs/promises'
 import { mkdirSync } from 'node:fs'
@@ -29,7 +32,7 @@ if (!hasSingleInstanceLock) {
     configureApplicationData(applicationDataDirectory)
     applicationDataConfigured = true
   } catch (error) {
-    dialog.showErrorBox('启动失败', messageFromError(error))
+    showErrorBox(msg('errors.startupFailed'), messageFromError(error))
     app.quit()
   }
   app.on('second-instance', focusMainWindow)
@@ -121,14 +124,16 @@ app.whenReady().then(async () => {
   const userDataDirectory = app.getPath('userData')
   configureStateFiles(join(userDataDirectory, 'servers.json'), join(userDataDirectory, 'settings.json'))
   try {
-    readState(true)
+    applyLanguage('system')
     const settings = readAppSettings()
+    applyLanguage(settings.language)
+    readState(true)
     configurePerformanceMonitorInterval(settings.performanceSampleIntervalSeconds)
     applyTheme(settings.theme)
   } catch (error) {
-    dialog.showErrorBox(
-      '配置文件无效',
-      messageFromError(error) + '\n\n应用未修改配置文件。请修复该文件后重新启动。',
+    showErrorBox(
+      msg('errors.invalidConfigurationFile'),
+      msg('errors.theApplicationHasNotModifiedTheConfigurationFileFixIt', { "value1": messageFromError(error) }),
     )
     app.exit(1)
     return
@@ -146,7 +151,7 @@ app.whenReady().then(async () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 }).catch((error: unknown) => {
-  dialog.showErrorBox('启动失败', messageFromError(error))
+  showErrorBox(msg('errors.startupFailed'), messageFromError(error))
   app.exit(1)
 })
 
@@ -163,7 +168,7 @@ app.on('before-quit', event => {
     }
     app.quit()
   })().catch(error => {
-    dialog.showErrorBox('退出清理失败', messageFromError(error))
+    showErrorBox(msg('errors.cleanupFailedOnExit'), messageFromError(error))
     app.exit(1)
   })
 })
@@ -171,3 +176,7 @@ app.on('before-quit', event => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+function showErrorBox(title: MessageValue, message: MessageValue): void {
+  dialog.showErrorBox(renderMessage(title), renderMessage(message))
+}

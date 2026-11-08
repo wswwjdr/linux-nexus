@@ -1,3 +1,4 @@
+import { renderMessage, type MessageValue } from '../src/shared/i18n/messages'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { act, createElement, type DragEvent } from 'react'
@@ -77,7 +78,7 @@ async function mountWorkflow({ hold = false, failure = '', holdRefresh = false }
       currentPath: activeSession.currentPath, sessionsRef,
       updateSession: (id, update) => { sessionsRef.current = sessionsRef.current.map((item) => item.id === id ? update(item) : item) },
       loadDirectory: async (id) => { refreshed.push(id); await refreshGate; return true },
-      showToast: (kind, message) => notices.push({ kind, message }), setBrowserContextMenu: () => {},
+      showToast: (kind, message) => notices.push({ kind, message: renderMessage(message) }), setBrowserContextMenu: () => {},
     })
     useRemoteFileShortcuts({
       activeSession, activeSessionId: activeSession.id,

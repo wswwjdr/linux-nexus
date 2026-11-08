@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from '../../shared/i18n/messages'
 import { lstat as localLstat, readdir as localReaddir } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
 import { isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
@@ -84,7 +85,7 @@ export async function collectRemoteTree(client: Client, remoteRoot: string, sign
     const failures = entries.filter((entry) => entry.type === 'symlink' || entry.type === 'other')
       .map((entry) => ({
         path: entry.remotePath,
-        message: entry.type === 'symlink' ? '目录包含符号链接，无法传输' : '目录包含暂不支持的文件类型',
+        message: entry.type === 'symlink' ? msg('errors.folderContainsSymbolicLinksAndCannotBeTransferred') : msg('errors.folderContainsUnsupportedFileTypes'),
       }))
     return { items, failures }
   } catch (error) {
@@ -107,7 +108,7 @@ export async function collectLocalTree(localRoot: string, signal: AbortSignal): 
       return
     }
     if (attrs.isSymbolicLink()) {
-      failures.push({ path: localPath, message: '目录包含符号链接，无法传输' })
+      failures.push({ path: localPath, message: msg('errors.folderContainsSymbolicLinksAndCannotBeTransferred') })
       return
     }
     if (attrs.isDirectory()) {
@@ -129,7 +130,7 @@ export async function collectLocalTree(localRoot: string, signal: AbortSignal): 
       return
     }
     if (!attrs.isFile()) {
-      failures.push({ path: localPath, message: '目录包含暂不支持的文件类型' })
+      failures.push({ path: localPath, message: msg('errors.folderContainsUnsupportedFileTypes') })
       return
     }
     items.push({ relativePath, type: 'file', size: attrs.size, modifiedAtMs: attrs.mtimeMs, localPath })
@@ -142,7 +143,7 @@ export function assertWindowsPath(relativePath: string): void {
   for (const name of relativePath.split('/')) {
     if (!name) continue
     if (/[<>:"/\\|?*\u0000-\u001f]/.test(name) || /[. ]$/.test(name) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(name)) {
-      throw new Error('Windows 不支持此文件名，无法下载：' + name)
+      throw new LocalizedError(msg('errors.windowsDoesNotSupportThisFilename', { "name": name }))
     }
   }
 }
@@ -154,7 +155,7 @@ export async function withTransferLock(
   operation: (signal: AbortSignal) => Promise<TransferResult>,
   onQueued?: () => void,
 ): Promise<TransferResult> {
-  if (activeTransfers.has(requestId)) throw new Error('传输请求标识重复')
+  if (activeTransfers.has(requestId)) throw new LocalizedError(msg('errors.duplicateTransferRequestId'))
   const transfer = { profileId, sessionId, controller: new AbortController(), settled: Promise.resolve() }
   const previous = transferQueues.get(profileId) ?? Promise.resolve()
   const wasQueued = transferQueues.has(profileId)
@@ -209,7 +210,7 @@ export function localDestination(destinationRoot: string, relativePath: string):
   const destination = relativePath ? resolve(root, ...relativePath.split('/')) : root
   const fromRoot = relative(root, destination)
   if (fromRoot === '..' || fromRoot.startsWith('..' + sep) || isAbsolute(fromRoot)) {
-    throw new Error('下载路径无效：' + relativePath)
+    throw new LocalizedError(msg('errors.invalidDownloadPath', { "relativePath": relativePath }))
   }
   return destination
 }

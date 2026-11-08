@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from '../../shared/i18n/messages'
 import { safeStorage } from 'electron'
 import { ipcMain } from './trusted-ipc'
 import { randomUUID } from 'node:crypto'
@@ -16,19 +17,19 @@ export function registerProfilesIpc(): void {
       typeof profile.host !== 'string' ||
       typeof profile.username !== 'string'
     ) {
-      throw new Error('服务器配置格式无效，请重新填写连接信息')
+      throw new LocalizedError(msg('errors.invalidServerConfigurationEnterTheConnectionDetailsAgain'))
     }
     if (!profile.name.trim() || !profile.host.trim() || !profile.username.trim()) {
-      throw new Error('名称、主机地址和用户名不能为空')
+      throw new LocalizedError(msg('errors.nameHostAddressAndUsernameAreRequired'))
     }
     if (!Number.isInteger(profile.port) || profile.port < 1 || profile.port > 65535) {
-      throw new Error('SSH 端口必须是 1 到 65535 之间的整数')
+      throw new LocalizedError(msg('errors.sshPortMustBeAnIntegerFrom1To65535'))
     }
     if (password !== undefined && typeof password !== 'string') {
-      throw new Error('SSH 密码格式无效')
+      throw new LocalizedError(msg('errors.invalidSshPasswordFormat'))
     }
     if (password && !safeStorage.isEncryptionAvailable()) {
-      throw new Error('Windows 凭据加密不可用，不能安全保存密码')
+      throw new LocalizedError(msg('errors.windowsCredentialEncryptionIsUnavailableCannotSaveThePasswordSecurely'))
     }
 
     const state = readState()
@@ -43,7 +44,7 @@ export function registerProfilesIpc(): void {
       username: profile.username.trim(),
       pinned: previousProfile?.pinned ?? false,
     }
-    if (!password && !state.passwords[id]) throw new Error('请填写 SSH 密码')
+    if (!password && !state.passwords[id]) throw new LocalizedError(msg('errors.enterAnSshPassword'))
     if (existingIndex === -1) state.profiles.push(savedProfile)
     else {
       state.profiles[existingIndex] = savedProfile
@@ -59,11 +60,11 @@ export function registerProfilesIpc(): void {
 
   ipcMain.handle('profiles:set-pinned', (_event, profileId: string, pinned: boolean) => {
     if (typeof profileId !== 'string' || !profileId || typeof pinned !== 'boolean') {
-      throw new Error('服务器置顶状态格式无效')
+      throw new LocalizedError(msg('errors.invalidServerPinState'))
     }
     const state = readState()
     const profile = state.profiles.find((candidate) => candidate.id === profileId)
-    if (!profile) throw new Error('找不到服务器配置')
+    if (!profile) throw new LocalizedError(msg('errors.serverConfigurationNotFound'))
     profile.pinned = pinned
     writeState(state)
     return profile

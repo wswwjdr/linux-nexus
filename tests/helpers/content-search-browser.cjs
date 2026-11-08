@@ -4,6 +4,7 @@ const { mkdirSync, writeFileSync } = require('node:fs')
 const profilePath = resolve('data/content-search-browser-profile')
 mkdirSync(profilePath, { recursive: true })
 app.setPath('userData', profilePath)
+app.on('window-all-closed', () => {})
 app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
   const { createServer } = await import('vite')
@@ -12,6 +13,7 @@ app.whenReady().then(async () => {
     name: 'content-search-test', configureServer(server) {
       server.middlewares.use('/__content_search_test', async (_req, response) => {
         const html = await server.transformIndexHtml('/__content_search_test', `<html><body><div id="root"></div><script type="module">
+import { setLanguage } from '/src/shared/i18n/messages.ts'; setLanguage('zh-CN');
           import React, { useState } from 'react'; import { createRoot } from 'react-dom/client';
           import { ContentSearchResults } from '/src/renderer/src/features/search/ContentSearchResults.tsx';
           import '/src/renderer/src/styles/foundation.css'; import '/src/renderer/src/styles/theme.css'; import '/src/renderer/src/styles/search.css';
@@ -31,6 +33,7 @@ app.whenReady().then(async () => {
     }
   }], server: { host: '127.0.0.1', port: 0, watch: null } })
   const window = new BrowserWindow({ show: false, width: 1000, height: 600, webPreferences: { sandbox: true, backgroundThrottling: false } })
+  window.webContents.on('console-message', details => { if (details.level === 'error') console.error(details.message) })
   try {
     await server.listen()
     await window.loadURL(server.resolvedUrls.local[0] + '__content_search_test')

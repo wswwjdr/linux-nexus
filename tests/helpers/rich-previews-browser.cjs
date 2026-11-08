@@ -8,10 +8,13 @@ const { registerPreviewProtocol } = require('../../src/main/preview-protocol.ts'
 const { registerLocalPreviewAsset, clearPreviewAssets } = require('../../src/main/previews/preview-assets.ts')
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'remote-preview', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }])
+app.setPath('userData', require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'nexus-browser-')))
+app.on('window-all-closed', () => {})
 app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
   const directory = mkdtempSync(join(tmpdir(), 'nexus-rich-preview-'))
   const window = new BrowserWindow({ show: false, width: 1050, height: 728, webPreferences: { sandbox: true, backgroundThrottling: false } })
+  window.webContents.on('console-message', details => { if (details.level === 'error') console.error(details.message) })
   window.webContents.debugger.attach('1.3')
   window.webContents.setAudioMuted(true)
   const execute = (code) => window.webContents.executeJavaScript(code, true)
@@ -73,7 +76,7 @@ app.whenReady().then(async () => {
   }
   const { createServer } = await import('vite')
   const { default: react } = await import('@vitejs/plugin-react')
-  const server = await createServer({ configFile: false, resolve: { alias: { '@shared': resolve('src/shared'), '@': resolve('src/renderer/src') } }, plugins: [react(), {
+  const server = await createServer({ configFile: false, cacheDir: require('node:path').join(app.getPath('userData'), 'vite-cache'), resolve: { alias: { '@shared': resolve('src/shared'), '@': resolve('src/renderer/src') } }, plugins: [react(), {
     name: 'rich-preview-fixture', configureServer(server) {
       server.middlewares.use('/__fixture_image.svg', (_request, response) => {
         response.setHeader('Content-Type', 'image/svg+xml')
@@ -208,6 +211,15 @@ app.whenReady().then(async () => {
     key('K'); key('K', 'keyUp')
     await until('!document.querySelector("video").paused')
     assert.equal(await execute('document.querySelector(".vp-notice")'), null)
+    await execute('document.querySelector("video").pause(); document.querySelector("video").currentTime = 2; document.querySelector("video").playbackRate = 1.5; window.languageVideo = document.querySelector("video"); window.fixtureLanguage("en")')
+    await until(`document.documentElement.lang === "en" && Boolean(document.querySelector('[aria-label="Close preview"]'))`)
+    assert.equal(await execute('document.querySelector("video") === window.languageVideo && document.querySelector("video").paused && document.querySelector("video").playbackRate === 1.5'), true)
+    assert.equal(await execute('document.querySelector("video").currentTime'), 2)
+    for (const kind of ['video', 'image', 'markdown']) {
+      await execute(`window.fixtureOpen('${kind}')`)
+      await until(`Boolean(document.querySelector('.${kind === 'video' ? 'vp-modal' : kind === 'image' ? 'ip-dialog' : 'md-dialog'}'))`)
+      assert.deepEqual(await execute(`(${checkLayout.toString()})()`), [], `English/${kind}`)
+    }
     console.log(`rich preview browser checks passed (${layouts} layouts, video timeline hover/current/remaining time, video playback/fullscreen/long-press/session pause, pointer image transforms, Markdown catalog)`)
   } finally {
     window.destroy(); clearPreviewAssets(); await server.close(); rmSync(directory, { recursive: true, force: true })

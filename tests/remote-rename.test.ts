@@ -38,7 +38,7 @@ test('renames in the same parent with shell-safe arguments and no-clobber exact-
     assert.ok(commands[0].includes('mv -nT -- "$1" "$2"'))
     assert.ok(commands[0].includes('! -L "$1" && ( -f "$1" || -d "$1" )'))
     assert.ok(commands[0].includes('! -e "$2" && ! -L "$2"'))
-    assert.ok(commands[0].includes('重命名未完成，目标名称可能已被占用'))
+    assert.ok(commands[0].includes('LINUX_NEXUS_DIAGNOSTIC:renameIncomplete'))
   } finally { sessions.delete('rename-session') }
 })
 

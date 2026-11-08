@@ -54,7 +54,7 @@ test('rejects unsupported distributions and exact major versions before probing 
   for (const [id, version] of [['centos', '6'], ['centos', '70'], ['centos', '80'], ['centos', '11'], ['rhel', '7'], ['rhel', '80'], ['rocky', '9'], ['alpine', '3.20']]) {
     const result = checkRelease(`ID=${id}\nVERSION_ID=${version}\n`, 'command() { printf "unexpected tool probe" >&2; return 1; }')
     assert.equal(result.status, 1)
-    assert.equal(result.stderr, `不支持的服务器发行版: ${id} ${version}\n`)
+    assert.equal(result.stderr, `LINUX_NEXUS_DIAGNOSTIC:unsupportedDistribution: ${id} ${version}\n`)
   }
 })
 
@@ -62,7 +62,7 @@ test('rejects missing, malformed and executable identity values as data', shellT
   for (const release of ['', 'ID=centos\n', 'VERSION_ID=7\n', 'ID=centos\nVERSION_ID="7\n', 'ID=centos\nVERSION_ID=7anything\n', 'ID=centos\nVERSION_ID="$(exit 99)"\n']) {
     const result = checkRelease(release)
     assert.equal(result.status, 1)
-    assert.match(result.stderr, /服务器发行版信息无效/)
+    assert.match(result.stderr, /LINUX_NEXUS_DIAGNOSTIC:distribution/)
   }
   const directory = mkdtempSync(join(tmpdir(), 'linux-nexus-release-injection-'))
   try {
@@ -77,11 +77,11 @@ test('rejects missing, malformed and executable identity values as data', shellT
 
 test('reports missing commands, non-GNU tools and unsupported command options', shellTest, () => {
   for (const [prefix, message] of [
-    ['command() { if [[ "$2" == sha256sum ]]; then return 1; fi; builtin command "$@"; }', '缺少服务器命令: sha256sum'],
-    ['find() { printf "BSD find\\n"; }', '需要 GNU findutils'],
-    ['cp() { printf "BSD cp\\n"; }', '需要 GNU coreutils'],
-    ['grep() { if [[ "$1" == --version ]]; then printf "BSD grep\\n"; else command grep "$@"; fi; }', '需要 GNU grep'],
-    ['tar() { printf "BSD tar\\n"; }', '需要 GNU tar'],
+    ['command() { if [[ "$2" == sha256sum ]]; then return 1; fi; builtin command "$@"; }', 'LINUX_NEXUS_DIAGNOSTIC:missingCommand: sha256sum'],
+    ['find() { printf "BSD find\\n"; }', 'LINUX_NEXUS_DIAGNOSTIC:gnuFind'],
+    ['cp() { printf "BSD cp\\n"; }', 'LINUX_NEXUS_DIAGNOSTIC:gnuCore'],
+    ['grep() { if [[ "$1" == --version ]]; then printf "BSD grep\\n"; else command grep "$@"; fi; }', 'LINUX_NEXUS_DIAGNOSTIC:gnuGrep'],
+    ['tar() { printf "BSD tar\\n"; }', 'LINUX_NEXUS_DIAGNOSTIC:gnuTar'],
     ['dd() { printf "unsupported dd option\\n" >&2; return 2; }', 'unsupported dd option'],
     ['tar() { if [[ "$1" == --skip-old-files ]]; then printf "unsupported tar policy\\n" >&2; return 2; fi; command tar "$@"; }', 'unsupported tar policy'],
   ]) {

@@ -1,3 +1,4 @@
+import { type MessageValue, msg } from '@shared/i18n/messages'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   CommandAlias,
@@ -14,7 +15,7 @@ import { errorMessage } from '@/app-utils'
 
 interface UseCommandAliasesOptions {
   profiles: ServerProfile[]
-  showToast: (kind: ToastNotice['kind'], message: string) => void
+  showToast: (kind: ToastNotice['kind'], message: MessageValue) => void
 }
 
 const emptySnapshot = (profileId: string): CommandAliasSnapshot => ({
@@ -41,7 +42,7 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
   }, [])
 
   useEffect(() => {
-    void refreshSnapshots().catch((error: unknown) => showToast('error', '读取命令别名失败：' + errorMessage(error)))
+    void refreshSnapshots().catch((error: unknown) => showToast('error', msg('common.couldNotReadCommandAliases', { "value1": errorMessage(error) })))
   }, [profiles, refreshSnapshots, showToast, overwriteConfirmation, deleteConfirmation])
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? null
@@ -59,7 +60,7 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
     setCommand('')
     setOverwriteConfirmation(null)
     setDeleteConfirmation(null)
-    void refreshSnapshots().catch((error: unknown) => showToast('error', '读取命令别名失败：' + errorMessage(error)))
+    void refreshSnapshots().catch((error: unknown) => showToast('error', msg('common.couldNotReadCommandAliases', { "value1": errorMessage(error) })))
   }, [profiles, refreshSnapshots, showToast])
 
   const selectProfile = (profileId: string) => {
@@ -74,7 +75,7 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
     if (result.status === 'host-key-required') {
       const profile = profiles.find((candidate) => candidate.id === profileId)
       if (!profile) {
-        showToast('error', '找不到正在同步别名的服务器')
+        showToast('error', msg('common.cannotFindTheServerWhoseAliasesAreBeingSynced'))
         return false
       }
       retryAfterTrustRef.current = retry
@@ -85,7 +86,7 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
     }
     setSnapshots((current) => ({ ...current, [profileId]: result.snapshot }))
     if (result.status === 'updated-sync-failed') {
-      showToast('error', '命令别名已修改，但刷新别名列表失败，请重新同步：' + result.message)
+      showToast('error', msg('common.commandAliasesChangedButRefreshingTheListFailedSyncAgain', { "message": result.message }))
     } else {
       setName('')
       setCommand('')
@@ -125,7 +126,7 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
     const existing = snapshot.aliases.find((alias) => alias.name === requestedName)
     if (existing) {
       if (!existing.removable) {
-        showToast('error', existing.removalReason ?? '此别名无法安全覆盖')
+        showToast('error', existing.removalReason ?? msg('common.thisAliasCannotBeSafelyOverwritten'))
         return
       }
       setOverwriteConfirmation({
@@ -155,7 +156,7 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
   const requestDelete = (alias: CommandAlias) => {
     if (operation || !selectedProfileId) return
     if (!alias.removable) {
-      showToast('error', alias.removalReason ?? '此别名无法安全删除')
+      showToast('error', alias.removalReason ?? msg('settings.thisAliasCannotBeSafelyDeleted'))
       return
     }
     setDeleteConfirmation({

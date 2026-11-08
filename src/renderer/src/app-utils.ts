@@ -1,15 +1,27 @@
+import { type MessageValue, formatLocale, msg, messageFromUnknown } from '@shared/i18n/messages'
 import type { ConnectResult, PreviewLimits } from '@shared/types'
 import type { PreviewLimitKey, PreviewLimitsForm, ProfileForm, RecentConnection } from './app-types'
 
-export const previewLimitFields: { key: PreviewLimitKey; label: string }[] = [
-  { key: 'textMiB', label: '文本文件上限（MiB）' },
-  { key: 'pdfMiB', label: 'PDF 文件上限（MiB）' },
-  { key: 'imageMiB', label: '图片文件上限（MiB）' },
-  { key: 'audioMiB', label: '音频文件上限（MiB）' },
-  { key: 'videoMiB', label: '视频文件上限（MiB）' },
+export const previewLimitFields: { key: PreviewLimitKey; label: MessageValue }[] = [
+  { key: 'textMiB', label: msg('common.textFileLimitMib') },
+  { key: 'pdfMiB', label: msg('common.pdfFileLimitMib') },
+  { key: 'imageMiB', label: msg('common.imageFileLimitMib') },
+  { key: 'audioMiB', label: msg('common.audioFileLimitMib') },
+  { key: 'videoMiB', label: msg('common.videoFileLimitMib') },
 ]
 
-export const entryNameCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' })
+const collators = new Map<string, Intl.Collator>()
+export const entryNameCollator = {
+  compare(left: string, right: string): number {
+    const locale = formatLocale()
+    let collator = collators.get(locale)
+    if (!collator) {
+      collator = new Intl.Collator(locale, { numeric: true, sensitivity: 'base' })
+      collators.set(locale, collator)
+    }
+    return collator.compare(left, right)
+  },
+}
 
 export const emptyForm = (): ProfileForm => ({
   id: '',
@@ -29,12 +41,13 @@ export function formatSize(bytes: number): string {
     value /= 1024
     unit += 1
   }
-  return value.toFixed(value >= 10 ? 0 : 1) + ' ' + units[unit]
+  const digits = value >= 10 ? 0 : 1
+  return new Intl.NumberFormat(formatLocale(), { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value) + ' ' + units[unit]
 }
 
 export function formatDate(value: string | null): string {
   if (!value) return '—'
-  return new Intl.DateTimeFormat('zh-CN', {
+  return new Intl.DateTimeFormat(formatLocale(), {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -54,12 +67,11 @@ export function getParentPath(remotePath: string): string {
   return parts.length ? '/' + parts.join('/') : '/'
 }
 
-export function errorMessage(error: unknown): string {
-  if (!(error instanceof Error)) return '操作失败，请重试'
-  return error.message.replace(/^Error invoking remote method '[^'\r\n]+': (?:Error: )?/, '')
+export function errorMessage(error: unknown): MessageValue {
+  return messageFromUnknown(error)
 }
 
-export function connectFailureText(result: Exclude<ConnectResult, { ok: true }>): string {
+export function connectFailureText(result: Exclude<ConnectResult, { ok: true }>): MessageValue {
   if (result.reason === 'auth-failed') return result.message
   if (result.reason === 'unreachable') return result.message
   if (result.reason === 'other') return result.message

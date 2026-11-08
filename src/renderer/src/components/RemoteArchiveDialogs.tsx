@@ -1,3 +1,5 @@
+import { msg, renderMessage, type MessageValue, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { useEffect, useId, useState, type FormEvent } from 'react'
 import { Check, ChevronRight, Folder, FolderPlus, LoaderCircle, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
@@ -28,12 +30,13 @@ function RemoteDirectoryPicker({
   onChoose: (directory: string) => void
   onCreateDirectory: (directory: string, name: string) => Promise<void>
 }) {
+  useLanguage()
   const titleId = useId()
   const [directory, setDirectory] = useState(state.directory)
   const [entries, setEntries] = useState<RemoteEntry[]>([])
   const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<MessageValue | null>(null)
+  const [error, setError] = useState<MessageValue | null>(null)
   const [newFolderName, setNewFolderName] = useState('')
   const [creating, setCreating] = useState(false)
 
@@ -44,7 +47,7 @@ function RemoteDirectoryPicker({
     void window.remoteFiles.listDirectory(state.sessionId, directory).then((result) => {
       if (active) setEntries(result.filter((entry) => entry.type === 'directory').sort((a, b) => a.name.localeCompare(b.name)))
     }).catch((reason: unknown) => {
-      if (active) setLoadError('读取目录失败：' + errorMessage(reason))
+      if (active) setLoadError(msg('files.couldNotReadDirectory', { "value1": errorMessage(reason) }))
     }).finally(() => {
       if (active) setLoading(false)
     })
@@ -66,7 +69,7 @@ function RemoteDirectoryPicker({
     event.preventDefault()
     const name = newFolderName.trim()
     if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\0')) {
-      setError('文件夹名称不能为空，不能是 . 或 ..，也不能包含 / 或空字符')
+      setError(msg('files.folderNameMustNotBeEmptyBeOrOrContain'))
       return
     }
     setCreating(true)
@@ -83,7 +86,7 @@ function RemoteDirectoryPicker({
         permissions: '',
       }].sort((a, b) => a.name.localeCompare(b.name)))
     } catch (reason) {
-      setError('创建文件夹失败：' + errorMessage(reason))
+      setError(msg('files.couldNotCreateFolder', { "value1": errorMessage(reason) }))
     } finally {
       setCreating(false)
     }
@@ -100,12 +103,12 @@ function RemoteDirectoryPicker({
       <section className="modal remote-directory-picker" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="modal-heading">
           <div>
-            <h2 id={titleId}>选择解压位置</h2>
+            <h2 id={titleId}>{tr('files.chooseExtractionLocation')}</h2>
             <p className="remote-archive-subtitle">{state.entry.name}</p>
           </div>
-          <button className="icon-button modal-close" title="关闭" aria-label="关闭" disabled={creating} onClick={onClose}><X size={18} /></button>
+          <button className="icon-button modal-close" title={tr('common.close')} aria-label={tr('common.close')} disabled={creating} onClick={onClose}><X size={18} /></button>
         </div>
-        <nav className="remote-directory-breadcrumbs" aria-label="远程目录路径">
+        <nav className="remote-directory-breadcrumbs" aria-label={tr('files.remoteDirectoryPath')}>
           {crumbs.map((crumb, index) => (
             <span className="remote-directory-crumb" key={crumb.path}>
               {index > 0 && <ChevronRight size={13} aria-hidden="true" />}
@@ -114,26 +117,25 @@ function RemoteDirectoryPicker({
           ))}
         </nav>
         <form className="remote-directory-create" onSubmit={(event) => void submitNewFolder(event)}>
-          <input aria-label="新文件夹名称" autoComplete="off" value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} placeholder="新建文件夹" disabled={creating} />
+          <input aria-label={tr('files.newFolderName')} autoComplete="off" value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} placeholder={tr('common.newFolder')} disabled={creating} />
           <button type="submit" className="secondary-button" disabled={creating || !newFolderName.trim()}>
-            {creating ? <LoaderCircle className="spin" size={15} /> : <FolderPlus size={15} />}新建
-          </button>
+            {creating ? <LoaderCircle className="spin" size={15} /> : <FolderPlus size={15} />}{tr('files.new')}</button>
         </form>
-        <div className="remote-directory-list" aria-label="文件夹列表" aria-busy={loading}>
-          {loading ? <div className="remote-directory-empty"><LoaderCircle className="spin" size={17} />正在读取目录…</div>
-            : loadError ? <div className="remote-directory-error" role="alert">{loadError}</div>
-              : entries.length === 0 ? <div className="remote-directory-empty">此目录没有子文件夹</div>
+        <div className="remote-directory-list" aria-label={tr('files.folderList')} aria-busy={loading}>
+          {loading ? <div className="remote-directory-empty"><LoaderCircle className="spin" size={17} />{tr('files.readingDirectory')}</div>
+            : loadError ? <div className="remote-directory-error" role="alert">{renderMessage(loadError)}</div>
+              : entries.length === 0 ? <div className="remote-directory-empty">{tr('files.thisDirectoryHasNoSubfolders')}</div>
                 : entries.map((entry) => (
                   <button className="remote-directory-entry" type="button" key={entry.path} onClick={() => navigateDirectory(entry.path)}>
                     <Folder size={16} aria-hidden="true" /><span>{entry.name}</span><ChevronRight size={14} aria-hidden="true" />
                   </button>
                 ))}
         </div>
-        {error && <div className="remote-directory-error" role="alert">{error}</div>}
+        {error && <div className="remote-directory-error" role="alert">{renderMessage(error)}</div>}
         <div className="remote-directory-current"><Folder size={15} aria-hidden="true" /><span title={directory}>{directory}</span></div>
         <div className="modal-footer">
-          <button type="button" className="secondary-button" disabled={creating} onClick={onClose}>取消</button>
-          <button type="button" className="primary-button" disabled={creating || loading || Boolean(loadError)} onClick={() => onChoose(directory)}><Check size={15} />解压到此目录</button>
+          <button type="button" className="secondary-button" disabled={creating} onClick={onClose}>{tr('common.cancel')}</button>
+          <button type="button" className="primary-button" disabled={creating || loading || Boolean(loadError)} onClick={() => onChoose(directory)}><Check size={15} />{tr('files.extractToThisDirectory')}</button>
         </div>
       </section>
     </div>
@@ -148,6 +150,7 @@ export interface RemoteArchiveDialogsProps {
 }
 
 export function RemoteArchiveDialogs({ destination, onCloseDestination, onChooseDestination, onCreateDirectory }: RemoteArchiveDialogsProps) {
+  useLanguage()
   return destination
     ? <RemoteDirectoryPicker state={destination} onClose={onCloseDestination} onChoose={onChooseDestination} onCreateDirectory={onCreateDirectory} />
     : null

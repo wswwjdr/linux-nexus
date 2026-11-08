@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from '@shared/i18n/messages'
 import { useRef, useState, type DragEvent, type MutableRefObject } from 'react'
 import type { DroppedUploadEntry, RemoteEntry } from '@shared/types'
 
@@ -50,14 +51,14 @@ async function readDirectoryEntries(entry: FileSystemDirectoryEntry): Promise<Fi
 
 function droppedFile(file: File, relativePath: string): DroppedUploadEntry {
   const localPath = window.remoteFiles.getPathForFile(file)
-  if (!localPath) throw new Error('无法读取拖入文件的本机路径：' + file.name)
+  if (!localPath) throw new LocalizedError(msg('files.cannotReadTheLocalPathOfTheDroppedFile', { "name": file.name }))
   return { relativePath, type: 'file', localPath }
 }
 
 async function readDroppedEntry(entry: FileSystemEntry, parentPath: string): Promise<DroppedUploadEntry[]> {
   const relativePath = parentPath ? parentPath + '/' + entry.name : entry.name
   if (entry.isFile) return [droppedFile(await readFileEntry(entry as FileSystemFileEntry), relativePath)]
-  if (!entry.isDirectory) throw new Error('拖入内容包含暂不支持的文件类型')
+  if (!entry.isDirectory) throw new LocalizedError(msg('errors.droppedContentContainsUnsupportedFileTypes'))
 
   const children = await readDirectoryEntries(entry as FileSystemDirectoryEntry)
   const descendants = await Promise.all(children.map((child) => readDroppedEntry(child, relativePath)))
@@ -179,7 +180,7 @@ export function useFileDragAndDrop({
     const paths = readRemoteMovePaths(event.dataTransfer)
     if (operationActive || entry.type !== 'directory' || paths.length === 0) return
     if (paths.includes(entry.path)) {
-      onDropError(new Error('不能将文件夹移动到自身'))
+      onDropError(new LocalizedError(msg('files.cannotMoveAFolderIntoItself')))
       return
     }
     onDropMove(paths, entry.path)

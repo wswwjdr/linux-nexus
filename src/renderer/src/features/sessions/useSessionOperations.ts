@@ -1,3 +1,4 @@
+import { type MessageValue, msg, tr } from '@shared/i18n/messages'
 import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { ServerProfile, SessionKind, StartupConnection, TrustHostKeyInput } from '@shared/types'
 import type { PendingHostKey, RecentConnection, SessionTab, BrowserContextMenu } from '@/app-types'
@@ -39,7 +40,7 @@ interface UseSessionOperationsOptions {
   directoryLoadIdsRef: MutableRefObject<Map<string, number>>
   connectingSessionsRef: MutableRefObject<Set<string>>
   setSearchOpen: (sessionId: string, open: boolean) => void
-  showToast: (kind: ToastNotice['kind'], message: string, action?: ToastNotice['action']) => void
+  showToast: (kind: ToastNotice['kind'], message: MessageValue, action?: ToastNotice['action']) => void
 }
 
 export function useSessionOperations({
@@ -80,7 +81,7 @@ export function useSessionOperations({
     if (!startupConnection || sessionsRef.current.length > 0) return
     const profile = profiles.find((candidate) => candidate.id === startupConnection.profileId)
     if (!profile) {
-      showToast('error', '启动连接所选服务器不存在，请在设置中重新选择')
+      showToast('error', msg('connections.theStartupServerDoesNotExistSelectAnotherServerIn'))
       return
     }
     openSession(profile, startupConnection.kind)
@@ -105,7 +106,7 @@ export function useSessionOperations({
       }
       if (!result.ok) {
         const latestSession = sessionsRef.current.find((candidate) => candidate.id === session.id)
-        if (result.reason === 'other' && result.message === '连接已取消'
+        if (result.reason === 'other' && result.message === tr('errors.connectionCancelled')
           && latestSession?.status !== 'connecting') return
         if (result.reason === 'host-key-unknown') {
           patchSession(session.id, { status: 'awaiting-trust' })
@@ -332,7 +333,7 @@ export function useSessionOperations({
   const dismissHostKey = () => {
     if (!pendingHostKey) return
     setPendingHostKeys((current) => current.filter((pending) => pending.sessionId !== pendingHostKey.sessionId))
-    patchSession(pendingHostKey.sessionId, { status: 'disconnected', error: '服务器指纹尚未验证' })
+    patchSession(pendingHostKey.sessionId, { status: 'disconnected', error: msg('connections.serverFingerprintHasNotBeenVerified') })
   }
 
   return {

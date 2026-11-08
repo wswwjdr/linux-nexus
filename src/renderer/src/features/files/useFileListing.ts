@@ -1,20 +1,22 @@
+import { type MessageValue, msg, renderMessage } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { useMemo } from 'react'
 import type { RemoteEntry } from '@shared/types'
 import type { FileViewMode, SessionTab, SortColumn, SortDirection } from '@/app-types'
 import { entryNameCollator } from '@/app-utils'
 import type { Breadcrumb } from './FilePathBar'
 
-const entryTypeLabels: Record<RemoteEntry['type'], string> = {
-  directory: '文件夹',
-  file: '文件',
-  symlink: '符号链接',
-  other: '其他',
+const entryTypeLabels: Record<RemoteEntry['type'], MessageValue> = {
+  directory: msg('files.folder'),
+  file: msg('files.file'),
+  symlink: msg('files.symbolicLink'),
+  other: msg('files.other'),
 }
 
 function getEntryTypeExtension(name: string): string {
   const extensionStart = name.lastIndexOf('.')
   return extensionStart > 0 && extensionStart < name.length - 1
-    ? name.slice(extensionStart + 1).toLocaleLowerCase('zh-CN')
+    ? name.slice(extensionStart + 1).toLowerCase()
     : ''
 }
 
@@ -25,6 +27,7 @@ interface UseFileListingOptions {
 }
 
 export function useFileListing({ activeSession, viewModeDefault, patchSession }: UseFileListingOptions) {
+  const language = useLanguage()
   const currentPath = activeSession?.currentPath ?? '/'
   const entries = activeSession?.entries ?? []
   const loading = activeSession?.loading ?? false
@@ -53,7 +56,7 @@ export function useFileListing({ activeSession, viewModeDefault, patchSession }:
     } else if (sort.column === 'size') {
       comparison = left.type === 'directory' ? 0 : left.size - right.size
     } else if (sort.column === 'type') {
-      comparison = entryNameCollator.compare(entryTypeLabels[left.type], entryTypeLabels[right.type])
+      comparison = entryNameCollator.compare(renderMessage(entryTypeLabels[left.type]), renderMessage(entryTypeLabels[right.type]))
       if (comparison === 0 && left.type === 'file' && right.type === 'file') {
         comparison = entryNameCollator.compare(getEntryTypeExtension(left.name), getEntryTypeExtension(right.name))
       }
@@ -70,7 +73,7 @@ export function useFileListing({ activeSession, viewModeDefault, patchSession }:
 
     if (comparison === 0) return entryNameCollator.compare(left.name, right.name)
     return sort.direction === 'ascending' ? comparison : -comparison
-  }), [entries, sort])
+  }), [entries, sort, language])
 
   const toggleSort = (column: SortColumn) => {
     if (!activeSession || activeSession.kind !== 'files') return

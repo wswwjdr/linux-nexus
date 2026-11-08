@@ -1,3 +1,4 @@
+import { type MessageValue } from '../i18n/messages'
 export interface ServerProfile {
   id: string
   name: string
@@ -11,7 +12,7 @@ export interface CommandAlias {
   name: string
   command: string
   removable: boolean
-  removalReason: string | null
+  removalReason: MessageValue | null
 }
 
 export interface CommandAliasSnapshot {
@@ -32,7 +33,7 @@ export interface CommandAliasConfirmation {
 export type CommandAliasOperationResult =
   | { status: 'completed'; snapshot: CommandAliasSnapshot }
   | { status: 'host-key-required'; fingerprint: string; previousFingerprint?: string }
-  | { status: 'updated-sync-failed'; message: string; snapshot: CommandAliasSnapshot }
+  | { status: 'updated-sync-failed'; message: MessageValue; snapshot: CommandAliasSnapshot }
 
 export interface SaveProfileInput {
   profile: Omit<ServerProfile, 'pinned'>

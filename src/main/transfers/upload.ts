@@ -1,3 +1,4 @@
+import { type MessageValue, msg, tr, LocalizedError } from '../../shared/i18n/messages'
 import { dialog } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { lstat as localLstat } from 'node:fs/promises'
@@ -23,17 +24,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function droppedRelativePath(value: unknown): string {
   if (typeof value !== 'string' || !value || value.includes('\0') || value.includes('\\')
     || posix.isAbsolute(value) || isAbsolute(value)) {
-    throw new Error('拖入的文件路径无效')
+    throw new LocalizedError(msg('errors.invalidDroppedFilePath'))
   }
   const parts = value.split('/')
   if (parts.some((part) => !part || part === '.' || part === '..')) {
-    throw new Error('拖入的文件路径无效')
+    throw new LocalizedError(msg('errors.invalidDroppedFilePath'))
   }
   return value
 }
 
 async function prepareDroppedItems(entries: unknown, signal: AbortSignal): Promise<{ items: TransferItem[]; failures: TransferFailure[] }> {
-  if (!Array.isArray(entries) || entries.length === 0) throw new Error('拖入内容中没有可上传的文件或文件夹')
+  if (!Array.isArray(entries) || entries.length === 0) throw new LocalizedError(msg('errors.droppedContentHasNoUploadableFilesOrFolders'))
 
   const items: TransferItem[] = []
   const failures: TransferFailure[] = []
@@ -41,9 +42,9 @@ async function prepareDroppedItems(entries: unknown, signal: AbortSignal): Promi
   const seenPaths = new Set<string>()
   for (const entry of entries) {
     signal.throwIfAborted()
-    if (!isRecord(entry)) throw new Error('拖入的文件清单无效')
+    if (!isRecord(entry)) throw new LocalizedError(msg('errors.invalidDroppedFileList'))
     const relativePath = droppedRelativePath(entry.relativePath)
-    if (seenPaths.has(relativePath)) throw new Error('拖入内容包含重名路径：' + relativePath)
+    if (seenPaths.has(relativePath)) throw new LocalizedError(msg('errors.droppedContentContainsDuplicatePaths', { "relativePath": relativePath }))
     seenPaths.add(relativePath)
 
     let item: TransferItem
@@ -51,7 +52,7 @@ async function prepareDroppedItems(entries: unknown, signal: AbortSignal): Promi
       item = { relativePath, type: 'directory', size: 0 }
     } else if (entry.type === 'file') {
       const localPath = entry.localPath
-      if (typeof localPath !== 'string' || !isAbsolute(localPath)) throw new Error('拖入文件的本机路径无效')
+      if (typeof localPath !== 'string' || !isAbsolute(localPath)) throw new LocalizedError(msg('errors.invalidLocalPathForDroppedFile'))
       let attributes: Awaited<ReturnType<typeof localLstat>>
       try {
         attributes = await localLstat(localPath)
@@ -61,19 +62,19 @@ async function prepareDroppedItems(entries: unknown, signal: AbortSignal): Promi
         continue
       }
       if (attributes.isSymbolicLink()) {
-        failures.push({ path: localPath, message: '不能上传符号链接' })
+        failures.push({ path: localPath, message: msg('errors.cannotUploadSymbolicLinks') })
         continue
       }
       if (!attributes.isFile()) {
-        failures.push({ path: localPath, message: '只能上传普通文件' })
+        failures.push({ path: localPath, message: msg('errors.onlyRegularFilesCanBeUploaded') })
         continue
       }
       if (basename(localPath).toLowerCase() !== relativePath.split('/').pop()!.toLowerCase()) {
-        throw new Error('拖入文件的名称与路径不一致：' + localPath)
+        throw new LocalizedError(msg('errors.droppedFilenameDoesNotMatchItsPath', { "localPath": localPath }))
       }
       item = { relativePath, type: 'file', size: attributes.size, modifiedAtMs: attributes.mtimeMs, localPath }
     } else {
-      throw new Error('拖入内容包含暂不支持的文件类型')
+      throw new LocalizedError(msg('errors.droppedContentContainsUnsupportedFileTypes'))
     }
 
     items.push(item)
@@ -85,7 +86,7 @@ async function prepareDroppedItems(entries: unknown, signal: AbortSignal): Promi
     for (let index = 1; index < parts.length; index += 1) {
       const parentPath = parts.slice(0, index).join('/')
       if (itemsByPath.get(parentPath)?.type !== 'directory') {
-        throw new Error('拖入的文件夹结构无效：' + item.relativePath)
+        throw new LocalizedError(msg('errors.invalidDroppedFolderStructure', { "relativePath": item.relativePath }))
       }
     }
   }
@@ -107,7 +108,7 @@ interface StoredUploadSelection {
 
 interface UploadSources {
   remoteRoot: string
-  name: string
+  name: MessageValue
   items: TransferItem[]
   failures: TransferFailure[]
 }
@@ -125,16 +126,16 @@ function pruneUploadSelections(): void {
 async function collectUploadSources(request: UploadSelectionRequest, signal: AbortSignal): Promise<UploadSources | null> {
   const remoteDirectory = normalizedRemotePath(request.remoteDirectory || '/')
   if (request.mode === 'drop') {
-    if (!Array.isArray(request.entries)) throw new Error('拖入文件清单无效')
+    if (!Array.isArray(request.entries)) throw new LocalizedError(msg('errors.invalidDroppedFileManifest'))
     const collected = await prepareDroppedItems(request.entries, signal)
-    return { remoteRoot: remoteDirectory, name: '拖放上传', items: collected.items, failures: collected.failures }
+    return { remoteRoot: remoteDirectory, name: msg('errors.dragAndDropUpload'), items: collected.items, failures: collected.failures }
   }
-  if (request.entries !== undefined) throw new Error('上传来源参数无效')
+  if (request.entries !== undefined) throw new LocalizedError(msg('errors.invalidUploadSourceParameters'))
 
   const uploadFolder = request.mode === 'folder'
   const options: Electron.OpenDialogOptions = uploadFolder
-    ? { title: '选择要上传的文件夹', properties: ['openDirectory'] }
-    : { title: '选择要上传的文件', properties: ['openFile', 'multiSelections'] }
+    ? { title: tr('errors.chooseAFolderToUpload'), properties: ['openDirectory'] }
+    : { title: tr('errors.chooseFilesToUpload'), properties: ['openFile', 'multiSelections'] }
   const window = getMainWindow()
   const selection = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options)
   signal.throwIfAborted()
@@ -157,15 +158,15 @@ async function collectUploadSources(request: UploadSelectionRequest, signal: Abo
     signal.throwIfAborted()
     try {
       const attrs = await localLstat(localPath)
-      if (attrs.isSymbolicLink()) failures.push({ path: localPath, message: '不能上传符号链接' })
-      else if (!attrs.isFile()) failures.push({ path: localPath, message: '只能上传普通文件' })
+      if (attrs.isSymbolicLink()) failures.push({ path: localPath, message: msg('errors.cannotUploadSymbolicLinks') })
+      else if (!attrs.isFile()) failures.push({ path: localPath, message: msg('errors.onlyRegularFilesCanBeUploaded') })
       else items.push({ relativePath: basename(localPath), type: 'file', size: attrs.size, modifiedAtMs: attrs.mtimeMs, localPath })
     } catch (error) {
       if (signal.aborted) throw error
       failures.push({ path: localPath, message: messageFromError(error) })
     }
   }
-  return { remoteRoot: remoteDirectory, name: selection.filePaths.length === 1 ? basename(selection.filePaths[0]) : `上传 ${items.length} 项`, items, failures }
+  return { remoteRoot: remoteDirectory, name: selection.filePaths.length === 1 ? basename(selection.filePaths[0]) : msg('errors.uploadItems', { "count": items.length }), items, failures }
 }
 
 export async function selectUploadSources(value: unknown): Promise<UploadSelection | null> {
@@ -175,12 +176,12 @@ export async function selectUploadSources(value: unknown): Promise<UploadSelecti
     || typeof value.remoteDirectory !== 'string'
     || !['files', 'folder', 'drop'].includes(value.mode as string)
     || !['force', 'skip', 'update', 'confirm'].includes(value.strategy as string)) {
-    throw new Error('上传来源参数无效')
+    throw new LocalizedError(msg('errors.invalidUploadSourceParameters'))
   }
   const request = value as unknown as UploadSelectionRequest
   pruneUploadSelections()
   if ([...uploadSelections.values()].some(({ selection }) => selection.requestId === request.requestId)) {
-    throw new Error('上传请求编号重复')
+    throw new LocalizedError(msg('errors.duplicateUploadRequestId'))
   }
   const session = filesSession(request.sessionId)
   return session.commands.track(prepareUploadSelection(request, session))
@@ -189,7 +190,7 @@ export async function selectUploadSources(value: unknown): Promise<UploadSelecti
 async function prepareUploadSelection(request: UploadSelectionRequest, session: ReturnType<typeof filesSession>): Promise<UploadSelection | null> {
   const sources = await collectUploadSources(request, session.commands.signal)
   if (!sources) return null
-  if (sources.items.length === 0 && sources.failures.length === 0) throw new Error('没有可上传的文件')
+  if (sources.items.length === 0 && sources.failures.length === 0) throw new LocalizedError(msg('errors.noUploadableFiles'))
   const remoteDirectory = normalizedRemotePath(request.remoteDirectory || '/')
   const remoteRoot = sources.remoteRoot
   const targets = sources.items.filter((item) => item.type === 'file')
@@ -234,9 +235,9 @@ async function prepareUploadSelection(request: UploadSelectionRequest, session: 
 export function uploadSelectionContext(selectionId: string) {
   pruneUploadSelections()
   const stored = uploadSelections.get(selectionId)
-  if (!stored) throw new Error('上传来源选择已过期，请重新选择')
+  if (!stored) throw new LocalizedError(msg('errors.uploadSelectionExpiredSelectTheSourceAgain'))
   const { requestId, sessionId, profileId } = stored.selection
-  if (filesSession(sessionId).commands !== stored.commands) throw new Error('文件会话身份已变更，请重新选择上传来源')
+  if (filesSession(sessionId).commands !== stored.commands) throw new LocalizedError(msg('errors.fileSessionIdentityChangedSelectTheUploadSourceAgain'))
   return { requestId, sessionId, profileId, commands: stored.commands }
 }
 
@@ -261,7 +262,7 @@ async function uploadItems(
   const collisionFailures: TransferFailure[] = []
   const collidingItems = new Set<TransferItem>()
   for (const group of findPathCollisions(items, (item) => item.relativePath)) {
-    const message = '本次上传包含重复目标路径'
+    const message = msg('errors.thisUploadContainsDuplicateDestinationPaths')
     for (const item of group) {
       collidingItems.add(item)
       collisionFailures.push({ path: item.relativePath ? posix.join(remoteRoot, item.relativePath) : remoteRoot, message })
@@ -320,13 +321,13 @@ export async function executeSelectedUpload(
   strategy: OperationExecutionStrategy,
   signal: AbortSignal,
 ): Promise<TransferResult> {
-  if (!['force', 'skip', 'update'].includes(strategy)) throw new Error('上传策略无效')
+  if (!['force', 'skip', 'update'].includes(strategy)) throw new LocalizedError(msg('errors.invalidUploadStrategy'))
   const stored = uploadSelections.get(selectionId)
   if (!stored || stored.expiresAt <= Date.now() || stored.commands.signal.aborted) {
     uploadSelections.delete(selectionId)
-    throw new Error('上传来源选择已过期，请重新选择')
+    throw new LocalizedError(msg('errors.uploadSelectionExpiredSelectTheSourceAgain'))
   }
-  if (stored.selection.strategy !== 'confirm' && stored.selection.strategy !== strategy) throw new Error('上传策略与所选策略不一致')
+  if (stored.selection.strategy !== 'confirm' && stored.selection.strategy !== strategy) throw new LocalizedError(msg('errors.uploadStrategyDoesNotMatchTheSelectedStrategy'))
   uploadSelections.delete(selectionId)
   return uploadItems(event, stored.selection.requestId, stored.selection.sessionId, stored.selection.profileId, stored.commands,
     stored.selection.remoteRoot, stored.items, stored.selection.failures, strategy, signal)

@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from '../shared/i18n/messages'
 import { safeStorage } from 'electron'
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -35,7 +36,7 @@ function validateStoredState(value: unknown, verifyPasswordCiphertexts = false):
   const keys = ['profiles', 'passwords', 'hostKeys', 'commandAliases']
   if (!isRecord(value) || !hasExactKeys(value, keys) || !Array.isArray(value.profiles)
     || !isRecord(value.passwords) || !isRecord(value.hostKeys)) {
-    throw new Error('服务器配置结构无效')
+    throw new LocalizedError(msg('errors.invalidServerConfigurationStructure'))
   }
 
   const profileIds = new Set<string>()
@@ -48,28 +49,28 @@ function validateStoredState(value: unknown, verifyPasswordCiphertexts = false):
       || typeof profile.username !== 'string' || !profile.username.trim()
       || typeof profile.pinned !== 'boolean'
       || profileIds.has(profile.id)) {
-      throw new Error('服务器配置中包含无效或重复的连接')
+      throw new LocalizedError(msg('errors.serverConfigurationContainsInvalidOrDuplicateConnections'))
     }
     profileIds.add(profile.id)
   }
 
   for (const [profileId, password] of Object.entries(value.passwords)) {
     if (!profileId || typeof password !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(password) || !password) {
-      throw new Error('服务器密码数据结构无效')
+      throw new LocalizedError(msg('errors.invalidServerPasswordDataStructure'))
     }
     const ciphertext = Buffer.from(password, 'base64')
-    if (ciphertext.toString('base64') !== password) throw new Error('服务器密码数据结构无效')
+    if (ciphertext.toString('base64') !== password) throw new LocalizedError(msg('errors.invalidServerPasswordDataStructure'))
     if (verifyPasswordCiphertexts && safeStorage.isEncryptionAvailable()) {
       try {
         safeStorage.decryptString(ciphertext)
       } catch {
-        throw new Error('服务器密码密文无效：' + profileId)
+        throw new LocalizedError(msg('errors.invalidServerPasswordCiphertext', { "profileId": profileId }))
       }
     }
   }
   for (const [endpoint, fingerprint] of Object.entries(value.hostKeys)) {
     if (!endpoint || typeof fingerprint !== 'string' || !/^SHA256:[A-Za-z0-9+/]{43}$/.test(fingerprint)) {
-      throw new Error('服务器指纹数据结构无效')
+      throw new LocalizedError(msg('errors.invalidServerFingerprintDataStructure'))
     }
   }
 
@@ -83,12 +84,12 @@ function parseJsonFile(filePath: string): unknown {
   try {
     contents = readFileSync(filePath, 'utf8')
   } catch (error) {
-    throw new Error('无法读取配置文件 ' + filePath + '：' + messageFromError(error))
+    throw new LocalizedError(msg('errors.cannotReadConfigurationFile', { "filePath": filePath, "value2": messageFromError(error) }))
   }
   try {
     return JSON.parse(contents) as unknown
   } catch (error) {
-    throw new Error('配置文件格式无效 ' + filePath + '：' + messageFromError(error))
+    throw new LocalizedError(msg('errors.invalidConfigurationFileFormat', { "filePath": filePath, "value2": messageFromError(error) }))
   }
 }
 
@@ -107,7 +108,7 @@ function atomicWriteJson(filePath: string, value: unknown): void {
       try { closeSync(descriptor) } catch { /* Preserve the original write error. */ }
     }
     try { unlinkSync(temporaryFile) } catch { /* The temporary file may not exist. */ }
-    throw new Error('无法安全保存配置文件 ' + filePath + '：' + messageFromError(error))
+    throw new LocalizedError(msg('errors.cannotSafelySaveConfigurationFile', { "filePath": filePath, "value2": messageFromError(error) }))
   }
 }
 
@@ -116,7 +117,7 @@ export function readState(verifyPasswordCiphertexts = false): StoredState {
   try {
     return validateStoredState(parseJsonFile(stateFile), verifyPasswordCiphertexts)
   } catch (error) {
-    throw new Error('服务器配置无效（' + stateFile + '）：' + messageFromError(error))
+    throw new LocalizedError(msg('errors.invalidServerConfiguration2', { "stateFile": stateFile, "value2": messageFromError(error) }))
   }
 }
 
@@ -132,14 +133,9 @@ export function readAppSettings(): AppSettings {
   }
   try {
     const stored = parseJsonFile(settingsFile)
-    if (isRecord(stored) && stored.theme === 'system') {
-      const migrated = validateAppSettings({ ...stored, theme: 'light' })
-      atomicWriteJson(settingsFile, migrated)
-      return migrated
-    }
     return validateAppSettings(stored)
   } catch (error) {
-    throw new Error('应用设置无效（' + settingsFile + '）：' + messageFromError(error))
+    throw new LocalizedError(msg('errors.invalidApplicationSettings', { "settingsFile": settingsFile, "value2": messageFromError(error) }))
   }
 }
 
@@ -150,8 +146,8 @@ export function writeAppSettings(settings: unknown): AppSettings {
 }
 
 export function readPreviewLimits(): PreviewLimits {
-  const { startupConnection: _startupConnection, transferFileConcurrency: _transferFileConcurrency, fileTypeExtensions: _fileTypeExtensions, ...limits } = readAppSettings()
-  return limits
+  const { textMiB, pdfMiB, imageMiB, audioMiB, videoMiB } = readAppSettings()
+  return { textMiB, pdfMiB, imageMiB, audioMiB, videoMiB }
 }
 
 export function endpointKey(profile: ServerProfile): string {
@@ -160,13 +156,13 @@ export function endpointKey(profile: ServerProfile): string {
 
 export function profileFromState(state: StoredState, profileId: string): ServerProfile {
   const profile = state.profiles.find((candidate) => candidate.id === profileId)
-  if (!profile) throw new Error('找不到服务器配置')
+  if (!profile) throw new LocalizedError(msg('errors.serverConfigurationNotFound'))
   return profile
 }
 
 export function passwordFor(state: StoredState, profileId: string): string {
   const encryptedPassword = state.passwords[profileId]
-  if (!encryptedPassword) throw new Error('此服务器没有保存密码，请编辑连接配置并填写密码')
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows 凭据加密不可用，密码未能读取')
+  if (!encryptedPassword) throw new LocalizedError(msg('errors.noPasswordIsSavedForThisServerEditTheConnection'))
+  if (!safeStorage.isEncryptionAvailable()) throw new LocalizedError(msg('errors.windowsCredentialEncryptionIsUnavailableCannotReadThePassword'))
   return safeStorage.decryptString(Buffer.from(encryptedPassword, 'base64'))
 }

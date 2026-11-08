@@ -1,3 +1,5 @@
+import { useLanguage } from '@/i18n'
+import { tr } from '@shared/i18n/messages'
 import { ArrowDown, ArrowUp, ArrowUpDown, File, Folder, type LucideIcon } from 'lucide-react'
 import type { DragEvent, FocusEvent, MouseEvent, RefObject } from 'react'
 import type { RemoteEntry } from '@shared/types'
@@ -40,9 +42,10 @@ function SortHeader({
   sort: FileEntryCollectionProps['sort']
   onToggle: (column: SortColumn) => void
 }) {
+  useLanguage()
   const active = sort.column === column
-  const directionLabel = sort.direction === 'ascending' ? '升序' : '降序'
-  const title = '按' + label + '排序' + (active ? '，当前' + directionLabel : '')
+  const directionLabel = sort.direction === 'ascending' ? tr('files.ascending2') : tr('files.descending2')
+  const title = tr('files.sortBy2', { "label": label, "value2": active ? tr('files.currently', { "directionLabel": directionLabel }) : '' })
   const SortIcon: LucideIcon = active
     ? sort.direction === 'ascending' ? ArrowUp : ArrowDown
     : ArrowUpDown
@@ -77,6 +80,7 @@ export default function FileEntryCollection({
   onTileMouseLeave,
   onTileBlur,
 }: FileEntryCollectionProps) {
+  useLanguage()
   const virtual = useVirtualRows(viewportRef, sortedEntries.length, viewMode === 'details' ? 48 : 120, viewMode !== 'details', sortedEntries.findIndex(entry => entry.path === highlightedPath))
   const visibleEntries = sortedEntries.slice(virtual.first, virtual.last)
   const selected = new Set(selectedPaths)
@@ -85,10 +89,10 @@ export default function FileEntryCollection({
       <table className="file-table">
         <thead>
           <tr>
-            <th className="name-col" aria-sort={sort.column === 'name' ? sort.direction : 'none'}><SortHeader column="name" label="名称" sort={sort} onToggle={onToggleSort} /></th>
-            <th className="size-col" aria-sort={sort.column === 'size' ? sort.direction : 'none'}><SortHeader column="size" label="大小" sort={sort} onToggle={onToggleSort} /></th>
-            <th className="date-col" aria-sort={sort.column === 'modifiedAt' ? sort.direction : 'none'}><SortHeader column="modifiedAt" label="修改时间" sort={sort} onToggle={onToggleSort} /></th>
-            <th className="permission-col" aria-sort={sort.column === 'permissions' ? sort.direction : 'none'}><SortHeader column="permissions" label="权限" sort={sort} onToggle={onToggleSort} /></th>
+            <th className="name-col" aria-sort={sort.column === 'name' ? sort.direction : 'none'}><SortHeader column="name" label={tr('common.name')} sort={sort} onToggle={onToggleSort} /></th>
+            <th className="size-col" aria-sort={sort.column === 'size' ? sort.direction : 'none'}><SortHeader column="size" label={tr('files.size')} sort={sort} onToggle={onToggleSort} /></th>
+            <th className="date-col" aria-sort={sort.column === 'modifiedAt' ? sort.direction : 'none'}><SortHeader column="modifiedAt" label={tr('files.modified')} sort={sort} onToggle={onToggleSort} /></th>
+            <th className="permission-col" aria-sort={sort.column === 'permissions' ? sort.direction : 'none'}><SortHeader column="permissions" label={tr('files.permissions')} sort={sort} onToggle={onToggleSort} /></th>
           </tr>
         </thead>
         <tbody>

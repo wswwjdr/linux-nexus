@@ -1,3 +1,5 @@
+import { useLanguage } from '@/i18n'
+import { tr } from '@shared/i18n/messages'
 import {
   Folder,
   LoaderCircle,
@@ -59,6 +61,7 @@ export default function FileBrowser({
   onDropMove,
   onDropError,
 }: FileBrowserProps) {
+  useLanguage()
   const contentRef = useRef<HTMLDivElement>(null)
   const hoverCardRef = useRef<HTMLDivElement>(null)
   const hoverTimerRef = useRef<number | null>(null)
@@ -300,13 +303,13 @@ export default function FileBrowser({
             cancelEntryDetails()
           }}
           onTileBlur={hideEntryDetailsOnBlur}
-        />        {loading && <div className="table-state"><LoaderCircle className="spin" size={19} /> 正在读取目录</div>}
-        {!loading && entries.length === 0 && <div className="table-state empty-directory"><Folder size={22} /> 此目录为空</div>}
+        />        {loading && <div className="table-state"><LoaderCircle className="spin" size={19} />{tr('files.readingDirectory2')}</div>}
+        {!loading && entries.length === 0 && <div className="table-state empty-directory"><Folder size={22} />{tr('files.thisDirectoryIsEmpty')}</div>}
         {dropActive && (
           <div className="file-drop-overlay" role="status">
             <Upload size={22} />
-            <strong>松开以上传</strong>
-            <span>目标目录：<code>{currentPath}</code></span>
+            <strong>{tr('files.releaseToUpload')}</strong>
+            <span>{tr('files.destinationDirectory')}<code>{currentPath}</code></span>
           </div>
         )}
         {selectionRectangle && <div className="selection-marquee" style={selectionRectangle} aria-hidden="true" />}
@@ -320,11 +323,11 @@ export default function FileBrowser({
           style={{ left: hoveredEntry.left, top: hoveredEntry.top }}
           onMouseLeave={() => setHoveredEntry(null)}
         >
-          <div className="entry-hover-row"><span>名称</span><strong>{hoveredEntry.entry.name}</strong></div>
-          <div className="entry-hover-row"><span>路径</span><span className="entry-hover-value path-value">{hoveredEntry.entry.path}</span></div>
-          <div className="entry-hover-row"><span>大小</span><span className="entry-hover-value">{hoveredEntry.entry.type === 'directory' ? '—' : formatSize(hoveredEntry.entry.size)}</span></div>
-          <div className="entry-hover-row"><span>修改时间</span><span className="entry-hover-value">{formatDate(hoveredEntry.entry.modifiedAt)}</span></div>
-          <div className="entry-hover-row"><span>权限</span><code>{hoveredEntry.entry.permissions}</code></div>
+          <div className="entry-hover-row"><span>{tr('common.name')}</span><strong>{hoveredEntry.entry.name}</strong></div>
+          <div className="entry-hover-row"><span>{tr('files.path')}</span><span className="entry-hover-value path-value">{hoveredEntry.entry.path}</span></div>
+          <div className="entry-hover-row"><span>{tr('files.size')}</span><span className="entry-hover-value">{hoveredEntry.entry.type === 'directory' ? '—' : formatSize(hoveredEntry.entry.size)}</span></div>
+          <div className="entry-hover-row"><span>{tr('files.modified')}</span><span className="entry-hover-value">{formatDate(hoveredEntry.entry.modifiedAt)}</span></div>
+          <div className="entry-hover-row"><span>{tr('files.permissions')}</span><code>{hoveredEntry.entry.permissions}</code></div>
         </div>
       )}
     </div>

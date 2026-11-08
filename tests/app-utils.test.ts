@@ -1,20 +1,17 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { errorMessage } from '../src/renderer/src/app-utils.ts'
+import { LocalizedError, msg, renderMessage } from '../src/shared/i18n/messages'
 
-test('shows the original failure reason without Electron IPC implementation details', () => {
+test('preserves structured errors and original diagnostics without IPC string parsing', () => {
+  const message = msg('errors.connectionFailed')
+  assert.deepEqual(errorMessage(new LocalizedError(message)), message)
   const diagnostic = 'unzip: cannot create /target/file\nPermission denied'
-  assert.equal(errorMessage(new Error(
-    "Error invoking remote method 'files:operation-execute': Error: " + diagnostic,
-  )), diagnostic)
-  assert.equal(errorMessage(new Error(
-    "Error invoking remote method 'files:list': 无法读取目录",
-  )), '无法读取目录')
+  assert.equal(errorMessage(new Error(diagnostic)), diagnostic)
+  const literal = "Error invoking remote method 'example': literal server output"
+  assert.equal(errorMessage(new Error(literal)), literal)
 })
 
-test('preserves ordinary error details and uses the existing fallback for unknown failures', () => {
-  const diagnostic = "服务器错误：Error invoking remote method 'example': Error: details"
-  assert.equal(errorMessage(new Error(diagnostic)), diagnostic)
-  assert.equal(errorMessage(new Error('文件名包含 Error: 字样')), '文件名包含 Error: 字样')
-  assert.equal(errorMessage(undefined), '操作失败，请重试')
+test('uses an application failure message when no diagnostic exists', () => {
+  assert.equal(renderMessage(errorMessage(undefined)), '操作失败，请重试')
 })

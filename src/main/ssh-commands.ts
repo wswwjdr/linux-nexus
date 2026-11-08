@@ -1,3 +1,4 @@
+import { type MessageValue, msg, LocalizedError } from '../shared/i18n/messages'
 import type { Client, ClientChannel } from 'ssh2'
 import { shellQuote } from '../shared/shell.ts'
 import { randomUUID } from 'node:crypto'
@@ -25,9 +26,9 @@ function ownTask(client: Client, controller: AbortController, fail: (error: Erro
     const notify = (error: Error) => { for (const failure of [...failures]) failure(error) }
     owned = {
       controllers: new Set(), failures, idle: new Set(),
-      onError: error => notify(new Error('SSH 连接失败：' + error.message)),
-      onEnd: () => notify(new Error('SSH 连接已结束；远端状态未知')),
-      onClose: () => notify(new Error('SSH 连接已关闭；远端状态未知')),
+      onError: error => notify(new LocalizedError(msg('errors.sshConnectionFailed', { "message": error.message }))),
+      onEnd: () => notify(new LocalizedError(msg('errors.sshConnectionEndedRemoteStateIsUnknown'))),
+      onClose: () => notify(new LocalizedError(msg('errors.sshConnectionClosedRemoteStateIsUnknown'))),
     }
     tasks.set(client, owned)
     client.on('error', owned.onError)
@@ -68,20 +69,23 @@ export interface RemoteCommandExecutor {
 }
 export type RemoteCommandTarget = Client | RemoteCommandExecutor
 
-export class SudoAuthenticationError extends Error {
-  constructor(readonly passwordRequired: boolean, message: string) {
+export class SudoAuthenticationError extends LocalizedError {
+  constructor(readonly passwordRequired: boolean, message: MessageValue) {
     super(message)
     this.name = 'SudoAuthenticationError'
   }
 }
-export class RemoteCommandError extends Error {
+export class RemoteCommandError extends LocalizedError {
   constructor(readonly exitCode: number | null, readonly stderr: string) {
-    super(stderr || (exitCode === null ? 'SSH 连接中断，未收到命令退出码；远端状态未知' : `远程命令失败（退出码 ${exitCode}）`))
+    super(stderr || (exitCode === null ? msg('errors.sshConnectionInterruptedWithoutAnExitCodeRemoteStateIs') : msg('errors.remoteCommandFailedExitCode', { "exitCode": exitCode })))
   }
 }
-export class RemoteTerminationError extends Error {
+export class RemoteTerminationError extends LocalizedError {
   constructor(readonly reason: 'cancelled' | 'timeout', readonly remoteState: 'exited' | 'unknown') {
-    super((reason === 'timeout' ? '远程命令执行超时' : '远程命令已取消') + (remoteState === 'unknown' ? '；远端状态未知，可能仍在运行' : '；命令通道已结束，子进程状态未确认'))
+    super(msg('errors.remoteTermination', {
+      reason: reason === 'timeout' ? msg('errors.remoteCommandTimedOut') : msg('errors.remoteCommandCancelled'),
+      state: remoteState === 'unknown' ? msg('errors.remoteStateIsUnknownAndTheProcessMayStillBe') : msg('errors.commandChannelEndedChildProcessStateIsUnconfirmed'),
+    }))
     this.name = reason === 'cancelled' ? 'AbortError' : 'TimeoutError'
   }
 }
@@ -129,7 +133,7 @@ function executeSshCommand(client: Client, command: string, options: RemoteComma
     let sentPassword = false
     let readyBytes = Buffer.alloc(0)
     let authStderr = ''
-    const asError = (value: unknown) => value instanceof Error ? value : new Error(String(value))
+    const asError = (value: unknown) => value instanceof Error ? value : new LocalizedError(String(value))
     const finish = (error?: Error) => {
       if (settled) return
       settled = true
@@ -141,11 +145,11 @@ function executeSshCommand(client: Client, command: string, options: RemoteComma
       stream?.removeListener('data', onData); stream?.stderr.removeListener('data', onStderr)
       stream?.removeListener('error', onError); stream?.stderr.removeListener('error', onError)
       stream?.removeListener('exit', onExit); stream?.removeListener('close', onClose)
-      const result = { stdout: options.collectStdout === false ? Buffer.alloc(0) : Buffer.concat(stdout), stderr: Buffer.concat(stderr).toString('utf8') + (truncated ? '\n[stderr 已截断]' : ''), exitCode }
+      const result = { stdout: options.collectStdout === false ? Buffer.alloc(0) : Buffer.concat(stdout), stderr: Buffer.concat(stderr).toString('utf8') + (truncated ? '\n[stderr truncated]' : ''), exitCode }
       if (!error && authentication && !authenticated && exitCode !== null) {
         error = new SudoAuthenticationError(false, sentPassword
-          ? 'sudo 密码验证失败或服务器拒绝了提权'
-          : authStderr.trim() || '服务器拒绝了非交互式 sudo 提权')
+          ? msg('errors.sudoPasswordVerificationFailedOrTheServerDeniedElevation')
+          : authStderr.trim() || msg('errors.serverDeniedNonInteractiveSudoElevation'))
       }
       error ??= exitCode === 0 ? undefined : new RemoteCommandError(exitCode, result.stderr)
       options.onComplete?.(error, result)
@@ -174,7 +178,7 @@ function executeSshCommand(client: Client, command: string, options: RemoteComma
         const needed = authentication.ready.length - readyBytes.length
         readyBytes = Buffer.concat([readyBytes, bytes.subarray(0, needed)])
         if (!authentication.ready.subarray(0, readyBytes.length).equals(readyBytes)) {
-          onError(new SudoAuthenticationError(false, '服务器返回了无效的 sudo 启动标记'))
+          onError(new SudoAuthenticationError(false, msg('errors.serverReturnedAnInvalidSudoStartupMarker')))
           return
         }
         if (readyBytes.length < authentication.ready.length) return
@@ -186,7 +190,7 @@ function executeSshCommand(client: Client, command: string, options: RemoteComma
       }
       outputBytes += bytes.length
       if (outputBytes > (options.maxStdoutBytes ?? (options.collectStdout === false ? Infinity : 64 * 1024 * 1024))) {
-        onError(new Error('服务器命令输出超过允许大小；远端状态未知')); return
+        onError(new LocalizedError(msg('errors.serverCommandOutputExceedsTheSizeLimitRemoteStateIs'))); return
       }
       if (options.collectStdout !== false) stdout.push(bytes)
       try {
@@ -204,17 +208,17 @@ function executeSshCommand(client: Client, command: string, options: RemoteComma
         authStderr += chunk.toString('utf8')
         if (authStderr.includes(authentication.prompt)) {
           if (!authentication.password) {
-            onError(new SudoAuthenticationError(true, '服务器要求 sudo 密码'))
+            onError(new SudoAuthenticationError(true, msg('errors.serverRequiresASudoPassword')))
           } else if (sentPassword) {
-            onError(new SudoAuthenticationError(false, 'sudo 密码错误或服务器需要多步认证'))
+            onError(new SudoAuthenticationError(false, msg('errors.incorrectSudoPasswordOrServerRequiresMultiStepAuthentication')))
           } else {
             sentPassword = true
             authStderr = ''
             try { stream!.write(authentication.password) }
-            catch { onError(new SudoAuthenticationError(false, '无法向远端 sudo 发送认证数据')) }
+            catch { onError(new SudoAuthenticationError(false, msg('errors.cannotSendAuthenticationDataToRemoteSudo'))) }
           }
         } else if (authStderr.length > 8192) {
-          onError(new SudoAuthenticationError(false, '服务器返回了无法识别的 sudo 认证提示'))
+          onError(new SudoAuthenticationError(false, msg('errors.serverReturnedAnUnrecognizedSudoAuthenticationPrompt')))
         }
         return
       }
@@ -241,7 +245,7 @@ function executeSshCommand(client: Client, command: string, options: RemoteComma
               if (!channel.write(bytes)) await new Promise<void>((ready, failed) => {
                 const cleanup = () => { cancelInputWait = undefined; channel.removeListener('drain', drain); channel.removeListener('close', closed); channel.removeListener('error', failedStream); controller.signal.removeEventListener('abort', aborted) }
                 const drain = () => { cleanup(); ready() }
-                const closed = () => { cleanup(); failed(new Error('SSH 命令通道已关闭')) }
+                const closed = () => { cleanup(); failed(new LocalizedError(msg('errors.sshCommandChannelClosed'))) }
                 const failedStream = (error: Error) => { cleanup(); failed(error) }
                 const aborted = () => { cleanup(); failed(new RemoteTerminationError('cancelled', 'unknown')) }
                 cancelInputWait = aborted
@@ -260,7 +264,7 @@ function executeSshCommand(client: Client, command: string, options: RemoteComma
     if (options.signal?.aborted) { cancel(); return }
     timer = setTimeout(() => stop('timeout'), options.timeoutMs ?? 30_000)
     if (authentication) authTimer = setTimeout(() => {
-      onError(new SudoAuthenticationError(false, 'sudo 认证超时，请检查服务器的认证策略'))
+      onError(new SudoAuthenticationError(false, msg('errors.sudoAuthenticationTimedOutCheckTheServerAuthenticationPolicy')))
     }, 15_000)
     try {
       client.exec(command, (error, channel) => {

@@ -1,3 +1,5 @@
+import { useLanguage } from '@/i18n'
+import { tr } from '@shared/i18n/messages'
 import { useImperativeHandle, useLayoutEffect, useRef, type KeyboardEvent, type Ref, type RefObject } from 'react'
 import { LoaderCircle, Search } from 'lucide-react'
 import type { LogPreviewDialog } from '@/app-types'
@@ -12,6 +14,7 @@ interface LogPreviewPanelProps {
 }
 
 export default function LogPreviewPanel({ ref, dialog, viewportRef, onScroll }: LogPreviewPanelProps) {
+  useLanguage()
   const { content } = dialog
   const search = usePreviewSearch(content, true)
   const markerRef = useRef<HTMLElement>(null)
@@ -69,17 +72,17 @@ export default function LogPreviewPanel({ ref, dialog, viewportRef, onScroll }: 
       <PreviewSearchBar search={search} onClose={closeSearch} />
       <div className="log-preview-status" aria-live="polite">
         {dialog.loadingEarlier
-          ? <><LoaderCircle className="spin" size={14} /> 正在读取更早内容</>
+          ? <><LoaderCircle className="spin" size={14} />{tr('previews.readingEarlierContent')}</>
           : !dialog.hasEarlier
-            ? dialog.startOffset === 0 ? '已到文件开头' : '已达到文本预览上限'
+            ? dialog.startOffset === 0 ? tr('previews.startOfFileReached') : tr('errors.textPreviewLimitReached')
             : ''}
       </div>
       <pre ref={viewportRef} className="preview-text log-preview-text" tabIndex={0} onScroll={onScroll}>
         {matchStart === undefined ? content : <>{content.slice(0, matchStart)}<mark ref={markerRef}>{content.slice(matchStart, matchEnd)}</mark>{content.slice(matchEnd)}</>}
       </pre>
       <div className="text-preview-footer">
-        <span className="text-preview-status">搜索范围：已加载内容{dialog.hasEarlier ? '，向上滚动可加载更早日志' : ''}</span>
-        <button type="button" className="icon-button text-preview-find" title="搜索文本（Ctrl+F）" aria-label="搜索文本（Ctrl+F）" onClick={openSearch}><Search size={16} /></button>
+        <span className="text-preview-status">{tr('previews.searchScopeLoadedContent')}{dialog.hasEarlier ? tr('previews.scrollUpToLoadEarlierLogEntries') : ''}</span>
+        <button type="button" className="icon-button text-preview-find" title={tr('previews.findTextCtrlF')} aria-label={tr('previews.findTextCtrlF')} onClick={openSearch}><Search size={16} /></button>
       </div>
     </div>
   )

@@ -1,3 +1,5 @@
+import { formatLocale, renderMessage, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { useEffect, useRef, useState } from 'react'
 import { Gauge, RefreshCw, X } from 'lucide-react'
 import type { PerformanceMonitorState, PerformanceThresholds } from '@shared/types'
@@ -27,7 +29,7 @@ function formatUptime(seconds: number): string {
   const days = Math.floor(seconds / 86400)
   const hours = Math.floor(seconds % 86400 / 3600)
   const minutes = Math.floor(seconds % 3600 / 60)
-  return days > 0 ? `${days} 天 ${hours} 小时` : hours > 0 ? `${hours} 小时 ${minutes} 分` : `${minutes} 分钟`
+  return days > 0 ? tr('common.dH', { "days": days, "hours": hours }) : hours > 0 ? tr('common.hM', { "hours": hours, "minutes": minutes }) : tr('common.min', { "minutes": minutes })
 }
 
 function metricSeverity(value: number | null, warning: number, critical: number): 'normal' | 'warning' | 'critical' | 'unavailable' {
@@ -54,6 +56,7 @@ function MetricTrend({
   critical: number
   series: 'cpu' | 'memory' | 'disk'
 }) {
+  useLanguage()
   const severity = metricSeverity(value, warning, critical)
   const key: PerformanceSeries = series === 'cpu' ? 'cpuPercent' : series === 'memory' ? 'memoryPercent' : 'diskPercent'
   const paths = performanceTrendPaths(history, key, nowMs, WINDOW_MS)
@@ -68,8 +71,8 @@ function MetricTrend({
         <span>50%</span>
         <span>0%</span>
       </div>
-      <svg className={'performance-trend-chart ' + series} viewBox="0 0 600 40" preserveAspectRatio="none" role="img" aria-label={`${label}最近 15 分钟趋势，纵轴 0 到 100%`}>
-        <title>{label}最近 15 分钟趋势</title>
+      <svg className={'performance-trend-chart ' + series} viewBox="0 0 600 40" preserveAspectRatio="none" role="img" aria-label={tr('common.overTheLast15MinutesVerticalAxis0100', { "label": label })}>
+        <title>{tr('common.trendTitle', { label })}</title>
         <path className="performance-trend-grid" d="M0 4H600 M0 19H600 M0 34H600" />
         {paths.map((path, index) => <path className="performance-trend-line" d={path} key={index} />)}
       </svg>
@@ -78,6 +81,7 @@ function MetricTrend({
 }
 
 export default function PerformanceMonitor({ state, thresholds, open, onOpenChange, onRefresh }: PerformanceMonitorProps) {
+  useLanguage()
   const rootRef = useRef<HTMLDivElement>(null)
   const [nowMs, setNowMs] = useState(Date.now())
   const snapshot = state?.snapshot ?? null
@@ -85,10 +89,10 @@ export default function PerformanceMonitor({ state, thresholds, open, onOpenChan
     ? 'unavailable'
     : performanceSeverity(snapshot, thresholds)
   const summaryLabel = state?.status === 'error'
-    ? '性能指标不可用'
-    : severity === 'critical' ? '服务器性能指标严重超限'
-      : severity === 'warning' ? '服务器性能指标偏高'
-        : snapshot ? '服务器性能指标正常' : '正在采集服务器性能指标'
+    ? tr('common.performanceMetricsUnavailable')
+    : severity === 'critical' ? tr('common.serverPerformanceMetricsAreCriticallyHigh')
+      : severity === 'warning' ? tr('common.serverPerformanceMetricsAreElevated')
+        : snapshot ? tr('common.serverPerformanceMetricsAreNormal') : tr('common.collectingServerPerformanceMetrics')
 
   useEffect(() => {
     if (!open) return
@@ -118,15 +122,15 @@ export default function PerformanceMonitor({ state, thresholds, open, onOpenChan
 
   const history = state?.history ?? []
   const statusText = state?.status === 'error'
-    ? '采集失败，将自动重试'
-    : snapshot ? `最近更新 ${new Date(snapshot.sampledAt).toLocaleTimeString('zh-CN')}` : '正在读取服务器指标…'
+    ? tr('common.samplingFailedRetryingAutomatically')
+    : snapshot ? tr('common.lastUpdated', { "value1": new Date(snapshot.sampledAt).toLocaleTimeString(formatLocale()) }) : tr('common.readingServerMetrics')
 
   return (
     <div className="performance-monitor" ref={rootRef}>
       <button
         type="button"
         className={'performance-summary-button ' + severity}
-        aria-label={`${summaryLabel}。CPU ${percent(snapshot?.cpuPercent ?? null)}，内存 ${percent(snapshot?.memoryPercent ?? null)}，磁盘 ${percent(snapshot?.diskPercent ?? null)}`}
+        aria-label={tr('common.cpuMemoryDisk', { "summaryLabel": summaryLabel, "value2": percent(snapshot?.cpuPercent ?? null), "value3": percent(snapshot?.memoryPercent ?? null), "value4": percent(snapshot?.diskPercent ?? null) })}
         aria-expanded={open}
         aria-haspopup="dialog"
         title={summaryLabel}
@@ -134,50 +138,50 @@ export default function PerformanceMonitor({ state, thresholds, open, onOpenChan
       >
         <Gauge size={15} aria-hidden="true" />
         <span className="performance-summary-item"><small>CPU</small>{percent(snapshot?.cpuPercent ?? null)}</span>
-        <span className="performance-summary-item"><small>内存</small>{percent(snapshot?.memoryPercent ?? null)}</span>
-        <span className="performance-summary-item"><small>磁盘</small>{percent(snapshot?.diskPercent ?? null)}</span>
+        <span className="performance-summary-item"><small>{tr('common.memory')}</small>{percent(snapshot?.memoryPercent ?? null)}</span>
+        <span className="performance-summary-item"><small>{tr('common.disk')}</small>{percent(snapshot?.diskPercent ?? null)}</span>
       </button>
 
       {open && (
-        <section className="performance-popover" role="dialog" aria-label="服务器性能监控">
+        <section className="performance-popover" role="dialog" aria-label={tr('common.serverPerformanceMonitoring')}>
           <header className="performance-popover-header">
             <div>
-              <h2>服务器性能</h2>
-              <span className={'performance-status ' + severity} role="status" aria-live="off">{severity === 'normal' ? '正常' : severity === 'warning' ? '注意' : severity === 'critical' ? '严重' : '不可用'} · {statusText}</span>
+              <h2>{tr('common.serverPerformance')}</h2>
+              <span className={'performance-status ' + severity} role="status" aria-live="off">{severity === 'normal' ? tr('common.normal') : severity === 'warning' ? tr('settings.warning') : severity === 'critical' ? tr('settings.critical') : tr('common.unavailable')} · {statusText}</span>
             </div>
             <div className="performance-popover-actions">
-              <button type="button" className="icon-button subtle" title="立即刷新" aria-label="立即刷新性能指标" disabled={!state || state.status === 'sampling'} onClick={() => state && onRefresh(state.sessionId)}>
+              <button type="button" className="icon-button subtle" title={tr('common.refreshNow')} aria-label={tr('common.refreshPerformanceMetricsNow')} disabled={!state || state.status === 'sampling'} onClick={() => state && onRefresh(state.sessionId)}>
                 <RefreshCw className={state?.status === 'sampling' ? 'spin' : ''} size={15} />
               </button>
-              <button type="button" className="icon-button subtle" title="关闭" aria-label="关闭性能监控" onClick={() => onOpenChange(false)}><X size={15} /></button>
+              <button type="button" className="icon-button subtle" title={tr('common.close')} aria-label={tr('common.closePerformanceMonitoring')} onClick={() => onOpenChange(false)}><X size={15} /></button>
             </div>
           </header>
 
-          {state?.message && <p className="performance-error">{state.message}</p>}
+          {state?.message && <p className="performance-error">{renderMessage(state.message)}</p>}
           {snapshot ? (
             <>
               <div className="performance-trends">
-                <MetricTrend label="CPU 使用率" value={snapshot.cpuPercent} history={history} nowMs={nowMs} warning={thresholds.cpu.warning} critical={thresholds.cpu.critical} series="cpu" />
-                <MetricTrend label="内存使用率" value={snapshot.memoryPercent} history={history} nowMs={nowMs} warning={thresholds.memory.warning} critical={thresholds.memory.critical} series="memory" />
-                <MetricTrend label="根分区使用率" value={snapshot.diskPercent} history={history} nowMs={nowMs} warning={thresholds.disk.warning} critical={thresholds.disk.critical} series="disk" />
-                <div className="performance-trend-axis"><span>15 分钟前</span><span>现在</span></div>
+                <MetricTrend label={tr('settings.cpuUsage')} value={snapshot.cpuPercent} history={history} nowMs={nowMs} warning={thresholds.cpu.warning} critical={thresholds.cpu.critical} series="cpu" />
+                <MetricTrend label={tr('settings.memoryUsage')} value={snapshot.memoryPercent} history={history} nowMs={nowMs} warning={thresholds.memory.warning} critical={thresholds.memory.critical} series="memory" />
+                <MetricTrend label={tr('settings.rootPartitionUsage')} value={snapshot.diskPercent} history={history} nowMs={nowMs} warning={thresholds.disk.warning} critical={thresholds.disk.critical} series="disk" />
+                <div className="performance-trend-axis"><span>{tr('common.15MinAgo')}</span><span>{tr('common.now')}</span></div>
               </div>
               <div className="performance-details">
                 <div className={'performance-detail-load ' + metricSeverity(snapshot.loadAverage[0] / snapshot.cpuCores, thresholds.loadPerCore.warning, thresholds.loadPerCore.critical)}>
-                  <span>系统负载</span>
+                  <span>{tr('common.systemLoad')}</span>
                   <div>
-                    {snapshot.loadAverage.map((load, index) => <span key={index}>{index === 0 ? '1' : index === 1 ? '5' : '15'} 分钟 <strong>{load.toFixed(2)}</strong></span>)}
+                    {snapshot.loadAverage.map((load, index) => <span key={index}>{tr('common.loadWindow', { minutes: index === 0 ? 1 : index === 1 ? 5 : 15 })}<strong>{load.toFixed(2)}</strong></span>)}
                   </div>
                 </div>
                 <dl>
-                  <div><dt>运行时长</dt><dd>{formatUptime(snapshot.uptimeSeconds)}</dd></div>
-                  <div><dt>逻辑 CPU</dt><dd>{snapshot.cpuCores} 核</dd></div>
-                  <div><dt>内存</dt><dd>{formatBytes(snapshot.memoryUsedBytes)} / {formatBytes(snapshot.memoryTotalBytes)}</dd></div>
-                  <div><dt>根分区</dt><dd>{formatBytes(snapshot.diskUsedBytes)} / {formatBytes(snapshot.diskTotalBytes)}</dd></div>
+                  <div><dt>{tr('common.uptime')}</dt><dd>{formatUptime(snapshot.uptimeSeconds)}</dd></div>
+                  <div><dt>{tr('common.logicalCpus')}</dt><dd>{tr('common.cpuCores', { count: snapshot.cpuCores })}</dd></div>
+                  <div><dt>{tr('common.memory')}</dt><dd>{formatBytes(snapshot.memoryUsedBytes)} / {formatBytes(snapshot.memoryTotalBytes)}</dd></div>
+                  <div><dt>{tr('common.rootPartition')}</dt><dd>{formatBytes(snapshot.diskUsedBytes)} / {formatBytes(snapshot.diskTotalBytes)}</dd></div>
                 </dl>
               </div>
             </>
-          ) : !state?.message ? <p className="performance-empty">首次采样后将显示指标，CPU 使用率需等待下一次样本。</p> : null}
+          ) : !state?.message ? <p className="performance-empty">{tr('common.metricsAppearAfterTheFirstSampleCpuUsageRequiresA')}</p> : null}
         </section>
       )}
     </div>

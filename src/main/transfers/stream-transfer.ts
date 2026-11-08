@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from '../../shared/i18n/messages'
 import { createReadStream } from 'node:fs'
 import { open, link, stat as localStat, unlink } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
@@ -20,7 +21,7 @@ async function writeAll(file: Awaited<ReturnType<typeof open>>, chunk: Buffer): 
   let offset = 0
   while (offset < chunk.length) {
     const { bytesWritten } = await file.write(chunk, offset, chunk.length - offset)
-    if (bytesWritten === 0) throw new Error('无法继续写入本机临时文件')
+    if (bytesWritten === 0) throw new LocalizedError(msg('errors.cannotContinueWritingToTheLocalTemporaryFile'))
     offset += bytesWritten
   }
 }
@@ -37,7 +38,7 @@ export async function transferFileStream(
 ): Promise<void> {
   signal.throwIfAborted()
   if (direction === 'upload') {
-    if (!uploadOptions) throw new Error('上传参数缺失')
+    if (!uploadOptions) throw new LocalizedError(msg('errors.missingUploadParameters'))
     const source = createReadStream(sourcePath, { highWaterMark: TRANSFER_CHUNK_SIZE })
     let uploaded = 0
     let reported = 0
@@ -47,12 +48,12 @@ export async function transferFileStream(
         const chunk = Buffer.from(value)
         uploaded += chunk.length
         hash.update(chunk)
-        if (uploaded > size) throw new Error('本机文件在上传期间发生变化')
+        if (uploaded > size) throw new LocalizedError(msg('errors.localFileChangedDuringUpload'))
         yield chunk
       }
       const attributes = await localStat(sourcePath)
       if (uploaded !== size || attributes.size !== size || attributes.mtimeMs !== uploadOptions.modifiedAtMs) {
-        throw new Error('本机文件在上传期间发生变化')
+        throw new LocalizedError(msg('errors.localFileChangedDuringUpload'))
       }
       signal.throwIfAborted()
       yield commitRecord(hash.digest('hex'))
@@ -90,7 +91,7 @@ export async function transferFileStream(
         },
       },
     )
-    if (received !== size) throw new Error('服务器文件在下载期间发生变化')
+    if (received !== size) throw new LocalizedError(msg('errors.serverFileChangedDuringDownload'))
     await file.sync()
     await file.close()
     fileOpen = false

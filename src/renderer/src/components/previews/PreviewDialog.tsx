@@ -1,3 +1,5 @@
+import { useLanguage } from '@/i18n'
+import { tr } from '@shared/i18n/messages'
 import type { Ref } from 'react'
 import { LoaderCircle, X } from 'lucide-react'
 import type { PreviewDialog as PreviewDialogState } from '@/app-types'
@@ -42,6 +44,7 @@ export default function PreviewDialog({
   onRequestTextSave,
   onOpenExternalLink,
 }: PreviewDialogProps) {
+  useLanguage()
   if (!previewDialog) return null
   const result = previewDialog.kind === 'ready' ? previewDialog.result : null
   const previewName = previewDialog.kind === 'ready' ? previewDialog.result.name : previewDialog.name
@@ -63,14 +66,14 @@ export default function PreviewDialog({
           <div>
             <h2 id="preview-modal-title">{previewName}</h2>
           </div>
-          <button className="icon-button modal-close" title="关闭预览" aria-label="关闭预览" disabled={textSaving || textReloading || Boolean(textSaveConfirmation)} onClick={onClosePreview}><X size={18} /></button>
+          <button className="icon-button modal-close" title={tr('previews.closePreview')} aria-label={tr('previews.closePreview')} disabled={textSaving || textReloading || Boolean(textSaveConfirmation)} onClick={onClosePreview}><X size={18} /></button>
         </div>
-        {previewDialog.kind === 'loading' && <div className="preview-loading"><LoaderCircle className="spin" size={20} /> 正在读取文件</div>}
+        {previewDialog.kind === 'loading' && <div className="preview-loading"><LoaderCircle className="spin" size={20} />{tr('previews.readingFile')}</div>}
         {result?.type === 'text' && <div className="text-encoding-toolbar">
-          <span>保存编码：{textEncoding === 'utf8' ? 'UTF-8' : 'GBK'}{result.bom && textEncoding === 'utf8' ? ' BOM' : ''}</span>
-          <button disabled={textSaving || textReloading || Boolean(textSaveConfirmation)} onClick={() => onReopenText('utf8')}>以 UTF-8 重新加载</button>
-          <button disabled={textSaving || textReloading || Boolean(textSaveConfirmation)} onClick={() => onReopenText('gbk')}>以 GBK 重新加载</button>
-          {textEncoding === 'gbk' && <button disabled={textSaving || textReloading || Boolean(textSaveConfirmation)} onClick={onConvertTextToUtf8}>转换为 UTF-8</button>}
+          <span>{tr('previews.saveEncoding')}{textEncoding === 'utf8' ? 'UTF-8' : 'GBK'}{result.bom && textEncoding === 'utf8' ? ' BOM' : ''}</span>
+          <button disabled={textSaving || textReloading || Boolean(textSaveConfirmation)} onClick={() => onReopenText('utf8')}>{tr('previews.reloadAsUtf8')}</button>
+          <button disabled={textSaving || textReloading || Boolean(textSaveConfirmation)} onClick={() => onReopenText('gbk')}>{tr('previews.reloadAsGbk')}</button>
+          {textEncoding === 'gbk' && <button disabled={textSaving || textReloading || Boolean(textSaveConfirmation)} onClick={onConvertTextToUtf8}>{tr('previews.convertToUtf8')}</button>}
         </div>}
         {result?.type === 'text' && (
           <TextPreviewPanel

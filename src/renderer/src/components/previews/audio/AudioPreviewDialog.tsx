@@ -1,3 +1,5 @@
+import { type MessageValue, msg, renderMessage, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Music2 } from 'lucide-react'
 import type { PreviewResult } from '@shared/types'
@@ -11,21 +13,22 @@ interface AudioPreviewDialogProps {
   onClose: () => void
 }
 
-const mediaErrors: Record<number, string> = {
-  1: '音频加载已中断，请重新打开预览。',
-  2: '音频读取失败，请检查服务器连接后重新打开预览。',
-  3: '音频解码失败，文件可能已损坏或使用了不支持的编码。',
-  4: '当前音频格式或编码不受支持。',
+const mediaErrors: Record<number, MessageValue> = {
+  1: msg('previews.audioLoadingWasInterruptedReopenThePreview'),
+  2: msg('previews.audioCouldNotBeReadCheckTheServerConnectionAnd'),
+  3: msg('previews.audioDecodingFailedTheFileMayBeDamagedOrUse'),
+  4: msg('previews.thisAudioFormatOrCodecIsNotSupported'),
 }
 
 export default function AudioPreviewDialog({ result, active, onClose }: AudioPreviewDialogProps) {
+  useLanguage()
   const audioRef = useRef<HTMLAudioElement>(null)
   const dialogRef = useRef<HTMLElement>(null)
   const activeRef = useRef(active)
   const playbackGeneration = useRef(0)
   const [playing, setPlaying] = useState(false)
   const [waiting, setWaiting] = useState(false)
-  const [notice, setNotice] = useState<{ error: boolean; message: string } | null>(null)
+  const [notice, setNotice] = useState<{ error: boolean; message: MessageValue } | null>(null)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const titleId = useId()
   const shortcutsId = useId()
@@ -38,7 +41,7 @@ export default function AudioPreviewDialog({ result, active, onClose }: AudioPre
       if (generation === playbackGeneration.current && !activeRef.current) audio.pause()
     }, (error: unknown) => {
       if (generation !== playbackGeneration.current || !activeRef.current) return
-      const failure = playbackFailure(error, '音频')
+      const failure = playbackFailure(error, msg('previews.audio'))
       if (!failure) return
       setPlaying(false)
       setWaiting(false)
@@ -107,9 +110,9 @@ export default function AudioPreviewDialog({ result, active, onClose }: AudioPre
                 setWaiting(false)
                 setNotice({ error: true, message: mediaErrors[audioRef.current!.error!.code] })
               }}
-            >浏览器不支持音频播放。</audio>
-            {waiting && !notice && <p className="ap-notice" role="status">正在缓冲音频…</p>}
-            {notice && <p className="ap-notice" role={notice.error ? 'alert' : 'status'}>{notice.message}</p>}
+            >{tr('previews.yourBrowserDoesNotSupportAudioPlayback')}</audio>
+            {waiting && !notice && <p className="ap-notice" role="status">{tr('previews.bufferingAudio')}</p>}
+            {notice && <p className="ap-notice" role={notice.error ? 'alert' : 'status'}>{renderMessage(notice.message)}</p>}
           </div>
         </div>
       </section>

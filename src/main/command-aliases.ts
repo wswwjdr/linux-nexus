@@ -1,3 +1,4 @@
+import { type MessageValue, msg, LocalizedError } from '../shared/i18n/messages'
 import { createHash, randomUUID } from 'node:crypto'
 import { Client } from 'ssh2'
 import type {
@@ -45,15 +46,15 @@ async function withProfileLock<T>(profileId: string, operation: () => Promise<T>
 }
 
 function classifyConnectionError(error: Error & { level?: string }): Error {
-  const message = error.message || '连接失败'
+  const message = error.message || ''
   const lowerMessage = message.toLowerCase()
   if (error.level === 'client-authentication' || lowerMessage.includes('authentication')) {
-    return new Error('用户名或密码错误，或服务器拒绝了密码认证')
+    return new LocalizedError(msg('errors.incorrectUsernameOrPasswordOrTheServerRejectedPasswordAuthentication'))
   }
   if (/timed out|econnrefused|ehostunreach|enetunreach|enotfound|socket hang up/i.test(message)) {
-    return new Error('无法连接服务器，请检查地址、端口和网络或 VPN')
+    return new LocalizedError(msg('errors.cannotConnectToTheServerCheckTheAddressPortNetwork'))
   }
-  return new Error(message)
+  return new LocalizedError(message || msg('errors.connectionFailed'))
 }
 
 function withTemporaryConnection<T>(profileId: string, operation: (client: Client, profile: ServerProfile) => Promise<T>): Promise<T | HostKeyRequired> {
@@ -83,7 +84,7 @@ function withTemporaryConnection<T>(profileId: string, operation: (client: Clien
       operationStarted = true
       void operation(client, profile)
         .then((result) => finish(result))
-        .catch((error: unknown) => finish(undefined, error instanceof Error ? error : new Error(String(error))))
+        .catch((error: unknown) => finish(undefined, error instanceof Error ? error : new LocalizedError(String(error))))
         .finally(() => client.end())
     }
     const onError = (error: Error & { level?: string }) => {
@@ -96,7 +97,7 @@ function withTemporaryConnection<T>(profileId: string, operation: (client: Clien
     const onClose = () => {
       if (settled || operationStarted) return
       if (keyIssue) finish(keyIssue)
-      else finish(undefined, new Error('连接在完成前关闭'))
+      else finish(undefined, new LocalizedError(msg('errors.connectionClosedBeforeItWasEstablished')))
     }
 
     client.once('ready', onReady)
@@ -125,7 +126,7 @@ function withTemporaryConnection<T>(profileId: string, operation: (client: Clien
         },
       })
     } catch (error) {
-      finish(undefined, error instanceof Error ? error : new Error(String(error)))
+      finish(undefined, error instanceof Error ? error : new LocalizedError(String(error)))
     }
   })
 }
@@ -134,7 +135,7 @@ async function assertBashLoginShell(client: Client): Promise<void> {
   const { stdout } = await runRemoteCommand(client, 'getent passwd "$(id -un)" | cut -d: -f7', [], { timeoutMs: COMMAND_TIMEOUT_MS })
   const loginShell = stdout.toString('utf8').trim().split(/\r?\n/).at(-1)
   if (!loginShell || loginShell.split('/').at(-1) !== 'bash') {
-    throw new Error('该服务器的登录 Shell 不是 Bash，命令别名功能暂不支持')
+    throw new LocalizedError(msg('errors.commandAliasesRequireBashAsTheServerLoginShell'))
   }
 }
 
@@ -166,7 +167,7 @@ async function readRemoteAliases(client: Client): Promise<CommandAlias[]> {
   })
   return parseCommandAliasProtocol(output, beginMarker, endMarker).map(({ definition, ...alias }) => {
     let removable = alias.removable
-    let removalReason = removable ? '此别名不是应用支持的标准单行定义' : '未在 ~/.bashrc 中找到唯一且完全匹配的单行定义'
+    let removalReason: MessageValue = removable ? msg('errors.thisAliasIsNotASupportedSingleLineDefinition') : msg('errors.noUniqueExactlyMatchingSingleLineDefinitionWasFoundIn')
     if (removable) {
       try {
         removable = formatBashAliasDefinition(alias.name, alias.command) === definition
@@ -189,8 +190,8 @@ expected=$2
 replacement=$3
 alias_name=$4
 alias_file=$HOME/.bashrc
-if [[ -L $alias_file ]]; then printf '%s\\n' '拒绝修改符号链接 ~/.bashrc' >&2; exit 41; fi
-if [[ -e $alias_file && ! -f $alias_file ]]; then printf '%s\\n' '~/.bashrc 不是普通文件' >&2; exit 41; fi
+if [[ -L $alias_file ]]; then printf '%s\\n' 'LINUX_NEXUS_DIAGNOSTIC:aliasSymlink' >&2; exit 41; fi
+if [[ -e $alias_file && ! -f $alias_file ]]; then printf '%s\\n' 'LINUX_NEXUS_DIAGNOSTIC:aliasNotRegular' >&2; exit 41; fi
 exact_count=0
 if [[ $mode != append && -f $alias_file ]]; then
   while IFS= read -r alias_line || [[ -n $alias_line ]]; do
@@ -200,11 +201,11 @@ fi
 if [[ $mode == append && -f $alias_file ]]; then
   alias_prefix="alias $alias_name="
   while IFS= read -r alias_line || [[ -n $alias_line ]]; do
-  [[ $alias_line != "$alias_prefix"* ]] || { printf '%s\\n' '服务器上已存在同名命令别名' >&2; exit 44; }
+  [[ $alias_line != "$alias_prefix"* ]] || { printf '%s\\n' 'LINUX_NEXUS_DIAGNOSTIC:aliasExists' >&2; exit 44; }
   done < "$alias_file"
 fi
 if [[ $mode != append && $exact_count -ne 1 ]]; then
-  printf '%s\\n' '未找到唯一匹配的别名定义，服务器文件未修改，请重新同步后重试' >&2
+  printf '%s\\n' 'LINUX_NEXUS_DIAGNOSTIC:aliasChanged' >&2
   exit 42
 fi
 temporary_file=$(mktemp "\${HOME}/.bashrc.linux-nexus.XXXXXX")
@@ -284,7 +285,7 @@ export function listCommandAliasSnapshots(): CommandAliasSnapshot[] {
 }
 
 export function synchronizeCommandAliases(profileId: string): Promise<CommandAliasOperationResult> {
-  if (typeof profileId !== 'string' || !profileId) throw new Error('服务器配置无效')
+  if (typeof profileId !== 'string' || !profileId) throw new LocalizedError(msg('errors.invalidServerConfiguration'))
   return withAliasOperation(profileId, async (client) => ({
     status: 'completed',
     snapshot: await synchronizeConnectedProfile(client, profileId),
@@ -310,7 +311,7 @@ export function saveCommandAlias(
 ): Promise<CommandAliasOperationResult> {
   if (typeof profileId !== 'string' || !profileId || typeof name !== 'string' || typeof command !== 'string'
     || (existingCommand !== undefined && typeof existingCommand !== 'string')) {
-    throw new Error('命令别名参数无效')
+    throw new LocalizedError(msg('errors.invalidCommandAliasParameters'))
   }
   validateCommandAlias(name, command)
   const replacement = formatBashAliasDefinition(name, command)
@@ -328,7 +329,7 @@ export function deleteCommandAlias(
   expectedCommand: string,
 ): Promise<CommandAliasOperationResult> {
   if (typeof profileId !== 'string' || !profileId || typeof name !== 'string' || !name
-    || typeof expectedCommand !== 'string') throw new Error('命令别名参数无效')
+    || typeof expectedCommand !== 'string') throw new LocalizedError(msg('errors.invalidCommandAliasParameters'))
   return withAliasOperation(profileId, async (client) => {
     await modifyBashrc(client, 'delete', formatBashAliasDefinition(name, expectedCommand), '', name)
     return finishAliasModification(client, profileId)

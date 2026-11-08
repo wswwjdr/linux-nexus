@@ -1,3 +1,5 @@
+import { useLanguage } from '@/i18n'
+import { tr } from '@shared/i18n/messages'
 import { ArrowUp, Check, ChevronRight, House, LayoutGrid, List, LoaderCircle, Pencil, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { FileViewMode } from '@/app-types'
@@ -25,6 +27,7 @@ export default function FilePathBar({
   onViewModeChange,
   onNavigate,
 }: FilePathBarProps) {
+  useLanguage()
   const pathInputRef = useRef<HTMLInputElement>(null)
   const pathEditFormRef = useRef<HTMLFormElement>(null)
   const [pathEditing, setPathEditing] = useState(false)
@@ -72,10 +75,10 @@ export default function FilePathBar({
 
   return (
     <div className="pathbar">
-      <button className="icon-button path-nav" title="返回根目录" aria-label="返回根目录" disabled={currentPath === '/'} onClick={() => void onNavigate('/')}>
+      <button className="icon-button path-nav" title={tr('files.goToRootDirectory')} aria-label={tr('files.goToRootDirectory')} disabled={currentPath === '/'} onClick={() => void onNavigate('/')}>
         <House size={16} />
       </button>
-      <button className="icon-button path-nav nav-group-end" title="返回上级目录" aria-label="返回上级目录" disabled={currentPath === '/'} onClick={() => void onNavigate(getParentPath(currentPath))}>
+      <button className="icon-button path-nav nav-group-end" title={tr('files.goToParentDirectory')} aria-label={tr('files.goToParentDirectory')} disabled={currentPath === '/'} onClick={() => void onNavigate(getParentPath(currentPath))}>
         <ArrowUp size={16} />
       </button>
       {pathEditing ? (
@@ -83,7 +86,7 @@ export default function FilePathBar({
           <input
             ref={pathInputRef}
             className="path-edit-input"
-            aria-label="远程路径"
+            aria-label={tr('common.remotePath')}
             autoComplete="off"
             autoCapitalize="none"
             spellCheck={false}
@@ -97,16 +100,16 @@ export default function FilePathBar({
               }
             }}
           />
-          <button className="icon-button path-nav" type="submit" title="跳转到路径" aria-label="跳转到路径" disabled={pathSubmitting}>
+          <button className="icon-button path-nav" type="submit" title={tr('files.goToPath')} aria-label={tr('files.goToPath')} disabled={pathSubmitting}>
             {pathSubmitting ? <LoaderCircle className="spin" size={15} /> : <Check size={16} />}
           </button>
-          <button className="icon-button path-nav" type="button" title="取消编辑" aria-label="取消编辑" disabled={pathSubmitting} onClick={cancelPathEdit}>
+          <button className="icon-button path-nav" type="button" title={tr('files.cancelEditing')} aria-label={tr('files.cancelEditing')} disabled={pathSubmitting} onClick={cancelPathEdit}>
             <X size={16} />
           </button>
         </form>
       ) : (
         <>
-          <nav className="breadcrumbs" aria-label="当前路径">
+          <nav className="breadcrumbs" aria-label={tr('files.currentPath')}>
             {breadcrumbs.map((crumb, index) => (
               <span className="breadcrumb-piece" key={crumb.path}>
                 {index > 0 && <ChevronRight size={13} />}
@@ -117,8 +120,8 @@ export default function FilePathBar({
           <button
             className="icon-button path-nav path-edit-button"
             type="button"
-            title="编辑路径"
-            aria-label="编辑路径"
+            title={tr('files.editPath')}
+            aria-label={tr('files.editPath')}
             onClick={() => {
               setPathDraft(currentPath)
               setPathEditing(true)
@@ -129,15 +132,15 @@ export default function FilePathBar({
         </>
       )}
       <div className="pathbar-tools">
-        <div className="view-toggle" role="group" aria-label="文件视图">
-          <button className="view-toggle-button" title="图标视图" aria-label="图标视图" aria-pressed={viewMode === 'icons'} onClick={() => onViewModeChange('icons')}>
+        <div className="view-toggle" role="group" aria-label={tr('files.fileView')}>
+          <button className="view-toggle-button" title={tr('settings.iconView')} aria-label={tr('settings.iconView')} aria-pressed={viewMode === 'icons'} onClick={() => onViewModeChange('icons')}>
             <LayoutGrid size={16} />
           </button>
-          <button className="view-toggle-button" title="详细信息视图" aria-label="详细信息视图" aria-pressed={viewMode === 'details'} onClick={() => onViewModeChange('details')}>
+          <button className="view-toggle-button" title={tr('files.detailsView')} aria-label={tr('files.detailsView')} aria-pressed={viewMode === 'details'} onClick={() => onViewModeChange('details')}>
             <List size={17} />
           </button>
         </div>
-        <div className="path-count">{entryCount} 项</div>
+        <div className="path-count">{tr('files.entryCount', { count: entryCount })}</div>
       </div>
     </div>
   )

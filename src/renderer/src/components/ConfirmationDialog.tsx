@@ -1,3 +1,5 @@
+import { type MessageValue, renderMessage, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { useEffect, useId, type ReactNode } from 'react'
 import { AlertTriangle, LoaderCircle, Trash2, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
@@ -14,7 +16,7 @@ interface ConfirmationDialogProps {
   children?: ReactNode
   busyLabel?: string
   cancelLabel?: string
-  error?: string | null
+  error?: MessageValue | null
   errorLabel?: string
   busy?: boolean
   secondaryActionLabel?: string
@@ -33,16 +35,17 @@ export default function ConfirmationDialog({
   confirmDisabled = false,
   focusCancel = false,
   children,
-  busyLabel = '处理中',
-  cancelLabel = '取消',
+  busyLabel = tr('common.processing'),
+  cancelLabel = tr('common.cancel'),
   error,
-  errorLabel = '操作失败',
+  errorLabel = tr('common.operationFailed'),
   busy = false,
   secondaryActionLabel,
   onConfirm,
   onSecondaryAction,
   onCancel,
 }: ConfirmationDialogProps) {
+  useLanguage()
   const id = useId()
   const Icon = tone === 'danger' ? Trash2 : AlertTriangle
 
@@ -67,7 +70,7 @@ export default function ConfirmationDialog({
             {eyebrow && <div className={'modal-kicker ' + tone}>{eyebrow}</div>}
             <h2 id={id + '-title'}>{title}</h2>
           </div>
-          <button className="icon-button modal-close" title="关闭" aria-label="关闭" disabled={busy} onClick={onCancel}><X size={18} /></button>
+          <button className="icon-button modal-close" title={tr('common.close')} aria-label={tr('common.close')} disabled={busy} onClick={onCancel}><X size={18} /></button>
         </div>
         {details.length > 0 && (
           <dl className="confirmation-details">
@@ -81,7 +84,7 @@ export default function ConfirmationDialog({
         )}
         <p id={id + '-description'} className="confirmation-description">{description}</p>
         {children}
-        {error && <div className="confirmation-error" role="alert">{errorLabel}：{error}</div>}
+        {error && <div className="confirmation-error" role="alert">{errorLabel}：{renderMessage(error)}</div>}
         <div className="modal-footer">
           <button type="button" className="secondary-button" autoFocus={focusCancel && !busy} disabled={busy} onClick={onCancel}>{cancelLabel}</button>
           {secondaryActionLabel && <button type="button" className="secondary-button" disabled={busy} onClick={onSecondaryAction}>{secondaryActionLabel}</button>}

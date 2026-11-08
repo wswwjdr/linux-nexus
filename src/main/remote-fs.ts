@@ -1,3 +1,4 @@
+import { formatLocale, msg, LocalizedError } from '../shared/i18n/messages'
 import { posix } from 'node:path'
 import type { RemoteEntry } from '@shared/types'
 import { sessions } from './runtime'
@@ -6,31 +7,31 @@ import { runRemoteCommand, type RemoteCommandTarget } from './ssh-commands'
 
 export function filesSession(sessionId: string) {
   const activeSession = sessions.get(sessionId)
-  if (!activeSession || activeSession.kind !== 'files') throw new Error('文件会话未连接')
+  if (!activeSession || activeSession.kind !== 'files') throw new LocalizedError(msg('errors.fileSessionIsNotConnected'))
   return { sessionId, profileId: activeSession.profileId, commands: fileCommands(activeSession) }
 }
 
 export function normalizedRemotePath(remotePath: string): string {
-  if (typeof remotePath !== 'string' || !remotePath || remotePath.includes('\0')) throw new Error('远程路径无效')
+  if (typeof remotePath !== 'string' || !remotePath || remotePath.includes('\0')) throw new LocalizedError(msg('errors.invalidRemotePath'))
   return posix.resolve('/', remotePath)
 }
 
 export async function renameRemoteEntry(sessionId: string, remotePath: string, name: string): Promise<string> {
   const session = filesSession(sessionId)
   const sourcePath = normalizedRemotePath(remotePath)
-  if (sourcePath === '/') throw new Error('不能重命名服务器根目录')
+  if (sourcePath === '/') throw new LocalizedError(msg('errors.cannotRenameTheServerRootDirectory'))
   if (typeof name !== 'string' || !name || name === '.' || name === '..' || name.includes('/') || name.includes('\0')) {
-    throw new Error('名称无效：不能为空，不能包含 / 或空字符，也不能是 . 或 ..')
+    throw new LocalizedError(msg('errors.invalidNameItMustNotBeEmptyOrContainOr'))
   }
   const targetPath = posix.join(posix.dirname(sourcePath), name)
   if (targetPath === sourcePath) return targetPath
   await runRemoteCommand(session.commands, [
     'set -eu',
-    '[[ ! -L "$1" && ( -f "$1" || -d "$1" ) ]] || { printf "%s\\n" "只能重命名普通文件或文件夹，来源可能已不存在" >&2; exit 1; }',
-    '[[ ! -e "$2" && ! -L "$2" ]] || { printf "%s\\n" "同名文件或文件夹已存在" >&2; exit 1; }',
+    '[[ ! -L "$1" && ( -f "$1" || -d "$1" ) ]] || { printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:renameType" >&2; exit 1; }',
+    '[[ ! -e "$2" && ! -L "$2" ]] || { printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:nameExists" >&2; exit 1; }',
     'mv -nT -- "$1" "$2"',
     // mv -n can skip a concurrently created destination with a successful exit code.
-    '[[ ! -e "$1" && ! -L "$1" ]] || { printf "%s\\n" "重命名未完成，目标名称可能已被占用" >&2; exit 1; }',
+    '[[ ! -e "$1" && ! -L "$1" ]] || { printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:renameIncomplete" >&2; exit 1; }',
   ].join('\n'), [sourcePath, targetPath])
   return targetPath
 }
@@ -59,7 +60,7 @@ export async function listRemoteDirectory(client: RemoteCommandTarget, remotePat
     [normalizedPath],
   )
   const fields = nulFields(stdout)
-  if (fields.length % 5 !== 0) throw new Error('服务器返回的目录清单格式无效')
+  if (fields.length % 5 !== 0) throw new LocalizedError(msg('errors.serverReturnedAnInvalidDirectoryListing'))
   const entries: RemoteEntry[] = []
   for (let offset = 0; offset < fields.length; offset += 5) {
     const [name, kind, rawSize, rawTime, rawMode] = fields.slice(offset, offset + 5)
@@ -77,7 +78,7 @@ export async function listRemoteDirectory(client: RemoteCommandTarget, remotePat
   return entries.sort((left, right) => {
     if (left.type === 'directory' && right.type !== 'directory') return -1
     if (left.type !== 'directory' && right.type === 'directory') return 1
-    return left.name.localeCompare(right.name, 'zh-CN', { numeric: true, sensitivity: 'base' })
+    return left.name.localeCompare(right.name, formatLocale(), { numeric: true, sensitivity: 'base' })
   })
 }
 
@@ -95,7 +96,7 @@ export async function* iterateRemoteTree(client: RemoteCommandTarget, remoteRoot
     signal: controller.signal, timeoutMs: 86_400_000, collectStdout: false, maxStdoutBytes: 128 * 1024 * 1024,
     onStdout: async chunk => {
       pending = Buffer.concat([pending, chunk])
-      if (pending.length > 1024 * 1024) throw new Error('文件树记录超过大小限制')
+      if (pending.length > 1024 * 1024) throw new LocalizedError(msg('errors.fileTreeRecordExceedsTheSizeLimit'))
       let delimiter = pending.indexOf(0)
       while (delimiter >= 0) {
         fields.push(new TextDecoder('utf-8', { fatal: true }).decode(pending.subarray(0, delimiter)))
@@ -104,7 +105,7 @@ export async function* iterateRemoteTree(client: RemoteCommandTarget, remoteRoot
           const [relativePath, kind, rawSize] = fields
           const size = Number(rawSize)
           if (!Number.isSafeInteger(size) || size < 0 || !['d', 'f', 'l', 'b', 'c', 'p', 's'].includes(kind)
-            || (relativePath && relativePath.split('/').some(part => !part || part === '.' || part === '..'))) throw new Error('服务器文件树格式无效')
+            || (relativePath && relativePath.split('/').some(part => !part || part === '.' || part === '..'))) throw new LocalizedError(msg('errors.invalidServerFileTreeFormat'))
           queue.push({ relativePath, type: remoteType(kind), size, remotePath: relativePath ? posix.join(root, relativePath) : root })
           fields = []
         }
@@ -113,7 +114,7 @@ export async function* iterateRemoteTree(client: RemoteCommandTarget, remoteRoot
       wake?.(); wake = undefined
       if (queue.length >= 256) await new Promise<void>(resolve => { const release = () => { controller.signal.removeEventListener('abort', release); resolve() }; drain = release; controller.signal.addEventListener('abort', release, { once: true }); if (controller.signal.aborted) release() })
     },
-  }).catch(error => { failure = error instanceof Error ? error : new Error(String(error)) }).finally(() => { done = true; wake?.() })
+  }).catch(error => { failure = error instanceof Error ? error : new LocalizedError(String(error)) }).finally(() => { done = true; wake?.() })
   try {
     while (!done || queue.length) {
       if (!queue.length) { await new Promise<void>(resolve => { wake = resolve }); continue }
@@ -121,7 +122,7 @@ export async function* iterateRemoteTree(client: RemoteCommandTarget, remoteRoot
       if (queue.length < 128) { drain?.(); drain = undefined }
     }
     if (failure) throw failure
-    if (pending.length || fields.length) throw new Error('服务器文件树响应不完整')
+    if (pending.length || fields.length) throw new LocalizedError(msg('errors.incompleteServerFileTreeResponse'))
   } finally {
     controller.abort(); drain?.(); signal?.removeEventListener('abort', abort); await task
   }
@@ -145,7 +146,7 @@ export async function remoteFileSize(client: RemoteCommandTarget, remotePath: st
   const normalizedPath = normalizedRemotePath(remotePath)
   const { stdout } = await runRemoteCommand(client, 'stat -c %s -- "$1"', [normalizedPath])
   const size = Number(stdout.toString('ascii').trim())
-  if (!Number.isSafeInteger(size) || size < 0) throw new Error('服务器返回的文件大小无效')
+  if (!Number.isSafeInteger(size) || size < 0) throw new LocalizedError(msg('errors.serverReturnedAnInvalidFileSize'))
   return size
 }
 

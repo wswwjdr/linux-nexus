@@ -1,3 +1,4 @@
+import { type MessageValue } from '../shared/i18n/messages'
 import { ScriptExecutionManager } from './script-executions'
 import { getMainWindow, sessions } from './runtime'
 import { fileCommands } from './file-identity'
@@ -25,6 +26,6 @@ export function cancelScriptExecutionsForSession(sessionId: string): void {
   manager.cancelForSession(sessionId)
 }
 
-export function failScriptExecutionsForSession(sessionId: string, message: string): void {
+export function failScriptExecutionsForSession(sessionId: string, message: MessageValue): void {
   manager.failForSession(sessionId, message)
 }

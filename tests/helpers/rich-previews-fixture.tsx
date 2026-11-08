@@ -1,3 +1,4 @@
+import { setLanguage } from '../../src/shared/i18n/messages'
 import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import PreviewDialog from '../../src/renderer/src/components/previews/PreviewDialog'
@@ -57,4 +58,6 @@ function Fixture() {
     </div></div>
   </main></div>
 }
+setLanguage('zh-CN')
+;(window as any).fixtureLanguage = setLanguage
 createRoot(document.getElementById('root')!).render(<Fixture />)

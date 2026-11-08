@@ -1,5 +1,6 @@
+import { msg, LocalizedError } from './i18n/messages'
 export function shellQuote(value: string): string {
-  if (value.includes('\0')) throw new Error('Shell 参数不能包含 NUL 字符')
+  if (value.includes('\0')) throw new LocalizedError(msg('errors.shellArgumentsMustNotContainNul'))
   return "'" + value.replace(/'/g, "'\\''") + "'"
 }
 

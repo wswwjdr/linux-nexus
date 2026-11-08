@@ -1,8 +1,9 @@
-import type { RemoteFilesApi } from '@shared/types'
+import type { RemoteFilesApi, RemoteFilesTransport } from '@shared/types'
 
 declare global {
   interface Window {
     remoteFiles: RemoteFilesApi
+    remoteFilesTransport: RemoteFilesTransport
   }
 }
 

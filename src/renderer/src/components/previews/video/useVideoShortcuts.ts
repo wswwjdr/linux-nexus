@@ -1,8 +1,9 @@
+import { type MessageValue, msg } from '@shared/i18n/messages'
 import { useEffect, type RefObject } from 'react'
 import type Player from 'video.js/dist/types/player'
 import { allowsMediaShortcut, applyMediaShortcut, seekMedia } from '../media/media-controls'
 
-export function useVideoShortcuts(playerRef: RefObject<Player | null>, dialogRef: RefObject<HTMLElement | null>, active: boolean, play: () => void, report: (message: string) => void) {
+export function useVideoShortcuts(playerRef: RefObject<Player | null>, dialogRef: RefObject<HTMLElement | null>, active: boolean, play: () => void, report: (message: MessageValue) => void) {
   useEffect(() => {
     if (!active) return
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -33,7 +34,7 @@ export function useVideoShortcuts(playerRef: RefObject<Player | null>, dialogRef
           timer = null; holding = true; previousRate = video.playbackRate; video.playbackRate = 2
         }, 500)
       } else if (key === 'f') {
-        if (!event.repeat) Promise.resolve(player.isFullscreen() ? player.exitFullscreen() : player.requestFullscreen()).catch((error: unknown) => report('全屏操作失败：' + String(error)))
+        if (!event.repeat) Promise.resolve(player.isFullscreen() ? player.exitFullscreen() : player.requestFullscreen()).catch((error: unknown) => report(msg('previews.fullscreenOperationFailed', { "value1": String(error) })))
       } else if (!applyMediaShortcut(video, event.key, event.repeat, play)) return
       event.preventDefault(); event.stopPropagation()
     }

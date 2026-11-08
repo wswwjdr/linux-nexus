@@ -1,3 +1,4 @@
+import { type MessageValue } from '../i18n/messages'
 export interface TransferFileProgress {
   remotePath: string
   transferred: number
@@ -6,7 +7,7 @@ export interface TransferFileProgress {
 
 export interface TransferFailure {
   path: string
-  message: string
+  message: MessageValue
 }
 
 export interface TransferProgress {
@@ -74,7 +75,7 @@ export interface UploadSelection {
   profileId: string
   remoteDirectory: string
   remoteRoot: string
-  name: string
+  name: MessageValue
   strategy: OperationStrategy
   items: UploadSelectionItem[]
   failures: TransferFailure[]

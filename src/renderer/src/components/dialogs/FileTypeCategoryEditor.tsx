@@ -1,3 +1,5 @@
+import { msg, renderMessage, type MessageValue, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { useState } from 'react'
 import { Plus, X } from 'lucide-react'
 import type { FileTypeCategory } from '@shared/types'
@@ -18,21 +20,22 @@ export function FileTypeCategoryEditor({
   onAdd: (category: FileTypeCategory, extension: string) => void
   onRemove: (category: FileTypeCategory, extension: string) => void
 }) {
+  useLanguage()
   const [draft, setDraft] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<MessageValue | null>(null)
 
   const add = () => {
     try {
       const extension = normalizeFileTypeExtension(draft)
       if (extensions.includes(extension)) {
-        setError('此后缀已添加')
+        setError(msg('files.thisExtensionHasAlreadyBeenAdded'))
         return
       }
       onAdd(category, extension)
       setDraft('')
       setError(null)
     } catch {
-      setError('请输入有效后缀，例如 .txt 或 .tar.gz')
+      setError(msg('files.enterAValidExtensionSuchAsTxtOrTarGz'))
     }
   }
 
@@ -47,7 +50,7 @@ export function FileTypeCategoryEditor({
           {extensions.map((extension) => (
             <span className="file-type-category-tag" key={extension}>
               <code>{extension}</code>
-              <button type="button" title={'移除 ' + extension} aria-label={'移除 ' + extension} onClick={() => onRemove(category, extension)}><X size={12} /></button>
+              <button type="button" title={tr('files.remove', { "extension": extension })} aria-label={tr('files.remove', { "extension": extension })} onClick={() => onRemove(category, extension)}><X size={12} /></button>
             </span>
           ))}
         </div>
@@ -55,8 +58,8 @@ export function FileTypeCategoryEditor({
       <div className="file-type-category-add">
         <input
           value={draft}
-          aria-label={'添加' + label + '后缀'}
-          placeholder="添加后缀，如 .txt"
+          aria-label={tr('files.addExtension', { "label": label })}
+          placeholder={tr('files.addAnExtensionEGTxt')}
           onChange={(event) => {
             setDraft(event.target.value)
             setError(null)
@@ -68,9 +71,9 @@ export function FileTypeCategoryEditor({
             }
           }}
         />
-        <button type="button" className="icon-button" title="添加后缀" aria-label="添加后缀" disabled={!draft.trim()} onClick={add}><Plus size={15} /></button>
+        <button type="button" className="icon-button" title={tr('files.addExtension2')} aria-label={tr('files.addExtension2')} disabled={!draft.trim()} onClick={add}><Plus size={15} /></button>
       </div>
-      {error && <span className="file-type-category-error" role="alert">{error}</span>}
+      {error && <span className="file-type-category-error" role="alert">{renderMessage(error)}</span>}
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import { type MessageValue } from '../i18n/messages'
 export interface ScriptExecutionRequest {
   requestId: string
   sessionId: string
@@ -8,5 +9,5 @@ export interface ScriptExecutionRequest {
 export type ScriptExecutionEvent =
   | { type: 'output'; requestId: string; sessionId: string; stream: 'stdout' | 'stderr'; data: string }
   | { type: 'completed'; requestId: string; sessionId: string; exitCode: 0 }
-  | { type: 'cancelled'; requestId: string; sessionId: string; message: string }
-  | { type: 'failed'; requestId: string; sessionId: string; exitCode?: number | null; message: string }
+  | { type: 'cancelled'; requestId: string; sessionId: string; message: MessageValue }
+  | { type: 'failed'; requestId: string; sessionId: string; exitCode?: number | null; message: MessageValue }

@@ -1,3 +1,4 @@
+import { type MessageValue, msg } from '@shared/i18n/messages'
 import { useEffect, useRef, useState } from 'react'
 import type { DroppedUploadEntry, OperationExecutionStrategy, OperationStrategy, RemoteEntry, TransferProgress, TransferResult, UploadSelection } from '@shared/types'
 import type { TransferJob } from '@/app-types'
@@ -11,7 +12,7 @@ interface UseTransfersOptions {
   currentPath: string
   profileName: string
   loadDirectory: (sessionId: string, remotePath: string) => Promise<boolean>
-  showToast: (kind: ToastNotice['kind'], message: string) => void
+  showToast: (kind: ToastNotice['kind'], message: MessageValue) => void
 }
 
 interface RunTransferOptions {
@@ -93,7 +94,7 @@ export function useTransfers({
         [progress.requestId]: {
           sessionId: progress.sessionId,
           profileName: current[progress.requestId]?.profileName ?? '',
-          name: current[progress.requestId]?.name ?? progress.remotePath.split('/').pop() ?? '文件',
+          name: current[progress.requestId]?.name ?? progress.remotePath.split('/').pop() ?? msg('files.file'),
           direction: progress.direction,
           transferred: progress.transferred,
           total: progress.total,
@@ -115,7 +116,7 @@ export function useTransfers({
   }, [])
 
   const runTransfer = async (
-    name: string,
+    name: MessageValue,
     direction: TransferJob['direction'],
     operation: (requestId: string) => Promise<TransferResult>,
     { refreshPath, initialTotal = 0, deferTrayUntilProgress = false, requestId: requestedId, sessionId: requestedSessionId }: RunTransferOptions = {},
@@ -189,7 +190,7 @@ export function useTransfers({
       })
       if (!sessionIdsRef.current.has(activeSessionId)) return
       if (refreshPath !== undefined && direction === 'upload') await loadDirectory(activeSessionId, refreshPath)
-      showToast('error', (direction === 'upload' ? '上传' : '下载') + '失败：' + errorMessage(error))
+      showToast('error', msg('transfers.failed', { "value1": direction === 'upload' ? msg('transfers.upload') : msg('transfers.download'), "value2": errorMessage(error) }))
     }
   }
 
@@ -208,7 +209,7 @@ export function useTransfers({
           ? { ...current, [requestId]: { ...active, state: previousState } }
           : current
       })
-      showToast('error', '取消传输失败：' + errorMessage(error))
+      showToast('error', msg('transfers.couldNotCancelTransfer', { "value1": errorMessage(error) }))
     })
   }
 
@@ -233,7 +234,7 @@ export function useTransfers({
         void executeUploadSelection(selection, executionStrategy)
       }
     } catch (error) {
-      showToast('error', '选择上传内容失败：' + errorMessage(error))
+      showToast('error', msg('transfers.couldNotSelectUploadContent', { "value1": errorMessage(error) }))
     }
   }
 
@@ -243,7 +244,7 @@ export function useTransfers({
   const uploadDroppedEntries = (entries: DroppedUploadEntry[], strategy: OperationStrategy = 'confirm') => {
     if (!sessionId) return
     if (entries.length === 0) {
-      showToast('info', '拖入内容中没有可上传的文件或文件夹')
+      showToast('info', msg('errors.droppedContentHasNoUploadableFilesOrFolders'))
       return
     }
     void prepareUpload('drop', strategy, entries)
@@ -268,7 +269,7 @@ export function useTransfers({
   const cancelUploadSelection = () => {
     if (!uploadSelection) return
     void window.remoteFiles.cancelUploadSelection(uploadSelection.selectionId)
-      .catch((error) => showToast('error', '取消上传选择失败：' + errorMessage(error)))
+      .catch((error) => showToast('error', msg('transfers.couldNotCancelUploadSelection', { "value1": errorMessage(error) })))
     setUploadSelection(null)
   }
 
@@ -276,7 +277,7 @@ export function useTransfers({
     if (!sessionId) return
     if (entries.length === 0) return
     const activeSessionId = sessionId
-    const name = entries.length === 1 ? entries[0].name : `下载 ${entries.length} 项`
+    const name = entries.length === 1 ? entries[0].name : msg('transfers.downloadItems', { "count": entries.length })
     void runTransfer(name, 'download', (requestId) =>
       window.remoteFiles.downloadEntries(requestId, activeSessionId, entries.map((entry) => entry.path)),
     { initialTotal: entries.reduce((total, entry) => total + (entry.type === 'file' ? entry.size : 0), 0) })

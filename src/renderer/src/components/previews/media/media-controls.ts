@@ -1,3 +1,4 @@
+import { type MessageValue, msg } from '@shared/i18n/messages'
 export function seekMedia(media: HTMLMediaElement, delta: number) {
   if (Number.isFinite(media.duration)) media.currentTime = Math.max(0, Math.min(media.duration, media.currentTime + delta))
 }
@@ -30,9 +31,9 @@ export function allowsMediaShortcut(event: KeyboardEvent, dialog: HTMLElement): 
   return !(event.key === ' ' && target.closest('button, a, summary, [role="button"]'))
 }
 
-export function playbackFailure(error: unknown, label: string): { error: boolean; message: string } | null {
+export function playbackFailure(error: unknown, label: MessageValue): { error: boolean; message: MessageValue } | null {
   if (error instanceof DOMException && error.name === 'AbortError') return null
   const blocked = error instanceof DOMException && error.name === 'NotAllowedError'
-  return { error: !blocked, message: blocked ? '自动播放被阻止，请点击播放按钮或按 Space 开始播放。'
-    : label + '播放失败：' + (error instanceof Error ? error.message : String(error)) }
+  return { error: !blocked, message: blocked ? msg('previews.autoplayWasBlockedClickPlayOrPressSpaceToStart')
+    : msg('previews.playbackFailed', { "label": label, "value2": error instanceof Error ? error.message : String(error) }) }
 }

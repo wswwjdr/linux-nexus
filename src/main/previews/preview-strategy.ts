@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from '../../shared/i18n/messages'
 import type { RemoteCommandTarget } from '../ssh-commands'
 import type { PreviewResult, TextEncoding } from '@shared/types'
 
@@ -22,7 +23,7 @@ export interface PreviewStrategy<TResult extends PreviewResult = PreviewResult> 
 }
 
 export function previewSizeError(limitMiB: number): Error {
-  return new Error('文件超过预览上限（' + limitMiB + ' MiB），请下载后查看')
+  return new LocalizedError(msg('errors.fileExceedsThePreviewLimitMibDownloadItToView', { "limitMiB": limitMiB }))
 }
 
 export function previewUrl(token: string, name: string): string {

@@ -1,3 +1,5 @@
+import { useLanguage } from '@/i18n'
+import { tr } from '@shared/i18n/messages'
 import { useImperativeHandle, useLayoutEffect, useMemo, useRef, type KeyboardEvent, type Ref } from 'react'
 import { LoaderCircle, Save, Search } from 'lucide-react'
 import PreviewSearchBar from './PreviewSearchBar'
@@ -22,6 +24,7 @@ export default function TextPreviewPanel({
   onUpdateDraft,
   onRequestSave,
 }: TextPreviewPanelProps) {
+  useLanguage()
   const editorRef = useRef<HTMLTextAreaElement>(null)
   const highlightRef = useRef<HTMLPreElement>(null)
   const matchRef = useRef<HTMLElement>(null)
@@ -94,7 +97,7 @@ export default function TextPreviewPanel({
         <textarea
           ref={editorRef}
           className="preview-text text-preview-editor"
-          aria-label="文本内容"
+          aria-label={tr('previews.textContent')}
           autoFocus
           autoCapitalize="none"
           autoCorrect="off"
@@ -108,12 +111,12 @@ export default function TextPreviewPanel({
       </div>
       <div className="text-preview-footer">
         <span className={dirty ? 'text-preview-status modified' : 'text-preview-status'} aria-live="polite">
-          {saving ? '正在保存' : dirty ? '有未保存修改' : '已保存'}
+          {saving ? tr('previews.saving') : dirty ? tr('previews.unsavedChanges') : tr('connections.saved')}
         </span>
-        <button type="button" className="icon-button text-preview-find" title="搜索文本（Ctrl+F）" aria-label="搜索文本（Ctrl+F）" disabled={disabled} onClick={openSearch}><Search size={16} /></button>
+        <button type="button" className="icon-button text-preview-find" title={tr('previews.findTextCtrlF')} aria-label={tr('previews.findTextCtrlF')} disabled={disabled} onClick={openSearch}><Search size={16} /></button>
         <button type="button" className="primary-button text-preview-save" disabled={!dirty || saving || saveConfirmationOpen} onClick={onRequestSave}>
           {saving ? <LoaderCircle className="spin" size={15} /> : <Save size={15} />}
-          {saving ? '保存中' : '保存'}
+          {saving ? tr('previews.saving2') : tr('previews.save')}
         </button>
       </div>
     </div>

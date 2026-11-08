@@ -1,3 +1,4 @@
+import { type MessageValue, msg } from '@shared/i18n/messages'
 import type { Dispatch, SetStateAction } from 'react'
 import type { RemoteEntry } from '@shared/types'
 import type { BrowserContextMenu, SessionTab } from '../../app-types'
@@ -33,7 +34,7 @@ interface UseFileMenuActionsOptions {
   locateSearchResult: SessionOperations['locateSearchResult']
   openEntryProperties: (sessionId: string, path: string) => void
   patchSession: (sessionId: string, patch: Partial<SessionTab>) => void
-  showToast: (kind: ToastNotice['kind'], message: string, action?: ToastNotice['action']) => void
+  showToast: (kind: ToastNotice['kind'], message: MessageValue, action?: ToastNotice['action']) => void
 }
 
 export function useFileMenuActions({
@@ -85,9 +86,9 @@ export function useFileMenuActions({
     setBrowserContextMenu(null)
     try {
       await window.remoteFiles.copyRemotePath(connectedSessionId, remotePath)
-      showToast('info', '路径已复制')
+      showToast('info', msg('files.pathCopied'))
     } catch (error) {
-      showToast('error', `复制路径失败：${errorMessage(error)}`)
+      showToast('error', msg('files.couldNotCopyPath', { "value1": errorMessage(error) }))
     }
   }
 

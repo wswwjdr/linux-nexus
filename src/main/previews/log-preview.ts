@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from '../../shared/i18n/messages'
 import type { LogPreviewPage } from '@shared/types'
 import { readPreviewLimits } from '../state-store'
 import { filesSession, normalizedRemotePath, remoteFileSize, remotePathType } from '../remote-fs'
@@ -13,7 +14,7 @@ async function readRemoteRange(client: ReturnType<typeof filesSession>['commands
     [remotePath, String(startOffset), String(length)],
     { maxStdoutBytes: length },
   )
-  if (stdout.length !== length) throw new Error('日志文件已变化，请重新打开预览')
+  if (stdout.length !== length) throw new LocalizedError(msg('errors.logFileChangedReopenThePreview'))
   return stdout
 }
 
@@ -29,32 +30,32 @@ export async function readLogPreview(
   beforeOffset?: number,
   snapshotSize?: number,
 ): Promise<LogPreviewPage> {
-  if (typeof sessionId !== 'string' || !sessionId) throw new Error('文件会话未连接')
+  if (typeof sessionId !== 'string' || !sessionId) throw new LocalizedError(msg('errors.fileSessionIsNotConnected'))
   if ((beforeOffset === undefined) !== (snapshotSize === undefined)) {
-    throw new Error('日志预览位置无效')
+    throw new LocalizedError(msg('errors.invalidLogPreviewPosition'))
   }
   if (beforeOffset !== undefined && (!Number.isSafeInteger(beforeOffset) || beforeOffset < 0)) {
-    throw new Error('日志预览位置无效')
+    throw new LocalizedError(msg('errors.invalidLogPreviewPosition'))
   }
   if (snapshotSize !== undefined && (!Number.isSafeInteger(snapshotSize) || snapshotSize < 0)) {
-    throw new Error('日志文件大小无效')
+    throw new LocalizedError(msg('errors.invalidLogFileSize'))
   }
 
   const session = filesSession(sessionId)
   const normalizedPath = normalizedRemotePath(remotePath)
-  if (await remotePathType(session.commands, normalizedPath) !== 'file') throw new Error('只能预览普通文件')
+  if (await remotePathType(session.commands, normalizedPath) !== 'file') throw new LocalizedError(msg('errors.onlyRegularFilesCanBePreviewed'))
 
   const currentSize = await remoteFileSize(session.commands, normalizedPath)
-  if (!Number.isSafeInteger(currentSize) || currentSize < 0) throw new Error('日志文件大小无效')
+  if (!Number.isSafeInteger(currentSize) || currentSize < 0) throw new LocalizedError(msg('errors.invalidLogFileSize'))
   const fileSize = snapshotSize ?? currentSize
-  if (fileSize > currentSize) throw new Error('日志文件已变化，请重新打开预览')
+  if (fileSize > currentSize) throw new LocalizedError(msg('errors.logFileChangedReopenThePreview'))
   const endOffset = beforeOffset ?? fileSize
-  if (endOffset > fileSize) throw new Error('日志预览位置无效')
+  if (endOffset > fileSize) throw new LocalizedError(msg('errors.invalidLogPreviewPosition'))
 
   const limitBytes = readPreviewLimits().textMiB * 1024 * 1024
   const loadedBytes = fileSize - endOffset
   const remainingBytes = limitBytes - loadedBytes
-  if (remainingBytes <= 0) throw new Error('已达到文本预览上限')
+  if (remainingBytes <= 0) throw new LocalizedError(msg('errors.textPreviewLimitReached'))
 
   const pageBytes = Math.min(LOG_PREVIEW_PAGE_BYTES, remainingBytes, endOffset)
   const candidateStart = endOffset - pageBytes

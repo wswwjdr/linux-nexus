@@ -1,3 +1,5 @@
+import { useLanguage } from '@/i18n'
+import { tr } from '@shared/i18n/messages'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FileSearch, FileText, X } from 'lucide-react'
 import type { FileTypeExtensions } from '@shared/types'
@@ -21,6 +23,7 @@ interface SearchDialogProps {
 type SearchTab = 'name' | 'content'
 
 export default function SearchDialog({ sessionId, profileId, currentPath, visible, previewOpen, fileTypeExtensions, onClose, onMenuAction }: SearchDialogProps) {
+  useLanguage()
   const [activeTab, setActiveTab] = useState<SearchTab>('name')
   const [running, setRunning] = useState({ name: false, content: false })
   const [menuOpen, setMenuOpen] = useState({ name: false, content: false })
@@ -78,8 +81,8 @@ export default function SearchDialog({ sessionId, profileId, currentPath, visibl
       <section className="modal search-modal" role="dialog" aria-labelledby="search-dialog-title">
         <header className="search-dialog-header">
           <div className="search-dialog-heading">
-            <h2 id="search-dialog-title">搜索文件</h2>
-            <div className="search-tabs" role="tablist" aria-label="搜索类型">
+            <h2 id="search-dialog-title">{tr('common.searchFiles')}</h2>
+            <div className="search-tabs" role="tablist" aria-label={tr('search.searchType')}>
               <button
                 id="name-search-tab"
                 type="button"
@@ -88,7 +91,7 @@ export default function SearchDialog({ sessionId, profileId, currentPath, visibl
                 aria-controls="name-search-panel"
                 className="search-tab"
                 onClick={() => setActiveTab('name')}
-              ><FileSearch size={14} /> 文件名</button>
+              ><FileSearch size={14} />{tr('search.filename')}</button>
               <button
                 id="content-search-tab"
                 type="button"
@@ -97,10 +100,10 @@ export default function SearchDialog({ sessionId, profileId, currentPath, visibl
                 aria-controls="content-search-panel"
                 className="search-tab"
                 onClick={() => setActiveTab('content')}
-              ><FileText size={14} /> 文本内容</button>
+              ><FileText size={14} />{tr('previews.textContent')}</button>
             </div>
           </div>
-          <button className="icon-button modal-close" title="关闭搜索" aria-label="关闭搜索" onClick={requestClose}>
+          <button className="icon-button modal-close" title={tr('search.closeSearch')} aria-label={tr('search.closeSearch')} onClick={requestClose}>
             <X size={17} />
           </button>
         </header>
@@ -134,11 +137,11 @@ export default function SearchDialog({ sessionId, profileId, currentPath, visibl
       </section>
       {confirmClose && (
         <ConfirmationDialog
-          title={anyRunning ? '搜索仍在进行' : '关闭搜索窗口？'}
-          description={anyRunning ? '取消正在运行的搜索并关闭窗口吗？' : '关闭搜索窗口吗？'}
+          title={anyRunning ? tr('search.searchIsStillRunning') : tr('search.closeSearchWindow')}
+          description={anyRunning ? tr('search.cancelTheRunningSearchAndCloseTheWindow') : tr('search.closeTheSearchWindow')}
           tone="warning"
-          confirmLabel={anyRunning ? '取消搜索并关闭' : '关闭搜索'}
-          cancelLabel={anyRunning ? '继续搜索' : '返回搜索'}
+          confirmLabel={anyRunning ? tr('search.cancelSearchAndClose') : tr('search.closeSearch')}
+          cancelLabel={anyRunning ? tr('search.continueSearch') : tr('search.backToSearch')}
           onConfirm={confirmPendingAction}
           onCancel={() => setConfirmClose(false)}
         />

@@ -1,3 +1,5 @@
+import { renderMessage, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import type { ComponentProps, RefObject } from 'react'
 import { Cloud, Copy, LoaderCircle } from 'lucide-react'
 import FileBrowser from '../files/FileBrowser'
@@ -92,6 +94,7 @@ interface SessionWorkspaceViewProps {
 }
 
 export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
+  useLanguage()
   const { state, actions, sessionContextMenuRef, contextMenuAnchorRef } = props
   const {
     sessions, profiles, offlineProfiles, activeSession, activeSessionId, connectedSessionId,
@@ -153,13 +156,12 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
             className="browser-context-menu session-context-menu"
             ref={sessionContextMenuRef}
             role="menu"
-            aria-label="会话操作"
+            aria-label={tr('connections.sessionActions')}
             style={{ left: sessionContextMenu.x, top: sessionContextMenu.y }}
             onContextMenu={(event) => event.preventDefault()}
           >
             <button className="entry-context-action" role="menuitem" onClick={() => duplicateSession(sessionContextMenu.sessionId)}>
-              <Copy size={16} /> 复制会话
-            </button>
+              <Copy size={16} />{tr('connections.duplicateSession')}</button>
           </div>
         )}
 
@@ -203,9 +205,9 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
         ) : activeSession?.kind === 'terminal' ? null : activeSession ? (
           <div className="session-connection-state" id={'session-panel-' + activeSession.id} role="tabpanel" aria-labelledby={'session-tab-' + activeSession.id}>
             {activeSession.status === 'connecting' ? <LoaderCircle className="spin" size={20} /> : <Cloud size={20} />}
-            <strong>{activeSession.status === 'connecting' ? '正在连接服务器' : '会话已断开'}</strong>
-            {activeSession.error && <span>{activeSession.error}</span>}
-            {activeSession.status === 'disconnected' && <button className="text-button" onClick={() => reconnectSession(activeSession.id)}>重连</button>}
+            <strong>{activeSession.status === 'connecting' ? tr('connections.connectingToServer') : tr('connections.sessionDisconnected')}</strong>
+            {activeSession.error && <span>{renderMessage(activeSession.error)}</span>}
+            {activeSession.status === 'disconnected' && <button className="text-button" onClick={() => reconnectSession(activeSession.id)}>{tr('common.reconnect')}</button>}
           </div>
         ) : null}
 
@@ -221,8 +223,8 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
             >
               {session.status !== 'connected' && (
                 <div className={'terminal-session-notice ' + session.status}>
-                  {session.error ?? (session.status === 'connecting' ? '正在连接 SSH 终端…' : '等待确认服务器指纹')}
-                  {session.status === 'disconnected' && <button className="text-button" onClick={() => reconnectSession(session.id)}>重连</button>}
+                  {renderMessage(session.error ?? (session.status === 'connecting' ? tr('connections.connectingToSshTerminal') : tr('connections.awaitingServerFingerprintVerification')))}
+                  {session.status === 'disconnected' && <button className="text-button" onClick={() => reconnectSession(session.id)}>{tr('common.reconnect')}</button>}
                 </div>
               )}
               <TerminalPanel

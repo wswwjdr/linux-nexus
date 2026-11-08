@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from './i18n/messages'
 export type RemoteArchiveFormat =
   | 'zip'
   | 'tar'
@@ -27,6 +28,6 @@ export function archiveFormatForName(name: string): RemoteArchiveFormat | null {
 export function archiveBaseName(name: string): string {
   const lowerName = name.toLowerCase()
   const match = archiveSuffixes.find(({ suffix }) => lowerName.endsWith(suffix))
-  if (!match) throw new Error('不支持的压缩包格式')
+  if (!match) throw new LocalizedError(msg('errors.unsupportedArchiveFormat'))
   return name.slice(0, -match.suffix.length) || 'extracted'
 }

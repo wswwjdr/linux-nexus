@@ -1,3 +1,4 @@
+import { type MessageValue, msg } from '@shared/i18n/messages'
 import { useEffect, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
 import type { RemoteEntry, ScriptExecutionEvent, ScriptExecutionRequest } from '@shared/types'
 import type { BrowserContextMenu, ScriptExecutionDialogState, SessionTab } from '../../app-types'
@@ -30,7 +31,7 @@ interface UseScriptExecutionOptions {
   activeSessionId?: string
   sessionsRef: { current: SessionTab[] }
   setBrowserContextMenu: Dispatch<SetStateAction<BrowserContextMenu | null>>
-  showToast: (kind: ToastNotice['kind'], message: string, action?: ToastNotice['action']) => void
+  showToast: (kind: ToastNotice['kind'], message: MessageValue, action?: ToastNotice['action']) => void
 }
 
 export function useScriptExecution({
@@ -47,7 +48,7 @@ export function useScriptExecution({
       if (event.type === 'output') {
         return { ...current, output: [...current.output, { stream: event.stream, data: event.data }] }
       }
-      if (event.type === 'completed') return { ...current, status: 'completed', message: '退出码 0' }
+      if (event.type === 'completed') return { ...current, status: 'completed', message: msg('files.exitCode0') }
       if (event.type === 'cancelled') return { ...current, status: 'cancelled', message: event.message }
       return { ...current, status: 'failed', message: event.message }
     })
@@ -75,7 +76,7 @@ export function useScriptExecution({
     }
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session || session.kind !== 'files' || session.status !== 'connected') {
-      showToast('error', '文件会话已断开，无法执行脚本')
+      showToast('error', msg('files.fileSessionDisconnectedCannotRunTheScript'))
       return
     }
     const request: ScriptExecutionRequest = {
@@ -130,7 +131,7 @@ export function useScriptExecution({
     const dialog = scriptCommandDialogs.get(sessionId)
     if (!dialog || !dialog.command.trim()) return
     if (dialog.command.length > 65535) {
-      showToast('error', '命令长度不能超过 65535 个字符')
+      showToast('error', msg('files.commandMustNotExceed65535Characters'))
       return
     }
     startScriptExecution(dialog.entry, dialog.command, sessionId)

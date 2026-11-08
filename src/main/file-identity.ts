@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from '../shared/i18n/messages'
 import type { FileIdentity, FileElevationResult } from '@shared/types'
 import { getMainWindow, sessions, type ActiveSession } from './runtime'
 import { executeRemoteCommand, executeSudoCommand, RemoteTerminationError, SudoAuthenticationError,
@@ -82,15 +83,15 @@ export function initializeFileIdentity(session: ActiveSession, effectiveUid: num
 }
 
 export function fileCommands(session: ActiveSession): FileCommandScope {
-  if (session.kind !== 'files') throw new Error('文件会话未连接')
+  if (session.kind !== 'files') throw new LocalizedError(msg('errors.fileSessionIsNotConnected'))
   const state = stateFor(session)
-  if (state.transition) throw new Error('正在切换文件会话身份')
+  if (state.transition) throw new LocalizedError(msg('errors.switchingFileSessionIdentity'))
   return state.commands
 }
 
 function connectedFileSession(sessionId: unknown): ActiveSession {
   const session = typeof sessionId === 'string' ? sessions.get(sessionId) : undefined
-  if (session?.kind !== 'files') throw new Error('文件会话未连接')
+  if (session?.kind !== 'files') throw new LocalizedError(msg('errors.fileSessionIsNotConnected'))
   return session
 }
 
@@ -104,10 +105,10 @@ export function revokeFileIdentity(session: ActiveSession): Promise<boolean> {
 export async function enterFileRoot(sessionId: unknown, value?: unknown): Promise<FileElevationResult> {
   const session = connectedFileSession(sessionId)
   if (value !== undefined && (typeof value !== 'string' || !value || value.length > 4096 || /[\0\r\n]/.test(value))) {
-    throw new Error('sudo 密码格式无效')
+    throw new LocalizedError(msg('errors.invalidSudoPasswordFormat'))
   }
   const state = stateFor(session)
-  if (state.transition) throw new Error('正在切换文件会话身份')
+  if (state.transition) throw new LocalizedError(msg('errors.switchingFileSessionIdentity'))
   if (state.identity !== 'login') return { status: 'entered', identity: state.identity }
   const transition = new AbortController()
   state.transition = transition
@@ -145,7 +146,7 @@ export function cancelFileRootEntry(sessionId: unknown): void {
 export async function leaveFileRoot(sessionId: unknown, expired = false): Promise<{ remoteStateUnknown: boolean }> {
   const session = connectedFileSession(sessionId)
   const state = stateFor(session)
-  if (state.transition) throw new Error('正在切换文件会话身份')
+  if (state.transition) throw new LocalizedError(msg('errors.switchingFileSessionIdentity'))
   if (state.identity !== 'sudo-root') return { remoteStateUnknown: false }
   const transition = new AbortController()
   state.transition = transition

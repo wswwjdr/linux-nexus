@@ -10,7 +10,7 @@ fail() {
   exit 2
 }
 if [[ ! -d "$root" ]]; then
-  fail '搜索目录不存在或不可访问'
+  fail 'LINUX_NEXUS_DIAGNOSTIC:searchDirectory'
 fi
 processed_files=0
 processed_bytes=0

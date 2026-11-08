@@ -1,3 +1,5 @@
+import { useLanguage } from '@/i18n'
+import { tr } from '@shared/i18n/messages'
 import type { Ref, RefObject } from 'react'
 import { LoaderCircle, X } from 'lucide-react'
 import type { LogPreviewDialog as LogPreviewDialogState } from '@/app-types'
@@ -19,6 +21,7 @@ export default function LogPreviewDialog({
   onClosePreview,
   onLogPreviewScroll,
 }: LogPreviewDialogProps) {
+  useLanguage()
   if (!logPreviewDialog) return null
 
   return (
@@ -28,10 +31,10 @@ export default function LogPreviewDialog({
           <div>
             <h2 id="log-preview-title">{logPreviewDialog.name}</h2>
           </div>
-          <button className="icon-button modal-close" title="关闭预览" aria-label="关闭预览" onClick={onClosePreview}><X size={18} /></button>
+          <button className="icon-button modal-close" title={tr('previews.closePreview')} aria-label={tr('previews.closePreview')} onClick={onClosePreview}><X size={18} /></button>
         </div>
         {logPreviewDialog.kind === 'loading' && (
-          <div className="preview-loading"><LoaderCircle className="spin" size={20} /> 正在读取日志</div>
+          <div className="preview-loading"><LoaderCircle className="spin" size={20} />{tr('previews.readingLog')}</div>
         )}
         {logPreviewDialog.kind === 'ready' && (
           <LogPreviewPanel ref={textSearchRef} dialog={logPreviewDialog} viewportRef={logViewportRef} onScroll={onLogPreviewScroll} />

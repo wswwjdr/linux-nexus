@@ -1,3 +1,4 @@
+import { messageFromUnknown, msg, LocalizedError } from '../shared/i18n/messages'
 import { executeRemoteCommand } from './ssh-commands'
 import { DEFAULT_APP_SETTINGS } from '../shared/app-settings.ts'
 import type { PerformanceMonitorState, PerformanceSnapshot } from '../shared/types.ts'
@@ -67,7 +68,7 @@ async function readRemoteReport(monitor: SessionPerformanceMonitor, generation: 
   const controller = new AbortController()
   monitor.controller = controller
   try {
-    if (!current(monitor) || monitor.generation !== generation) throw new Error('性能采集已停止')
+    if (!current(monitor) || monitor.generation !== generation) throw new LocalizedError(msg('errors.performanceSamplingStopped'))
     const result = await executeRemoteCommand(monitor.session.client, PERFORMANCE_COMMAND, {
       signal: controller.signal, timeoutMs: COMMAND_TIMEOUT_MS, maxStdoutBytes: MAX_STDOUT_BYTES, maxStderrBytes: MAX_STDERR_BYTES,
     })
@@ -116,7 +117,7 @@ async function sample(monitor: SessionPerformanceMonitor): Promise<void> {
     monitor.previousCpuTicks = null
     monitor.segmentOpen = false
     monitor.state.status = 'error'
-    monitor.state.message = error instanceof Error ? error.message : String(error)
+    monitor.state.message = messageFromUnknown(error)
     publish(monitor)
   } finally {
     monitor.inFlight = false
@@ -181,7 +182,7 @@ export function getPerformanceMonitorState(sessionId: string): PerformanceMonito
 
 export function activatePerformanceMonitor(sessionId: string): PerformanceMonitorState {
   const session = sessions.get(sessionId)
-  if (!session) throw new Error('SSH 会话未连接')
+  if (!session) throw new LocalizedError(msg('errors.sshSessionIsNotConnected'))
   let monitor = monitors.get(sessionId)
   if (monitor && monitor.session !== session) {
     removePerformanceMonitorForSession(sessionId)
@@ -257,7 +258,7 @@ export function stopAllPerformanceMonitors(): void {
 
 export function refreshPerformanceMonitor(sessionId: string): void {
   const monitor = monitors.get(sessionId)
-  if (!monitor || !current(monitor)) throw new Error('性能监控当前未启用')
+  if (!monitor || !current(monitor)) throw new LocalizedError(msg('errors.performanceMonitoringIsNotEnabled'))
   if (monitor.timer) clearTimeout(monitor.timer)
   monitor.timer = null
   void sample(monitor)

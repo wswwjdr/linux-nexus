@@ -1,3 +1,4 @@
+import { msg, LocalizedError } from './i18n/messages'
 import type { CommandAliasSnapshot, ServerProfile } from './types'
 
 export interface ParsedCommandAlias {
@@ -16,7 +17,7 @@ function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
 }
 
 export function normalizeStoredCommandAliases(value: unknown, profileIds: ReadonlySet<string>): Record<string, CommandAliasSnapshot> {
-  if (!isRecord(value)) throw new Error('命令别名数据结构无效')
+  if (!isRecord(value)) throw new LocalizedError(msg('errors.invalidCommandAliasDataStructure'))
   const aliases = value
   for (const [profileId, candidate] of Object.entries(aliases)) {
     if (!profileIds.has(profileId) || !isRecord(candidate)
@@ -25,7 +26,7 @@ export function normalizeStoredCommandAliases(value: unknown, profileIds: Readon
       || (candidate.syncedAt !== null && (typeof candidate.syncedAt !== 'string' || !Number.isFinite(Date.parse(candidate.syncedAt))))
       || (candidate.status !== 'unsynced' && candidate.status !== 'synced' && candidate.status !== 'stale')
       || (candidate.status === 'synced' && candidate.syncedAt === null)) {
-      throw new Error('命令别名数据结构无效：' + profileId)
+      throw new LocalizedError(msg('errors.invalidCommandAliasDataStructure2', { "profileId": profileId }))
     }
     const names = new Set<string>()
     for (const alias of candidate.aliases) {
@@ -36,7 +37,7 @@ export function normalizeStoredCommandAliases(value: unknown, profileIds: Readon
         || (alias.removable && alias.removalReason !== null)
         || (!alias.removable && !alias.removalReason)
         || names.has(alias.name)) {
-        throw new Error('命令别名数据结构无效：' + profileId)
+        throw new LocalizedError(msg('errors.invalidCommandAliasDataStructure2', { "profileId": profileId }))
       }
       names.add(alias.name)
     }
@@ -50,10 +51,10 @@ export function connectionIdentityChanged(previous: ServerProfile, next: ServerP
 
 export function validateCommandAlias(name: string, command: string): void {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-    throw new Error('别名名称只能包含英文字母、数字和下划线，且不能以数字开头')
+    throw new LocalizedError(msg('errors.aliasNamesMayContainOnlyLettersNumbersAndUnderscoresAnd'))
   }
   if (!command.trim() || command.length > 8192 || /[\0\r\n]/.test(command)) {
-    throw new Error('命令不能为空，且不能包含换行或空字符（最多 8192 个字符）')
+    throw new LocalizedError(msg('errors.commandMustNotBeEmptyOrContainLineBreaksOr'))
   }
 }
 
@@ -68,7 +69,7 @@ export function parseCommandAliasProtocol(output: string | Uint8Array, beginMark
   const begin = fields.lastIndexOf(beginMarker)
   const end = fields.indexOf(endMarker, begin + 1)
   if (begin < 0 || end < 0 || (end - begin - 1) % 4 !== 0) {
-    throw new Error('无法读取服务器命令别名数据')
+    throw new LocalizedError(msg('errors.cannotReadServerCommandAliasData'))
   }
 
   const aliases: ParsedCommandAlias[] = []
@@ -80,7 +81,7 @@ export function parseCommandAliasProtocol(output: string | Uint8Array, beginMark
     const removableValue = fields[index + 3]
     if (!name || command === undefined || definition === undefined
       || (removableValue !== '0' && removableValue !== '1') || names.has(name)) {
-      throw new Error('服务器返回的命令别名数据无效')
+      throw new LocalizedError(msg('errors.serverReturnedInvalidCommandAliasData'))
     }
     names.add(name)
     aliases.push({ name, command, definition, removable: removableValue === '1' })

@@ -1,3 +1,7 @@
+import { initializeApplication } from '../../src/renderer/src/application-settings'
+import { createRemoteFilesApi } from '../../src/renderer/src/remote-files-api'
+import type { MessageValue } from '../../src/shared/i18n/messages'
+import { setLanguage } from '../../src/shared/i18n/messages'
 import React, { createRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Terminal } from '@xterm/xterm'
@@ -14,6 +18,8 @@ import PerformanceMonitor from '../../src/renderer/src/components/PerformanceMon
 import type { PerformanceSnapshot, PerformanceMonitorState } from '../../src/shared/types'
 import { DEFAULT_APP_SETTINGS } from '../../src/shared/app-settings'
 import '../../src/renderer/src/styles.css'
+
+setLanguage('zh-CN')
 
 const noop = () => {}
 const profile = { id: 'server', name: '生产服务器 · Nexus', host: '192.0.2.10', port: 22, username: 'deploy', pinned: true }
@@ -38,6 +44,7 @@ const monitorState: PerformanceMonitorState = {
   }))],
 }
 const fixtureWindow = window as any
+fixtureWindow.settingsApi = createRemoteFilesApi(fixtureWindow.remoteFilesTransport)
 const showToast = (_kind: string, message: string) => { fixtureWindow.lastToast = message }
 const terminalError = (message: string) => { throw new Error(message) }
 const terminalOpen = Terminal.prototype.open
@@ -76,11 +83,13 @@ function Files({ grid = false }: { grid?: boolean }) {
 function Fixture() {
   const [scene, setScene] = useState('home')
   const management = useProfileManagement({
+    initialSettings,
     showToast,
     onProfileSaved: noop, onProfileDeleted: noop, onDefaultViewChange: noop,
     onFileTypeExtensionsChange: noop, onPerformanceThresholdsChange: noop,
   })
   fixtureWindow.openSettings = management.openSettingsDialog
+  fixtureWindow.changeLanguage = management.updateLanguage
   fixtureWindow.settingsLoaded = management.profileDataLoaded
   fixtureWindow.showScene = setScene
   return <div className="app-shell"><main className="main-area">
@@ -119,9 +128,15 @@ function Fixture() {
       onCloseSettings={management.closeSettingsDialog} onUpdateSettings={management.updateSettingsForm}
       onAddFileTypeExtension={management.addFileTypeExtension} onRemoveFileTypeExtension={management.removeFileTypeExtension}
       onResetFileTypeExtensions={management.resetFileTypeExtensions} onUpdateDefaultView={management.updateDefaultView}
-      onUpdateTheme={management.updateTheme} onUpdateStartupProfile={management.updateStartupProfile}
+      onUpdateLanguage={management.updateLanguage} onUpdateTheme={management.updateTheme} onUpdateStartupProfile={management.updateStartupProfile}
       onUpdateStartupKind={management.updateStartupKind} onSelectAliasProfile={noop} onUpdateAliasName={noop}
       onUpdateAliasCommand={noop} onSyncAliases={noop} onAddAlias={noop} onRequestAliasDelete={noop} />
   </div>
 }
-createRoot(document.getElementById('root')!).render(<Fixture />)
+let initialSettings = DEFAULT_APP_SETTINGS
+async function start() {
+  initialSettings = await fixtureWindow.settingsApi.getAppSettings()
+  initializeApplication({ settings: initialSettings, systemLanguage: 'zh-CN' })
+  createRoot(document.getElementById('root')!).render(<Fixture />)
+}
+void start()

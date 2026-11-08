@@ -1,3 +1,5 @@
+import { msg, renderMessage, type MessageValue, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ComponentPropsWithoutRef } from 'react'
 import { BookOpen, List, X } from 'lucide-react'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
@@ -8,7 +10,8 @@ import { markdownImageUrl } from '@shared/markdown-resources'
 import { collectHeadings, headingIds } from './markdown-headings'
 
 function CodeBlock({ children, ...props }: ComponentPropsWithoutRef<'pre'>) {
-  const [notice, setNotice] = useState('')
+  useLanguage()
+  const [notice, setNotice] = useState<MessageValue>('')
   useEffect(() => {
     if (!notice) return
     const timer = window.setTimeout(() => setNotice(''), 2000)
@@ -16,20 +19,22 @@ function CodeBlock({ children, ...props }: ComponentPropsWithoutRef<'pre'>) {
   }, [notice])
   return <div className="md-code-block"><button className="md-copy-code" onClick={async (event) => {
     const text = event.currentTarget.parentElement!.querySelector('code')!.textContent!
-    try { await navigator.clipboard.writeText(text); setNotice('已复制') }
-    catch { setNotice('复制失败，请手动选择代码') }
-  }}>复制代码</button><pre {...props}>{children}</pre>{notice && <span role="status" className="md-copy-notice">{notice}</span>}</div>
+    try { await navigator.clipboard.writeText(text); setNotice(msg('previews.copied')) }
+    catch { setNotice(msg('previews.copyFailedSelectTheCodeManually')) }
+  }}>{tr('previews.copyCode')}</button><pre {...props}>{children}</pre>{notice && <span role="status" className="md-copy-notice">{renderMessage(notice)}</span>}</div>
 }
 
 function MarkdownImage({ src, alt }: { src: string | null; alt?: string }) {
+  useLanguage()
   const [failed, setFailed] = useState(false)
-  if (!src || failed) return <span className="md-image-error" role="img" aria-label={alt || '图片'}>图片无法加载{alt && `：${alt}`}</span>
+  if (!src || failed) return <span className="md-image-error" role="img" aria-label={alt || tr('previews.image')}>{tr('previews.imageCouldNotBeLoaded2')}{alt && `：${alt}`}</span>
   return <img src={src} alt={alt || ''} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
 }
 
 export default function MarkdownPreviewDialog({ result, active, onClose, onOpenExternalLink }: {
   result: Extract<PreviewResult, { type: 'markdown' }>; active: boolean; onClose: () => void; onOpenExternalLink: (url: string) => void
 }) {
+  useLanguage()
   const titleId = useId()
   const prefix = useId() + '-heading-'
   const catalogId = useId()
@@ -93,12 +98,12 @@ export default function MarkdownPreviewDialog({ result, active, onClose, onOpenE
   return <div className="modal-backdrop preview-backdrop ap-overlay md-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <section className="ap-modal md-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} inert={!active}>
       <header className="ap-header"><div className="ap-title-area"><span className="ap-title-icon"><BookOpen size={20} /></span><h2 id={titleId} title={result.name}>{result.name}</h2></div>
-        <div className="ap-header-actions"><button className={'ap-icon-button' + (catalogOpen ? ' active' : '')} aria-label="目录" title="目录" aria-expanded={catalogOpen} aria-controls={catalogId} disabled={headings.length === 0} onClick={() => setCatalogOpen(!catalogOpen)}><List size={18} /></button>
-          <button className="ap-icon-button ap-close" title="关闭预览" aria-label="关闭预览" onClick={onClose}><X size={18} /></button></div>
+        <div className="ap-header-actions"><button className={'ap-icon-button' + (catalogOpen ? ' active' : '')} aria-label={tr('previews.contents')} title={tr('previews.contents')} aria-expanded={catalogOpen} aria-controls={catalogId} disabled={headings.length === 0} onClick={() => setCatalogOpen(!catalogOpen)}><List size={18} /></button>
+          <button className="ap-icon-button ap-close" title={tr('previews.closePreview')} aria-label={tr('previews.closePreview')} onClick={onClose}><X size={18} /></button></div>
       </header>
       <div className={'md-layout' + (catalogOpen ? ' catalog-open' : '')}>
-        <nav className="md-catalog" id={catalogId} aria-label="文档目录" hidden={!catalogOpen}>
-          {headings.map((heading) => <button key={heading.id} style={{ paddingLeft: 12 + (heading.depth - 1) * 12 }} aria-current={currentHeading === heading.id ? 'location' : undefined} onClick={() => jump(heading.id)}>{heading.text || '无标题'}</button>)}
+        <nav className="md-catalog" id={catalogId} aria-label={tr('previews.documentContents')} hidden={!catalogOpen}>
+          {headings.map((heading) => <button key={heading.id} style={{ paddingLeft: 12 + (heading.depth - 1) * 12 }} aria-current={currentHeading === heading.id ? 'location' : undefined} onClick={() => jump(heading.id)}>{heading.text || tr('previews.untitled')}</button>)}
         </nav>
         <div className="md-viewport" ref={viewportRef}><article className="md-article">
           {body}

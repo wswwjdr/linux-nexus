@@ -2,23 +2,15 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   ConnectionClosedEvent,
   FileRootExpiredEvent,
-  CommandAliasOperationResult,
-  CommandAliasSnapshot,
-  DroppedUploadEntry,
-  LogPreviewPage,
   OperationExecutionRequest,
-  OperationExecutionResult,
   UploadSelectionRequest,
-  UploadSelection,
   UploadExecutionRequest,
-  PreviewResult,
   PreviewType,
   TextEncoding,
   TextSaveOptions,
   PerformanceMonitorState,
-  AppSettings,
   AppSettingsPatch,
-  RemoteFilesApi,
+  RemoteFilesTransport,
   ContentSearchEvent,
   ContentSearchRequest,
   NameSearchEvent,
@@ -33,7 +25,8 @@ import type {
   SessionKind,
 } from '@shared/types'
 
-const api: RemoteFilesApi = {
+const api: RemoteFilesTransport = {
+  getBootstrap: () => ipcRenderer.invoke('app:bootstrap'),
   listProfiles: () => ipcRenderer.invoke('profiles:list'),
   saveProfile: (input: SaveProfileInput) => ipcRenderer.invoke('profiles:save', input),
   setProfilePinned: (profileId: string, pinned: boolean) => ipcRenderer.invoke('profiles:set-pinned', profileId, pinned),
@@ -52,17 +45,17 @@ const api: RemoteFilesApi = {
   },
   writeTerminal: (sessionId: string, data: string) => ipcRenderer.invoke('terminal:write', sessionId, data),
   resizeTerminal: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
-  getPerformanceMonitorState: (sessionId: string): Promise<PerformanceMonitorState> => ipcRenderer.invoke('performance:state', sessionId),
-  activatePerformanceMonitor: (sessionId: string): Promise<PerformanceMonitorState> => ipcRenderer.invoke('performance:activate', sessionId),
-  deactivatePerformanceMonitor: (sessionId: string): Promise<void> => ipcRenderer.invoke('performance:deactivate', sessionId),
-  refreshPerformanceMonitor: (sessionId: string): Promise<void> => ipcRenderer.invoke('performance:refresh', sessionId),
-  getAppSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
-  updateAppSettings: (patch: AppSettingsPatch): Promise<AppSettings> => ipcRenderer.invoke('settings:update', patch),
-  listCommandAliasSnapshots: (): Promise<CommandAliasSnapshot[]> => ipcRenderer.invoke('aliases:list'),
-  syncCommandAliases: (profileId: string): Promise<CommandAliasOperationResult> => ipcRenderer.invoke('aliases:sync', profileId),
-  saveCommandAlias: (profileId: string, name: string, command: string, existingCommand?: string): Promise<CommandAliasOperationResult> =>
+  getPerformanceMonitorState: (sessionId: string) => ipcRenderer.invoke('performance:state', sessionId),
+  activatePerformanceMonitor: (sessionId: string) => ipcRenderer.invoke('performance:activate', sessionId),
+  deactivatePerformanceMonitor: (sessionId: string) => ipcRenderer.invoke('performance:deactivate', sessionId),
+  refreshPerformanceMonitor: (sessionId: string) => ipcRenderer.invoke('performance:refresh', sessionId),
+  getAppSettings: () => ipcRenderer.invoke('settings:get'),
+  updateAppSettings: (patch: AppSettingsPatch) => ipcRenderer.invoke('settings:update', patch),
+  listCommandAliasSnapshots: () => ipcRenderer.invoke('aliases:list'),
+  syncCommandAliases: (profileId: string) => ipcRenderer.invoke('aliases:sync', profileId),
+  saveCommandAlias: (profileId: string, name: string, command: string, existingCommand?: string) =>
     ipcRenderer.invoke('aliases:save', profileId, name, command, existingCommand),
-  deleteCommandAlias: (profileId: string, name: string, expectedCommand: string): Promise<CommandAliasOperationResult> =>
+  deleteCommandAlias: (profileId: string, name: string, expectedCommand: string) =>
     ipcRenderer.invoke('aliases:delete', profileId, name, expectedCommand),
   listDirectory: (sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('files:list', sessionId, remotePath),
@@ -74,17 +67,17 @@ const api: RemoteFilesApi = {
   cancelNameSearch: (requestId: string) => ipcRenderer.invoke('files:name-search-cancel', requestId),
   startContentSearch: (request: ContentSearchRequest) => ipcRenderer.invoke('files:content-search', request),
   cancelContentSearch: (requestId: string) => ipcRenderer.invoke('files:content-search-cancel', requestId),
-  startScriptExecution: (request: ScriptExecutionRequest): Promise<void> => ipcRenderer.invoke('files:script-execution-start', request),
-  cancelScriptExecution: (requestId: string): Promise<boolean> => ipcRenderer.invoke('files:script-execution-cancel', requestId),
-  selectUploadSources: (request: UploadSelectionRequest): Promise<UploadSelection | null> => ipcRenderer.invoke('files:upload-select', request),
+  startScriptExecution: (request: ScriptExecutionRequest) => ipcRenderer.invoke('files:script-execution-start', request),
+  cancelScriptExecution: (requestId: string) => ipcRenderer.invoke('files:script-execution-cancel', requestId),
+  selectUploadSources: (request: UploadSelectionRequest) => ipcRenderer.invoke('files:upload-select', request),
   executeUpload: (request: UploadExecutionRequest) => ipcRenderer.invoke('files:upload-execute', request),
   cancelUploadSelection: (selectionId: string) => ipcRenderer.invoke('files:upload-selection-cancel', selectionId),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   downloadEntries: (requestId: string, sessionId: string, remotePaths: string[]) =>
     ipcRenderer.invoke('files:download', requestId, sessionId, remotePaths),
   cancelTransfer: (requestId: string) => ipcRenderer.invoke('files:transfer-cancel', requestId),
-  executeOperation: (request: OperationExecutionRequest): Promise<OperationExecutionResult> => ipcRenderer.invoke('files:operation-execute', request),
-  cancelOperation: (requestId: string): Promise<boolean> => ipcRenderer.invoke('files:operation-cancel', requestId),
+  executeOperation: (request: OperationExecutionRequest) => ipcRenderer.invoke('files:operation-execute', request),
+  cancelOperation: (requestId: string) => ipcRenderer.invoke('files:operation-cancel', requestId),
   createRemoteDirectory: (sessionId: string, remoteDirectory: string, name: string) =>
     ipcRenderer.invoke('files:create-directory', sessionId, remoteDirectory, name),
   renameRemoteEntry: (sessionId: string, remotePath: string, name: string) =>
@@ -93,14 +86,14 @@ const api: RemoteFilesApi = {
     ipcRenderer.invoke('files:path-copy', sessionId, remotePath),
   deleteRemoteEntries: (sessionId: string, remotePaths: string[]) =>
     ipcRenderer.invoke('files:delete', sessionId, remotePaths),
-  previewFile: (sessionId: string, remotePath: string, type: PreviewType, encoding?: TextEncoding): Promise<PreviewResult> =>
+  previewFile: (sessionId: string, remotePath: string, type: PreviewType, encoding?: TextEncoding) =>
     ipcRenderer.invoke('files:preview', sessionId, remotePath, type, encoding),
-  openExternalUrl: (url: string): Promise<void> => ipcRenderer.invoke('shell:open-external', url),
+  openExternalUrl: (url: string) => ipcRenderer.invoke('shell:open-external', url),
   saveTextFile: (sessionId: string, remotePath: string, content: string, lineEnding, options: TextSaveOptions) =>
     ipcRenderer.invoke('files:text-save', sessionId, remotePath, content, lineEnding, options),
   installTextSaveDependencies: (sessionId, packages, password) =>
     ipcRenderer.invoke('files:text-save-install-dependencies', sessionId, packages, password),
-  readLogPreview: (sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number): Promise<LogPreviewPage> =>
+  readLogPreview: (sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number) =>
     ipcRenderer.invoke('files:preview-log', sessionId, remotePath, beforeOffset, snapshotSize),
   releasePreview: (token: string) => ipcRenderer.invoke('files:preview-release', token),
   onTransferProgress: (callback: (progress: TransferProgress) => void) => {
@@ -145,4 +138,4 @@ const api: RemoteFilesApi = {
   },
 }
 
-contextBridge.exposeInMainWorld('remoteFiles', api)
+contextBridge.exposeInMainWorld('remoteFilesTransport', api)

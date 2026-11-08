@@ -1,3 +1,5 @@
+import { msg, renderMessage, type MessageValue, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Check, LoaderCircle, X } from 'lucide-react'
 import type { RemoteEntryRenameDialogState } from '../features/remote-files/useRemoteOperations'
@@ -10,9 +12,10 @@ interface RemoteEntryRenameDialogProps {
 }
 
 export default function RemoteEntryRenameDialog({ state, onSubmit, onClose }: RemoteEntryRenameDialogProps) {
+  useLanguage()
   const [name, setName] = useState(state.entry.name)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<MessageValue | null>(null)
   const submittingRef = useRef(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -38,7 +41,7 @@ export default function RemoteEntryRenameDialog({ state, onSubmit, onClose }: Re
     event.preventDefault()
     if (submittingRef.current) return
     if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\0')) {
-      setError('名称不能为空，不能是 . 或 ..，也不能包含 / 或空字符')
+      setError(msg('files.nameMustNotBeEmptyBeOrOrContainOr'))
       return
     }
     submittingRef.current = true
@@ -47,7 +50,7 @@ export default function RemoteEntryRenameDialog({ state, onSubmit, onClose }: Re
     try {
       await onSubmit(name)
     } catch (reason) {
-      setError('重命名失败：' + errorMessage(reason))
+      setError(msg('files.renameFailed', { "value1": errorMessage(reason) }))
     } finally {
       submittingRef.current = false
       setBusy(false)
@@ -58,12 +61,12 @@ export default function RemoteEntryRenameDialog({ state, onSubmit, onClose }: Re
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
       <section className="modal create-directory-modal" role="dialog" aria-modal="true" aria-labelledby="rename-entry-title">
         <div className="modal-heading">
-          <h2 id="rename-entry-title">{state.entry.type === 'directory' ? '重命名文件夹' : '重命名文件'}</h2>
-          <button className="icon-button modal-close" title="关闭" aria-label="关闭" disabled={busy} onClick={onClose}><X size={18} /></button>
+          <h2 id="rename-entry-title">{state.entry.type === 'directory' ? tr('files.renameFolder') : tr('files.renameFile')}</h2>
+          <button className="icon-button modal-close" title={tr('common.close')} aria-label={tr('common.close')} disabled={busy} onClick={onClose}><X size={18} /></button>
         </div>
         <form onSubmit={(event) => void submit(event)}>
           <label className="field">
-            <span>名称</span>
+            <span>{tr('common.name')}</span>
             <input
               ref={inputRef}
               autoCapitalize="none"
@@ -76,12 +79,12 @@ export default function RemoteEntryRenameDialog({ state, onSubmit, onClose }: Re
               onChange={(event) => { setName(event.target.value); setError(null) }}
             />
           </label>
-          {error && <div id="rename-entry-error" className="confirmation-error" role="alert">{error}</div>}
+          {error && <div id="rename-entry-error" className="confirmation-error" role="alert">{renderMessage(error)}</div>}
           <div className="modal-footer">
-            <button type="button" className="secondary-button" disabled={busy} onClick={onClose}>取消</button>
+            <button type="button" className="secondary-button" disabled={busy} onClick={onClose}>{tr('common.cancel')}</button>
             <button type="submit" className="primary-button" disabled={busy}>
               {busy ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}
-              {busy ? '重命名中' : '重命名'}
+              {busy ? tr('files.renaming') : tr('files.rename')}
             </button>
           </div>
         </form>

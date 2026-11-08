@@ -4,6 +4,8 @@ const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } = require(
 const { join, resolve } = require('node:path')
 const { tmpdir } = require('node:os')
 
+app.setPath('userData', require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'nexus-browser-')))
+app.on('window-all-closed', () => {})
 app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
   const { createServer } = await import('vite')
@@ -26,11 +28,10 @@ app.whenReady().then(async () => {
     server: { host: '127.0.0.1', port: 0, watch: null },
   })
   const preload = join(directory, 'preload.cjs')
-  writeFileSync(preload, `const { contextBridge, ipcRenderer } = require('electron');
-    contextBridge.exposeInMainWorld('settingsApi', {
-      getAppSettings: () => ipcRenderer.invoke('settings:get'),
-      updateAppSettings: patch => ipcRenderer.invoke('settings:update', patch),
-    });`)
+  await require('esbuild').build({
+    entryPoints: [resolve('src/preload/index.ts')], bundle: true, platform: 'node', format: 'cjs',
+    external: ['electron'], outfile: preload, alias: { '@shared': resolve('src/shared') },
+  })
   const window = new BrowserWindow({ show: false, width: 1160, height: 760, webPreferences: { preload, sandbox: true, backgroundThrottling: false } })
   const originalSource = nativeTheme.themeSource
   let main
@@ -44,7 +45,7 @@ app.whenReady().then(async () => {
     await require('esbuild').build({
       stdin: { contents: "export { registerSettingsIpc } from './src/main/ipc/settings'; export * from './src/main/theme'; export * from './src/main/runtime'; export { configureStateFiles, readAppSettings, writeAppSettings } from './src/main/state-store'", resolveDir: process.cwd() },
       bundle: true, platform: 'node', format: 'cjs', packages: 'external', outfile: mainBundle,
-      alias: { '@shared': resolve('src/shared') },
+      alias: { '@shared': resolve('src/shared'), i18next: require.resolve('i18next') },
     })
     const theme = require(mainBundle)
     main = theme
@@ -53,21 +54,16 @@ app.whenReady().then(async () => {
     runtime.setMainWindow(window)
     store.configureStateFiles(join(directory, 'servers.json'), join(directory, 'settings.json'))
     assert.equal(store.readAppSettings().theme, 'light')
-    // Migrate only valid legacy settings, preserving every other preference.
+    // Unsupported settings are rejected without rewriting configuration files.
     const settingsPath = join(directory, 'settings.json')
-    const legacy = { ...store.readAppSettings(), theme: 'system', textMiB: 17 }
-    writeFileSync(settingsPath, JSON.stringify(legacy))
-    assert.deepEqual(store.readAppSettings(), { ...legacy, theme: 'light' })
-    assert.deepEqual(JSON.parse(readFileSync(settingsPath, 'utf8')), { ...legacy, theme: 'light' })
-    assert.equal(store.readAppSettings().textMiB, 17)
-    for (const invalid of [{ ...legacy, textMiB: 0 }, { ...legacy, theme: 'unknown' }]) {
+    const valid = { ...store.readAppSettings(), textMiB: 17 }
+    for (const invalid of [{ ...valid, theme: 'system' }, { ...valid, textMiB: 0 }, { ...valid, language: 'unknown' }]) {
       const contents = JSON.stringify(invalid)
       writeFileSync(settingsPath, contents)
       assert.throws(() => store.readAppSettings())
       assert.equal(readFileSync(settingsPath, 'utf8'), contents)
     }
-    store.writeAppSettings({ ...legacy, theme: 'light' })
-    assert.throws(() => store.writeAppSettings(legacy))
+    store.writeAppSettings(valid)
     theme.registerSettingsIpc()
     theme.applyTheme('light')
     await window.loadURL(server.resolvedUrls.local[0] + '__theme_test')
@@ -186,6 +182,32 @@ app.whenReady().then(async () => {
     assert.equal(store.readAppSettings().theme, 'cream')
     await js('window.rejectSettingsSave = false; document.querySelector("[aria-label=关闭设置]").click()')
     await assert.rejects(js('window.settingsApi.updateAppSettings({ theme: "system" })'))
+    // Exercise the production sandboxed preload, typed IPC failure and live language persistence.
+    assert.equal(await js(`window.settingsApi.updateAppSettings({ language: 'unknown' }).then(() => '', error => error.localizedMessage.key)`), 'settings.invalidLanguage')
+    const bootstrap = await js('window.settingsApi.getBootstrap()')
+    assert.ok(['en', 'zh-CN'].includes(bootstrap.systemLanguage))
+    assert.equal(bootstrap.settings.language, 'system')
+    await js('window.originalLanguageTerminal = window.terminal; window.originalLanguageScreen = document.querySelector(".xterm-screen"); window.changeLanguage("en")')
+    await waitFor('document.documentElement.lang === "en"')
+    assert.equal(store.readAppSettings().language, 'en')
+    assert.equal(await js('window.terminal === window.originalLanguageTerminal && document.querySelector(".xterm-screen") === window.originalLanguageScreen && window.outputSubscriptions === 1'), true)
+    window.setSize(820, 560)
+    await js('window.openSettings()')
+    await waitFor('Boolean(document.querySelector(".settings-section-language select"))')
+    assert.equal(await js('document.querySelector("#settings-modal-title").textContent'), 'Application settings')
+    assert.equal(await js('document.querySelector(".settings-section-language select").value'), 'en')
+    assert.equal(await js('document.querySelector(".settings-modal").scrollWidth <= document.querySelector(".settings-modal").clientWidth + 1'), true)
+    if (screenshots) writeFileSync(join(screenshots, 'english-settings-small.png'), (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
+    await js(`document.querySelector('[aria-label="Close settings"]').click()`)
+    await js('window.showScene("menu")')
+    await tick()
+    assert.match(await js('document.querySelector("[role=menu]").textContent'), /Copy/)
+    if (screenshots) {
+      await window.webContents.capturePage(undefined, { stayHidden: true })
+      await tick()
+      writeFileSync(join(screenshots, 'english-menu-small.png'), (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
+    }
+    window.setSize(1160, 760)
     // Restart the main theme module and reload the renderer using the persisted settings.
     delete require.cache[require.resolve(mainBundle)]
     const restarted = require(mainBundle)
@@ -194,6 +216,7 @@ app.whenReady().then(async () => {
     restarted.applyTheme(restarted.readAppSettings().theme)
     await window.reload()
     await waitFor('Boolean(window.settingsLoaded) && document.documentElement.dataset.theme === "cream"')
+    assert.equal(await js('document.documentElement.lang'), 'en')
     assert.equal(window.getBackgroundColor().toLowerCase(), backgrounds.cream)
     nativeTheme.emit('updated')
     await tick()

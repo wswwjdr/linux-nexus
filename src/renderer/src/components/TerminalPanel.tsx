@@ -1,3 +1,5 @@
+import { type MessageValue, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
@@ -11,10 +13,11 @@ interface TerminalPanelProps {
   sessionId: string
   active: boolean
   connected: boolean
-  onError: (message: string) => void
+  onError: (message: MessageValue) => void
 }
 
 export default function TerminalPanel({ sessionId, active, connected, onError }: TerminalPanelProps) {
+  useLanguage()
   const hostRef = useRef<HTMLDivElement>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -162,7 +165,7 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
           className="browser-context-menu terminal-context-menu"
           ref={contextMenuRef}
           role="menu"
-          aria-label="终端操作"
+          aria-label={tr('connections.terminalActions')}
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onContextMenu={(event) => {
             event.preventDefault()
@@ -170,11 +173,9 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
           }}
         >
           <button className="entry-context-action" role="menuitem" disabled={!terminalRef.current?.hasSelection()} onClick={copySelection}>
-            <Copy size={16} /> 复制
-          </button>
+            <Copy size={16} />{tr('common.copy')}</button>
           <button className="entry-context-action" role="menuitem" disabled={!connected} onClick={() => void pasteClipboard()}>
-            <Clipboard size={16} /> 粘贴
-          </button>
+            <Clipboard size={16} />{tr('connections.paste')}</button>
         </div>
       )}
     </div>

@@ -2,14 +2,17 @@ const { app, BrowserWindow } = require('electron')
 const assert = require('node:assert/strict')
 const { resolve } = require('node:path')
 const { mkdirSync, writeFileSync } = require('node:fs')
+app.setPath('userData', require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'nexus-browser-')))
+app.on('window-all-closed', () => {})
 app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
   const { createServer } = await import('vite')
   const { default: react } = await import('@vitejs/plugin-react')
-  const server = await createServer({ configFile: false, resolve: { alias: { '@': resolve('src/renderer/src'), '@shared': resolve('src/shared') } }, plugins: [react(), {
+  const server = await createServer({ configFile: false, cacheDir: require('node:path').join(app.getPath('userData'), 'vite-cache'), resolve: { alias: { '@': resolve('src/renderer/src'), '@shared': resolve('src/shared') } }, plugins: [react(), {
     name: 'virtual-test', configureServer(server) {
       server.middlewares.use('/__virtual_test', async (_req, response) => {
         const html = await server.transformIndexHtml('/__virtual_test', `<html><body><div id="root"></div><script type="module">
+import { setLanguage } from '/src/shared/i18n/messages.ts'; setLanguage('zh-CN');
           import React, { useRef, useState } from 'react'; import { createRoot } from 'react-dom/client';
           import Collection from '/src/renderer/src/features/files/FileEntryCollection.tsx';
           import '/src/renderer/src/styles/foundation.css'; import '/src/renderer/src/styles/theme.css'; import '/src/renderer/src/styles/workspace.css';
@@ -24,6 +27,7 @@ app.whenReady().then(async () => {
     }
   }], server: { host: '127.0.0.1', port: 0, watch: null } })
   const window = new BrowserWindow({ show: false, width: 1000, height: 600, webPreferences: { sandbox: true, backgroundThrottling: false } })
+  window.webContents.on('console-message', details => { if (details.level === 'error') console.error(details.message) })
   try {
     await server.listen(); await window.loadURL(server.resolvedUrls.local[0] + '__virtual_test')
     while (!await window.webContents.executeJavaScript('Boolean(document.querySelector("[data-entry-path]"))')) await new Promise(resolve => setTimeout(resolve, 50))

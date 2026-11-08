@@ -1,3 +1,5 @@
+import { type LanguagePreference } from '@shared/i18n/languages'
+import { type MessageValue } from '@shared/i18n/messages'
 import type { CommandAlias, CommandAliasConfirmation, CommandAliasSnapshot, FileTypeCategory, ServerProfile, ThemeMode } from '@shared/types'
 import type { FormEvent } from 'react'
 import type { FileViewMode, PendingAliasHostKey, PendingHostKey, PerformanceThresholdField, ProfileForm, SettingsFieldKey, SettingsForm } from '@/app-types'
@@ -5,7 +7,7 @@ import type { FileViewMode, PendingAliasHostKey, PendingHostKey, PerformanceThre
 export interface DialogLayerProps {
   profileDialog: { mode: 'create' | 'edit'; form: ProfileForm } | null
   profileDeleteDialog: ServerProfile | null
-  profileDeleteError: string | null
+  profileDeleteError: MessageValue | null
   profileDeleting: boolean
   createDirectoryDialog: { name: string } | null
   creatingDirectory: boolean
@@ -34,6 +36,7 @@ export interface DialogLayerProps {
   onRemoveFileTypeExtension: (category: FileTypeCategory, extension: string) => void
   onResetFileTypeExtensions: () => void
   onUpdateDefaultView: (mode: FileViewMode) => void
+  onUpdateLanguage: (language: LanguagePreference) => void
   onUpdateTheme: (theme: ThemeMode) => void
   onUpdateStartupProfile: (profileId: string) => void
   onUpdateStartupKind: (kind: SettingsForm['startupKind']) => void

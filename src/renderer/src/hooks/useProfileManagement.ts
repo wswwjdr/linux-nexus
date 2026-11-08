@@ -1,3 +1,6 @@
+import { type LanguagePreference } from '@shared/i18n/languages'
+import { applyApplicationLanguage } from '@/application-settings'
+import { msg, type MessageValue } from '@shared/i18n/messages'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { AppSettings, AppSettingsPatch, FileTypeCategory, PerformanceThresholds, FileTypeExtensions, SaveProfileInput, ServerProfile, SessionKind, StartupConnection, ThemeMode } from '@shared/types'
 import { performanceThresholdsToForm, type FileViewMode, type PerformanceThresholdField, type ProfileForm, type SettingsFieldKey, type SettingsForm } from '@/app-types'
@@ -7,7 +10,8 @@ import { defaultFileTypeExtensions } from '@shared/app-settings'
 import { applyRendererTheme } from '@/app-theme'
 
 interface UseProfileManagementOptions {
-  showToast: (kind: ToastNotice['kind'], message: string) => void
+  initialSettings: AppSettings
+  showToast: (kind: ToastNotice['kind'], message: MessageValue) => void
   onProfileSaved: (profile: ServerProfile) => void
   onProfileDeleted: (profileId: string) => void
   onDefaultViewChange: (mode: FileViewMode) => void
@@ -26,14 +30,14 @@ const thresholdFieldParts: Record<PerformanceThresholdField, keyof PerformanceTh
   loadPerCoreCritical: 'loadPerCore',
 }
 
-export function useProfileManagement({ showToast, onProfileSaved, onProfileDeleted, onDefaultViewChange, onFileTypeExtensionsChange, onPerformanceThresholdsChange }: UseProfileManagementOptions) {
+export function useProfileManagement({ initialSettings, showToast, onProfileSaved, onProfileDeleted, onDefaultViewChange, onFileTypeExtensionsChange, onPerformanceThresholdsChange }: UseProfileManagementOptions) {
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
   const [profilesLoaded, setProfilesLoaded] = useState(false)
   const [startupSettingsLoaded, setStartupSettingsLoaded] = useState(false)
   const [startupConnection, setStartupConnection] = useState<StartupConnection | null>(null)
   const [dialog, setDialog] = useState<{ mode: 'create' | 'edit'; form: ProfileForm } | null>(null)
   const [profileDeleteDialog, setProfileDeleteDialog] = useState<ServerProfile | null>(null)
-  const [profileDeleteError, setProfileDeleteError] = useState<string | null>(null)
+  const [profileDeleteError, setProfileDeleteError] = useState<MessageValue | null>(null)
   const [profileDeleting, setProfileDeleting] = useState(false)
   const [settingsForm, setSettingsForm] = useState<SettingsForm | null>(null)
   const [settingsLoading, setSettingsLoading] = useState(false)
@@ -86,16 +90,17 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
       try {
         const saved = await window.remoteFiles.updateAppSettings(patch)
         persistedSettingsRef.current = saved
+        if (key === 'language') applyApplicationLanguage(saved)
         if (key === 'theme') applyRendererTheme(saved.theme)
         if (key === 'performanceThresholds') onPerformanceThresholdsChange(saved.performanceThresholds)
       } catch (error) {
-        showToast('error', '保存设置失败：' + errorMessage(error))
+        showToast('error', msg('settings.couldNotSaveSettings', { "value1": errorMessage(error) }))
         let saved = persistedSettingsRef.current
         try {
           saved = await window.remoteFiles.getAppSettings()
           persistedSettingsRef.current = saved
         } catch (readError) {
-          showToast('error', '重新读取设置失败：' + errorMessage(readError))
+          showToast('error', msg('settings.couldNotRereadSettings', { "value1": errorMessage(readError) }))
         }
         if (saved && settingsVersionsRef.current.get(key) === version) {
           updateSettingsDraft((current) => formWithSetting(current, key, saved!))
@@ -113,18 +118,14 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
     void refreshProfiles()
       .catch((error) => showToast('error', errorMessage(error)))
       .finally(() => setProfilesLoaded(true))
-    void window.remoteFiles.getAppSettings()
-      .then((settings) => {
-        applyRendererTheme(settings.theme)
-        persistedSettingsRef.current = settings
-        setStartupConnection(settings.startupConnection)
-        onDefaultViewChange(settings.defaultView)
-        onFileTypeExtensionsChange(settings.fileTypeExtensions)
-        onPerformanceThresholdsChange(settings.performanceThresholds)
-      })
-      .catch((error) => showToast('error', '读取设置失败：' + errorMessage(error)))
-      .finally(() => setStartupSettingsLoaded(true))
-  }, [showToast, onFileTypeExtensionsChange, onPerformanceThresholdsChange])
+    applyRendererTheme(initialSettings.theme)
+    persistedSettingsRef.current = initialSettings
+    setStartupConnection(initialSettings.startupConnection)
+    onDefaultViewChange(initialSettings.defaultView)
+    onFileTypeExtensionsChange(initialSettings.fileTypeExtensions)
+    onPerformanceThresholdsChange(initialSettings.performanceThresholds)
+    setStartupSettingsLoaded(true)
+  }, [initialSettings, showToast, onFileTypeExtensionsChange, onPerformanceThresholdsChange])
 
   const openProfileDialog = (mode: 'create' | 'edit', profile?: ServerProfile) => {
     setDialog({
@@ -152,6 +153,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
       const profileId = settings.startupConnection?.profileId
       replaceSettingsForm({
         ...toPreviewLimitsForm(settings),
+        language: settings.language,
         theme: settings.theme,
         defaultView: settings.defaultView,
         fileTypeExtensions: Object.fromEntries(Object.entries(settings.fileTypeExtensions).map(([type, extensions]) => [type, [...extensions]])) as FileTypeExtensions,
@@ -163,7 +165,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
       })
       setStartupConnection(settings.startupConnection)
     } catch (error) {
-      showToast('error', '读取设置失败：' + errorMessage(error))
+      showToast('error', msg('settings.couldNotReadSettings', { "value1": errorMessage(error) }))
     } finally {
       setSettingsLoading(false)
     }
@@ -246,6 +248,11 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
     updateSettingsDraft((current) => ({ ...current, defaultView }))
     onDefaultViewChange(defaultView)
     persistSetting('defaultView', { defaultView })
+  }
+
+  const updateLanguage = (language: LanguagePreference) => {
+    updateSettingsDraft(current => ({ ...current, language }))
+    persistSetting('language', { language })
   }
 
   const updateTheme = (theme: ThemeMode) => {
@@ -334,7 +341,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
       const updatedProfile = await window.remoteFiles.setProfilePinned(profileId, pinned)
       setProfiles((current) => current.map((profile) => profile.id === profileId ? updatedProfile : profile))
     } catch (error) {
-      showToast('error', '更新服务器置顶状态失败：' + errorMessage(error))
+      showToast('error', msg('settings.couldNotUpdateServerPinState', { "value1": errorMessage(error) }))
     }
   }
 
@@ -365,6 +372,7 @@ export function useProfileManagement({ showToast, onProfileSaved, onProfileDelet
     resetFileTypeExtensions,
     updateDefaultView,
     updateTheme,
+    updateLanguage,
     updateStartupProfile,
     updateStartupKind,
     closeProfileDialog,

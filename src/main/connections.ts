@@ -1,3 +1,4 @@
+import { type MessageValue, messageFromUnknown, msg, LocalizedError } from '../shared/i18n/messages'
 import { clipboard } from 'electron'
 import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
@@ -23,14 +24,14 @@ const pendingConnections = new Map<string, { profileId: string; client: Client; 
 const SSH_KEEPALIVE_INTERVAL_MS = 15_000
 const SSH_KEEPALIVE_COUNT_MAX = 3
 
-function sendConnectionClosed(sessionId: string, profileId: string, message: string): void {
+function sendConnectionClosed(sessionId: string, profileId: string, message: MessageValue): void {
   const window = getMainWindow()
   if (window && !window.isDestroyed()) {
     window.webContents.send('connection:closed', { sessionId, profileId, message })
   }
 }
 
-function failActiveSession(activeSession: ActiveSession, message: string): void {
+function failActiveSession(activeSession: ActiveSession, message: MessageValue): void {
   if (sessions.get(activeSession.sessionId) !== activeSession) return
   sessions.delete(activeSession.sessionId)
   void revokeFileIdentity(activeSession)
@@ -67,12 +68,12 @@ export function stopSessionsForProfile(profileId: string): void {
   for (const [sessionId, pending] of pendingConnections) {
     if (pending.profileId !== profileId) continue
     stopSession(sessionId)
-    sendConnectionClosed(sessionId, profileId, '服务器配置已更新')
+    sendConnectionClosed(sessionId, profileId, msg('errors.serverConfigurationUpdated'))
   }
   for (const activeSession of sessions.values()) {
     if (activeSession.profileId !== profileId) continue
     stopSession(activeSession.sessionId)
-    sendConnectionClosed(activeSession.sessionId, profileId, '服务器配置已更新')
+    sendConnectionClosed(activeSession.sessionId, profileId, msg('errors.serverConfigurationUpdated'))
   }
 }
 
@@ -89,7 +90,7 @@ export function connectProfile(
   rows: number,
   startPath: string,
 ): Promise<ConnectResult> {
-  if (pendingConnections.has(sessionId) || sessions.has(sessionId)) throw new Error('会话编号已在使用')
+  if (pendingConnections.has(sessionId) || sessions.has(sessionId)) throw new LocalizedError(msg('errors.sessionIdIsAlreadyInUse'))
   const state = readState()
   const profile = profileFromState(state, profileId)
   const password = passwordFor(state, profileId)
@@ -111,17 +112,17 @@ export function connectProfile(
     pendingConnections.set(sessionId, {
       profileId,
       client,
-      cancel: () => finish({ ok: false, reason: 'other', message: '连接已取消' }),
+      cancel: () => finish({ ok: false, reason: 'other', message: msg('errors.connectionCancelled') }),
     })
 
     client.on('ready', () => {
       if (!isCurrentAttempt()) {
-        finish({ ok: false, reason: 'other', message: '连接已取消' })
+        finish({ ok: false, reason: 'other', message: msg('errors.connectionCancelled') })
         return
       }
       const activate = (shell?: ActiveSession['shell'], effectiveUid?: number) => {
         if (!isCurrentAttempt()) {
-          finish({ ok: false, reason: 'other', message: '连接已取消' })
+          finish({ ok: false, reason: 'other', message: msg('errors.connectionCancelled') })
           return
         }
         const activeSession: ActiveSession = { sessionId, client, kind, profileId, shell }
@@ -143,7 +144,7 @@ export function connectProfile(
             sendOutput(stdoutDecoder.end())
             sendOutput(stderrDecoder.end())
             if (sessions.get(sessionId) === activeSession) {
-              failActiveSession(activeSession, 'SSH 终端已退出')
+              failActiveSession(activeSession, msg('errors.sshTerminalExited'))
               client.end()
             }
           })
@@ -158,17 +159,17 @@ export function connectProfile(
           ({ stdout }) => {
             const uid = stdout.toString('ascii')
             if (!/^\d+$/.test(uid)) {
-              finish({ ok: false, reason: 'other', message: '服务器返回了无效的登录 UID' })
+              finish({ ok: false, reason: 'other', message: msg('errors.serverReturnedAnInvalidLoginUid') })
               return
             }
             activate(undefined, Number(uid))
           },
-          (error: unknown) => finish({ ok: false, reason: 'other', message: error instanceof Error ? error.message : String(error) }),
+          (error: unknown) => finish({ ok: false, reason: 'other', message: messageFromUnknown(error) }),
         )
       } else {
         client.shell({ term: 'xterm-256color', cols, rows }, (error, shell) => {
           if (error) {
-            finish({ ok: false, reason: 'other', message: error.message })
+            finish({ ok: false, reason: 'other', message: messageFromUnknown(error) })
             return
           }
           activate(shell)
@@ -182,8 +183,8 @@ export function connectProfile(
         failActiveSession(
           activeSession,
           error.message === 'Keepalive timeout'
-            ? 'SSH 保活超时，服务器或网络已断开'
-            : error.message || 'SSH 连接异常',
+            ? msg('errors.sshKeepaliveTimedOutTheServerOrNetworkDisconnected')
+            : error.message || msg('errors.sshConnectionError'),
         )
         client.destroy()
         return
@@ -193,22 +194,22 @@ export function connectProfile(
         finish(keyIssue)
         return
       }
-      const message = error.message || '连接失败'
+      const message = error.message || ''
       const lowerMessage = message.toLowerCase()
       if (error.level === 'client-authentication' || lowerMessage.includes('authentication')) {
-        finish({ ok: false, reason: 'auth-failed', message: '用户名或密码错误，或服务器拒绝了密码认证' })
+        finish({ ok: false, reason: 'auth-failed', message: msg('errors.incorrectUsernameOrPasswordOrTheServerRejectedPasswordAuthentication') })
       } else if (/timed out|econnrefused|ehostunreach|enetunreach|enotfound|socket hang up/i.test(message)) {
-        finish({ ok: false, reason: 'unreachable', message: '无法连接服务器，请检查地址、端口和网络或 VPN' })
+        finish({ ok: false, reason: 'unreachable', message: msg('errors.cannotConnectToTheServerCheckTheAddressPortNetwork') })
       } else {
-        finish({ ok: false, reason: 'other', message })
+        finish({ ok: false, reason: 'other', message: message || msg('errors.connectionFailed') })
       }
     })
 
     client.on('close', () => {
       const activeSession = sessions.get(sessionId)
-      if (activeSession?.client === client) failActiveSession(activeSession, 'SSH 连接已关闭')
+      if (activeSession?.client === client) failActiveSession(activeSession, msg('errors.sshConnectionClosed'))
       if (!settled && isCurrentAttempt()) {
-        finish({ ok: false, reason: 'unreachable', message: '连接在完成前关闭' })
+        finish({ ok: false, reason: 'unreachable', message: msg('errors.connectionClosedBeforeItWasEstablished') })
       }
     })
 
@@ -242,13 +243,13 @@ export function connectProfile(
 
 export function writeTerminal(sessionId: string, data: string): void {
   const shell = sessions.get(sessionId)?.shell
-  if (!shell || shell.destroyed) throw new Error('SSH 终端未连接')
+  if (!shell || shell.destroyed) throw new LocalizedError(msg('errors.sshTerminalIsNotConnected'))
   shell.write(data)
 }
 
 export function resizeTerminal(sessionId: string, cols: number, rows: number): void {
   const shell = sessions.get(sessionId)?.shell
-  if (!shell || shell.destroyed) throw new Error('SSH 终端未连接')
+  if (!shell || shell.destroyed) throw new LocalizedError(msg('errors.sshTerminalIsNotConnected'))
   shell.setWindow(rows, cols, 0, 0)
 }
 
@@ -268,7 +269,7 @@ export async function createRemoteDirectory(
 ): Promise<void> {
   const { commands } = filesSession(sessionId)
   if (typeof name !== 'string' || !name || name === '.' || name === '..' || name.includes('/') || name.includes('\0')) {
-    throw new Error('名称无效：不能包含路径分隔符，也不能是 . 或 ..')
+    throw new LocalizedError(msg('errors.invalidNamePathSeparatorsAndAreNotAllowed'))
   }
   const parentPath = posix.resolve('/', remoteDirectory)
   const targetPath = posix.join(parentPath, name)
@@ -277,15 +278,15 @@ export async function createRemoteDirectory(
 
 export async function deleteRemoteEntries(sessionId: string, remotePaths: string[]): Promise<void> {
   const { commands } = filesSession(sessionId)
-  if (!Array.isArray(remotePaths) || remotePaths.length === 0) throw new Error('至少选择一个远程项目')
+  if (!Array.isArray(remotePaths) || remotePaths.length === 0) throw new LocalizedError(msg('errors.selectAtLeastOneRemoteItem'))
   const paths = remotePaths.map((remotePath) => {
-    if (typeof remotePath !== 'string' || !remotePath || remotePath.includes('\0')) throw new Error('删除路径无效')
+    if (typeof remotePath !== 'string' || !remotePath || remotePath.includes('\0')) throw new LocalizedError(msg('errors.invalidDeletionPath'))
     return posix.resolve('/', remotePath)
   })
-  if (paths.includes('/')) throw new Error('不能删除服务器根目录')
-  if (new Set(paths).size !== paths.length) throw new Error('删除列表包含重复路径')
+  if (paths.includes('/')) throw new LocalizedError(msg('errors.cannotDeleteTheServerRootDirectory'))
+  if (new Set(paths).size !== paths.length) throw new LocalizedError(msg('errors.deletionListContainsDuplicatePaths'))
   await runRemoteCommand(commands,
-    'set -eu; for path in "$@"; do [[ ! -L "$path" && ( -f "$path" || -d "$path" ) ]] || { printf "只能删除普通文件或文件夹: %s\\n" "$path" >&2; exit 1; }; done; rm -r -- "$@"',
+    'set -eu; for path in "$@"; do [[ ! -L "$path" && ( -f "$path" || -d "$path" ) ]] || { printf "LINUX_NEXUS_DIAGNOSTIC:deleteType: %s\\n" "$path" >&2; exit 1; }; done; rm -r -- "$@"',
     paths,
   )
 }

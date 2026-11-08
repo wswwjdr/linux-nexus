@@ -1,3 +1,4 @@
+import { type MessageValue } from '../i18n/messages'
 export interface PerformanceThreshold {
   warning: number
   critical: number
@@ -29,6 +30,6 @@ export interface PerformanceMonitorState {
   version: number
   status: 'inactive' | 'sampling' | 'ready' | 'error'
   snapshot: PerformanceSnapshot | null
-  message: string | null
+  message: MessageValue | null
   history: PerformanceSnapshot[][]
 }

@@ -1,3 +1,5 @@
+import { renderMessage, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { useEffect, useId, useRef, type KeyboardEvent } from 'react'
 import { Eye, X } from 'lucide-react'
 import type { PreviewType } from '@shared/file-type-registry'
@@ -11,6 +13,7 @@ interface FileOpenDialogProps {
 }
 
 export default function FileOpenDialog({ name, types, onSelect, onClose }: FileOpenDialogProps) {
+  useLanguage()
   const id = useId()
   const dialogRef = useRef<HTMLElement>(null)
   const returnFocusRef = useRef<HTMLElement | null>(null)
@@ -54,18 +57,18 @@ export default function FileOpenDialog({ name, types, onSelect, onClose }: FileO
     <div className="modal-backdrop file-open-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close() }}>
       <section className="modal file-open-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={id + '-title'} aria-describedby={id + '-name'} onKeyDown={handleKeyDown}>
         <header className="modal-heading">
-          <h2 id={id + '-title'}>选择打开方式</h2>
-          <button type="button" className="icon-button modal-close" aria-label="关闭" title="关闭" onClick={close}><X size={18} /></button>
+          <h2 id={id + '-title'}>{tr('files.chooseHowToOpen')}</h2>
+          <button type="button" className="icon-button modal-close" aria-label={tr('common.close')} title={tr('common.close')} onClick={close}><X size={18} /></button>
         </header>
         <p className="file-open-name" id={id + '-name'}>{name}</p>
         <div className="file-open-options">
           {types.map((type) => (
             <button type="button" className="secondary-button" data-preview-type={type} key={type} onClick={() => onSelect(type)}>
-              <Eye size={16} />{previewTypeLabels[type]}
+              <Eye size={16} />{renderMessage(previewTypeLabels[type])}
             </button>
           ))}
         </div>
-        <footer className="modal-footer"><button type="button" className="secondary-button" onClick={close}>取消</button></footer>
+        <footer className="modal-footer"><button type="button" className="secondary-button" onClick={close}>{tr('common.cancel')}</button></footer>
       </section>
     </div>
   )

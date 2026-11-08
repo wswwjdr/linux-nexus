@@ -1,3 +1,5 @@
+import { useLanguage } from '@/i18n'
+import { tr } from '@shared/i18n/messages'
 import { useLayoutEffect, useRef, useState, type DragEvent } from 'react'
 import { FolderOpen, LoaderCircle, Plus, Terminal, X } from 'lucide-react'
 import type { ServerProfile } from '@shared/types'
@@ -17,6 +19,7 @@ interface SessionTabBarProps {
 }
 
 export default function SessionTabBar({ sessions, profiles, activeSessionId, actions, onAdd }: SessionTabBarProps) {
+  useLanguage()
   const draggedIdRef = useRef<string | null>(null)
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
@@ -50,7 +53,7 @@ export default function SessionTabBar({ sessions, profiles, activeSessionId, act
     draggedIdRef.current !== null && event.dataTransfer.types.includes(sessionTabMime)
 
   return (
-    <nav className="session-tabbar" role="tablist" aria-label="会话标签">
+    <nav className="session-tabbar" role="tablist" aria-label={tr('connections.sessionTabs')}>
       <div
         className="session-tab-list"
         onDragOver={(event) => {
@@ -78,13 +81,13 @@ export default function SessionTabBar({ sessions, profiles, activeSessionId, act
         {sessions.map((session, index) => {
           const profile = profiles.find((candidate) => candidate.id === session.profileId)
           const isActive = activeSessionId === session.id
-          const kindLabel = session.kind === 'files' ? '文件管理' : 'SSH'
+          const kindLabel = session.kind === 'files' ? tr('common.fileManager') : 'SSH'
           const sameKindSessions = sessions.filter((candidate) =>
             candidate.profileId === session.profileId && candidate.kind === session.kind)
           const duplicateIndex = sameKindSessions.findIndex((candidate) => candidate.id === session.id)
-          const baseLabel = profile?.name ?? '服务器'
+          const baseLabel = profile?.name ?? tr('settings.server')
           const label = sameKindSessions.length > 1 ? `${baseLabel} (${duplicateIndex + 1})` : baseLabel
-          const title = `${label} · ${kindLabel}${session.kind === 'files' ? ' · ' + session.currentPath : ''} · 拖动调整顺序`
+          const title = tr('connections.dragToReorder', { "label": label, "kindLabel": kindLabel, "value3": session.kind === 'files' ? ' · ' + session.currentPath : '' })
           const dropClass = dropTarget?.sessionId === session.id && draggedId !== session.id
             ? ' drop-' + dropTarget.placement : ''
           return (
@@ -142,15 +145,15 @@ export default function SessionTabBar({ sessions, profiles, activeSessionId, act
               </button>
               <button
                 className="session-tab-close"
-                title={'关闭 ' + label + ' ' + kindLabel}
-                aria-label={'关闭 ' + label + ' ' + kindLabel}
+                title={tr('connections.close', { "label": label, "kindLabel": kindLabel })}
+                aria-label={tr('connections.close', { "label": label, "kindLabel": kindLabel })}
                 onClick={() => actions.closeSession(session.id)}
               ><X size={13} /></button>
             </div>
           )
         })}
       </div>
-      <button className="icon-button session-add-button" title="新建会话" aria-label="新建会话" onClick={onAdd}>
+      <button className="icon-button session-add-button" title={tr('connections.newSession')} aria-label={tr('connections.newSession')} onClick={onAdd}>
         <Plus size={16} />
       </button>
     </nav>

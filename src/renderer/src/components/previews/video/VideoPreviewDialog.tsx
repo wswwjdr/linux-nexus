@@ -1,3 +1,5 @@
+import { type MessageValue, i18n, msg, renderMessage, tr } from '@shared/i18n/messages'
+import { useLanguage } from '@/i18n'
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Video } from 'lucide-react'
 import videojs from 'video.js'
@@ -12,22 +14,23 @@ import { useVideoShortcuts } from './useVideoShortcuts'
 
 videojs.addLanguage('zh-CN', zhCN)
 const shortcutGroups = audioShortcutGroups.map((group, index) => ({ ...group, items: index === 0
-  ? [...group.items, { keys: ['F'], description: '全屏模式' }]
-  : index === 1 ? [...group.items, { keys: ['长按 →'], description: '临时 2x 倍速' }] : group.items }))
+  ? [...group.items, { keys: ['F'], description: tr('previews.fullscreenMode') }]
+  : index === 1 ? [...group.items, { keys: [tr('previews.hold')], description: tr('previews.temporary2xSpeed') }] : group.items }))
 
 export default function VideoPreviewDialog({ result, active, onClose }: {
   result: Extract<PreviewResult, { type: 'video' }>; active: boolean; onClose: () => void
 }) {
+  const language = useLanguage()
   const hostRef = useRef<HTMLDivElement>(null)
   const dialogRef = useRef<HTMLElement>(null)
   const playerRef = useRef<Player | null>(null)
   const activeRef = useRef(active)
   const mayAutoplay = useRef(active)
   const [showShortcuts, setShowShortcuts] = useState(false)
-  const [notice, setNotice] = useState<{ error: boolean; message: string } | null>(null)
+  const [notice, setNotice] = useState<{ error: boolean; message: MessageValue } | null>(null)
   const titleId = useId()
   const shortcutsId = useId()
-  const report = useCallback((message: string) => setNotice({ error: true, message }), [])
+  const report = useCallback((message: MessageValue) => setNotice({ error: true, message }), [])
   const play = useCallback(() => {
     const player = playerRef.current!
     setNotice(null)
@@ -35,7 +38,7 @@ export default function VideoPreviewDialog({ result, active, onClose }: {
       if (!player.isDisposed() && !activeRef.current) player.pause()
     }, (error: unknown) => {
       if (player.isDisposed() || !activeRef.current) return
-      const failure = playbackFailure(error, '视频')
+      const failure = playbackFailure(error, msg('previews.video'))
       if (failure) setNotice(failure)
     })
   }, [])
@@ -46,7 +49,7 @@ export default function VideoPreviewDialog({ result, active, onClose }: {
       mayAutoplay.current = false
       playerRef.current?.pause()
       if (document.fullscreenElement && dialogRef.current!.contains(document.fullscreenElement)) {
-        void document.exitFullscreen().catch((error: unknown) => report('退出全屏失败：' + String(error)))
+        void document.exitFullscreen().catch((error: unknown) => report(msg('previews.couldNotExitFullscreen', { "value1": String(error) })))
       }
     }
   }, [active, report])
@@ -57,7 +60,7 @@ export default function VideoPreviewDialog({ result, active, onClose }: {
     element.className = 'video-js vjs-big-play-centered'
     hostRef.current!.append(element)
     const player = videojs(element, {
-      controls: true, autoplay: false, preload: 'metadata', fluid: false, fill: true, language: 'zh-CN',
+      controls: true, autoplay: false, preload: 'metadata', fluid: false, fill: true, language: i18n.language,
       playbackRates: [.5, 1, 1.5, 2], userActions: { hotkeys: false },
       controlBar: {
         progressControl: { seekBar: { playProgressBar: { children: [] } } },
@@ -71,7 +74,7 @@ export default function VideoPreviewDialog({ result, active, onClose }: {
     })
     player.on('error', () => {
       const error = player.error()!
-      report('视频加载或解码失败：' + error.message)
+      report(tr('previews.videoLoadingOrDecodingFailed', { "message": error.message }))
     })
     const initiallyActive = activeRef.current
     player.one('loadedmetadata', () => {
@@ -85,6 +88,7 @@ export default function VideoPreviewDialog({ result, active, onClose }: {
       if (activeRef.current && previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus()
     }
   }, [result.url, result.name, play, report])
+  useEffect(() => { playerRef.current?.language(language) }, [language])
   useVideoShortcuts(playerRef, dialogRef, active, play, report)
 
   const close = () => { playerRef.current!.pause(); onClose() }
@@ -93,7 +97,7 @@ export default function VideoPreviewDialog({ result, active, onClose }: {
       <MediaPreviewHeader title={result.name} titleId={titleId} icon={<Video size={20} />} showShortcuts={showShortcuts} shortcutsId={shortcutsId} onToggleShortcuts={() => setShowShortcuts(!showShortcuts)} onClose={close} />
       <div className="vp-content"><MediaShortcuts id={shortcutsId} open={showShortcuts} groups={shortcutGroups} />
         <div className="vp-player-container" ref={hostRef} />
-        {notice && <p className="vp-notice" role={notice.error ? 'alert' : 'status'}>{notice.message}</p>}
+        {notice && <p className="vp-notice" role={notice.error ? 'alert' : 'status'}>{renderMessage(notice.message)}</p>}
       </div>
     </section>
   </div>
