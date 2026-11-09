@@ -66,8 +66,11 @@ const api: RemoteFilesTransport = {
     ipcRenderer.invoke('files:list', sessionId, remotePath),
   getRemoteEntryProperties: (sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('files:properties', sessionId, remotePath),
-  getRemoteDirectoryDiskUsage: (sessionId: string, remotePath: string) =>
-    ipcRenderer.invoke('files:directory-disk-usage', sessionId, remotePath),
+  getRemoteDirectoryStats: (sessionId: string, remotePath: string) =>
+    ipcRenderer.invoke('files:directory-stats', sessionId, remotePath),
+  getRemoteDirectoryUsageTree: (sessionId, remotePath, requestId) =>
+    ipcRenderer.invoke('files:directory-usage-tree', sessionId, remotePath, requestId),
+  cancelRemoteDirectoryUsageTree: (requestId) => ipcRenderer.invoke('files:directory-usage-tree-cancel', requestId),
   startNameSearch: (request: NameSearchRequest) => ipcRenderer.invoke('files:name-search', request),
   cancelNameSearch: (requestId: string) => ipcRenderer.invoke('files:name-search-cancel', requestId),
   startContentSearch: (request: ContentSearchRequest) => ipcRenderer.invoke('files:content-search', request),

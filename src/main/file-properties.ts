@@ -1,6 +1,6 @@
 import { msg, LocalizedError } from '../shared/i18n/messages'
 import { posix } from 'node:path'
-import type { RemoteEntryProperties } from '@shared/types'
+import type { RemoteDirectoryStats, RemoteEntryProperties } from '@shared/types'
 import { filesSession, normalizedRemotePath } from './remote-fs'
 import { runRemoteCommand } from './ssh-commands'
 
@@ -50,22 +50,22 @@ export async function getRemoteEntryProperties(sessionId: string, remotePath: st
   }
 }
 
-export async function getRemoteDirectoryDiskUsage(sessionId: string, remotePath: string): Promise<number> {
+export async function getRemoteDirectoryStats(sessionId: string, remotePath: string): Promise<RemoteDirectoryStats> {
   const session = filesSession(sessionId)
   const path = normalizedRemotePath(remotePath)
-  const { stdout } = await runRemoteCommand(session.commands, [
-    'set -eu',
-    'export LC_ALL=C',
-    '[[ ! -L "$1" && -d "$1" ]] || { printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:diskUsageType" >&2; exit 1; }',
-    'du -s -B1 --null -- "$1"',
-  ].join('\n'), [path], commandOptions)
-  const output = stdout.toString('utf8')
-  const separator = output.indexOf('\t')
-  if (separator < 1 || output.slice(separator + 1) !== path + '\0') {
-    throw new LocalizedError(msg('errors.serverReturnedInvalidDirectoryDiskUsageData'))
-  }
-  const rawSize = output.slice(0, separator)
-  const size = Number(rawSize)
-  if (!/^\d+$/.test(rawSize) || !Number.isSafeInteger(size)) throw new LocalizedError(msg('errors.serverReturnedInvalidDirectoryDiskUsage'))
-  return size
+  const { stdout } = await runRemoteCommand(session.commands, String.raw`set -euo pipefail
+export LC_ALL=C
+[[ ! -L "$1" && -d "$1" ]] || { printf '%s\n' 'LINUX_NEXUS_DIAGNOSTIC:directoryStatsType' >&2; exit 1; }
+usage=$(du -P -s -B1 -- "$1")
+IFS=$'\t' read -r bytes _ <<< "$usage"
+counts=$(find -P -- "$1" -mindepth 1 -type d -printf 'd\n' -o -type f -printf 'f\n' |
+  awk '/^d$/ { directories++ } /^f$/ { files++ } END { printf "%.0f\t%.0f", directories, files }')
+printf '%s\t%s\n' "$bytes" "$counts"
+`, [path], commandOptions)
+
+  const fields = /^(\d+)\t(\d+)\t(\d+)\n$/.exec(stdout.toString('utf8'))
+  const values = fields?.slice(1).map(Number)
+  if (!values?.every(Number.isSafeInteger)) throw new LocalizedError(msg('errors.serverReturnedInvalidDirectoryStats'))
+  const [allocatedBytes, directoryCount, fileCount] = values
+  return { allocatedBytes, directoryCount, fileCount }
 }

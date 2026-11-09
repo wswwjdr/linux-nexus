@@ -115,6 +115,7 @@ export interface SettingsForm extends PreviewLimitsForm {
   language: LanguagePreference
   theme: ThemeMode
   fileTypeExtensions: FileTypeExtensions
+  directoryUsageEntryLimit: string
   transferFileConcurrency: string
   performanceSampleIntervalSeconds: string
   performanceThresholds: Record<PerformanceThresholdField, string>
@@ -127,7 +128,7 @@ export type PerformanceThresholdField = 'cpuWarning' | 'cpuCritical'
   | 'memoryWarning' | 'memoryCritical'
   | 'diskWarning' | 'diskCritical'
   | 'loadPerCoreWarning' | 'loadPerCoreCritical'
-export type SettingsFieldKey = PreviewLimitKey | 'transferFileConcurrency' | 'performanceSampleIntervalSeconds' | PerformanceThresholdField
+export type SettingsFieldKey = PreviewLimitKey | 'directoryUsageEntryLimit' | 'transferFileConcurrency' | 'performanceSampleIntervalSeconds' | PerformanceThresholdField
 export type PerformanceThresholdFieldValues = Record<PerformanceThresholdField, string>
 
 export function performanceThresholdsToForm(thresholds: PerformanceThresholds): PerformanceThresholdFieldValues {

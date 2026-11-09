@@ -4,7 +4,7 @@ const { readFileSync, writeFileSync, mkdirSync } = require('node:fs')
 
 app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
-  const { css, fixtures } = JSON.parse(readFileSync(process.argv[2], 'utf8'))
+  const { css, fixtures, treeFixture } = JSON.parse(readFileSync(process.argv[2], 'utf8'))
   const window = new BrowserWindow({ show: false, webPreferences: { sandbox: true, backgroundThrottling: false } })
   await window.loadURL('about:blank')
   const failures = []
@@ -35,6 +35,12 @@ app.whenReady().then(async () => {
     }
   }
   console.log(JSON.stringify({ checks, failures }))
+  if (!failures.length) {
+    window.setContentSize(640, 480)
+    await window.loadFile(treeFixture)
+    await window.webContents.executeJavaScript(`(${checkDirectoryUsage.toString()})(${JSON.stringify(css)})`)
+    console.log('directory usage tree checks passed')
+  }
   window.destroy()
   app.exit(failures.length ? 1 : 0)
 }).catch((error) => {
@@ -59,6 +65,18 @@ function checkLayout({ css, html, scope, theme }) {
   const area = performance ? { top: 42, left: 0, right: innerWidth, bottom: innerHeight } : backdrop.getBoundingClientRect()
   const padding = performance ? 16 : parseFloat(getComputedStyle(backdrop).paddingTop)
   const errors = []
+  const calculate = dialog.querySelector('.file-properties-calculate')
+  const contents = dialog.querySelector('.file-properties-directory-contents')
+  if ((calculate || contents) && innerWidth <= 640) dialog.style.maxWidth = '320px'
+  for (const button of dialog.querySelectorAll('.file-properties-calculate')) {
+    const style = getComputedStyle(button)
+    if (button.offsetHeight !== 26 || style.paddingLeft !== '8px' || style.paddingRight !== '8px') errors.push('calculate button must use compact dimensions')
+    if (button.getBoundingClientRect().right > button.parentElement.getBoundingClientRect().right + 1) errors.push('calculate button exceeds available width')
+  }
+  if (contents) {
+    if (contents.scrollWidth > contents.clientWidth) errors.push('directory counts overflow horizontally')
+    if (innerWidth <= 640 && contents.offsetHeight <= parseFloat(getComputedStyle(contents).lineHeight)) errors.push('directory counts must wrap in a narrow dialog')
+  }
   const fits = (element, label) => {
     const rect = element.getBoundingClientRect()
     if (rect.top < area.top + padding - 1 || rect.bottom > Math.min(area.bottom, innerHeight) - padding + 1
@@ -86,4 +104,49 @@ function checkLayout({ css, html, scope, theme }) {
     if (panel && panel.clientHeight < 40) errors.push(selector + ' has no usable viewport')
   }
   return errors
+}
+
+async function checkDirectoryUsage(css) {
+  document.head.appendChild(document.createElement('style')).textContent = css
+  const check = (condition, description) => { if (!condition) throw new Error(description) }
+  const until = async (predicate, description) => {
+    for (let i = 0; i < 160; i++) {
+      if (predicate()) return
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
+    throw new Error(description)
+  }
+  for (const [locale, name, size] of [['zh-CN', '名称', '占用空间'], ['en', 'Name', 'Disk usage']]) {
+    window.openTreeFixture(locale)
+    const button = () => document.querySelector('.file-properties-disk-usage button:last-child')
+    await until(button, 'The detailed usage button did not appear')
+    button().click()
+    const viewport = () => document.querySelector('[role="tree"]')
+    const rows = () => [...viewport().querySelectorAll('[role="treeitem"]')]
+    const row = title => rows().find(item => item.querySelector('bdi').textContent === title)
+    await until(() => viewport() && row('folder'), 'The detailed usage tree did not render')
+    const dialog = viewport().closest('[role="dialog"]')
+    dialog.style.maxWidth = '360px'
+    const header = [...dialog.querySelector('.directory-usage-columns').children].map(element => element.textContent)
+    check(header.join('|') === name + '|' + size, 'The usage column headings are incorrect')
+    check(viewport().clientHeight > 80 && viewport().scrollWidth <= viewport().clientWidth, 'The tree must fit a narrow dialog')
+    check(Math.abs(dialog.querySelector('.directory-usage-columns > :last-child').getBoundingClientRect().right -
+      row('folder').querySelector('.directory-usage-size').getBoundingClientRect().right) <= 1, 'Size column is not aligned with its heading')
+    check(rows().length < 80 && rows()[1] === row('folder') && !row('nested'), 'The tree must render sorted, expanded-root rows only')
+    check(row('a shared file').querySelector('.directory-usage-shared'), 'The shared allocation marker is missing')
+    const key = value => viewport().dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true }))
+    viewport().focus()
+    key('ArrowRight')
+    await until(() => row('folder').dataset.active === 'true', 'ArrowRight did not move into the root')
+    key('ArrowRight')
+    await until(() => row('nested'), 'Keyboard expansion did not show the nested row')
+    key('ArrowLeft')
+    await until(() => !row('nested'), 'Keyboard collapse did not hide the nested row')
+    row('folder').click()
+    await until(() => row('nested'), 'Mouse expansion did not show the nested row')
+    key('End')
+    const lastFile = locale === 'en' ? 'file-499996' : 'file-99996'
+    await until(() => row(lastFile)?.dataset.active === 'true', 'The last descendant was not reachable')
+    check(rows().length < 80, 'The virtual tree rendered too many rows')
+  }
 }

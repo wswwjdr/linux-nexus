@@ -3,6 +3,9 @@ import { msg, LocalizedError } from './i18n/messages'
 import type { AppSettings, PerformanceThresholds, FileTypeExtensions, PreviewLimits, SessionKind, StartupConnection } from './types'
 import { DEFAULT_FILE_TYPE_EXTENSIONS, fileTypeRegistry, normalizeFileTypeExtension } from './file-type-registry'
 
+export const DEFAULT_DIRECTORY_USAGE_ENTRY_LIMIT = 100_000
+export const MAX_DIRECTORY_USAGE_ENTRY_LIMIT = 500_000
+
 export const DEFAULT_PREVIEW_LIMITS: PreviewLimits = {
   textMiB: 5,
   pdfMiB: 100,
@@ -33,6 +36,7 @@ export function defaultAppSettings(): AppSettings {
     defaultView: 'details',
     fileTypeExtensions: defaultFileTypeExtensions(),
     startupConnection: null,
+    directoryUsageEntryLimit: DEFAULT_DIRECTORY_USAGE_ENTRY_LIMIT,
     transferFileConcurrency: 4,
     performanceSampleIntervalSeconds: 3,
     performanceThresholds: {
@@ -45,7 +49,8 @@ export function defaultAppSettings(): AppSettings {
 }
 
 export const DEFAULT_APP_SETTINGS = defaultAppSettings()
-const appSettingsKeys = [...Object.keys(DEFAULT_PREVIEW_LIMITS), 'language', 'theme', 'defaultView', 'fileTypeExtensions', 'startupConnection', 'transferFileConcurrency', 'performanceSampleIntervalSeconds', 'performanceThresholds']
+const requiredAppSettingsKeys = [...Object.keys(DEFAULT_PREVIEW_LIMITS), 'language', 'theme', 'defaultView', 'fileTypeExtensions', 'startupConnection', 'transferFileConcurrency', 'performanceSampleIntervalSeconds', 'performanceThresholds']
+const appSettingsKeys = [...requiredAppSettingsKeys, 'directoryUsageEntryLimit']
 const performanceThresholdKeys = ['cpu', 'memory', 'disk', 'loadPerCore'] as const
 
 const MIN_TRANSFER_FILE_CONCURRENCY = 1
@@ -63,7 +68,7 @@ function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
 
 export function validateAppSettings(value: unknown): AppSettings {
   const limitKeys = Object.keys(DEFAULT_PREVIEW_LIMITS)
-  if (!isRecord(value) || !hasExactKeys(value, appSettingsKeys)) throw new LocalizedError(msg('errors.invalidApplicationSettingsStructure'))
+  if (!isRecord(value) || !hasExactKeys(value, Object.hasOwn(value, 'directoryUsageEntryLimit') ? appSettingsKeys : requiredAppSettingsKeys)) throw new LocalizedError(msg('errors.invalidApplicationSettingsStructure'))
   if (!isLanguagePreference(value.language)) throw new LocalizedError(msg('settings.invalidLanguage'))
   if (value.theme !== 'light' && value.theme !== 'dark' && value.theme !== 'cream') {
     throw new LocalizedError(msg('errors.invalidAppearanceThemeSetting'))
@@ -74,6 +79,12 @@ export function validateAppSettings(value: unknown): AppSettings {
     if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1) {
       throw new LocalizedError(msg('errors.previewSettingMustBeAPositiveInteger', { "key": key }))
     }
+  }
+  const directoryUsageEntryLimit = Object.hasOwn(value, 'directoryUsageEntryLimit')
+    ? value.directoryUsageEntryLimit : DEFAULT_DIRECTORY_USAGE_ENTRY_LIMIT
+  if (typeof directoryUsageEntryLimit !== 'number' || !Number.isInteger(directoryUsageEntryLimit)
+    || directoryUsageEntryLimit < 1 || directoryUsageEntryLimit > MAX_DIRECTORY_USAGE_ENTRY_LIMIT) {
+    throw new LocalizedError(msg('settings.invalidDirectoryUsageEntryLimit', { max: MAX_DIRECTORY_USAGE_ENTRY_LIMIT }))
   }
   const transferFileConcurrency = value.transferFileConcurrency
   if (typeof transferFileConcurrency !== 'number' || !Number.isInteger(transferFileConcurrency)
@@ -131,6 +142,7 @@ export function validateAppSettings(value: unknown): AppSettings {
     defaultView: value.defaultView,
     fileTypeExtensions,
     startupConnection,
+    directoryUsageEntryLimit,
     transferFileConcurrency,
     performanceSampleIntervalSeconds,
     performanceThresholds,

@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { act, createElement, Fragment, useState } from 'react'
 import { JSDOM } from 'jsdom'
-import type { RemoteEntryProperties, RemoteFilesApi } from '../src/shared/types.ts'
+import type { RemoteDirectoryStats, RemoteDirectoryUsageNode, RemoteEntryProperties, RemoteFilesApi } from '../src/shared/types.ts'
+import { setLanguage } from '../src/shared/i18n/messages.ts'
 import RemoteEntryPropertiesDialog from '../src/renderer/src/components/RemoteEntryPropertiesDialog.tsx'
 import SearchDialog from '../src/renderer/src/features/search/SearchDialog.tsx'
 import { defaultFileTypeExtensions } from '../src/shared/app-settings.ts'
@@ -19,13 +20,15 @@ const file: RemoteEntryProperties = {
   owner: 'alice', uid: 1000, group: 'staff', gid: 1001, accessedAt: '2026-10-01T12:00:00Z',
   modifiedAt: '2026-10-02T12:00:00Z', changedAt: '2026-10-03T12:00:00Z', createdAt: null, linkTarget: null,
 }
+const emptyStats: RemoteDirectoryStats = { allocatedBytes: 4096, directoryCount: 0, fileCount: 0 }
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason: Error) => void
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
-async function mount(api: Pick<RemoteFilesApi, 'getRemoteEntryProperties' | 'getRemoteDirectoryDiskUsage'>) {
+async function mount(api: Pick<RemoteFilesApi, 'getRemoteEntryProperties' | 'getRemoteDirectoryStats'> &
+  Partial<Pick<RemoteFilesApi, 'getRemoteDirectoryUsageTree' | 'cancelRemoteDirectoryUsageTree'>>) {
   const { createRoot } = await import('react-dom/client')
   Object.defineProperty(window, 'remoteFiles', { configurable: true, value: api })
   const host = document.createElement('div')
@@ -51,7 +54,7 @@ test('shows loading then fresh read-only metadata, focuses and traps focus, and 
   const calls: unknown[] = []
   const view = await mount({
     getRemoteEntryProperties: async (...args) => { calls.push(args); return pending.promise },
-    getRemoteDirectoryDiskUsage: async () => { throw new Error('must be on demand') },
+    getRemoteDirectoryStats: async () => { throw new Error('must be on demand') },
   })
   try {
     assert.match(view.host.textContent!, /正在读取/)
@@ -62,6 +65,7 @@ test('shows loading then fresh read-only metadata, focuses and traps focus, and 
     assert.ok(!view.host.textContent!.includes('创建时间'))
     assert.equal(view.host.querySelector('input'), null)
     assert.equal(view.button('计算占用空间'), undefined)
+    assert.equal(view.button('计算详细空间（树展示）'), undefined)
     const last = view.button('关闭')
     act(() => { last.focus(); last.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })) })
     assert.equal(document.activeElement?.getAttribute('aria-label'), '关闭')
@@ -80,7 +84,7 @@ test('metadata errors can be retried and symlinks display their own size, target
       if (++calls === 1) throw new Error('No such file or directory')
       return { ...file, type: 'symlink', size: 9, linkTarget: '../target\n中文', createdAt: file.accessedAt }
     },
-    getRemoteDirectoryDiskUsage: async () => 0,
+    getRemoteDirectoryStats: async () => emptyStats,
   })
   try {
     assert.match(view.host.querySelector('[role="alert"]')!.textContent!, /No such file/)
@@ -94,17 +98,21 @@ test('metadata errors can be retried and symlinks display their own size, target
   } finally { view.unmount() }
 })
 
-test('directory allocation is on demand, blocks duplicate requests and allows retry after timeout', async () => {
-  const first = deferred<number>()
+test('directory statistics are on demand, block duplicate requests and can be retried after timeout', async () => {
+  const first = deferred<RemoteDirectoryStats>()
   let count = 0
   const calls: unknown[] = []
   const view = await mount({
     getRemoteEntryProperties: async () => ({ ...file, type: 'directory' }),
-    getRemoteDirectoryDiskUsage: async (...args) => { calls.push(args); return ++count === 1 ? first.promise : 8192 },
+    getRemoteDirectoryStats: async (...args) => {
+      calls.push(args)
+      return ++count === 1 ? first.promise : { allocatedBytes: 8192, directoryCount: 1, fileCount: 1234 }
+    },
   })
   try {
     assert.equal(count, 0)
     assert.match(view.host.textContent!, /未计算/)
+    assert.doesNotMatch(view.host.textContent!, /包含/)
     assert.ok(!view.host.textContent!.includes('1,234'))
     await view.click('计算占用空间')
     assert.equal(view.button('计算占用空间').disabled, true)
@@ -112,23 +120,32 @@ test('directory allocation is on demand, blocks duplicate requests and allows re
     assert.equal(count, 1)
     await act(async () => first.reject(new Error('远程命令执行超时')))
     assert.match(view.host.querySelector('[role="alert"]')!.textContent!, /超时/)
+    assert.doesNotMatch(view.host.textContent!, /包含/)
     assert.match(view.host.textContent!, /alice/)
     await view.click('重试计算')
     assert.match(view.host.textContent!, /8,192 字节/)
+    assert.match(view.host.textContent!, /包含 1 个文件夹，1,234 个文件/)
+    await act(async () => { setLanguage('en') })
+    assert.match(view.host.textContent!, /Contains 1 folder and 1,234 files/)
     assert.deepEqual(calls, [['session-a', '/notes.txt'], ['session-a', '/notes.txt']])
-  } finally { view.unmount() }
+  } finally { view.unmount(); setLanguage('zh-CN') }
 })
 
 test('late responses cannot replace properties for a different session or path, or update an unmounted dialog', async () => {
   const old = deferred<RemoteEntryProperties>()
-  const disk = deferred<number>()
+  const oldStats = deferred<RemoteDirectoryStats>()
+  const afterClose = deferred<RemoteDirectoryStats>()
   const calls: unknown[] = []
   const view = await mount({
     getRemoteEntryProperties: async (session, path) => {
       calls.push([session, path])
       return session === 'session-a' ? old.promise : { ...file, name: path, path, type: 'directory' }
     },
-    getRemoteDirectoryDiskUsage: async () => disk.promise,
+    getRemoteDirectoryStats: async (_session, path) => {
+      if (path === '/long/new-directory') return oldStats.promise
+      if (path === '/another-directory') return afterClose.promise
+      return emptyStats
+    },
   })
   await view.render('session-b', '/long/new-directory')
   await act(async () => old.resolve(file))
@@ -136,11 +153,87 @@ test('late responses cannot replace properties for a different session or path, 
   assert.match(view.host.textContent!, /\/long\/new-directory/)
   assert.deepEqual(calls, [['session-a', '/notes.txt'], ['session-b', '/long/new-directory']])
   await view.click('计算占用空间')
+  await view.render('session-b', '/empty-directory')
+  await act(async () => oldStats.resolve({ allocatedBytes: 8192, directoryCount: 1, fileCount: 2 }))
+  assert.match(view.host.textContent!, /未计算/)
+  assert.doesNotMatch(view.host.textContent!, /包含/)
+  await view.click('计算占用空间')
+  assert.match(view.host.textContent!, /包含 0 个文件夹，0 个文件/)
+  await view.render('session-b', '/another-directory')
+  await view.click('计算占用空间')
   view.escape()
   assert.equal(view.closed, 1)
   view.unmount()
-  await act(async () => disk.resolve(4096))
+  await act(async () => afterClose.resolve(emptyStats))
   assert.equal(document.querySelector('[role="dialog"]'), null)
+})
+
+test('opens and retries detailed usage independently, cancels by request, and preserves simple statistics on return', async () => {
+  const result: RemoteDirectoryUsageNode[] = [{ name: 'notes.txt', parentIndex: null, type: 'directory', allocatedBytes: 4096, sharedAllocation: false }]
+  const cancelled = deferred<RemoteDirectoryUsageNode[]>()
+  const failed = deferred<RemoteDirectoryUsageNode[]>()
+  const closing = deferred<RemoteDirectoryUsageNode[]>()
+  const requests: string[] = []
+  const cancellations: string[] = []
+  const view = await mount({
+    getRemoteEntryProperties: async () => ({ ...file, type: 'directory' }),
+    getRemoteDirectoryStats: async () => emptyStats,
+    getRemoteDirectoryUsageTree: async (sessionId, path, requestId) => {
+      assert.equal(sessionId, 'session-a')
+      assert.equal(path, '/notes.txt')
+      requests.push(requestId)
+      return [cancelled.promise, failed.promise, result, closing.promise][requests.length - 1]
+    },
+    cancelRemoteDirectoryUsageTree: async (requestId) => { cancellations.push(requestId); return true },
+  })
+  const calculate = '计算详细空间（树展示）'
+  try {
+    await view.click('计算占用空间')
+    assert.match(view.host.textContent!, /包含 0 个文件夹，0 个文件/)
+    assert.equal(requests.length, 0)
+    await view.click(calculate)
+    assert.match(view.host.querySelector('[role="status"]')!.textContent!, /正在计算详细/)
+    assert.equal(document.activeElement?.textContent, '取消')
+    await view.click('取消')
+    assert.equal(document.activeElement?.textContent, calculate)
+    await act(async () => cancelled.resolve(result))
+    assert.equal(view.host.querySelector('[role="tree"]'), null)
+    assert.match(view.host.textContent!, /包含 0 个文件夹，0 个文件/)
+    await view.click(calculate)
+    await act(async () => failed.reject(new Error('Permission denied')))
+    assert.match(view.host.querySelector('[role="alert"]')!.textContent!, /Permission denied/)
+    await view.click('重试计算')
+    assert.ok(view.host.querySelector('[role="tree"]'))
+    await view.click('返回属性')
+    assert.match(view.host.textContent!, /包含 0 个文件夹，0 个文件/)
+    await view.click(calculate)
+    view.escape()
+    assert.equal(view.closed, 1)
+    assert.deepEqual(cancellations, [requests[0], requests[3]])
+    assert.equal(new Set(requests).size, 4)
+    await act(async () => closing.resolve(result))
+    assert.equal(view.host.querySelector('[role="tree"]'), null)
+  } finally { view.unmount() }
+})
+
+test('switching directory cancels the old detailed usage request and discards its result', async () => {
+  const old = deferred<RemoteDirectoryUsageNode[]>()
+  let requestId: string | undefined
+  const cancellations: string[] = []
+  const view = await mount({
+    getRemoteEntryProperties: async (_sessionId, path) => ({ ...file, type: 'directory', path }),
+    getRemoteDirectoryStats: async () => emptyStats,
+    getRemoteDirectoryUsageTree: async (_sessionId, _path, id) => { requestId = id; return old.promise },
+    cancelRemoteDirectoryUsageTree: async (id) => { cancellations.push(id); return true },
+  })
+  try {
+    await view.click('计算详细空间（树展示）')
+    await view.render('session-b', '/new-folder')
+    await act(async () => old.resolve([{ name: 'old', parentIndex: null, type: 'directory', allocatedBytes: 0, sharedAllocation: false }]))
+    assert.deepEqual(cancellations, [requestId])
+    assert.match(view.host.textContent!, /\/new-folder/)
+    assert.equal(view.host.querySelector('[role="tree"]'), null)
+  } finally { view.unmount() }
 })
 
 test('Escape closes properties above search without dismissing the search dialog', async () => {

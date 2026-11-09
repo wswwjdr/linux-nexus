@@ -8,7 +8,7 @@ import type { AppSettings, AppSettingsPatch, AppBootstrap } from './settings'
 import type { DroppedUploadEntry, TransferResult, OperationExecutionRequest, OperationExecutionResult, UploadSelectionRequest, UploadSelection, UploadExecutionRequest, TransferProgress, TransferQueuedEvent } from './transfers'
 import type { PreviewResult, TextLineEnding, LogPreviewPage, TextEncoding, TextSaveOptions, TextSaveResult, TextSavePackage, TextSaveInstallResult } from './previews'
 import type { PreviewType } from '../file-type-registry'
-import type { RemoteEntryProperties } from './file-properties'
+import type { RemoteDirectoryStats, RemoteDirectoryUsageNode, RemoteEntryProperties } from './file-properties'
 
 export interface RemoteFilesApi {
   getBootstrap(): Promise<AppBootstrap>
@@ -38,7 +38,9 @@ export interface RemoteFilesApi {
   deleteCommandAlias(profileId: string, name: string, expectedCommand: string): Promise<CommandAliasOperationResult>
   listDirectory(sessionId: string, remotePath: string): Promise<RemoteEntry[]>
   getRemoteEntryProperties(sessionId: string, remotePath: string): Promise<RemoteEntryProperties>
-  getRemoteDirectoryDiskUsage(sessionId: string, remotePath: string): Promise<number>
+  getRemoteDirectoryStats(sessionId: string, remotePath: string): Promise<RemoteDirectoryStats>
+  getRemoteDirectoryUsageTree(sessionId: string, remotePath: string, requestId: string): Promise<RemoteDirectoryUsageNode[]>
+  cancelRemoteDirectoryUsageTree(requestId: string): Promise<boolean>
   startNameSearch(request: NameSearchRequest): Promise<void>
   cancelNameSearch(requestId: string): Promise<boolean>
   startContentSearch(request: ContentSearchRequest): Promise<void>

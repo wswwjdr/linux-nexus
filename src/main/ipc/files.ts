@@ -1,4 +1,5 @@
 import { msg, LocalizedError } from '../../shared/i18n/messages'
+import { readAppSettings } from '../state-store'
 import { ipcMain } from './trusted-ipc'
 import type { TextEncoding, TextSaveOptions, ContentSearchRequest, NameSearchRequest, OperationExecutionStrategy, ScriptExecutionRequest, UploadExecutionRequest } from '@shared/types'
 import { copyRemotePath, createRemoteDirectory, deleteRemoteEntries, listDirectory } from '../connections'
@@ -9,7 +10,8 @@ import { cancelNameSearch, startNameSearch } from '../name-search'
 import { cancelContentSearch, startContentSearch } from '../content-search'
 import { cancelScriptExecution, startScriptExecution } from '../script-execution-runtime'
 import { filesSession, renameRemoteEntry } from '../remote-fs'
-import { getRemoteEntryProperties, getRemoteDirectoryDiskUsage } from '../file-properties'
+import { getRemoteDirectoryStats, getRemoteEntryProperties } from '../file-properties'
+import { cancelRemoteDirectoryUsageTree, getRemoteDirectoryUsageTree } from '../directory-usage-tree'
 import { cancelFileRootEntry, enterFileRoot, leaveFileRoot } from '../file-identity'
 
 export function registerFilesIpc(): void {
@@ -18,8 +20,12 @@ export function registerFilesIpc(): void {
   ipcMain.handle('files:root-leave', (_event, sessionId: unknown) => leaveFileRoot(sessionId))
   ipcMain.handle('files:properties', (_event, sessionId: string, remotePath: string) =>
     getRemoteEntryProperties(sessionId, remotePath))
-  ipcMain.handle('files:directory-disk-usage', (_event, sessionId: string, remotePath: string) =>
-    getRemoteDirectoryDiskUsage(sessionId, remotePath))
+  ipcMain.handle('files:directory-stats', (_event, sessionId: string, remotePath: string) =>
+    getRemoteDirectoryStats(sessionId, remotePath))
+  ipcMain.handle('files:directory-usage-tree', (_event, sessionId: string, remotePath: string, requestId: unknown) =>
+    getRemoteDirectoryUsageTree(sessionId, remotePath, requestId, readAppSettings().directoryUsageEntryLimit))
+  ipcMain.handle('files:directory-usage-tree-cancel', (_event, requestId: unknown) =>
+    cancelRemoteDirectoryUsageTree(requestId))
   ipcMain.handle('files:list', (_event, sessionId: string, remotePath: string) =>
     listDirectory(sessionId, remotePath))
   ipcMain.handle('files:name-search', (_event, request: NameSearchRequest) => startNameSearch(request))

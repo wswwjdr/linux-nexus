@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { FileTypeExtensions } from '../src/shared/types.ts'
-import { DEFAULT_APP_SETTINGS, DEFAULT_PERFORMANCE_THRESHOLDS, validateAppSettings } from '../src/shared/app-settings.ts'
+import { applyAppSettingsPatch, DEFAULT_APP_SETTINGS, DEFAULT_PERFORMANCE_THRESHOLDS, validateAppSettings } from '../src/shared/app-settings.ts'
 import { validateExternalUrl } from '../src/shared/external-url.ts'
 import { previewMimeType } from '../src/shared/preview-mime-type.ts'
 import { DEFAULT_FILE_TYPE_EXTENSIONS, normalizeFileTypeExtension, classifyFileTypeCategories } from '../src/shared/file-type-registry.ts'
@@ -10,6 +10,18 @@ import { previewTypesForFile } from '../src/shared/preview-file-type.ts'
 function copyDefaultExtensions(): FileTypeExtensions {
   return Object.fromEntries(Object.entries(DEFAULT_FILE_TYPE_EXTENSIONS).map(([type, extensions]) => [type, [...extensions]])) as FileTypeExtensions
 }
+
+test('detailed usage has a default and accepts configured entry limits up to 500000', () => {
+  const { directoryUsageEntryLimit, ...settings } = DEFAULT_APP_SETTINGS
+  assert.equal(directoryUsageEntryLimit, 100_000)
+  assert.equal(validateAppSettings(settings).directoryUsageEntryLimit, 100_000)
+  for (const limit of [1, 250_000, 500_000]) {
+    assert.equal(applyAppSettingsPatch(DEFAULT_APP_SETTINGS, { directoryUsageEntryLimit: limit }).directoryUsageEntryLimit, limit)
+  }
+  for (const limit of [0, 1.5, 500_001, '250000', null]) {
+    assert.throws(() => applyAppSettingsPatch(DEFAULT_APP_SETTINGS, { directoryUsageEntryLimit: limit }))
+  }
+})
 
 test('normalizes extensions and matches overlapping and multi-part suffixes', () => {
   assert.equal(normalizeFileTypeExtension('  .TaR.GZ '), '.tar.gz')

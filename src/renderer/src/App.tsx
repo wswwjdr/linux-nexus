@@ -157,6 +157,7 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
     else workspaceActionsRef.current.delete(sessionId)
   }, [])
   const removeSessionWorkspaceState = useCallback((sessionIds: string[]) => {
+    setEntryProperties((current) => current && sessionIds.includes(current.sessionId) ? null : current)
     setSearchOpenSessionIds((current) => {
       const next = new Set(current)
       for (const sessionId of sessionIds) next.delete(sessionId)
@@ -282,6 +283,7 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
     const removeClosedListener = window.remoteFiles.onConnectionClosed((event) => {
       const session = sessionsRef.current.find((candidate) => candidate.id === event.sessionId)
       if (!session) return
+      setEntryProperties((current) => current?.sessionId === event.sessionId ? null : current)
       removeScriptSessionStates([event.sessionId])
       removeSessionPerformanceState([event.sessionId])
       setRootRequest((current) => current?.sessionId === event.sessionId ? null : current)

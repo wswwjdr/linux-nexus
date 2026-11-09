@@ -60,7 +60,7 @@ export interface RemoteCommandOptions {
   collectStdout?: boolean
   maxStdoutBytes?: number
   maxStderrBytes?: number
-  timeoutMs?: number
+  timeoutMs?: number | null
   keepStdinOpen?: boolean
 }
 export interface RemoteCommandResult { stdout: Buffer; stderr: string; exitCode: number | null }
@@ -262,7 +262,7 @@ function executeSshCommand(client: Client, command: string, options: RemoteComma
     releaseOwner = ownTask(client, controller, finish)
     controller.signal.addEventListener('abort', cancel, { once: true })
     if (options.signal?.aborted) { cancel(); return }
-    timer = setTimeout(() => stop('timeout'), options.timeoutMs ?? 30_000)
+    if (options.timeoutMs !== null) timer = setTimeout(() => stop('timeout'), options.timeoutMs ?? 30_000)
     if (authentication) authTimer = setTimeout(() => {
       onError(new SudoAuthenticationError(false, msg('errors.sudoAuthenticationTimedOutCheckTheServerAuthenticationPolicy')))
     }, 15_000)

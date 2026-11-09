@@ -89,7 +89,7 @@ const diagnosticKeys: Record<string, MessageKey> = {
   "aliasExists": "errors.remoteAliasExists",
   "aliasChanged": "errors.remoteAliasChanged",
   "deleteType": "errors.remoteDeleteType",
-  "diskUsageType": "errors.remoteDiskUsageType",
+  "directoryStatsType": "errors.remoteDirectoryStatsType",
   "searchDirectory": "errors.remoteSearchDirectory",
   "distribution": "errors.remoteDistribution",
   "unsupportedDistribution": "errors.remoteUnsupportedDistribution",

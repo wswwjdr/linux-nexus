@@ -14,7 +14,7 @@ const gitPath = process.platform === 'win32'
   : undefined
 const bash = process.env.LINUX_NEXUS_TEST_BASH
   ?? (gitPath ? resolve(dirname(gitPath), '../bin/bash.exe') : 'bash')
-const hasGnuTools = spawnSync(bash, ['-c', 'find --version && cp --version && grep --version && tar --version']).status === 0
+const hasGnuTools = spawnSync(bash, ['-c', 'find --version && cp --version && grep --version && tar --version && command -v awk']).status === 0
 const shellTest = { skip: !hasGnuTools && 'Bash and GNU tools are required' }
 
 function checkRelease(release: string, prefix = '') {
@@ -78,6 +78,7 @@ test('rejects missing, malformed and executable identity values as data', shellT
 test('reports missing commands, non-GNU tools and unsupported command options', shellTest, () => {
   for (const [prefix, message] of [
     ['command() { if [[ "$2" == sha256sum ]]; then return 1; fi; builtin command "$@"; }', 'LINUX_NEXUS_DIAGNOSTIC:missingCommand: sha256sum'],
+    ['command() { if [[ "$2" == awk ]]; then return 1; fi; builtin command "$@"; }', 'LINUX_NEXUS_DIAGNOSTIC:missingCommand: awk'],
     ['find() { printf "BSD find\\n"; }', 'LINUX_NEXUS_DIAGNOSTIC:gnuFind'],
     ['cp() { printf "BSD cp\\n"; }', 'LINUX_NEXUS_DIAGNOSTIC:gnuCore'],
     ['grep() { if [[ "$1" == --version ]]; then printf "BSD grep\\n"; else command grep "$@"; fi; }', 'LINUX_NEXUS_DIAGNOSTIC:gnuGrep'],

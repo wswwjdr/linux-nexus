@@ -6,7 +6,7 @@ import type { AppSettings, AppSettingsPatch, FileTypeCategory, PerformanceThresh
 import { performanceThresholdsToForm, type FileViewMode, type PerformanceThresholdField, type ProfileForm, type SettingsFieldKey, type SettingsForm } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { emptyForm, errorMessage, toPreviewLimitsForm } from '@/app-utils'
-import { defaultFileTypeExtensions } from '@shared/app-settings'
+import { defaultFileTypeExtensions, MAX_DIRECTORY_USAGE_ENTRY_LIMIT } from '@shared/app-settings'
 import { applyRendererTheme } from '@/app-theme'
 
 interface UseProfileManagementOptions {
@@ -157,6 +157,7 @@ export function useProfileManagement({ initialSettings, showToast, onProfileSave
         theme: settings.theme,
         defaultView: settings.defaultView,
         fileTypeExtensions: Object.fromEntries(Object.entries(settings.fileTypeExtensions).map(([type, extensions]) => [type, [...extensions]])) as FileTypeExtensions,
+        directoryUsageEntryLimit: String(settings.directoryUsageEntryLimit),
         transferFileConcurrency: String(settings.transferFileConcurrency),
         performanceSampleIntervalSeconds: String(settings.performanceSampleIntervalSeconds),
         performanceThresholds: performanceThresholdsToForm(settings.performanceThresholds),
@@ -194,9 +195,10 @@ export function useProfileManagement({ initialSettings, showToast, onProfileSave
       return
     }
     const numericValue = Number(value)
-    const maximum = key === 'transferFileConcurrency' ? 16
-      : key === 'performanceSampleIntervalSeconds' ? 300
-        : Infinity
+    const maximum = key === 'directoryUsageEntryLimit' ? MAX_DIRECTORY_USAGE_ENTRY_LIMIT
+      : key === 'transferFileConcurrency' ? 16
+        : key === 'performanceSampleIntervalSeconds' ? 300
+          : Infinity
     const settingsKey = key as keyof AppSettings
     if (Number.isInteger(numericValue) && numericValue >= 1 && numericValue <= maximum) {
       persistSetting(settingsKey, { [settingsKey]: numericValue })

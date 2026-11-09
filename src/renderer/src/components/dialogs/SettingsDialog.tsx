@@ -1,6 +1,7 @@
 import { type MessageValue, formatLocale, msg, renderMessage, tr } from '@shared/i18n/messages'
 import { languages, type LanguagePreference } from '@shared/i18n/languages'
 import { useLanguage } from '@/i18n'
+import { MAX_DIRECTORY_USAGE_ENTRY_LIMIT } from '@shared/app-settings'
 import { fileTypeMessages } from '@shared/preview-file-type'
 
 import { ChevronRight, FolderOpen, LayoutGrid, List, LoaderCircle, Moon, Palette, Plus, RefreshCw, Sun, Terminal, Trash2, X } from 'lucide-react'
@@ -36,6 +37,9 @@ export function SettingsDialog(props: Pick<DialogLayerProps, "settingsForm" | "p
       || !Number.isFinite(warningValue) || !Number.isFinite(criticalValue)
       || warningValue < 0 || criticalValue > 100 || warningValue >= criticalValue
   }))
+  const directoryUsageEntryLimit = Number(settingsForm?.directoryUsageEntryLimit)
+  const invalidDirectoryUsageEntryLimit = !Number.isInteger(directoryUsageEntryLimit)
+    || directoryUsageEntryLimit < 1 || directoryUsageEntryLimit > MAX_DIRECTORY_USAGE_ENTRY_LIMIT
   const sampleInterval = Number(settingsForm?.performanceSampleIntervalSeconds)
   const invalidPerformanceSampleInterval = Boolean(settingsForm && (!settingsForm.performanceSampleIntervalSeconds.trim()
     || !Number.isInteger(sampleInterval) || sampleInterval < 1 || sampleInterval > 300))
@@ -88,6 +92,23 @@ export function SettingsDialog(props: Pick<DialogLayerProps, "settingsForm" | "p
                         >
                           <List size={16} />{tr('settings.details')}</button>
                       </div>
+                    </fieldset>
+                    <fieldset className="settings-section">
+                      <legend>{tr('files.detailedDiskUsage')}</legend>
+                      <label className="field">
+                        <span>{tr('settings.directoryUsageEntryLimit')}</span>
+                        <input type="number" min={1} max={MAX_DIRECTORY_USAGE_ENTRY_LIMIT} step={1}
+                          value={settingsForm.directoryUsageEntryLimit}
+                          aria-invalid={invalidDirectoryUsageEntryLimit}
+                          aria-describedby="directory-usage-entry-limit-help"
+                          onChange={(event) => onUpdateSettings('directoryUsageEntryLimit', event.target.value)} />
+                      </label>
+                      <p id="directory-usage-entry-limit-help" className={invalidDirectoryUsageEntryLimit ? 'settings-performance-error' : 'settings-field-note'}
+                        role={invalidDirectoryUsageEntryLimit ? 'alert' : undefined}>
+                        {invalidDirectoryUsageEntryLimit
+                          ? tr('settings.invalidDirectoryUsageEntryLimit', { max: MAX_DIRECTORY_USAGE_ENTRY_LIMIT })
+                          : tr('settings.directoryUsageEntryLimitHint')}
+                      </p>
                     </fieldset>
                     <fieldset className="settings-section settings-section-startup">
                       <legend>{tr('settings.startupConnection')}</legend>

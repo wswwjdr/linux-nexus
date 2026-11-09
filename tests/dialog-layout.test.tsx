@@ -8,6 +8,7 @@ import React, { act, createRef, type ReactElement } from 'react'
 import { fileURLToPath } from 'node:url'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { JSDOM } from 'jsdom'
+import { build } from 'esbuild'
 import PreviewDialog from '../src/renderer/src/components/previews/PreviewDialog'
 import LogPreviewDialog from '../src/renderer/src/components/previews/LogPreviewDialog'
 import ScriptExecutionDialog from '../src/renderer/src/components/ScriptExecutionDialog'
@@ -28,6 +29,7 @@ import { SecurityDialogs } from '../src/renderer/src/components/dialogs/Security
 import { DEFAULT_APP_SETTINGS } from '../src/shared/app-settings'
 import { performanceThresholdsToForm } from '../src/renderer/src/app-types'
 import type { PreviewResult, RemoteEntryProperties } from '../src/shared/types'
+import { setLanguage } from '../src/shared/i18n/messages'
 
 const noop = () => {}
 const longText = Array.from({ length: 200 }, (_, index) => `第 ${index + 1} 行：用于检查滚动区域的文件内容。`).join('\n')
@@ -65,7 +67,7 @@ test('dialogs fit window and session bounds with reachable actions at small wind
     fixture('fingerprint', <SecurityDialogs pendingHostKey={null} pendingAliasHostKey={{ profile, fingerprint: 'SHA256:' + 'a'.repeat(64), previousFingerprint: 'SHA256:' + 'b'.repeat(64) }} aliasOverwriteConfirmation={null} aliasDeleteConfirmation={null} aliasOperationBusy={false} onTrustHostKey={noop} onDismissHostKey={noop} onTrustAliasHostKey={noop} onDismissAliasHostKey={noop} onConfirmAliasOverwrite={noop} onCancelAliasOverwrite={noop} onConfirmAliasDelete={noop} onCancelAliasDelete={noop} />),
     fixture('settings', <SettingsDialog profiles={[profile]} aliasSnapshot={null} aliasProfileId="server" aliasOperationBusy={false} aliasName="" aliasCommand="" settingsForm={{
       theme: 'light', defaultView: 'details', fileTypeExtensions: DEFAULT_APP_SETTINGS.fileTypeExtensions,
-      textMiB: '5', pdfMiB: '100', imageMiB: '100', audioMiB: '100', videoMiB: '100', transferFileConcurrency: '4', performanceSampleIntervalSeconds: '3',
+      textMiB: '5', pdfMiB: '100', imageMiB: '100', audioMiB: '100', videoMiB: '100', directoryUsageEntryLimit: '100000', transferFileConcurrency: '4', performanceSampleIntervalSeconds: '3',
       performanceThresholds: performanceThresholdsToForm(DEFAULT_APP_SETTINGS.performanceThresholds), startupProfileId: '', startupKind: 'files',
     }} onCloseSettings={noop} onUpdateSettings={noop} onAddFileTypeExtension={noop} onRemoveFileTypeExtension={noop} onResetFileTypeExtensions={noop} onUpdateDefaultView={noop} onUpdateTheme={noop} onUpdateStartupProfile={noop} onUpdateStartupKind={noop} onSelectAliasProfile={noop} onUpdateAliasName={noop} onUpdateAliasCommand={noop} onSyncAliases={noop} onAddAlias={noop} onRequestAliasDelete={noop} />),
     fixture('search', <SearchDialog sessionId="session" profileId="server" currentPath="/" visible previewOpen={false} fileTypeExtensions={DEFAULT_APP_SETTINGS.fileTypeExtensions} onClose={noop} onMenuAction={noop} />),
@@ -83,6 +85,11 @@ test('dialogs fit window and session bounds with reachable actions at small wind
       accessedAt: '2026-10-01T12:00:00Z', modifiedAt: '2026-10-02T12:00:00Z', changedAt: '2026-10-03T12:00:00Z', createdAt: '2026-10-01T12:00:00Z',
       linkTarget: path === '/symlink' ? '../' + '链接目标/'.repeat(30) : null,
     }),
+    getRemoteDirectoryStats: async () => ({
+      allocatedBytes: 123456789,
+      directoryCount: Number.MAX_SAFE_INTEGER,
+      fileCount: Number.MAX_SAFE_INTEGER,
+    }),
   } })
   for (const [name, element] of [
     ...(['file', 'directory', 'symlink', 'other'] as const).map((type) => [
@@ -99,6 +106,14 @@ test('dialogs fit window and session bounds with reachable actions at small wind
     try {
       await act(async () => { root.render(element) })
       fixtures.push({ name, html: document.body.innerHTML })
+      if (name === 'properties directory') {
+        await act(async () => { setLanguage('en') })
+        fixtures.push({ name: 'properties directory idle en', html: document.body.innerHTML })
+        await act(async () => { host.querySelector<HTMLButtonElement>('.file-properties-calculate')!.click() })
+        fixtures.push({ name: 'properties directory result en', html: document.body.innerHTML })
+        await act(async () => { setLanguage('zh-CN') })
+        fixtures.push({ name: 'properties directory result zh-CN', html: document.body.innerHTML })
+      }
     } finally {
       act(() => root.unmount())
       host.remove()
@@ -108,7 +123,46 @@ test('dialogs fit window and session bounds with reachable actions at small wind
   const directory = await mkdtemp(join(tmpdir(), 'linux-nexus-dialog-layout-'))
   try {
     const input = join(directory, 'fixtures.json')
-    await writeFile(input, JSON.stringify({ css, fixtures }))
+    const treeFixture = join(directory, 'tree.html')
+    const { outputFiles } = await build({
+      bundle: true, write: false, jsx: 'automatic', minify: true,
+      alias: { '@': join(process.cwd(), 'src/renderer/src'), '@shared': join(process.cwd(), 'src/shared') },
+      stdin: {
+        resolveDir: process.cwd(),
+        loader: 'tsx',
+        contents: `
+          import { createRoot } from 'react-dom/client'
+          import { setLanguage } from './src/shared/i18n/messages'
+          import Dialog from './src/renderer/src/components/RemoteEntryPropertiesDialog'
+          const node = (name, parentIndex, allocatedBytes, type = 'file', sharedAllocation = false) =>
+            ({ name, parentIndex, allocatedBytes, type, sharedAllocation })
+          const path = '/example/' + '很长的目录名'.repeat(30)
+          const nodes = (limit) => [
+            node('root', null, 1048576, 'directory'), node('folder', 0, 8192, 'directory'),
+            node('nested', 1, 8192), node('a shared file', 0, 4096, 'file', true),
+            ...Array.from({ length: limit - 3 }, (_, index) => node('file-' + index, 0, 512)),
+          ]
+          window.remoteFiles = {
+            getRemoteEntryProperties: async () => ({
+              name: 'root', path, type: 'directory', permissions: '755', symbolicPermissions: 'drwxr-xr-x',
+              owner: 'me', group: 'me', uid: 1000, gid: 1000, accessedAt: null, modifiedAt: null, changedAt: null,
+              createdAt: null, linkTarget: null,
+            }),
+            getRemoteDirectoryUsageTree: async () => nodes(document.documentElement.lang === 'en' ? 500000 : 100000),
+          }
+          const root = createRoot(document.querySelector('#fixture'))
+          window.openTreeFixture = (language) => {
+            setLanguage(language)
+            root.render(<Dialog key={language} sessionId="example" path={path} onClose={() => {}} />)
+          }
+        `,
+      },
+    })
+    await Promise.all([
+      writeFile(join(directory, 'tree.js'), outputFiles[0].text),
+      writeFile(treeFixture, '<!doctype html><meta charset="utf-8"><div id="fixture"></div><script src="tree.js"></script>'),
+      writeFile(input, JSON.stringify({ css, fixtures, treeFixture })),
+    ])
     const { default: electron } = await import('electron')
     const env = { ...process.env }
     delete env.ELECTRON_RUN_AS_NODE
@@ -123,6 +177,7 @@ test('dialogs fit window and session bounds with reachable actions at small wind
     assert.equal(result.code, 0, result.output)
     const checks = (fixtures.length * 2 - 2) * 4 * 3
     assert.ok(result.output.includes(`"checks":${checks},"failures":[]`), result.output)
+    assert.match(result.output, /directory usage tree checks passed/)
   } finally {
     await rm(directory, { recursive: true, force: true })
     dom.window.close()

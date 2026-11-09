@@ -31,7 +31,7 @@ export function buildFileSessionCapabilityScript(): string {
   return `set -eu
 export LC_ALL=C
 ${detectServerDistribution}
-for tool in bash cat cp mv rm mkdir rmdir find grep tar sha256sum dd tail head mktemp stat touch chmod readlink du base64 dirname basename sed; do
+for tool in bash cat cp mv rm mkdir rmdir find grep tar sha256sum dd tail head mktemp stat touch chmod readlink du awk base64 dirname basename sed; do
   command -v "$tool" >/dev/null || { printf 'LINUX_NEXUS_DIAGNOSTIC:missingCommand: %s\\n' "$tool" >&2; exit 1; }
 done
 find --version | grep -q 'GNU find' || { printf '%s\\n' 'LINUX_NEXUS_DIAGNOSTIC:gnuFind' >&2; exit 1; }

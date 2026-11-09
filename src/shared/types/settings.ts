@@ -24,6 +24,7 @@ export interface AppSettings extends PreviewLimits {
   defaultView: 'icons' | 'details'
   fileTypeExtensions: FileTypeExtensions
   startupConnection: StartupConnection | null
+  directoryUsageEntryLimit: number
   transferFileConcurrency: number
   performanceSampleIntervalSeconds: number
   performanceThresholds: PerformanceThresholds

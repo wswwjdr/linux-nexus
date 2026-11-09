@@ -11,3 +11,17 @@ export interface RemoteEntryProperties extends RemoteEntry {
   createdAt: string | null
   linkTarget: string | null
 }
+
+export interface RemoteDirectoryStats {
+  allocatedBytes: number
+  directoryCount: number
+  fileCount: number
+}
+
+export interface RemoteDirectoryUsageNode {
+  parentIndex: number | null
+  name: string
+  type: RemoteEntry['type']
+  allocatedBytes: number
+  sharedAllocation: boolean
+}
