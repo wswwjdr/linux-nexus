@@ -12,6 +12,7 @@ import type { RemoteEntryProperties } from './file-properties'
 
 export interface RemoteFilesApi {
   getBootstrap(): Promise<AppBootstrap>
+  onWindowExpanded(callback: (expanded: boolean) => void): () => void
   listProfiles(): Promise<ServerProfile[]>
   saveProfile(input: SaveProfileInput): Promise<ServerProfile>
   setProfilePinned(profileId: string, pinned: boolean): Promise<ServerProfile>

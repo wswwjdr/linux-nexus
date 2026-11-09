@@ -1,6 +1,17 @@
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.pdf-preview-modal,
+:root[data-window-expanded] :is(.text-preview-modal, .log-preview-modal, .md-dialog) {
+  width: min(80vw, 100%);
+  height: min(82vh, 100%);
+
+  @media (max-width: 780px) {
+    width: 100%;
+    height: 100%;
+  }
+}
+
 @media (max-width: 960px) {
   .connected-host { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .performance-summary-button { min-width: 118px; gap: 6px; padding: 0 6px; }
@@ -46,7 +57,7 @@
 
 @media (max-width: 780px) {
   .modal-backdrop { padding: 8px; }
-  .pdf-preview-modal { width: 100%; height: 100%; padding: 12px; }
+  .pdf-preview-modal { padding: 12px; }
   .log-preview-modal { width: 100%; height: 100%; padding: 15px; }
   .settings-modal { width: 100%; padding: 16px; }
   .shortcut-guide-modal { width: 100%; padding: 16px; }

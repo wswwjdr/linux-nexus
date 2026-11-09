@@ -1,10 +1,24 @@
 import { setLanguage } from '../../src/shared/i18n/messages'
 import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { loadApplicationBootstrap } from '../../src/renderer/src/application-settings'
 import PreviewDialog from '../../src/renderer/src/components/previews/PreviewDialog'
+import LogPreviewDialog from '../../src/renderer/src/components/previews/LogPreviewDialog'
 import { usePreview } from '../../src/renderer/src/hooks/usePreview'
+import { createRemoteFilesApi } from '../../src/renderer/src/remote-files-api'
 import { defaultFileTypeExtensions } from '../../src/shared/app-settings'
+import type { PreviewResult } from '../../src/shared/types'
 import '../../src/renderer/src/styles.css'
+
+type FixturePreview = 'markdown' | 'image' | 'video' | 'text' | 'log' | 'pdf'
+const fileNames: Record<FixturePreview, string> = {
+  markdown: 'Markdown 只读预览.md',
+  image: '图片预览.svg',
+  video: '视频预览.webm',
+  text: 'notes.txt',
+  log: 'app.log',
+  pdf: 'document.pdf',
+}
 
 const content = `# 阅读预览
 
@@ -32,13 +46,20 @@ function Fixture() {
   const preview = usePreview({ sessionId: 'test', fileTypeExtensions: defaultFileTypeExtensions(), showToast: (_kind, message) => { throw new Error(message) } })
   useEffect(() => {
     Object.assign(window, { remoteFiles: {
-      previewFile: async (_session: string, _path: string, type: string) => type === 'markdown'
-        ? { type, name: 'Markdown 只读预览.md', content, token: 'doc', resourceBaseUrl: 'remote-preview://doc/docs/readme.md' }
-        : { type, name: type === 'image' ? '图片预览.svg' : '视频预览.webm', url: `remote-preview://${type}/fixture.${type === 'image' ? 'svg' : 'webm'}`, token: type },
+      previewFile: async (_session: string, _path: string, type: Exclude<FixturePreview, 'log'>): Promise<PreviewResult> => {
+        const name = fileNames[type]
+        if (type === 'markdown') return { type, name, content, token: 'doc', resourceBaseUrl: 'remote-preview://doc/docs/readme.md' }
+        if (type === 'text') return { type, name, content: 'Preview text', lineEnding: '\n', encoding: 'utf8', bom: false, version: { hash: 'text', identity: 'text' } }
+        if (type === 'pdf') return { type, name, url: 'about:blank', token: 'pdf' }
+        return { type, name, url: `remote-preview://${type}/fixture.${type === 'image' ? 'svg' : 'webm'}`, token: type }
+      },
+      readLogPreview: async () => ({ name: fileNames.log, content: 'Log preview', startOffset: 0, fileSize: 11, limitBytes: 1000, hasEarlier: false }),
       releasePreview: async () => {},
-    }, fixtureOpen: async (next: 'video' | 'image' | 'markdown') => {
+    }, fixtureOpen: async (next: FixturePreview) => {
       setKind(next)
-      await preview.previewFile({ name: next === 'video' ? 'test.webm' : next === 'image' ? 'test.svg' : 'test.md', path: '/fixture' }, next)
+      const entry = { name: fileNames[next], path: '/fixture' }
+      if (next === 'log') await preview.previewLogFile(entry)
+      else await preview.previewFile(entry, next)
     } })
     void (window as any).fixtureOpen('markdown')
   }, [])
@@ -53,11 +74,15 @@ function Fixture() {
     <div className="session-tabbar"><button id="switch-session" onClick={() => setActive((active) => !active)}>切换会话</button></div>
     <div className="session-content"><div className={'session-workspace-layer' + (active ? ' active' : '')}>
       <PreviewDialog active={active} previewDialog={preview.previewDialog} textReloading={false} textEncoding="utf8" onReopenText={() => {}} onConvertTextToUtf8={() => {}}
-        textDraft="" textDirty={false} textSaving={false} textSaveConfirmation={null} onClosePreview={preview.closePreview}
-        onUpdateTextDraft={() => {}} onRequestTextSave={() => {}} onOpenExternalLink={() => {}} />
+        textDraft={preview.textDraft} textDirty={preview.textDirty} textSaving={false} textSaveConfirmation={null} onClosePreview={preview.closePreview}
+        onUpdateTextDraft={preview.updateTextDraft} onRequestTextSave={() => {}} onOpenExternalLink={() => {}} />
+      <LogPreviewDialog logPreviewDialog={preview.logPreviewDialog} logViewportRef={preview.logViewportRef}
+        onClosePreview={preview.closePreview} onLogPreviewScroll={preview.onLogPreviewScroll} />
     </div></div>
   </main></div>
 }
 setLanguage('zh-CN')
 ;(window as any).fixtureLanguage = setLanguage
-createRoot(document.getElementById('root')!).render(<Fixture />)
+void loadApplicationBootstrap(createRemoteFilesApi(window.remoteFilesTransport)).then(() => {
+  createRoot(document.getElementById('root')!).render(<Fixture />)
+})

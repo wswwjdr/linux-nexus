@@ -1,10 +1,22 @@
 import { type SupportedLanguage, resolveLanguage } from '@shared/i18n/languages'
 import { setLanguage } from '@shared/i18n/messages'
-import type { AppBootstrap, AppSettings } from '@shared/types'
+import type { AppBootstrap, AppSettings, RemoteFilesApi } from '@shared/types'
 
 let system: SupportedLanguage
 
-export function initializeApplication(bootstrap: AppBootstrap): void {
+export async function loadApplicationBootstrap(api: Pick<RemoteFilesApi, 'getBootstrap' | 'onWindowExpanded'>): Promise<AppBootstrap> {
+  let receivedWindowUpdate = false
+  const applyWindowLayout = (expanded: boolean) => document.documentElement.toggleAttribute('data-window-expanded', expanded)
+  api.onWindowExpanded((expanded) => {
+    receivedWindowUpdate = true
+    applyWindowLayout(expanded)
+  })
+  const bootstrap = await api.getBootstrap()
+  if (!receivedWindowUpdate) applyWindowLayout(bootstrap.windowExpanded)
+  return bootstrap
+}
+
+export function initializeApplication(bootstrap: Pick<AppBootstrap, 'settings' | 'systemLanguage'>): void {
   system = bootstrap.systemLanguage
   applyApplicationLanguage(bootstrap.settings)
 }

@@ -216,7 +216,7 @@ details[open] > .settings-disclosure-summary .settings-disclosure-chevron { tran
 .preview-modal .modal-heading h2 { max-width: min(78vw, 480px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .media-preview-modal { width: min(100%, 960px); }
 .text-preview-modal { height: min(680px, 100%); }
-.pdf-preview-modal { width: min(80vw, 100%); height: min(82vh, 100%); padding: 16px; }
+.pdf-preview-modal { padding: 16px; }
 .text-preview-content { min-height: 0; flex: 1; display: flex; flex-direction: column; }
 .text-preview-search { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; margin-bottom: 9px; padding: 4px 6px; border:1px solid var(--line); border-radius: var(--radius); color:var(--text-secondary); background:var(--surface-soft); }
 .text-preview-search input { min-width: 0; flex: 1; height: 28px; padding: 0 4px; border:0; border-radius: 3px; color:var(--text-strong); background:transparent; font-size: 12px; }

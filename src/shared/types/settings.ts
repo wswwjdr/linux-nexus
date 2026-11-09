@@ -34,4 +34,5 @@ export type AppSettingsPatch = Partial<AppSettings>
 export interface AppBootstrap {
   settings: AppSettings
   systemLanguage: SupportedLanguage
+  windowExpanded: boolean
 }

@@ -3,15 +3,21 @@ import { applyLanguage, systemLanguage } from '../language'
 
 import { shell } from 'electron'
 import { ipcMain } from './trusted-ipc'
-import type { AppSettingsPatch } from '@shared/types'
+import type { AppBootstrap, AppSettingsPatch } from '@shared/types'
 import { applyAppSettingsPatch } from '@shared/app-settings'
 import { validateExternalUrl } from '@shared/external-url'
 import { configurePerformanceMonitorInterval } from '../performance-monitor'
 import { readAppSettings, readState, writeAppSettings } from '../state-store'
 import { applyTheme } from '../theme'
+import { getMainWindow } from '../runtime'
+import { isWindowExpanded } from '../window-layout'
 
 export function registerSettingsIpc(): void {
-  ipcMain.handle('app:bootstrap', () => ({ settings: readAppSettings(), systemLanguage: systemLanguage() }))
+  ipcMain.handle('app:bootstrap', (): AppBootstrap => ({
+    settings: readAppSettings(),
+    systemLanguage: systemLanguage(),
+    windowExpanded: isWindowExpanded(getMainWindow()!),
+  }))
   ipcMain.handle('settings:get', () => readAppSettings())
   ipcMain.handle('settings:update', (_event, input: AppSettingsPatch) => {
     const currentSettings = readAppSettings()

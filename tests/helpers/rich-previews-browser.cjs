@@ -1,5 +1,6 @@
 const { app, BrowserWindow, nativeTheme, protocol } = require('electron')
 const assert = require('node:assert/strict')
+const { once } = require('node:events')
 const { mkdirSync, writeFileSync, mkdtempSync, rmSync } = require('node:fs')
 const { tmpdir } = require('node:os')
 const { join, resolve } = require('node:path')
@@ -13,7 +14,25 @@ app.on('window-all-closed', () => {})
 app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
   const directory = mkdtempSync(join(tmpdir(), 'nexus-rich-preview-'))
-  const window = new BrowserWindow({ show: false, width: 1050, height: 728, webPreferences: { sandbox: true, backgroundThrottling: false } })
+  const preload = join(directory, 'preload.cjs'), mainBundle = join(directory, 'main.cjs')
+  const { build } = require('esbuild')
+  const bundleOptions = { bundle: true, platform: 'node', format: 'cjs', external: ['electron'], alias: { '@shared': resolve('src/shared') } }
+  await Promise.all([
+    build({ ...bundleOptions, entryPoints: [resolve('src/preload/index.ts')], outfile: preload }),
+    build({ ...bundleOptions, packages: 'external', outfile: mainBundle, stdin: {
+      contents: `export { registerSettingsIpc } from './src/main/ipc/settings';
+        export { publishWindowLayoutChanges } from './src/main/window-layout';
+        export { setMainWindow } from './src/main/runtime';
+        export { configureStateFiles } from './src/main/state-store';`,
+      resolveDir: process.cwd(),
+    }, alias: { ...bundleOptions.alias, i18next: require.resolve('i18next') } }),
+  ])
+  const window = new BrowserWindow({ show: false, width: 1050, height: 728, webPreferences: { preload, sandbox: true, backgroundThrottling: false } })
+  const main = require(mainBundle)
+  main.setMainWindow(window)
+  main.configureStateFiles(join(directory, 'servers.json'), join(directory, 'settings.json'))
+  main.registerSettingsIpc()
+  main.publishWindowLayoutChanges(window)
   window.webContents.on('console-message', details => { if (details.level === 'error') console.error(details.message) })
   window.webContents.debugger.attach('1.3')
   window.webContents.setAudioMuted(true)
@@ -220,12 +239,91 @@ app.whenReady().then(async () => {
       await until(`Boolean(document.querySelector('.${kind === 'video' ? 'vp-modal' : kind === 'image' ? 'ip-dialog' : 'md-dialog'}'))`)
       assert.deepEqual(await execute(`(${checkLayout.toString()})()`), [], `English/${kind}`)
     }
-    console.log(`rich preview browser checks passed (${layouts} layouts, video timeline hover/current/remaining time, video playback/fullscreen/long-press/session pause, pointer image transforms, Markdown catalog)`)
+    await verifyDocumentLayouts(window, execute, until)
+    console.log(`rich preview browser checks passed (${layouts} media layouts, native window transitions and document sizing, video playback/fullscreen, image transforms, Markdown catalog)`)
   } finally {
     window.destroy(); clearPreviewAssets(); await server.close(); rmSync(directory, { recursive: true, force: true })
   }
   app.exit(0)
 }).catch((error) => { console.error(error); app.exit(1) })
+
+async function verifyDocumentLayouts(window, execute, until) {
+  const selectors = { text: '.text-preview-modal', log: '.log-preview-modal', markdown: '.md-dialog', pdf: '.pdf-preview-modal' }
+  const expanded = `document.documentElement.hasAttribute('data-window-expanded')`
+  const open = async kind => {
+    await execute(`window.fixtureOpen('${kind}')`)
+    await until(`Boolean(document.querySelector('${selectors[kind]}'))`)
+  }
+  const check = async (kind, width, height) => {
+    const layout = await execute(`(() => {
+      const dialog = document.querySelector('${selectors[kind]}')
+      const rect = dialog.getBoundingClientRect()
+      const backdrop = dialog.parentElement
+      const style = getComputedStyle(backdrop)
+      const availableWidth = backdrop.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+      const availableHeight = backdrop.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
+      return { width: rect.width, height: rect.height, availableWidth, availableHeight, viewportWidth: innerWidth, viewportHeight: innerHeight }
+    })()`)
+    const expectedWidth = Math.min(width ?? (layout.viewportWidth <= 780 ? Infinity : layout.viewportWidth * .8), layout.availableWidth)
+    const expectedHeight = Math.min(height ?? (layout.viewportWidth <= 780 ? Infinity : layout.viewportHeight * .82), layout.availableHeight)
+    assert.ok(Math.abs(layout.width - expectedWidth) < 1 && Math.abs(layout.height - expectedHeight) < 1,
+      `${kind}: expected ${expectedWidth}×${expectedHeight}, got ${JSON.stringify(layout)}`)
+  }
+  const checkSharedSizes = async () => {
+    for (const kind of ['pdf', 'text', 'log', 'markdown']) {
+      await open(kind)
+      await check(kind)
+    }
+  }
+
+  window.setContentSize(1150, 740)
+  await until('innerWidth === 1150')
+  assert.equal(await execute(expanded), false, 'resizing a normal window does not expand previews')
+  await open('text')
+  await check('text', 960, 680)
+  await execute(`{
+    const editor = document.querySelector('.text-preview-editor')
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(editor, 'Unsaved draft')
+    editor.dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector('.text-preview-find').click()
+    window.editorBeforeResize = editor
+  }`)
+  await until(`Boolean(document.querySelector('.text-preview-search input'))`)
+
+  window.maximize()
+  await until(expanded)
+  await check('text')
+  assert.equal(await execute(`window.editorBeforeResize === document.querySelector('.text-preview-editor') &&
+    window.editorBeforeResize.value === 'Unsaved draft' && Boolean(document.querySelector('.text-preview-search input'))`), true)
+  await checkSharedSizes()
+  window.unmaximize()
+  await until(`!${expanded}`)
+  await check('markdown', 1240, 820)
+
+  window.setFullScreen(true)
+  await until(expanded)
+  await check('markdown')
+  const devtools = (method, params) => window.webContents.debugger.sendCommand(method, params)
+  await devtools('Emulation.setDeviceMetricsOverride', { width: 780, height: 520, deviceScaleFactor: 1, mobile: false })
+  await until('innerWidth === 780')
+  await checkSharedSizes()
+  await devtools('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false })
+  await until('innerWidth === 1600')
+  await execute(`Object.assign(document.querySelector('.session-workspace-layer').style, { width: '760px', height: '420px' })`)
+  await checkSharedSizes()
+  await devtools('Emulation.clearDeviceMetricsOverride')
+
+  const reloaded = once(window.webContents, 'did-finish-load')
+  window.webContents.reload()
+  await reloaded
+  await until(`Boolean(document.querySelector('.md-dialog'))`)
+  assert.equal(await execute(expanded), true, 'bootstrap sees the already fullscreen window')
+  window.setFullScreen(false)
+  await until(`!${expanded}`)
+  await check('markdown', 1240, 820)
+  await open('log')
+  await check('log', 1040, 820)
+}
 
 function checkLayout() {
   const failures = [], dialog = document.querySelector('[role="dialog"]'), backdrop = dialog.parentElement

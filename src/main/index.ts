@@ -12,6 +12,7 @@ import { clearPreviewAssets, getMainWindow, messageFromError, setMainWindow } fr
 import { configureStateFiles, readAppSettings, readState } from './state-store'
 import { applyTheme, themeBackgroundColor } from './theme'
 import { configurePerformanceMonitorInterval, stopAllPerformanceMonitors } from './performance-monitor'
+import { publishWindowLayoutChanges } from './window-layout'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'remote-preview',
@@ -88,6 +89,7 @@ function createWindow(): void {
   })
   window.setMenu(null)
   setMainWindow(window)
+  publishWindowLayoutChanges(window)
   window.webContents.on('will-navigate', event => event.preventDefault())
   window.webContents.on('will-redirect', event => event.preventDefault())
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))

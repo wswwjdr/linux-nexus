@@ -27,6 +27,11 @@ import type {
 
 const api: RemoteFilesTransport = {
   getBootstrap: () => ipcRenderer.invoke('app:bootstrap'),
+  onWindowExpanded: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, expanded: boolean) => callback(expanded)
+    ipcRenderer.on('app:window-expanded', listener)
+    return () => ipcRenderer.removeListener('app:window-expanded', listener)
+  },
   listProfiles: () => ipcRenderer.invoke('profiles:list'),
   saveProfile: (input: SaveProfileInput) => ipcRenderer.invoke('profiles:save', input),
   setProfilePinned: (profileId: string, pinned: boolean) => ipcRenderer.invoke('profiles:set-pinned', profileId, pinned),
