@@ -87,6 +87,24 @@ function transfer(types: string[] = []) {
   }
 }
 
+test('opening an SSH terminal from a file tab carries its directory and scopes sudo to the elevated source', async () => {
+  const elevated = { ...session('elevated'), fileIdentity: 'sudo-root' as const }
+  const ordinary = { ...session('ordinary'), fileIdentity: 'login' as const }
+  const tabs = await mountTabs([elevated, ordinary])
+  try {
+    await act(async () => {
+      tabs.operations.openSession(profile, 'terminal', elevated.currentPath, elevated)
+      tabs.operations.openSession(profile, 'terminal', ordinary.currentPath, ordinary)
+    })
+    assert.deepEqual(tabs.connections.map(([, ...args]) => args), [
+      [profile.id, 'terminal', 100, 30, elevated.currentPath, elevated.id],
+      [profile.id, 'terminal', 100, 30, ordinary.currentPath, undefined],
+    ])
+  } finally {
+    tabs.dispose()
+  }
+})
+
 function drag(target: Element, type: string, dataTransfer: ReturnType<typeof transfer>, clientX = 120) {
   const event = new dom.window.MouseEvent(type, { bubbles: true, cancelable: true, clientX })
   Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })

@@ -582,7 +582,7 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
 
   const openTerminalForCurrentPath = () => {
     if (!connectedProfile || activeSession?.kind !== 'files') return
-    openSession(connectedProfile, 'terminal', currentPath)
+    openSession(connectedProfile, 'terminal', currentPath, activeSession)
   }
 
   const openFileForCurrentProfile = () => {
@@ -692,7 +692,7 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
                 <button className="icon-button toolbar-button" title={tr('common.searchFiles')} aria-label={tr('common.searchFiles')} onClick={openSearch}>
                   <Search size={16} />
                 </button>
-                <button className="icon-button toolbar-button" title={tr('common.newSshTerminal')} aria-label={tr('common.newSshTerminal')} onClick={openTerminalForCurrentPath}>
+                <button className="icon-button toolbar-button" title={tr('common.newSshTerminal')} aria-label={tr('common.newSshTerminal')} disabled={rootRequest?.sessionId === connectedSessionId} onClick={openTerminalForCurrentPath}>
                   <Terminal size={16} />
                 </button>
                 <button className="text-button upload-button" title={tr('common.uploadFilesToTheCurrentDirectory')} aria-label={tr('common.uploadFilesToTheCurrentDirectory')} onClick={() => uploadFiles()}>

@@ -16,7 +16,7 @@ export interface RemoteFilesApi {
   saveProfile(input: SaveProfileInput): Promise<ServerProfile>
   setProfilePinned(profileId: string, pinned: boolean): Promise<ServerProfile>
   deleteProfile(profileId: string): Promise<void>
-  connect(sessionId: string, profileId: string, kind: SessionKind, cols: number, rows: number, startPath: string): Promise<ConnectResult>
+  connect(sessionId: string, profileId: string, kind: SessionKind, cols: number, rows: number, startPath: string, rootSourceSessionId?: string): Promise<ConnectResult>
   trustHostKey(input: TrustHostKeyInput): Promise<void>
   disconnect(sessionId: string): Promise<void>
   enterFileRoot(sessionId: string, password?: string): Promise<FileElevationResult>

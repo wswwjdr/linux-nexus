@@ -99,6 +99,7 @@ export function useSessionOperations({
         100,
         30,
         session.kind === 'terminal' ? session.startPath : '',
+        session.rootSourceSessionId,
       )
       if (!sessionsRef.current.some((candidate) => candidate.id === session.id)) {
         if (result.ok) await window.remoteFiles.disconnect(session.id)
@@ -160,6 +161,10 @@ export function useSessionOperations({
   const openSession = (profile: ServerProfile, kind: SessionKind, startPath = '', source?: SessionTab) => {
     const id = crypto.randomUUID()
     const currentPath = kind === 'files' ? source?.currentPath || '/' : ''
+    let rootSourceSessionId: string | undefined
+    if (kind === 'terminal') {
+      rootSourceSessionId = source?.fileIdentity === 'sudo-root' ? source.id : source?.rootSourceSessionId
+    }
     const session: SessionTab = {
       id,
       profileId: profile.id,
@@ -167,6 +172,7 @@ export function useSessionOperations({
       status: 'connecting',
       currentPath,
       startPath,
+      rootSourceSessionId,
       entries: [],
       selectedPaths: [],
       loading: kind === 'files',

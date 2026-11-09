@@ -6,16 +6,17 @@ import { sessions } from '../runtime'
 import { activatePerformanceMonitor, deactivatePerformanceMonitor, getPerformanceMonitorState, refreshPerformanceMonitor } from '../performance-monitor'
 
 export function registerSessionsIpc(): void {
-  ipcMain.handle('connection:connect', (_event, sessionId: string, profileId: string, kind: SessionKind, cols: number, rows: number, startPath: string) => {
+  ipcMain.handle('connection:connect', (_event, sessionId: string, profileId: string, kind: SessionKind, cols: number, rows: number, startPath: string, rootSourceSessionId?: string) => {
     if (typeof sessionId !== 'string' || !sessionId || typeof profileId !== 'string' || !profileId
       || (kind !== 'files' && kind !== 'terminal')
       || !Number.isInteger(cols) || cols < 1 || cols > 500
       || !Number.isInteger(rows) || rows < 1 || rows > 200
-      || typeof startPath !== 'string') {
+      || typeof startPath !== 'string' || startPath.includes('\0')
+      || (rootSourceSessionId !== undefined && (kind !== 'terminal' || typeof rootSourceSessionId !== 'string' || !rootSourceSessionId))) {
       throw new LocalizedError(msg('errors.invalidSessionConnectionParameters'))
     }
     if (sessions.has(sessionId)) throw new LocalizedError(msg('errors.sessionIdIsAlreadyInUse'))
-    return connectProfile(sessionId, profileId, kind, cols, rows, startPath)
+    return connectProfile(sessionId, profileId, kind, cols, rows, startPath, rootSourceSessionId)
   })
   ipcMain.handle('connection:disconnect', (_event, sessionId: string) => stopSession(sessionId))
   ipcMain.handle('performance:state', (_event, sessionId: unknown) => {

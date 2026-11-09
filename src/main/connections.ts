@@ -18,7 +18,7 @@ import { removePerformanceMonitorForSession } from './performance-monitor'
 import { cancelClientTasks, runRemoteCommand } from './ssh-commands'
 import { filesSession, listRemoteDirectory } from './remote-fs'
 import { verifyFileSessionCapabilities } from './file-session-capabilities'
-import { initializeFileIdentity, revokeFileIdentity } from './file-identity'
+import { initializeFileIdentity, revokeFileIdentity, rootTerminalScope } from './file-identity'
 
 const pendingConnections = new Map<string, { profileId: string; client: Client; cancel: () => void }>()
 const SSH_KEEPALIVE_INTERVAL_MS = 15_000
@@ -89,14 +89,17 @@ export function connectProfile(
   cols: number,
   rows: number,
   startPath: string,
+  rootSourceSessionId?: string,
 ): Promise<ConnectResult> {
   if (pendingConnections.has(sessionId) || sessions.has(sessionId)) throw new LocalizedError(msg('errors.sessionIdIsAlreadyInUse'))
+  const rootScope = rootSourceSessionId === undefined ? undefined : rootTerminalScope(rootSourceSessionId, profileId)
   const state = readState()
   const profile = profileFromState(state, profileId)
   const password = passwordFor(state, profileId)
 
   return new Promise((resolve) => {
     const client = new Client()
+    const connection = new AbortController()
     let settled = false
     let keyIssue: ConnectResult | null = null
     const isCurrentAttempt = () => pendingConnections.get(sessionId)?.client === client
@@ -105,7 +108,10 @@ export function connectProfile(
       if (settled) return
       settled = true
       if (pendingConnections.get(sessionId)?.client === client) pendingConnections.delete(sessionId)
-      if (!result.ok) client.end()
+      if (!result.ok) {
+        connection.abort()
+        client.end()
+      }
       resolve(result)
     }
 
@@ -120,7 +126,7 @@ export function connectProfile(
         finish({ ok: false, reason: 'other', message: msg('errors.connectionCancelled') })
         return
       }
-      const activate = (shell?: ActiveSession['shell'], effectiveUid?: number) => {
+      const activate = (shell?: ActiveSession['shell'], effectiveUid?: number, initialOutput?: Buffer) => {
         if (!isCurrentAttempt()) {
           finish({ ok: false, reason: 'other', message: msg('errors.connectionCancelled') })
           return
@@ -138,6 +144,7 @@ export function connectProfile(
               window.webContents.send('terminal:output', { sessionId, data })
             }
           }
+          if (initialOutput) sendOutput(stdoutDecoder.write(initialOutput))
           shell.on('data', (chunk: Buffer) => sendOutput(stdoutDecoder.write(chunk)))
           shell.stderr.on('data', (chunk: Buffer) => sendOutput(stderrDecoder.write(chunk)))
           shell.on('close', () => {
@@ -149,7 +156,7 @@ export function connectProfile(
             }
           })
           shell.on('error', (shellError: Error) => failActiveSession(activeSession, shellError.message))
-          if (startPath) shell.write('cd ' + shellQuoteIfNeeded(posix.resolve('/', startPath)) + '\n')
+          if (startPath && !rootScope) shell.write('cd ' + shellQuoteIfNeeded(posix.resolve('/', startPath)) + '\n')
         }
         finish({ ok: true, path: kind === 'files' ? '/' : startPath, fileIdentity })
       }
@@ -166,6 +173,11 @@ export function connectProfile(
           },
           (error: unknown) => finish({ ok: false, reason: 'other', message: messageFromUnknown(error) }),
         )
+      } else if (rootScope) {
+        rootScope.openRootTerminal(client, { term: 'xterm-256color', cols, rows }, startPath, connection.signal, (result) => {
+          if ('error' in result) finish({ ok: false, reason: 'other', message: messageFromUnknown(result.error) })
+          else activate(result.shell, undefined, result.output)
+        })
       } else {
         client.shell({ term: 'xterm-256color', cols, rows }, (error, shell) => {
           if (error) {

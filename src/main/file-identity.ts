@@ -10,6 +10,8 @@ import { cancelRemoteOperationsForSession } from './remote-operations'
 import { cancelTransfersForSession } from './transfers'
 import { clearPreviewAssetsForSession } from './previews/preview-assets'
 import { waitWithSignal } from './stream-utils'
+import { openSudoTerminal, type RootTerminalResult } from './root-terminal'
+import type { PseudoTtyOptions } from 'ssh2'
 
 export class FileCommandScope implements RemoteCommandExecutor {
   private readonly controller = new AbortController()
@@ -47,6 +49,16 @@ export class FileCommandScope implements RemoteCommandExecutor {
       if (error instanceof SudoAuthenticationError && !signal.aborted) this.sudo!.onFailure()
       throw error
     }))
+  }
+
+  openRootTerminal(
+    client: ActiveSession['client'],
+    pty: PseudoTtyOptions,
+    path: string,
+    signal: AbortSignal,
+    done: (result: RootTerminalResult) => void,
+  ): void {
+    openSudoTerminal(client, pty, path, this.sudo!.password, AbortSignal.any([this.signal, signal]), done)
   }
 
   async revoke(): Promise<boolean> {
@@ -93,6 +105,15 @@ function connectedFileSession(sessionId: unknown): ActiveSession {
   const session = typeof sessionId === 'string' ? sessions.get(sessionId) : undefined
   if (session?.kind !== 'files') throw new LocalizedError(msg('errors.fileSessionIsNotConnected'))
   return session
+}
+
+export function rootTerminalScope(sessionId: string, profileId: string): FileCommandScope {
+  const session = sessions.get(sessionId)
+  const state = session && identities.get(session)
+  if (session?.kind !== 'files' || session.profileId !== profileId || state?.identity !== 'sudo-root' || state.transition) {
+    throw new LocalizedError(msg('errors.rootFileSessionRequiredForTerminal'))
+  }
+  return state.commands
 }
 
 export function revokeFileIdentity(session: ActiveSession): Promise<boolean> {

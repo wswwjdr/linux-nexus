@@ -814,6 +814,8 @@ export default {
     "stderrTruncated": "\n[stderr truncated]",
     "sudoPasswordVerificationFailedOrTheServerDeniedElevation": "sudo password verification failed or the server denied elevation",
     "serverDeniedNonInteractiveSudoElevation": "Server denied non-interactive sudo elevation",
+    "rootFileSessionRequiredForTerminal": "Enable root mode in the source file session before opening this SSH terminal",
+    "cannotStartRootTerminal": "Could not start the root SSH terminal",
     "serverReturnedAnInvalidSudoStartupMarker": "Server returned an invalid sudo startup marker",
     "serverCommandOutputExceedsTheSizeLimitRemoteStateIs": "Server command output exceeds the size limit; remote state is unknown",
     "serverRequiresASudoPassword": "Server requires a sudo password",

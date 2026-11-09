@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import test, { type TestContext } from 'node:test'
-import type { Client, ClientChannel } from 'ssh2'
-import { cancelFileRootEntry, enterFileRoot, fileCommands, initializeFileIdentity, leaveFileRoot, revokeFileIdentity } from '../src/main/file-identity.ts'
+import type { Client, ClientChannel, ExecOptions } from 'ssh2'
+import { cancelFileRootEntry, enterFileRoot, fileCommands, initializeFileIdentity, leaveFileRoot, revokeFileIdentity, rootTerminalScope } from '../src/main/file-identity.ts'
 import { sessions, type ActiveSession } from '../src/main/runtime.ts'
 import { executeRemoteOperation } from '../src/main/remote-operations.ts'
 
@@ -136,4 +136,90 @@ test('copy, move and extraction keep their native commands in an elevated file s
     assert.ok(commands.at(-1)?.startsWith('exec /usr/bin/sudo '))
     assert.ok(commands.at(-1)?.includes(utility))
   }
+})
+
+function mockTerminal() {
+  const client = new EventEmitter() as Client
+  const writes: string[] = []
+  const channel = Object.assign(new EventEmitter(), {
+    stderr: new EventEmitter(),
+    close: () => channel.emit('close'),
+    write: (data: Buffer) => writes.push(data.toString()),
+  })
+  let command = ''
+  let pty: ExecOptions['pty']
+  client.exec = (value: string, options: ExecOptions, callback: (error: Error | undefined, shell: ClientChannel) => void) => {
+    command = value
+    pty = options.pty
+    callback(undefined, channel as unknown as ClientChannel)
+    return client
+  }
+  return {
+    client, channel, writes,
+    get command() { return command },
+    get pty() { return pty },
+    get prompt() { return command.match(/LINUX_NEXUS_SUDO_[\da-f-]+:/)![0] },
+    get ready() { return command.match(/LINUX_NEXUS_ROOT_[\da-f-]+:/)![0] },
+    output: (value: string) => channel.emit('data', Buffer.from(value)),
+  }
+}
+
+test('a root terminal uses the source tab credential and starts in the selected directory after sudo', async (t) => {
+  const { session } = attachSession(t, 'terminal-source', () => 'password')
+  await enterFileRoot(session.sessionId, 'valid')
+  assert.throws(() => rootTerminalScope(session.sessionId, 'different-profile'))
+  const scope = rootTerminalScope(session.sessionId, session.profileId)
+  const terminal = mockTerminal()
+  const pty = { term: 'xterm-256color', cols: 100, rows: 30 }
+  let startup: unknown
+  scope.openRootTerminal(terminal.client, pty, '/root/private files', new AbortController().signal, (result) => { startup = result })
+  assert.deepEqual(terminal.pty, pty)
+  assert.ok(terminal.command.includes('/root/private files'))
+  assert.ok(terminal.command.includes('exec /bin/bash -il'))
+  assert.ok(!terminal.command.includes('valid'))
+  terminal.output(terminal.prompt.slice(0, 16))
+  assert.deepEqual(terminal.writes, [])
+  terminal.output(terminal.prompt.slice(16))
+  assert.deepEqual(terminal.writes, ['valid\n'])
+  terminal.output(terminal.ready.slice(0, 16))
+  assert.equal(startup, undefined)
+  terminal.output(terminal.ready.slice(16) + 'root# ')
+  assert.deepEqual(startup, { shell: terminal.channel, output: Buffer.from('root# ') })
+  let closed = false
+  terminal.channel.on('close', () => { closed = true })
+  await leaveFileRoot(session.sessionId)
+  assert.equal(closed, false)
+  assert.throws(() => rootTerminalScope(session.sessionId, session.profileId))
+})
+
+test('a passwordless root terminal sends no credential and rejects revocation or denial before startup', async (t) => {
+  const { session } = attachSession(t, 'terminal-passwordless', () => 'allow')
+  await enterFileRoot(session.sessionId)
+  const scope = rootTerminalScope(session.sessionId, session.profileId)
+  const pty = { cols: 100, rows: 30 }
+  const signal = new AbortController().signal
+  const terminal = mockTerminal()
+  scope.openRootTerminal(terminal.client, pty, '/root', signal, (result) => {
+    assert.ok('shell' in result)
+  })
+  terminal.output(terminal.ready)
+  assert.deepEqual(terminal.writes, [])
+
+  const denied = mockTerminal()
+  let denial: unknown
+  scope.openRootTerminal(denied.client, pty, '/root', signal, (result) => {
+    assert.ok('error' in result)
+    denial = result.error
+  })
+  denied.output('sudo: authorization denied')
+  denied.channel.close()
+  assert.ok(denial instanceof Error && denial.message.includes('sudo: authorization denied'))
+
+  const pending = mockTerminal()
+  let revoked = false
+  scope.openRootTerminal(pending.client, pty, '/root', signal, (result) => { revoked = 'error' in result })
+  await leaveFileRoot(session.sessionId)
+  pending.output(pending.ready)
+  assert.equal(revoked, true)
+  assert.deepEqual(pending.writes, [])
 })

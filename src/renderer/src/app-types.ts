@@ -55,6 +55,7 @@ export interface SessionTab {
   status: 'connecting' | 'connected' | 'disconnected' | 'awaiting-trust'
   currentPath: string
   startPath: string
+  rootSourceSessionId?: string
   entries: RemoteEntry[]
   selectedPaths: string[]
   loading: boolean

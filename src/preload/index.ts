@@ -31,8 +31,8 @@ const api: RemoteFilesTransport = {
   saveProfile: (input: SaveProfileInput) => ipcRenderer.invoke('profiles:save', input),
   setProfilePinned: (profileId: string, pinned: boolean) => ipcRenderer.invoke('profiles:set-pinned', profileId, pinned),
   deleteProfile: (profileId: string) => ipcRenderer.invoke('profiles:delete', profileId),
-  connect: (sessionId: string, profileId: string, kind: SessionKind, cols: number, rows: number, startPath: string) =>
-    ipcRenderer.invoke('connection:connect', sessionId, profileId, kind, cols, rows, startPath),
+  connect: (sessionId, profileId, kind, cols, rows, startPath, rootSourceSessionId) =>
+    ipcRenderer.invoke('connection:connect', sessionId, profileId, kind, cols, rows, startPath, rootSourceSessionId),
   trustHostKey: (input: TrustHostKeyInput) => ipcRenderer.invoke('host-key:trust', input),
   disconnect: (sessionId: string) => ipcRenderer.invoke('connection:disconnect', sessionId),
   enterFileRoot: (sessionId, password) => ipcRenderer.invoke('files:root-enter', sessionId, password),

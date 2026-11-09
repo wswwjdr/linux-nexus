@@ -814,6 +814,8 @@ export default {
     "stderrTruncated": "\n[stderr 已截断]",
     "sudoPasswordVerificationFailedOrTheServerDeniedElevation": "sudo 密码验证失败或服务器拒绝了提权",
     "serverDeniedNonInteractiveSudoElevation": "服务器拒绝了非交互式 sudo 提权",
+    "rootFileSessionRequiredForTerminal": "请先在来源文件会话中启用 root 模式，再打开此 SSH 终端",
+    "cannotStartRootTerminal": "无法启动 root SSH 终端",
     "serverReturnedAnInvalidSudoStartupMarker": "服务器返回了无效的 sudo 启动标记",
     "serverCommandOutputExceedsTheSizeLimitRemoteStateIs": "服务器命令输出超过允许大小；远端状态未知",
     "serverRequiresASudoPassword": "服务器要求 sudo 密码",
