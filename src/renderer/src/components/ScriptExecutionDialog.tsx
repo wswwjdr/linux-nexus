@@ -1,6 +1,6 @@
 import { type MessageValue, msg, renderMessage, tr } from '@shared/i18n/messages'
 import { useLanguage } from '@/i18n'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type UIEvent } from 'react'
 import { CheckCircle2, CircleX, LoaderCircle, Square, X } from 'lucide-react'
 import type { ScriptExecutionDialogState } from '@/app-types'
 
@@ -25,6 +25,7 @@ export default function ScriptExecutionDialog({ active, execution, onClose, onSt
   const outputRef = useRef<HTMLPreElement>(null)
   const onCloseRef = useRef(onClose)
   const followOutputRef = useRef(true)
+  const outputSizeRef = useRef({ width: 0, height: 0 })
   const [atBottom, setAtBottom] = useState(true)
   const isRunning = execution.status === 'starting' || execution.status === 'running' || execution.status === 'cancelling'
   onCloseRef.current = onClose
@@ -40,14 +41,34 @@ export default function ScriptExecutionDialog({ active, execution, onClose, onSt
     return () => window.removeEventListener('keydown', dismissOnEscape)
   }, [active])
 
-  useEffect(() => {
-    if (!followOutputRef.current || !outputRef.current) return
-    outputRef.current.scrollTop = outputRef.current.scrollHeight
-  }, [execution.output])
+  const followLatestOutput = useEffectEvent(() => {
+    if (!followOutputRef.current) return
+    const output = outputRef.current!
+    output.scrollTop = output.scrollHeight
+  })
 
-  const updateFollowState = () => {
-    const element = outputRef.current
-    if (!element) return
+  useLayoutEffect(() => {
+    const output = outputRef.current!
+    const syncViewport = () => {
+      const width = output.clientWidth
+      const height = output.clientHeight
+      if (width === outputSizeRef.current.width && height === outputSizeRef.current.height) return
+      outputSizeRef.current = { width, height }
+      followLatestOutput()
+    }
+    syncViewport()
+    const observer = new ResizeObserver(syncViewport)
+    observer.observe(output)
+    return () => observer.disconnect()
+  }, [])
+
+  useLayoutEffect(() => followLatestOutput(), [execution.output])
+
+  const updateFollowState = (event: UIEvent<HTMLPreElement>) => {
+    const element = event.currentTarget
+    const { width, height } = outputSizeRef.current
+    // Chromium can dispatch a scroll event for the resized viewport before the observer runs.
+    if (element.clientWidth !== width || element.clientHeight !== height) return
     const nextAtBottom = element.scrollHeight - element.clientHeight - element.scrollTop < 12
     followOutputRef.current = nextAtBottom
     setAtBottom(nextAtBottom)
@@ -55,7 +76,7 @@ export default function ScriptExecutionDialog({ active, execution, onClose, onSt
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="modal script-execution-modal" role="dialog" aria-labelledby={`script-execution-title-${execution.request.sessionId}`}>
+      <section className="modal script-execution-modal" data-modal-size="reading-expanded" role="dialog" aria-labelledby={`script-execution-title-${execution.request.sessionId}`}>
         <div className="modal-heading">
           <div className="script-execution-heading-copy">
             <h2 id={`script-execution-title-${execution.request.sessionId}`}>{execution.name}</h2>

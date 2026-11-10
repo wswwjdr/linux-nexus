@@ -1,8 +1,9 @@
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.pdf-preview-modal,
-:root[data-window-expanded] :is(.text-preview-modal, .log-preview-modal, .md-dialog) {
+[data-modal-size="reading"],
+:root[data-window-expanded] [data-modal-size="reading-expanded"] {
+  --modal-scroll-max-height: none;
   width: min(80vw, 100%);
   height: min(82vh, 100%);
 

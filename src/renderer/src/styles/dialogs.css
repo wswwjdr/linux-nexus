@@ -196,7 +196,7 @@ details[open] > .settings-disclosure-summary .settings-disclosure-chevron { tran
 .script-execution-status.completed { color:var(--text-success); }
 .script-execution-status.failed { color:var(--text-danger); }
 .script-execution-message { min-width: 0; margin-left: auto; overflow-wrap: anywhere; color:var(--text-secondary); text-align: right; }
-.script-execution-output { min-height: 0; max-height: 560px; flex: 1 1 360px; overflow: auto; margin: 0; padding: 12px; border:1px solid var(--line-strong); border-radius: var(--radius); color:var(--text-primary); background:var(--surface-output); font: 12px/1.55 Consolas, 'Cascadia Mono', monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.script-execution-output { min-height: 0; max-height: var(--modal-scroll-max-height, 560px); flex: 1 1 360px; overflow: auto; margin: 0; padding: 12px; border:1px solid var(--line-strong); border-radius: var(--radius); color:var(--text-primary); background:var(--surface-output); font: 12px/1.55 Consolas, 'Cascadia Mono', monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .script-execution-output .stderr { color:var(--text-danger); }
 .script-execution-empty { color:var(--text-secondary); }
 .script-execution-footer { align-items: center; }

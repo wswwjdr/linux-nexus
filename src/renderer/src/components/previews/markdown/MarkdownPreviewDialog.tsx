@@ -96,7 +96,7 @@ export default function MarkdownPreviewDialog({ result, active, onClose, onOpenE
     >{result.content}</ReactMarkdown>
   ), [result.content, result.resourceBaseUrl, ids, prefix, jump, onOpenExternalLink])
   return <div className="modal-backdrop preview-backdrop ap-overlay md-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-    <section className="ap-modal md-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} inert={!active}>
+    <section className="ap-modal md-dialog" data-modal-size="reading-expanded" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} inert={!active}>
       <header className="ap-header"><div className="ap-title-area"><span className="ap-title-icon"><BookOpen size={20} /></span><h2 id={titleId} title={result.name}>{result.name}</h2></div>
         <div className="ap-header-actions"><button className={'ap-icon-button' + (catalogOpen ? ' active' : '')} aria-label={tr('previews.contents')} title={tr('previews.contents')} aria-expanded={catalogOpen} aria-controls={catalogId} disabled={headings.length === 0} onClick={() => setCatalogOpen(!catalogOpen)}><List size={18} /></button>
           <button className="ap-icon-button ap-close" title={tr('previews.closePreview')} aria-label={tr('previews.closePreview')} onClick={onClose}><X size={18} /></button></div>

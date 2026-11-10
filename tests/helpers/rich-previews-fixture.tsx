@@ -2,6 +2,8 @@ import { setLanguage } from '../../src/shared/i18n/messages'
 import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { loadApplicationBootstrap } from '../../src/renderer/src/application-settings'
+import type { ScriptExecutionDialogState } from '../../src/renderer/src/app-types'
+import ScriptExecutionDialog from '../../src/renderer/src/components/ScriptExecutionDialog'
 import PreviewDialog from '../../src/renderer/src/components/previews/PreviewDialog'
 import LogPreviewDialog from '../../src/renderer/src/components/previews/LogPreviewDialog'
 import { usePreview } from '../../src/renderer/src/hooks/usePreview'
@@ -18,6 +20,13 @@ const fileNames: Record<FixturePreview, string> = {
   text: 'notes.txt',
   log: 'app.log',
   pdf: 'document.pdf',
+}
+const scriptExecution: ScriptExecutionDialogState = {
+  request: { requestId: 'request', sessionId: 'test', scriptPath: '/test.sh', command: 'bash /test.sh' },
+  name: 'test.sh',
+  status: 'running',
+  output: [{ stream: 'stdout', data: Array.from({ length: 120 }, (_, line) => `Output line ${line + 1}\n`).join('') }],
+  message: null,
 }
 
 const content = `# 阅读预览
@@ -55,8 +64,12 @@ function Fixture() {
       },
       readLogPreview: async () => ({ name: fileNames.log, content: 'Log preview', startOffset: 0, fileSize: 11, limitBytes: 1000, hasEarlier: false }),
       releasePreview: async () => {},
-    }, fixtureOpen: async (next: FixturePreview) => {
+    }, fixtureOpen: async (next: FixturePreview | 'script') => {
       setKind(next)
+      if (next === 'script') {
+        preview.closePreview()
+        return
+      }
       const entry = { name: fileNames[next], path: '/fixture' }
       if (next === 'log') await preview.previewLogFile(entry)
       else await preview.previewFile(entry, next)
@@ -78,6 +91,7 @@ function Fixture() {
         onUpdateTextDraft={preview.updateTextDraft} onRequestTextSave={() => {}} onOpenExternalLink={() => {}} />
       <LogPreviewDialog logPreviewDialog={preview.logPreviewDialog} logViewportRef={preview.logViewportRef}
         onClosePreview={preview.closePreview} onLogPreviewScroll={preview.onLogPreviewScroll} />
+      {kind === 'script' && <ScriptExecutionDialog active={active} execution={scriptExecution} onClose={() => setKind('')} onStop={() => {}} />}
     </div></div>
   </main></div>
 }

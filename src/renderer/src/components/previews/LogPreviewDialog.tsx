@@ -26,7 +26,7 @@ export default function LogPreviewDialog({
 
   return (
     <div className="modal-backdrop preview-backdrop log-preview-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClosePreview()}>
-      <section className="modal preview-modal log-preview-modal" role="dialog" aria-labelledby="log-preview-title">
+      <section className="modal preview-modal log-preview-modal" data-modal-size="reading-expanded" role="dialog" aria-labelledby="log-preview-title">
         <div className="modal-heading">
           <div>
             <h2 id="log-preview-title">{logPreviewDialog.name}</h2>

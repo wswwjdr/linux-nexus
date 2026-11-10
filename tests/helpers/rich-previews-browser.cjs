@@ -239,16 +239,16 @@ app.whenReady().then(async () => {
       await until(`Boolean(document.querySelector('.${kind === 'video' ? 'vp-modal' : kind === 'image' ? 'ip-dialog' : 'md-dialog'}'))`)
       assert.deepEqual(await execute(`(${checkLayout.toString()})()`), [], `English/${kind}`)
     }
-    await verifyDocumentLayouts(window, execute, until)
-    console.log(`rich preview browser checks passed (${layouts} media layouts, native window transitions and document sizing, video playback/fullscreen, image transforms, Markdown catalog)`)
+    await verifyReadingDialogs(window, execute, until)
+    console.log(`rich preview browser checks passed (${layouts} media layouts, native window transitions and reading dialog sizing, video playback/fullscreen, image transforms, Markdown catalog)`)
   } finally {
     window.destroy(); clearPreviewAssets(); await server.close(); rmSync(directory, { recursive: true, force: true })
   }
   app.exit(0)
 }).catch((error) => { console.error(error); app.exit(1) })
 
-async function verifyDocumentLayouts(window, execute, until) {
-  const selectors = { text: '.text-preview-modal', log: '.log-preview-modal', markdown: '.md-dialog', pdf: '.pdf-preview-modal' }
+async function verifyReadingDialogs(window, execute, until) {
+  const selectors = { text: '.text-preview-modal', log: '.log-preview-modal', markdown: '.md-dialog', pdf: '.pdf-preview-modal', script: '.script-execution-modal' }
   const expanded = `document.documentElement.hasAttribute('data-window-expanded')`
   const open = async kind => {
     await execute(`window.fixtureOpen('${kind}')`)
@@ -270,7 +270,7 @@ async function verifyDocumentLayouts(window, execute, until) {
       `${kind}: expected ${expectedWidth}×${expectedHeight}, got ${JSON.stringify(layout)}`)
   }
   const checkSharedSizes = async () => {
-    for (const kind of ['pdf', 'text', 'log', 'markdown']) {
+    for (const kind of ['pdf', 'text', 'log', 'script', 'markdown']) {
       await open(kind)
       await check(kind)
     }
@@ -304,8 +304,21 @@ async function verifyDocumentLayouts(window, execute, until) {
   await until(expanded)
   await check('markdown')
   const devtools = (method, params) => window.webContents.debugger.sendCommand(method, params)
+  await open('script')
+  await devtools('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false })
+  await until('innerWidth === 1600')
+  await check('script')
+  const scriptOutput = `document.querySelector('.script-execution-output')`
+  const atBottom = `(() => {
+    const output = ${scriptOutput}
+    return output && output.scrollHeight - output.scrollTop - output.clientHeight < 2
+  })()`
+  await until(atBottom)
+  assert.ok(await execute(`${scriptOutput}.clientHeight > 560`), 'script output fills the large dialog')
+
   await devtools('Emulation.setDeviceMetricsOverride', { width: 780, height: 520, deviceScaleFactor: 1, mobile: false })
   await until('innerWidth === 780')
+  await until(atBottom)
   await checkSharedSizes()
   await devtools('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false })
   await until('innerWidth === 1600')
@@ -318,8 +331,16 @@ async function verifyDocumentLayouts(window, execute, until) {
   await reloaded
   await until(`Boolean(document.querySelector('.md-dialog'))`)
   assert.equal(await execute(expanded), true, 'bootstrap sees the already fullscreen window')
+  await open('script')
+  await until(atBottom)
+  await execute(`${scriptOutput}.scrollTop = 80`)
+  await until(`Boolean(document.querySelector('.script-output-follow-hint'))`)
   window.setFullScreen(false)
   await until(`!${expanded}`)
+  await until(`${scriptOutput}.scrollTop === 80`)
+  assert.equal(await execute(`document.querySelector('.script-execution-modal').getBoundingClientRect().width`), 880)
+  assert.equal(await execute(`getComputedStyle(${scriptOutput}).maxHeight`), '560px')
+  await open('markdown')
   await check('markdown', 1240, 820)
   await open('log')
   await check('log', 1040, 820)
