@@ -1,6 +1,6 @@
 import { formatLocale, msg, LocalizedError } from '../shared/i18n/messages'
 import { posix } from 'node:path'
-import type { RemoteEntry } from '@shared/types'
+import type { RemoteEntry, RemoteSymlinkTarget } from '@shared/types'
 import { sessions } from './runtime'
 import { fileCommands } from './file-identity'
 import { runRemoteCommand, type RemoteCommandTarget } from './ssh-commands'
@@ -14,6 +14,26 @@ export function filesSession(sessionId: string) {
 export function normalizedRemotePath(remotePath: string): string {
   if (typeof remotePath !== 'string' || !remotePath || remotePath.includes('\0')) throw new LocalizedError(msg('errors.invalidRemotePath'))
   return posix.resolve('/', remotePath)
+}
+
+export async function resolveRemoteSymlink(sessionId: string, remotePath: string): Promise<RemoteSymlinkTarget> {
+  const session = filesSession(sessionId)
+  const path = normalizedRemotePath(remotePath)
+  const { stdout } = await runRemoteCommand(session.commands, [
+    'if [[ ! -L "$1" ]] || ! IFS= read -r -d "" target < <(readlink --canonicalize-existing --zero -- "$1"); then',
+    '  printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:symlinkTargetUnavailable" >&2; exit 1',
+    'fi',
+    'if [[ -d "$target" ]]; then kind=d; elif [[ -f "$target" ]]; then kind=f; else',
+    '  printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:symlinkTargetUnsupported" >&2; exit 1',
+    'fi',
+    'printf "%s\\0%s\\0" "$kind" "$target"',
+  ].join('\n'), [path])
+  const fields = nulFields(stdout)
+  const [kind, target] = fields
+  if (fields.length !== 2 || stdout.at(-1) !== 0 || (kind !== 'd' && kind !== 'f') || !posix.isAbsolute(target) || posix.resolve(target) !== target) {
+    throw new LocalizedError(msg('errors.serverReturnedInvalidSymlinkTarget'))
+  }
+  return { type: kind === 'd' ? 'directory' : 'file', path: target }
 }
 
 export async function renameRemoteEntry(sessionId: string, remotePath: string, name: string): Promise<string> {
@@ -56,20 +76,22 @@ function remoteType(kind: string): RemoteEntry['type'] {
 export async function listRemoteDirectory(client: RemoteCommandTarget, remotePath: string): Promise<RemoteEntry[]> {
   const normalizedPath = normalizedRemotePath(remotePath)
   const { stdout } = await runRemoteCommand(client,
-    'find -- "$1" -mindepth 1 -maxdepth 1 -printf \'%f\\0%y\\0%s\\0%T@\\0%m\\0\'',
+    'find -- "$1" -mindepth 1 -maxdepth 1 -printf \'%f\\0%y\\0%Y\\0%s\\0%T@\\0%m\\0\'',
     [normalizedPath],
   )
   const fields = nulFields(stdout)
-  if (fields.length % 5 !== 0) throw new LocalizedError(msg('errors.serverReturnedAnInvalidDirectoryListing'))
+  if (fields.length % 6 !== 0) throw new LocalizedError(msg('errors.serverReturnedAnInvalidDirectoryListing'))
   const entries: RemoteEntry[] = []
-  for (let offset = 0; offset < fields.length; offset += 5) {
-    const [name, kind, rawSize, rawTime, rawMode] = fields.slice(offset, offset + 5)
+  for (let offset = 0; offset < fields.length; offset += 6) {
+    const [name, kind, targetKind, rawSize, rawTime, rawMode] = fields.slice(offset, offset + 6)
+    const targetType = remoteType(targetKind)
     const timestamp = Number(rawTime)
     const mode = Number.parseInt(rawMode, 8)
     entries.push({
       name,
       path: posix.join(normalizedPath, name),
       type: remoteType(kind),
+      ...(kind === 'l' && (targetType === 'directory' || targetType === 'file') ? { targetType } : {}),
       size: Number(rawSize),
       modifiedAt: Number.isFinite(timestamp) ? new Date(timestamp * 1000).toISOString() : null,
       permissions: mode.toString(8).padStart(3, '0'),

@@ -44,7 +44,13 @@ export interface RemoteEntry {
   name: string
   path: string
   type: 'directory' | 'file' | 'symlink' | 'other'
+  targetType?: RemoteSymlinkTarget['type']
   size: number
   modifiedAt: string | null
   permissions: string
+}
+
+export interface RemoteSymlinkTarget {
+  type: 'directory' | 'file'
+  path: string
 }

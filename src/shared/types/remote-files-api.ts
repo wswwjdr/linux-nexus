@@ -1,5 +1,5 @@
 import { type IpcResult } from '../i18n/messages'
-import type { RemoteEntry, SaveProfileInput, ServerProfile, CommandAliasOperationResult, CommandAliasSnapshot } from './profiles'
+import type { RemoteEntry, RemoteSymlinkTarget, SaveProfileInput, ServerProfile, CommandAliasOperationResult, CommandAliasSnapshot } from './profiles'
 import type { NameSearchRequest, ContentSearchRequest, NameSearchEvent, ContentSearchEvent } from './search'
 import type { ScriptExecutionRequest, ScriptExecutionEvent } from './script-executions'
 import type { ConnectResult, TrustHostKeyInput, SessionKind, TerminalOutputEvent, ConnectionClosedEvent, FileElevationResult, FileRootExpiredEvent } from './sessions'
@@ -37,6 +37,7 @@ export interface RemoteFilesApi {
   saveCommandAlias(profileId: string, name: string, command: string, existingCommand?: string): Promise<CommandAliasOperationResult>
   deleteCommandAlias(profileId: string, name: string, expectedCommand: string): Promise<CommandAliasOperationResult>
   listDirectory(sessionId: string, remotePath: string): Promise<RemoteEntry[]>
+  resolveRemoteSymlink(sessionId: string, remotePath: string): Promise<RemoteSymlinkTarget>
   getRemoteEntryProperties(sessionId: string, remotePath: string): Promise<RemoteEntryProperties>
   getRemoteDirectoryStats(sessionId: string, remotePath: string): Promise<RemoteDirectoryStats>
   getRemoteDirectoryUsageTree(sessionId: string, remotePath: string, requestId: string): Promise<RemoteDirectoryUsageNode[]>

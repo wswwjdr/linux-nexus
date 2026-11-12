@@ -23,7 +23,6 @@ import SessionTabBar from './SessionTabBar'
 import type { useRemoteOperations } from '../remote-files/useRemoteOperations'
 import type { useProfileManagement } from '../../hooks/useProfileManagement'
 import type { ScriptCommandDialog } from '../files/useScriptExecution'
-import { errorMessage } from '../../app-utils'
 
 type FileBrowserProps = ComponentProps<typeof FileBrowser>
 type FileWorkspaceProps = ComponentProps<typeof FileSessionWorkspace>
@@ -66,7 +65,7 @@ interface SessionWorkspaceActions {
   remoteFiles: Pick<RemoteOperations,
     'requestRemoteEntriesDeletion' | 'beginRemoteMove' | 'extractRemoteArchive'>
   browser: Pick<FileBrowserProps,
-    'onOpenFile' | 'onOpenEntryContextMenu' | 'onOpenDirectoryContextMenu' | 'onDropUpload' | 'onDropError'>
+    'onOpenFile' | 'onOpenEntryContextMenu' | 'onOpenDirectoryContextMenu' | 'onDropUpload' | 'onError'>
   serverList: Pick<ServerListProps, 'onAdd' | 'onConnect' | 'onEdit' | 'onSetPinned' | 'onDelete'>
   terminal: {
     onReconnect: SessionOperations['reconnectSession']
@@ -113,7 +112,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
     onOpenEntryContextMenu,
     onOpenDirectoryContextMenu,
     onDropUpload,
-    onDropError,
+    onError,
   } = actions.browser
   const openEntryContextMenu = onOpenEntryContextMenu
   const openDirectoryContextMenu = onOpenDirectoryContextMenu
@@ -169,6 +168,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
         {activeSession?.kind === 'files' && connectedSessionId ? (
           <div className="files-session-panel" id={'session-panel-' + activeSession.id} role="tabpanel" aria-labelledby={'session-tab-' + activeSession.id}>
             <FileBrowser
+              sessionId={connectedSessionId}
               currentPath={currentPath}
               entries={entries}
               loading={loading}
@@ -189,7 +189,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
               onDeleteEntries={requestRemoteEntriesDeletion}
               onDropUpload={uploadDroppedEntries}
               onDropMove={beginRemoteMove}
-              onDropError={(error) => showToast('error', errorMessage(error))}
+              onError={onError}
             />
           </div>
         ) : !activeSession ? (

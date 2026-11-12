@@ -38,6 +38,7 @@ import type { PreviewType } from '@shared/file-type-registry'
 import { DEFAULT_PERFORMANCE_THRESHOLDS, defaultFileTypeExtensions } from '@shared/app-settings'
 import type {
   BrowserContextMenu as BrowserContextMenuState,
+  DirectoryLoadOptions,
   FileViewMode,
   PendingHostKey,
   RecentConnection,
@@ -319,7 +320,7 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
     }
   }, [sessionContextMenu])
 
-  const loadDirectory = async (sessionId: string, remotePath: string, quiet = false) => {
+  const loadDirectory = async (sessionId: string, remotePath: string, { quiet = false, reveal }: DirectoryLoadOptions = {}) => {
     if (!sessionsRef.current.some((session) => session.id === sessionId && session.status === 'connected')) return false
     const requestId = (directoryLoadIdsRef.current.get(sessionId) ?? 0) + 1
     directoryLoadIdsRef.current.set(sessionId, requestId)
@@ -328,14 +329,15 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
       const nextEntries = await window.remoteFiles.listDirectory(sessionId, remotePath)
       if (directoryLoadIdsRef.current.get(sessionId) !== requestId
         || !sessionsRef.current.some((session) => session.id === sessionId && session.status === 'connected')) return false
+      const revealedEntry = reveal && nextEntries.find((entry) => entry.path === reveal.path)
       updateSession(sessionId, (session) => ({
         ...session,
         entries: nextEntries,
         currentPath: remotePath,
         loading: false,
-        selectedPaths: session.currentPath === remotePath
-          ? session.selectedPaths.filter((path) => nextEntries.some((entry) => entry.path === path))
-          : [],
+        highlightedPath: revealedEntry?.path ?? null,
+        selectedPaths: revealedEntry && reveal?.select ? [revealedEntry.path] : session.currentPath === remotePath
+          ? session.selectedPaths.filter((path) => nextEntries.some((entry) => entry.path === path)) : [],
       }))
       return true
     } catch (error) {
@@ -424,7 +426,7 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
     if (archiveDestinationDialog?.sessionId === sessionId) setArchiveDestinationDialog(null)
     if (uploadSelection?.sessionId === sessionId) cancelUploadSelection()
     if (identity === 'login' && session.currentPath !== '/') {
-      if (await loadDirectory(sessionId, session.currentPath, true)) return
+      if (await loadDirectory(sessionId, session.currentPath, { quiet: true })) return
       if (await loadDirectory(sessionId, '/')) patchSession(sessionId, { history: ['/'], historyIndex: 0 })
     } else {
       await loadDirectory(sessionId, session.currentPath)
@@ -760,7 +762,7 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
               onOpenEntryContextMenu: openEntryContextMenu,
               onOpenDirectoryContextMenu: openDirectoryContextMenu,
               onDropUpload: uploadDroppedEntries,
-              onDropError: (error) => showToast('error', errorMessage(error)),
+              onError: (error) => showToast('error', errorMessage(error)),
             },
             serverList: {
               onAdd: () => openProfileDialog('create'),

@@ -1,9 +1,9 @@
-import { renderMessage, type MessageValue } from '../src/shared/i18n/messages'
+import { LocalizedError, msg, renderMessage, type MessageValue } from '../src/shared/i18n/messages'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { act, createElement, Fragment, useState } from 'react'
 import { JSDOM } from 'jsdom'
-import type { FileTypeExtensions, PreviewResult, RemoteEntry, RemoteFilesApi } from '../src/shared/types.ts'
+import type { FileTypeExtensions, PreviewResult, RemoteEntry, RemoteFilesApi, RemoteSymlinkTarget } from '../src/shared/types.ts'
 import { defaultFileTypeExtensions } from '../src/shared/app-settings.ts'
 import FileBrowser from '../src/renderer/src/features/files/FileBrowser.tsx'
 import FileSessionWorkspace, { type SessionFileWorkspaceActions } from '../src/renderer/src/features/files/FileSessionWorkspace.tsx'
@@ -20,11 +20,14 @@ Object.defineProperties(globalThis, {
   IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true },
   ResizeObserver: { configurable: true, value: class { observe() {} disconnect() {} } },
 })
+dom.window.HTMLElement.prototype.scrollIntoView = () => {}
 const noop = () => {}
 function entry(name: string, type: RemoteEntry['type'] = 'file'): RemoteEntry {
   return { name, path: '/srv/' + name, type, size: 12, modifiedAt: null, permissions: 'rw-r--r--' }
 }
-const entries = [entry('notes.txt'), entry('README.md'), entry('unknown.bin'), entry('folder', 'directory'), entry('link', 'symlink'), entry('socket', 'other'), entry('run.sh'), entry('archive.zip')]
+const entries: RemoteEntry[] = [entry('notes.txt'), entry('README.md'), entry('unknown.bin'), entry('folder', 'directory'),
+  { ...entry('current', 'symlink'), targetType: 'directory' }, { ...entry('file-link', 'symlink'), targetType: 'file' },
+  entry('broken', 'symlink'), entry('socket', 'other'), entry('run.sh'), entry('archive.zip')]
 function session(id: string): SessionTab {
   return { id, profileId: 'profile', kind: 'files', status: 'connected', currentPath: '/srv', startPath: '/', entries,
     selectedPaths: [], loading: false, viewMode: 'details', sort: { column: 'name', direction: 'ascending' }, highlightedPath: null,
@@ -44,6 +47,7 @@ async function mount(viewMode: 'details' | 'icons' = 'details') {
   const calls: Array<{ sessionId: string; path: string; type: string }> = []
   const notices: string[] = []
   const navigated: string[] = []
+  const linkRequests: Array<{ sessionId: string; path: string }> = []
   const contexts: RemoteEntry[][] = []
   const actions = new Map<string, SessionFileWorkspaceActions>()
   const blocking = new Set<string>()
@@ -51,7 +55,15 @@ async function mount(viewMode: 'details' | 'icons' = 'details') {
   const sessions = [session('first'), session('second')]
   let current = 'first'
   let extensions = defaultFileTypeExtensions()
+  const targetFile = { ...entry('os-release'), path: '/srv/releases/os-release' }
+  let resolveDirectoryLink = async (): Promise<RemoteSymlinkTarget> => ({ type: 'directory', path: '/srv/releases/v1' })
   window.remoteFiles = {
+    resolveRemoteSymlink: async (sessionId: string, path: string): Promise<RemoteSymlinkTarget> => {
+      linkRequests.push({ sessionId, path })
+      if (path === '/srv/current') return resolveDirectoryLink()
+      if (path === '/srv/file-link') return { type: 'file', path: targetFile.path }
+      throw new LocalizedError(msg('errors.remoteSymlinkTargetUnavailable'))
+    },
     previewFile: async (sessionId: string, path: string, type: string): Promise<PreviewResult> => {
       calls.push({ sessionId, path, type })
       if (path.endsWith('failure.txt')) throw new Error('read failed')
@@ -64,13 +76,20 @@ async function mount(viewMode: 'details' | 'icons' = 'details') {
   const showToast = (_kind: string, message: MessageValue) => { notices.push(renderMessage(message)) }
   function Browser() {
     const [selectedPaths, setSelectedPaths] = useState<string[]>([])
+    const [highlightedPath, setHighlightedPath] = useState<string | null>(null)
+    const browserEntries = highlightedPath ? [targetFile] : entries
     return createElement(FileBrowser, {
-      currentPath: '/srv', entries, loading: false, viewMode, breadcrumbs: [], sort: sessions[0].sort, sortedEntries: entries,
-      selectedPaths, operationActive: false, highlightedPath: null,
-      onViewModeChange: noop, onNavigate: async (path) => { navigated.push(path); return true },
+      sessionId: current, currentPath: highlightedPath ? '/srv/releases' : '/srv', entries: browserEntries, loading: false, viewMode, breadcrumbs: [], sort: sessions[0].sort, sortedEntries: browserEntries,
+      selectedPaths, operationActive: false, highlightedPath,
+      onViewModeChange: noop, onNavigate: async (path, reveal) => {
+        navigated.push(path)
+        if (reveal) setHighlightedPath(reveal.path)
+        if (reveal?.select) setSelectedPaths([reveal.path])
+        return true
+      },
       onOpenFile: (file) => actions.get(current)!.openFile(file), onToggleSort: noop, onSelectedPathsChange: setSelectedPaths,
       onOpenEntryContextMenu: (targets) => { contexts.push(targets) }, onOpenDirectoryContextMenu: noop,
-      onDeleteEntries: noop, onDropUpload: noop, onDropMove: noop, onDropError: noop,
+      onDeleteEntries: noop, onDropUpload: noop, onDropMove: noop, onError: (error) => { notices.push((error as Error).message) },
     })
   }
   const render = (active = current, config: FileTypeExtensions = extensions) => {
@@ -95,12 +114,13 @@ async function mount(viewMode: 'details' | 'icons' = 'details') {
     mouse(target, 'dblclick', { detail: 2 })
     await flush()
   }
-  return { host, calls, notices, navigated, contexts, actions, blocking, opened, sessions, render, row, flush, doubleClick,
+  return { host, calls, notices, navigated, linkRequests, contexts, actions, blocking, opened, sessions, render, row, flush, doubleClick,
+    setDirectoryLinkResolver(resolve: () => Promise<RemoteSymlinkTarget>) { resolveDirectoryLink = resolve },
     unmount() { act(() => root.unmount()); host.remove() } }
 }
 
 for (const view of ['details', 'icons'] as const) {
-  test(view + ': double-click opens each surface once, directories navigate and special entries stay unchanged', async () => {
+  test(view + ': double-click opens files once and navigates into folders', async () => {
     const fixture = await mount(view)
     try {
       const selectors = view === 'details' ? ['.entry-label', '.entry-icon svg', '.size-col', null] : ['.tile-name', '.tile-glyph svg', '.file-tile-main', null]
@@ -114,7 +134,7 @@ for (const view of ['details', 'icons'] as const) {
       }
       await fixture.doubleClick(fixture.row('folder'))
       assert.deepEqual(fixture.navigated, ['/srv/folder'])
-      for (const name of ['link', 'socket']) await fixture.doubleClick(fixture.row(name))
+      await fixture.doubleClick(fixture.row('socket'))
       assert.equal(fixture.calls.length, 0)
       assert.equal(fixture.notices.length, 0)
       for (const name of ['unknown.bin', 'archive.zip']) await fixture.doubleClick(fixture.row(name))
@@ -124,7 +144,47 @@ for (const view of ['details', 'icons'] as const) {
       assert.deepEqual(fixture.calls[0], { sessionId: 'first', path: '/srv/run.sh', type: 'text' })
     } finally { fixture.unmount() }
   })
+
+  test(view + ': symbolic links have a distinct icon and double-click opens the resolved target', async () => {
+    const fixture = await mount(view)
+    try {
+      const icon = fixture.row('current').querySelector('svg.lucide-folder-symlink[aria-label="目录链接"]')!
+      assert.ok(icon)
+      assert.ok(fixture.row('file-link').querySelector('svg.lucide-file-symlink[aria-label="文件链接"]'))
+      assert.ok(fixture.row('broken').querySelector('svg.lucide-link-2[aria-label="符号链接"]'))
+      await fixture.doubleClick(icon)
+      assert.deepEqual(fixture.navigated, ['/srv/releases/v1'])
+      fixture.setDirectoryLinkResolver(async () => ({ type: 'directory', path: '/srv/releases/v2' }))
+      await fixture.doubleClick(icon)
+      assert.deepEqual(fixture.navigated, ['/srv/releases/v1', '/srv/releases/v2'])
+      await fixture.doubleClick(fixture.row('broken'))
+      assert.equal(fixture.notices.length, 1)
+      assert.match(fixture.notices[0], /无法访问符号链接目标/)
+      await fixture.doubleClick(fixture.row('file-link'))
+      assert.deepEqual(fixture.navigated, ['/srv/releases/v1', '/srv/releases/v2', '/srv/releases'])
+      const target = fixture.row('releases/os-release')
+      assert.equal(target.querySelector('button')?.getAttribute('aria-pressed'), 'true')
+      assert.equal(document.activeElement, target)
+      assert.equal(fixture.calls.length, 0)
+      assert.equal(fixture.notices.length, 1)
+      assert.equal(fixture.linkRequests.length, 4)
+    } finally { fixture.unmount() }
+  })
 }
+
+test('ignores a pending link resolution after switching sessions', async () => {
+  const fixture = await mount()
+  try {
+    const pending = Promise.withResolvers<RemoteSymlinkTarget>()
+    fixture.setDirectoryLinkResolver(() => pending.promise)
+    await fixture.doubleClick(fixture.row('current'))
+    assert.deepEqual(fixture.linkRequests, [{ sessionId: 'first', path: '/srv/current' }])
+    fixture.render('second')
+    pending.resolve({ type: 'directory', path: '/srv/releases/v1' })
+    await fixture.flush()
+    assert.deepEqual(fixture.navigated, [])
+  } finally { fixture.unmount() }
+})
 
 test('multiple previews require a choice; keyboard, cancellation and focus restoration work', async () => {
   const fixture = await mount()

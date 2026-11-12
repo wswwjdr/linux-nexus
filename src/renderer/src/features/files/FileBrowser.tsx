@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import type { DroppedUploadEntry, RemoteEntry } from '@shared/types'
-import type { FileViewMode, SortColumn, SortDirection } from '@/app-types'
+import type { DirectoryLoadOptions, FileViewMode, SortColumn, SortDirection } from '@/app-types'
 import { formatDate, formatSize, getParentPath } from '@/app-utils'
 import FileEntryCollection from './FileEntryCollection'
 import FilePathBar, { type Breadcrumb } from './FilePathBar'
@@ -15,6 +15,7 @@ import { useFileDragAndDrop } from './useFileDragAndDrop'
 import { isSelectionBackground, useFileSelection } from './useFileSelection'
 
 interface FileBrowserProps {
+  sessionId: string
   currentPath: string
   entries: RemoteEntry[]
   loading: boolean
@@ -26,8 +27,8 @@ interface FileBrowserProps {
   operationActive: boolean
   highlightedPath: string | null
   onViewModeChange: (mode: FileViewMode) => void
-  onOpenFile: (entry: RemoteEntry) => void
-  onNavigate: (path: string) => Promise<boolean>
+  onOpenFile: (entry: Pick<RemoteEntry, 'name' | 'path'>) => void
+  onNavigate: (path: string, reveal?: DirectoryLoadOptions['reveal']) => Promise<boolean>
   onToggleSort: (column: SortColumn) => void
   onSelectedPathsChange: (paths: string[]) => void
   onOpenEntryContextMenu: (entries: RemoteEntry[], x: number, y: number, anchor: HTMLElement) => void
@@ -35,10 +36,11 @@ interface FileBrowserProps {
   onDeleteEntries: (entries: RemoteEntry[]) => void
   onDropUpload: (entries: DroppedUploadEntry[]) => void
   onDropMove: (sourcePaths: string[], targetDirectory: string) => void
-  onDropError: (error: unknown) => void
+  onError: (error: unknown) => void
 }
 
 export default function FileBrowser({
+  sessionId,
   currentPath,
   entries,
   loading,
@@ -59,12 +61,16 @@ export default function FileBrowser({
   onDeleteEntries,
   onDropUpload,
   onDropMove,
-  onDropError,
+  onError,
 }: FileBrowserProps) {
   useLanguage()
   const contentRef = useRef<HTMLDivElement>(null)
   const hoverCardRef = useRef<HTMLDivElement>(null)
   const hoverTimerRef = useRef<number | null>(null)
+  const pendingLinkOpen = useRef<symbol | null>(null)
+  useLayoutEffect(() => () => {
+    pendingLinkOpen.current = null
+  }, [sessionId, currentPath, loading])
   const [hoveredEntry, setHoveredEntry] = useState<{
     entry: RemoteEntry
     anchorLeft: number
@@ -121,6 +127,27 @@ export default function FileBrowser({
     setHoveredEntry(null)
   }
 
+  const openEntry = async (entry: RemoteEntry) => {
+    cancelEntryDetails()
+    pendingLinkOpen.current = null
+    if (entry.type === 'directory') void onNavigate(entry.path)
+    else if (entry.type === 'file') onOpenFile(entry)
+    else if (entry.type === 'symlink' && !loading) {
+      const request = Symbol()
+      pendingLinkOpen.current = request
+      try {
+        const target = await window.remoteFiles.resolveRemoteSymlink(sessionId, entry.path)
+        if (pendingLinkOpen.current !== request) return
+        if (target.type === 'directory') void onNavigate(target.path)
+        else void onNavigate(getParentPath(target.path), { path: target.path, select: true })
+      } catch (error) {
+        if (pendingLinkOpen.current === request) onError(error)
+      } finally {
+        if (pendingLinkOpen.current === request) pendingLinkOpen.current = null
+      }
+    }
+  }
+
   const hideEntryDetailsOnBlur = (event: ReactFocusEvent<HTMLElement>) => {
     if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
     cancelEntryDetails()
@@ -142,7 +169,7 @@ export default function FileBrowser({
     operationActive,
     onDropUpload,
     onDropMove,
-    onDropError,
+    onDropError: onError,
     onDragStart: cancelEntryDetails,
   })
 
@@ -292,11 +319,7 @@ export default function FileBrowser({
           onEntryDragOver={handleEntryDragOver}
           onEntryDragLeave={handleEntryDragLeave}
           onEntryDrop={handleEntryDrop}
-          onOpenEntry={(entry) => {
-            cancelEntryDetails()
-            if (entry.type === 'directory') void onNavigate(entry.path)
-            else if (entry.type === 'file') onOpenFile(entry)
-          }}
+          onOpenEntry={(entry) => void openEntry(entry)}
           onTileMouseEnter={scheduleEntryDetails}
           onTileMouseLeave={(event) => {
             if (event.relatedTarget instanceof Node && hoverCardRef.current?.contains(event.relatedTarget)) return

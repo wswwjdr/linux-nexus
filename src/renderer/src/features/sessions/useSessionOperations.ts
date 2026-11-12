@@ -1,7 +1,7 @@
 import { type MessageValue, msg, tr } from '@shared/i18n/messages'
 import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { ServerProfile, SessionKind, StartupConnection, TrustHostKeyInput } from '@shared/types'
-import type { PendingHostKey, RecentConnection, SessionTab, BrowserContextMenu } from '@/app-types'
+import type { PendingHostKey, RecentConnection, SessionTab, BrowserContextMenu, DirectoryLoadOptions } from '@/app-types'
 import type { SessionFileWorkspaceActions } from '@/features/files/FileSessionWorkspace'
 import type { ToastNotice } from '@/GlobalToast'
 import { connectFailureText, errorMessage, getParentPath } from '@/app-utils'
@@ -32,7 +32,7 @@ interface UseSessionOperationsOptions {
   setCreateDirectoryDialog: Dispatch<SetStateAction<{ name: string } | null>>
   patchSession: (sessionId: string, patch: Partial<SessionTab>) => void
   updateSession: (sessionId: string, update: (session: SessionTab) => SessionTab) => void
-  loadDirectory: (sessionId: string, remotePath: string) => Promise<boolean>
+  loadDirectory: (sessionId: string, remotePath: string, options?: DirectoryLoadOptions) => Promise<boolean>
   removeSessionWorkspaceState: (sessionIds: string[]) => void
   removeSessionScriptStates: (sessionIds: string[]) => void
   removeSessionPerformanceState: (sessionIds: string[]) => void
@@ -280,40 +280,35 @@ export function useSessionOperations({
     setActiveSessionId(null)
   }
 
-  const navigateSession = (sessionId: string, remotePath: string): Promise<boolean> => {
+  const navigateSession = async (sessionId: string, remotePath: string, reveal?: DirectoryLoadOptions['reveal']): Promise<boolean> => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    if (session?.kind !== 'files' || session.status !== 'connected') return Promise.resolve(false)
-    const nextHistory = session.history.slice(0, session.historyIndex + 1)
-    if (nextHistory.at(-1) !== remotePath) nextHistory.push(remotePath)
-    updateSession(sessionId, (current) => ({ ...current, history: nextHistory, historyIndex: nextHistory.length - 1 }))
-    return loadDirectory(sessionId, remotePath).then((loaded) => {
-      if (!loaded && sessionsRef.current.some((candidate) => candidate.id === sessionId)) {
-        updateSession(sessionId, (current) => ({ ...current, history: session.history, historyIndex: session.historyIndex }))
-      }
-      return loaded
+    if (session?.kind !== 'files' || session.status !== 'connected') return false
+    if (!await loadDirectory(sessionId, remotePath, { reveal })) return false
+    updateSession(sessionId, (current) => {
+      if (current.history[current.historyIndex] === remotePath) return current
+      const history = [...current.history.slice(0, current.historyIndex + 1), remotePath]
+      return { ...current, history, historyIndex: history.length - 1 }
     })
+    return true
   }
 
-  const navigate = (remotePath: string): Promise<boolean> => activeSession
-    ? navigateSession(activeSession.id, remotePath)
+  const navigate = (remotePath: string, reveal?: DirectoryLoadOptions['reveal']): Promise<boolean> => activeSession
+    ? navigateSession(activeSession.id, remotePath, reveal)
     : Promise.resolve(false)
 
   const locateSearchResult = async (result: { path: string }, sessionId: string) => {
     setSearchOpen(sessionId, false)
     activateSession(sessionId)
-    const loaded = await navigateSession(sessionId, getParentPath(result.path))
-    if (loaded) patchSession(sessionId, { highlightedPath: result.path })
+    await navigateSession(sessionId, getParentPath(result.path), { path: result.path })
   }
 
   const movePathHistory = (offset: -1 | 1) => {
     if (!activeSession || activeSession.kind !== 'files' || activeSession.status !== 'connected') return
-    const previousIndex = activeSession.historyIndex
-    const nextIndex = previousIndex + offset
+    const nextIndex = activeSession.historyIndex + offset
     const remotePath = activeSession.history[nextIndex]
     if (remotePath === undefined) return
-    patchSession(activeSession.id, { historyIndex: nextIndex })
     void loadDirectory(activeSession.id, remotePath).then((loaded) => {
-      if (!loaded) patchSession(activeSession.id, { historyIndex: previousIndex })
+      if (loaded) patchSession(activeSession.id, { historyIndex: nextIndex })
     })
   }
 

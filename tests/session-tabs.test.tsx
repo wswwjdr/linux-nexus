@@ -3,7 +3,7 @@ import test from 'node:test'
 import { act, createElement, useRef, useState } from 'react'
 import { JSDOM } from 'jsdom'
 import type { RemoteFilesApi, ServerProfile } from '../src/shared/types.ts'
-import type { SessionTab } from '../src/renderer/src/app-types.ts'
+import type { DirectoryLoadOptions, SessionTab } from '../src/renderer/src/app-types.ts'
 import SessionTabBar from '../src/renderer/src/features/sessions/SessionTabBar.tsx'
 import { useSessionOperations } from '../src/renderer/src/features/sessions/useSessionOperations.ts'
 
@@ -28,7 +28,10 @@ function session(id: string, kind: SessionTab['kind'] = 'files'): SessionTab {
   }
 }
 
-async function mountTabs(initial = [session('first'), session('second', 'terminal'), session('third')]) {
+async function mountTabs(
+  initial = [session('first'), session('second', 'terminal'), session('third')],
+  loadDirectory: (id: string, path: string, options?: DirectoryLoadOptions) => Promise<boolean> = async () => true,
+) {
   const { createRoot } = await import('react-dom/client')
   const host = document.createElement('div')
   document.body.append(host)
@@ -53,8 +56,9 @@ async function mountTabs(initial = [session('first'), session('second', 'termina
       viewModeDefault: 'details', pendingHostKey: null, startupConnection: null, profileDataLoaded: false,
       setSessions, setActiveSessionId: setActiveId, setPendingHostKeys: noOp, setRecentConnections: noOp,
       setBrowserContextMenu: noOp, setSessionContextMenu: noOp, setSessionChooserOpen: noOp,
-      setCreateDirectoryDialog: noOp, patchSession: noOp, updateSession: noOp,
-      loadDirectory: async () => true, removeSessionWorkspaceState: noOp,
+      setCreateDirectoryDialog: noOp, patchSession: noOp,
+      updateSession: (id, update) => setSessions((current) => current.map((tab) => tab.id === id ? update(tab) : tab)),
+      loadDirectory, removeSessionWorkspaceState: noOp,
       removeSessionScriptStates: noOp, removeSessionPerformanceState: noOp,
       workspaceActionsRef: useRef(new Map()), directoryLoadIdsRef: useRef(new Map()),
       connectingSessionsRef: useRef(new Set()), setSearchOpen: noOp, showToast: noOp,
@@ -77,6 +81,26 @@ async function mountTabs(initial = [session('first'), session('second', 'termina
     dispose() { act(() => root.unmount()); host.remove() },
   }
 }
+
+test('navigation reveals the requested file and records only successful destinations', async () => {
+  const pending = Promise.withResolvers<boolean>()
+  const loads: Array<{ id: string; path: string; options?: DirectoryLoadOptions }> = []
+  const first = session('first')
+  const tabs = await mountTabs([first], (id, path, options) => {
+    loads.push({ id, path, options })
+    return path === '/failed' ? pending.promise : Promise.resolve(true)
+  })
+  try {
+    const failed = tabs.operations.navigate('/failed')
+    assert.deepEqual(tabs.current.sessions[0].history, [first.currentPath])
+    const reveal = { path: '/usr/lib/os-release', select: true }
+    await act(async () => { assert.equal(await tabs.operations.navigate('/usr/lib', reveal), true) })
+    pending.resolve(false)
+    assert.equal(await failed, false)
+    assert.deepEqual(loads[1], { id: first.id, path: '/usr/lib', options: { reveal } })
+    assert.deepEqual(tabs.current.sessions[0].history, [first.currentPath, '/usr/lib'])
+  } finally { tabs.dispose() }
+})
 
 function transfer(types: string[] = []) {
   const data = new Map<string, string>()

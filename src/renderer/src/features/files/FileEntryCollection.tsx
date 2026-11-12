@@ -1,6 +1,6 @@
 import { useLanguage } from '@/i18n'
 import { tr } from '@shared/i18n/messages'
-import { ArrowDown, ArrowUp, ArrowUpDown, File, Folder, type LucideIcon } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, File, FileSymlink, Folder, FolderSymlink, Link2, type LucideIcon } from 'lucide-react'
 import type { DragEvent, FocusEvent, MouseEvent, RefObject } from 'react'
 import type { RemoteEntry } from '@shared/types'
 import type { FileViewMode, SortColumn, SortDirection } from '@/app-types'
@@ -29,6 +29,15 @@ interface FileEntryCollectionProps {
   onTileMouseEnter: (entry: RemoteEntry, element: HTMLElement) => void
   onTileMouseLeave: (event: MouseEvent<HTMLElement>) => void
   onTileBlur: (event: FocusEvent<HTMLElement>) => void
+}
+
+function EntryIcon({ entry: { type, targetType }, large = false }: { entry: RemoteEntry; large?: boolean }) {
+  const size = large ? 29 : 16
+  if (type === 'directory') return <Folder size={large ? 31 : 17} fill="currentColor" strokeWidth={large ? 1.7 : 1.8} />
+  if (type !== 'symlink') return <File size={size} />
+  if (targetType === 'directory') return <FolderSymlink size={size} className="directory-link-icon" role="img" aria-label={tr('files.directorySymlink')} />
+  if (targetType === 'file') return <FileSymlink size={size} role="img" aria-label={tr('files.fileSymlink')} />
+  return <Link2 size={size} role="img" aria-label={tr('files.symbolicLink')} />
 }
 
 function SortHeader({
@@ -99,7 +108,7 @@ export default function FileEntryCollection({
           {virtual.before > 0 && <tr aria-hidden="true"><td colSpan={4} style={{ height: virtual.before, padding: 0, border: 0 }} /></tr>}
           {visibleEntries.map((entry) => (
             <tr
-              className={'file-row ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selected.has(entry.path) ? 'selected ' : '') + (dropTargetPath === entry.path ? 'drop-target' : '')}
+              className={'file-row ' + (entry.path === highlightedPath ? 'entry-highlight ' : '') + (selected.has(entry.path) ? 'selected ' : '') + (dropTargetPath === entry.path ? 'drop-target' : '')}
               key={entry.path}
               data-entry-path={entry.path}
               draggable={!operationActive && (entry.type === 'file' || entry.type === 'directory')}
@@ -120,7 +129,7 @@ export default function FileEntryCollection({
                   aria-pressed={selected.has(entry.path)}
                 >
                   <span className={'entry-icon ' + (entry.type === 'directory' ? 'folder-icon' : '')}>
-                    {entry.type === 'directory' ? <Folder size={17} fill="currentColor" strokeWidth={1.8} /> : <File size={16} />}
+                    <EntryIcon entry={entry} />
                   </span>
                   <span className="entry-label">{entry.name}</span>
                 </button>
@@ -140,7 +149,7 @@ export default function FileEntryCollection({
     <div className="file-icon-grid" style={{ gridTemplateColumns: `repeat(${virtual.columns}, minmax(0, 1fr))`, paddingTop: 16 + virtual.before, paddingBottom: 16 + virtual.after }}>
       {visibleEntries.map((entry) => (
         <article
-          className={'file-tile ' + (entry.path === highlightedPath ? 'search-highlight ' : '') + (selected.has(entry.path) ? 'selected ' : '') + (dropTargetPath === entry.path ? 'drop-target' : '')}
+          className={'file-tile ' + (entry.path === highlightedPath ? 'entry-highlight ' : '') + (selected.has(entry.path) ? 'selected ' : '') + (dropTargetPath === entry.path ? 'drop-target' : '')}
           key={entry.path}
           data-entry-path={entry.path}
           draggable={!operationActive && (entry.type === 'file' || entry.type === 'directory')}
@@ -164,7 +173,7 @@ export default function FileEntryCollection({
             aria-pressed={selected.has(entry.path)}
           >
             <span className={'tile-glyph ' + (entry.type === 'directory' ? 'folder-glyph' : '')}>
-              {entry.type === 'directory' ? <Folder size={31} fill="currentColor" strokeWidth={1.7} /> : <File size={29} />}
+              <EntryIcon entry={entry} large />
             </span>
             <span className="tile-name">{entry.name}</span>
           </button>

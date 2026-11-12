@@ -64,6 +64,8 @@ const api: RemoteFilesTransport = {
     ipcRenderer.invoke('aliases:delete', profileId, name, expectedCommand),
   listDirectory: (sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('files:list', sessionId, remotePath),
+  resolveRemoteSymlink: (sessionId, remotePath) =>
+    ipcRenderer.invoke('files:resolve-symlink', sessionId, remotePath),
   getRemoteEntryProperties: (sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('files:properties', sessionId, remotePath),
   getRemoteDirectoryStats: (sessionId: string, remotePath: string) =>

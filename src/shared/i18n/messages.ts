@@ -105,6 +105,8 @@ const diagnosticKeys: Record<string, MessageKey> = {
   "renameType": "errors.remoteRenameType",
   "nameExists": "errors.remoteNameExists",
   "renameIncomplete": "errors.remoteRenameIncomplete",
+  "symlinkTargetUnavailable": "errors.remoteSymlinkTargetUnavailable",
+  "symlinkTargetUnsupported": "errors.remoteSymlinkTargetUnsupported",
   "packageManager": "errors.remotePackageManager",
   "installSudo": "errors.remoteInstallSudo",
   "incompleteBytes": "errors.remoteIncompleteBytes",

@@ -67,6 +67,11 @@ export interface SessionTab {
   error: MessageValue | null
 }
 
+export interface DirectoryLoadOptions {
+  quiet?: boolean
+  reveal?: { path: string; select?: boolean }
+}
+
 export interface ScriptExecutionOutputChunk {
   stream: 'stdout' | 'stderr'
   data: string

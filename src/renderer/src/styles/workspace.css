@@ -154,11 +154,16 @@
 .file-tile.selected .tile-name { color:var(--text-accent); font-weight: 600; }
 .file-tile.drop-target, .file-tile.drop-target:hover:not(:disabled) { border-color:var(--border-accent); background:var(--surface-selected); box-shadow: inset 0 0 0 2px var(--accent); }
 .file-tile:focus-visible { outline:2px solid var(--focus-outline); outline-offset: 2px; }
+.file-row.entry-highlight { outline:2px solid var(--focus-outline); outline-offset: -2px; background:var(--surface-selected); }
+.file-tile.entry-highlight { border-color:var(--border-accent); background:var(--surface-selected); box-shadow: 0 0 0 2px var(--focus-surface); }
+.file-row.entry-highlight.selected { background:var(--surface-selected); box-shadow: inset 3px 0 0 var(--accent); }
+.file-tile.entry-highlight.selected { border-color:var(--border-accent); background:var(--surface-selected-strong); box-shadow: inset 0 0 0 1px var(--accent); }
 .file-tile-main { min-width: 0; width: 100%; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 10px 8px 5px; overflow: hidden; border:0; color:var(--text-strong); background:transparent; cursor: pointer; }
 .file-tile-main:disabled { opacity: 1; }
 .file-tile-main.directory-entry { cursor: pointer; }
 .tile-glyph { width: 38px; height: 38px; display: grid; flex: 0 0 auto; place-items: center; color:var(--text-info); }
 .tile-glyph.folder-glyph { color:var(--text-accent); }
+.directory-link-icon { color:var(--text-accent); }
 .tile-name { width: 100%; overflow: hidden; color:var(--text-strong); font-size: 11px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .file-tile-main.directory-entry:hover:not(:disabled) .tile-name { color:var(--accent); }
 .entry-hover-card { position: fixed; z-index: 8; width: 300px; max-height: min(240px, calc(100vh - 16px)); display: flex; flex-direction: column; gap: 9px; overflow: auto; padding: 12px 14px; border:1px solid var(--line); border-radius: 6px; color:var(--text-primary); background:var(--surface-raised); box-shadow: var(--shadow-hover-card); font-size: 12px; pointer-events: auto; }
