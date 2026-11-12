@@ -390,6 +390,7 @@ export default {
     "entryCount_other": "{{count, number}} 项"
   },
   "search": {
+    "commandPreviewHint": "填写有效的搜索条件后显示原生命令",
     "nativeCommand": "原生命令",
     "findInText": "文本内搜索",
     "findText": "搜索文本",

@@ -11,12 +11,9 @@ import type {
   ContentSearchResult,
   SearchRunStatus,
 } from '@shared/types'
-import { shellQuote } from '@shared/shell'
+import { buildContentSearchCommand } from '@shared/search-commands'
 import { getMainWindow, sessions } from './runtime'
 import { normalizedRemotePath } from './remote-fs'
-import { buildContentSearchScript } from './content-search/script'
-
-export { buildContentSearchScript } from './content-search/script'
 
 interface ContentSearchTask {
   request: ContentSearchRequest
@@ -312,9 +309,7 @@ export function startContentSearch(input: ContentSearchRequest): string {
   }
   activeSearches.set(request.requestId, task)
   emitProgress(task, true)
-  const command = 'bash -c ' + shellQuote(buildContentSearchScript()) + ' linux-nexus-content-search'
-    + ' ' + [request.rootPath, request.query, request.ignoreCase ? '1' : '0', String(request.maxFileSizeMiB * 1024 * 1024)]
-      .map(shellQuote).join(' ')
+  const command = buildContentSearchCommand(request)
 
   void executeRemoteCommand(commands, command, {
     signal: task.controller.signal, collectStdout: false, keepStdinOpen: true, timeoutMs: 86_400_000,

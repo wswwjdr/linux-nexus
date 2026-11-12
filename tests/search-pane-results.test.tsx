@@ -11,6 +11,7 @@ import type {
   RemoteFilesApi,
 } from '../src/shared/types.ts'
 import { defaultFileTypeExtensions } from '../src/shared/app-settings.ts'
+import { buildContentSearchCommand, buildNameSearchCommand } from '../src/shared/search-commands.ts'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })
 Object.defineProperties(globalThis, {
@@ -224,3 +225,73 @@ test('clicking a content result opens its menu while the click target is still a
     host.remove()
   }
 })
+
+for (const kind of ['name', 'content'] as const) {
+  test(`${kind} command preview updates before searching, validates conditions and replays history`, async () => {
+    const [{ createRoot }, { NameSearchPane }, { ContentSearchPane }] = await Promise.all([
+      import('react-dom/client'),
+      import('../src/renderer/src/features/search/NameSearchPane.tsx'),
+      import('../src/renderer/src/features/search/ContentSearchPane.tsx'),
+    ])
+    let startCalls = 0
+    window.remoteFiles = {
+      onNameSearchEvent: () => () => {},
+      onContentSearchEvent: () => () => {},
+      startNameSearch: async () => { startCalls += 1 },
+      startContentSearch: async () => { startCalls += 1 },
+    } as unknown as RemoteFilesApi
+    const saved = { query: "saved ' [x]", rootPath: '/srv/saved', scope: 'custom', ignoreCase: false, matchMode: 'contains', maxFileSizeMiB: 8 }
+    const historyKey = `remote-files:${kind === 'name' ? 'name' : 'content'}-search-history:v2:preview-${kind}`
+    window.localStorage.setItem(historyKey, JSON.stringify([saved]))
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    const input = (selector: string, value: string) => {
+      const element = host.querySelector<HTMLInputElement>(selector)!
+      const setValue = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!
+      act(() => {
+        setValue.call(element, value)
+        element.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+      })
+    }
+    const preview = () => host.querySelector('.search-native-command pre')?.textContent
+    try {
+      act(() => root.render(createElement(kind === 'name' ? NameSearchPane : ContentSearchPane, {
+        sessionId: 'session', profileId: `preview-${kind}`, currentPath: '/home/user', active: true,
+        fileTypeExtensions: defaultFileTypeExtensions(),
+        onRunningChange: () => {}, onMenuOpenChange: () => {}, onMenuAction: () => {},
+      })))
+      assert.ok(host.querySelector('section.search-native-command'))
+      assert.equal(host.querySelector('.search-native-command summary'), null)
+      assert.equal(preview(), undefined)
+      input('.search-query-field input', "a'b*[x]")
+      if (kind === 'name') {
+        assert.equal(preview(), buildNameSearchCommand({ rootPath: '/home/user', query: "a'b*[x]", matchMode: 'exact', ignoreCase: true }))
+        act(() => host.querySelectorAll<HTMLButtonElement>('fieldset.search-option-field button')[1].click())
+        assert.ok(preview()!.includes("'*a"))
+      } else {
+        assert.equal(preview(), buildContentSearchCommand({ rootPath: '/home/user', query: "a'b*[x]", ignoreCase: true, maxFileSizeMiB: 100 }))
+        input('.search-size-field input', '')
+        assert.equal(preview(), undefined)
+        input('.search-size-field input', '2')
+        assert.ok(preview()!.endsWith("'2097152'"))
+      }
+      act(() => host.querySelector<HTMLInputElement>('.search-case-option input')!.click())
+      assert.ok(kind === 'name' ? preview()!.includes(' -name ') : preview()!.includes(" '0' "))
+      act(() => host.querySelectorAll<HTMLButtonElement>('.search-scope-options button')[2].click())
+      input('.search-custom-path-field input', 'relative/path')
+      assert.equal(preview(), undefined)
+      input('.search-custom-path-field input', "/srv/it's files")
+      assert.ok(preview()!.includes("'/srv/it'\\''s files'"))
+      input('.search-query-field input', '')
+      assert.equal(preview(), undefined)
+      act(() => host.querySelector<HTMLButtonElement>('.search-history-item')!.click())
+      assert.equal(preview(), kind === 'name' ? buildNameSearchCommand(saved) : buildContentSearchCommand(saved))
+      assert.equal(startCalls, 0)
+    } finally {
+      act(() => root.unmount())
+      host.remove()
+      window.localStorage.removeItem(historyKey)
+    }
+  })
+}

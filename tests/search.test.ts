@@ -1,11 +1,13 @@
+import { buildContentSearchScript } from '../src/shared/content-search-script.ts'
+import { buildContentSearchCommand, buildNameSearchCommand } from '../src/shared/search-commands.ts'
 import { renderMessage, type MessageValue } from '../src/shared/i18n/messages'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import test from 'node:test'
 import type { BrowserWindow } from 'electron'
 import type { Client, ClientChannel } from 'ssh2'
-import { buildContentSearchScript, cancelContentSearch, startContentSearch } from '../src/main/content-search.ts'
-import { buildNameSearchCommand, cancelNameSearch, startNameSearch } from '../src/main/name-search.ts'
+import { cancelContentSearch, startContentSearch } from '../src/main/content-search.ts'
+import { cancelNameSearch, startNameSearch } from '../src/main/name-search.ts'
 import { setMainWindow, sessions } from '../src/main/runtime.ts'
 import type { ContentSearchEvent, ContentSearchRequest, NameSearchEvent, NameSearchRequest } from '../src/shared/types.ts'
 
@@ -219,6 +221,7 @@ test('content search uses one find traversal and fixed-string grep with the chos
     assert.equal((script.match(/find -- "\$root"/g) ?? []).length, 1)
     assert.doesNotMatch(script, /inventory|matchedFiles.*100|RESULT_LIMIT/)
     startContentSearch(setup.contentRequest)
+    assert.ok(setup.commands[0].includes(buildContentSearchCommand(setup.contentRequest)))
     assert.match(setup.commands[0], /'needle' '1' '1048576'$/)
     assert.equal(cancelContentSearch(setup.contentRequest.requestId), true)
     startContentSearch({ ...setup.contentRequest, ignoreCase: false })

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { buildContentSearchScript } from '../src/main/content-search.ts'
+import { buildContentSearchScript } from '../src/shared/content-search-script.ts'
 
 const hasGnuSearchTools = process.platform === 'linux'
   && spawnSync('bash', ['-c', 'find -- . -maxdepth 0 -printf %s >/dev/null && base64 -w0 </dev/null >/dev/null && grep --version >/dev/null']).status === 0

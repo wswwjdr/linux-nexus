@@ -1,3 +1,4 @@
+import { buildNameSearchCommand } from '@shared/search-commands'
 import { msg, renderMessage, type MessageValue, tr } from '@shared/i18n/messages'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent, type RefObject } from 'react'
 import { AlertTriangle, File, LoaderCircle, Search } from 'lucide-react'
@@ -38,8 +39,6 @@ export const NameSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(func
   const [progress, setProgress] = useState<NameSearchProgress>(emptyNameProgress)
   const [status, setStatus] = useState<SearchStatus>('idle')
   const [clockNow, setClockNow] = useState(Date.now())
-  const [command, setCommand] = useState('')
-  const latestRequest = useRef<string | null>(null)
   const [error, setError] = useState<MessageValue | null>(null)
   const queryRef = useRef<HTMLInputElement>(null)
   const activeRequestRef = useRef<string | null>(null)
@@ -47,6 +46,7 @@ export const NameSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(func
   const receivedAtRef = useRef(Date.now())
   const running = status === 'running' || status === 'cancelling'
   const invalidPath = conditions.scope === 'custom' && !isNormalizedAbsoluteRemotePath(conditions.rootPath)
+  const command = conditions.query && !/[\0\r\n]/.test(conditions.query) && !invalidPath ? buildNameSearchCommand(conditions) : ''
   menuAnchorRef.current = menu?.anchor ?? null
 
   useImperativeHandle(ref, () => ({ cancel: cancelSearch }))
@@ -115,8 +115,6 @@ export const NameSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(func
       ignoreCase: conditions.ignoreCase,
     }
     activeRequestRef.current = request.requestId
-    latestRequest.current = request.requestId
-    setCommand('')
     setResults([])
     setMenu(null)
     setProgress(emptyNameProgress())
@@ -126,8 +124,7 @@ export const NameSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(func
     setError(null)
     remember(conditions)
     try {
-      const nativeCommand = await window.remoteFiles.startNameSearch(request)
-      if (latestRequest.current === request.requestId) setCommand(nativeCommand)
+      await window.remoteFiles.startNameSearch(request)
     } catch (searchError) {
       if (activeRequestRef.current !== request.requestId) return
       activeRequestRef.current = null
@@ -213,12 +210,10 @@ export const NameSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(func
             )}
           </div>
         </form>
-        {command && (
-          <details className="search-native-command">
-            <summary>{tr('search.nativeCommand')}</summary>
-            <pre>{command}</pre>
-          </details>
-        )}
+        <section className="search-native-command" aria-label={tr('search.nativeCommand')}>
+          <h3>{tr('search.nativeCommand')}</h3>
+          {command ? <pre>{command}</pre> : <p>{tr('search.commandPreviewHint')}</p>}
+        </section>
         <SearchHistory
           history={history}
           disabled={running}

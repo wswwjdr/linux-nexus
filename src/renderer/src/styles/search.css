@@ -104,6 +104,8 @@
 .search-results-empty { min-height: 180px; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color:var(--text-secondary); font-size: 11px; }
 .search-results-empty svg { color:var(--text-secondary); }
 
+.search-native-command h3 { margin: 0; color:var(--text-primary); font-size: 11px; font-weight: 600; }
+.search-native-command p { color:var(--text-secondary); font-size: 11px; }
 .search-native-command pre {
   max-height: 12rem;
   overflow: auto;

@@ -9,7 +9,7 @@ import type {
   NameSearchResult,
   SearchRunStatus,
 } from '@shared/types'
-import { shellQuote } from '@shared/shell'
+import { buildNameSearchCommand } from '@shared/search-commands'
 import { getMainWindow, sessions } from './runtime'
 import { normalizedRemotePath } from './remote-fs'
 
@@ -131,24 +131,6 @@ function markReadError(task: NameSearchTask): void {
   task.incomplete = true
   task.hasReadErrors = true
   emitProgress(task)
-}
-
-function escapeFindPattern(value: string): string {
-  return value.replace(/[\\*?\[\]]/g, '\\$&')
-}
-
-export function buildNameSearchCommand(request: NameSearchRequest): string {
-  const literal = escapeFindPattern(request.query)
-  const pattern = request.matchMode === 'contains' ? `*${literal}*` : literal
-  const matcher = request.ignoreCase ? '-iname' : '-name'
-  return [
-    'find --',
-    shellQuote(request.rootPath),
-    '-type f',
-    matcher,
-    shellQuote(pattern),
-    '-print0',
-  ].join(' ')
 }
 
 export function startNameSearch(input: NameSearchRequest): string {

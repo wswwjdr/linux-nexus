@@ -390,6 +390,7 @@ export default {
     "entryCount_other": "{{count, number}} items"
   },
   "search": {
+    "commandPreviewHint": "Enter valid search criteria to preview the native command",
     "nativeCommand": "Native command",
     "findInText": "Find in text",
     "findText": "Find text",

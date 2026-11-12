@@ -1,3 +1,4 @@
+import { buildContentSearchCommand } from '@shared/search-commands'
 import { msg, renderMessage, type MessageValue, tr } from '@shared/i18n/messages'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type FormEvent } from 'react'
 import { AlertTriangle, LoaderCircle, Search } from 'lucide-react'
@@ -25,8 +26,6 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
   const [progress, setProgress] = useState<ContentSearchProgress>(emptyContentProgress)
   const [status, setStatus] = useState<SearchStatus>('idle')
   const [clockNow, setClockNow] = useState(Date.now())
-  const [command, setCommand] = useState('')
-  const latestRequest = useRef<string | null>(null)
   const [error, setError] = useState<MessageValue | null>(null)
   const queryRef = useRef<HTMLInputElement>(null)
   const activeRequestRef = useRef<string | null>(null)
@@ -35,6 +34,7 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
   const running = status === 'running' || status === 'cancelling'
   const invalidFileSize = !Number.isInteger(conditions.maxFileSizeMiB) || conditions.maxFileSizeMiB < 1 || conditions.maxFileSizeMiB > 102400
   const invalidPath = conditions.scope === 'custom' && !isNormalizedAbsoluteRemotePath(conditions.rootPath)
+  const command = conditions.query && !/[\0\r\n]/.test(conditions.query) && !invalidPath && !invalidFileSize ? buildContentSearchCommand(conditions) : ''
   menuAnchorRef.current = menu?.anchor ?? null
 
   useImperativeHandle(ref, () => ({ cancel: cancelSearch }))
@@ -109,8 +109,6 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
       maxFileSizeMiB: conditions.maxFileSizeMiB,
     }
     activeRequestRef.current = request.requestId
-    latestRequest.current = request.requestId
-    setCommand('')
     setResults([])
     setMenu(null)
     setProgress(emptyContentProgress())
@@ -120,8 +118,7 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
     setError(null)
     remember(conditions)
     try {
-      const nativeCommand = await window.remoteFiles.startContentSearch(request)
-      if (latestRequest.current === request.requestId) setCommand(nativeCommand)
+      await window.remoteFiles.startContentSearch(request)
     } catch (searchError) {
       if (activeRequestRef.current !== request.requestId) return
       activeRequestRef.current = null
@@ -217,12 +214,10 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
             )}
           </div>
         </form>
-        {command && (
-          <details className="search-native-command">
-            <summary>{tr('search.nativeCommand')}</summary>
-            <pre>{command}</pre>
-          </details>
-        )}
+        <section className="search-native-command" aria-label={tr('search.nativeCommand')}>
+          <h3>{tr('search.nativeCommand')}</h3>
+          {command ? <pre>{command}</pre> : <p>{tr('search.commandPreviewHint')}</p>}
+        </section>
         <SearchHistory
           history={history}
           disabled={running}
