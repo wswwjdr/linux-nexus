@@ -7,7 +7,3 @@ export function shellQuote(value: string): string {
 export function shellQuoteIfNeeded(value: string): string {
   return /^[a-zA-Z0-9_./-]+$/.test(value) ? value : shellQuote(value)
 }
-
-export function scriptExecutionCommand(fileName: string): string {
-  return './' + shellQuote(fileName)
-}

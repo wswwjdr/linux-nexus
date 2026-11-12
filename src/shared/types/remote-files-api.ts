@@ -41,9 +41,9 @@ export interface RemoteFilesApi {
   getRemoteDirectoryStats(sessionId: string, remotePath: string): Promise<RemoteDirectoryStats>
   getRemoteDirectoryUsageTree(sessionId: string, remotePath: string, requestId: string): Promise<RemoteDirectoryUsageNode[]>
   cancelRemoteDirectoryUsageTree(requestId: string): Promise<boolean>
-  startNameSearch(request: NameSearchRequest): Promise<void>
+  startNameSearch(request: NameSearchRequest): Promise<string>
   cancelNameSearch(requestId: string): Promise<boolean>
-  startContentSearch(request: ContentSearchRequest): Promise<void>
+  startContentSearch(request: ContentSearchRequest): Promise<string>
   cancelContentSearch(requestId: string): Promise<boolean>
   startScriptExecution(request: ScriptExecutionRequest): Promise<void>
   cancelScriptExecution(requestId: string): Promise<boolean>

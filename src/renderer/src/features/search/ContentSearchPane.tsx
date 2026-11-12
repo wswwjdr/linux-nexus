@@ -25,6 +25,8 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
   const [progress, setProgress] = useState<ContentSearchProgress>(emptyContentProgress)
   const [status, setStatus] = useState<SearchStatus>('idle')
   const [clockNow, setClockNow] = useState(Date.now())
+  const [command, setCommand] = useState('')
+  const latestRequest = useRef<string | null>(null)
   const [error, setError] = useState<MessageValue | null>(null)
   const queryRef = useRef<HTMLInputElement>(null)
   const activeRequestRef = useRef<string | null>(null)
@@ -107,6 +109,8 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
       maxFileSizeMiB: conditions.maxFileSizeMiB,
     }
     activeRequestRef.current = request.requestId
+    latestRequest.current = request.requestId
+    setCommand('')
     setResults([])
     setMenu(null)
     setProgress(emptyContentProgress())
@@ -116,7 +120,8 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
     setError(null)
     remember(conditions)
     try {
-      await window.remoteFiles.startContentSearch(request)
+      const nativeCommand = await window.remoteFiles.startContentSearch(request)
+      if (latestRequest.current === request.requestId) setCommand(nativeCommand)
     } catch (searchError) {
       if (activeRequestRef.current !== request.requestId) return
       activeRequestRef.current = null
@@ -212,6 +217,12 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
             )}
           </div>
         </form>
+        {command && (
+          <details className="search-native-command">
+            <summary>{tr('search.nativeCommand')}</summary>
+            <pre>{command}</pre>
+          </details>
+        )}
         <SearchHistory
           history={history}
           disabled={running}

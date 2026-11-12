@@ -3,7 +3,7 @@ import { useEffect, useState, type Dispatch, type FormEvent, type SetStateAction
 import type { RemoteEntry, ScriptExecutionEvent, ScriptExecutionRequest } from '@shared/types'
 import type { BrowserContextMenu, ScriptExecutionDialogState, SessionTab } from '../../app-types'
 import type { ToastNotice } from '../../GlobalToast'
-import { scriptExecutionCommand } from '@shared/shell'
+import { shellQuoteIfNeeded } from '@shared/shell'
 import { errorMessage } from '../../app-utils'
 
 export interface ScriptCommandDialog {
@@ -60,7 +60,7 @@ export function useScriptExecution({
     setBrowserContextMenu(null)
     setScriptCommandDialogs((current) => new Map(current).set(session.id, {
       entry,
-      command: scriptExecutionCommand(entry.name),
+      command: shellQuoteIfNeeded(entry.path),
     }))
   }
 
@@ -106,7 +106,7 @@ export function useScriptExecution({
   }
 
   const runScript = (entry: Pick<RemoteEntry, 'name' | 'path'>, sessionId = activeSessionId) => {
-    startScriptExecution(entry, scriptExecutionCommand(entry.name), sessionId)
+    startScriptExecution(entry, shellQuoteIfNeeded(entry.path), sessionId)
   }
 
   const updateScriptCommand = (sessionId: string, command: string) => {

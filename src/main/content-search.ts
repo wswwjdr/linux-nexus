@@ -274,7 +274,7 @@ function processField(task: ContentSearchTask, field: string): void {
   if (marker === 'F') finishSearch(task, 'failed', diagnosticMessage(decodeBase64(fields[1])) || msg('errors.remoteContentSearchFailed'))
 }
 
-export function startContentSearch(input: ContentSearchRequest): void {
+export function startContentSearch(input: ContentSearchRequest): string {
   const request = validateRequest(input)
   if (activeSearches.has(request.requestId)) throw new LocalizedError(msg('errors.contentSearchRequestIdIsAlreadyInUse'))
   const session = sessions.get(request.sessionId)
@@ -343,6 +343,7 @@ export function startContentSearch(input: ContentSearchRequest): void {
     },
   }).catch(() => undefined)
 
+  return command
 }
 
 export function cancelContentSearch(requestId: string): boolean {

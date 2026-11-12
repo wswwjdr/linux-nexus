@@ -385,6 +385,7 @@ export default {
     "entryCount_other": "{{count, number}} items"
   },
   "search": {
+    "nativeCommand": "Native command",
     "findInText": "Find in text",
     "findText": "Find text",
     "noMatches": "No matches",

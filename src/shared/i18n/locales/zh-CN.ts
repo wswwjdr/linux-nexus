@@ -385,6 +385,7 @@ export default {
     "entryCount_other": "{{count, number}} 项"
   },
   "search": {
+    "nativeCommand": "原生命令",
     "findInText": "文本内搜索",
     "findText": "搜索文本",
     "noMatches": "无匹配",

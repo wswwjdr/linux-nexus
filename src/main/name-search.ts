@@ -151,7 +151,7 @@ export function buildNameSearchCommand(request: NameSearchRequest): string {
   ].join(' ')
 }
 
-export function startNameSearch(input: NameSearchRequest): void {
+export function startNameSearch(input: NameSearchRequest): string {
   const request = validateRequest(input)
   if (activeSearches.has(request.requestId)) throw new LocalizedError(msg('errors.filenameSearchRequestIdIsAlreadyInUse'))
   const session = sessions.get(request.sessionId)
@@ -176,7 +176,8 @@ export function startNameSearch(input: NameSearchRequest): void {
   activeSearches.set(request.requestId, task)
   emitProgress(task, true)
 
-  void executeRemoteCommand(commands, buildNameSearchCommand(request), {
+  const command = buildNameSearchCommand(request)
+  void executeRemoteCommand(commands, command, {
     signal: task.controller.signal, collectStdout: false, keepStdinOpen: true, timeoutMs: 86_400_000,
     maxStdoutBytes: 32 * 1024 * 1024,
     onStdout: (chunk) => {
@@ -200,6 +201,7 @@ export function startNameSearch(input: NameSearchRequest): void {
     },
   }).catch(() => undefined)
 
+  return command
 }
 
 export function cancelNameSearch(requestId: string): boolean {
