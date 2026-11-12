@@ -7,6 +7,7 @@ import ScriptExecutionDialog from '../../src/renderer/src/components/ScriptExecu
 import PreviewDialog from '../../src/renderer/src/components/previews/PreviewDialog'
 import LogPreviewDialog from '../../src/renderer/src/components/previews/LogPreviewDialog'
 import { usePreview } from '../../src/renderer/src/hooks/usePreview'
+import SearchDialog from '../../src/renderer/src/features/search/SearchDialog'
 import { createRemoteFilesApi } from '../../src/renderer/src/remote-files-api'
 import { defaultFileTypeExtensions } from '../../src/shared/app-settings'
 import type { PreviewResult } from '../../src/shared/types'
@@ -64,9 +65,11 @@ function Fixture() {
       },
       readLogPreview: async () => ({ name: fileNames.log, content: 'Log preview', startOffset: 0, fileSize: 11, limitBytes: 1000, hasEarlier: false }),
       releasePreview: async () => {},
-    }, fixtureOpen: async (next: FixturePreview | 'script') => {
+      onNameSearchEvent: () => () => {},
+      onContentSearchEvent: () => () => {},
+    }, fixtureOpen: async (next: FixturePreview | 'script' | 'search') => {
       setKind(next)
-      if (next === 'script') {
+      if (next === 'script' || next === 'search') {
         preview.closePreview()
         return
       }
@@ -92,6 +95,8 @@ function Fixture() {
       <LogPreviewDialog logPreviewDialog={preview.logPreviewDialog} logViewportRef={preview.logViewportRef}
         onClosePreview={preview.closePreview} onLogPreviewScroll={preview.onLogPreviewScroll} />
       {kind === 'script' && <ScriptExecutionDialog active={active} execution={scriptExecution} onClose={() => setKind('')} onStop={() => {}} />}
+      {kind === 'search' && <SearchDialog sessionId="test" profileId="test" currentPath="/" visible={active} previewOpen={false}
+        fileTypeExtensions={defaultFileTypeExtensions()} onClose={() => setKind('')} onMenuAction={() => {}} />}
     </div></div>
   </main></div>
 }

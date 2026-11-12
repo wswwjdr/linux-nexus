@@ -248,7 +248,7 @@ app.whenReady().then(async () => {
 }).catch((error) => { console.error(error); app.exit(1) })
 
 async function verifyReadingDialogs(window, execute, until) {
-  const selectors = { text: '.text-preview-modal', log: '.log-preview-modal', markdown: '.md-dialog', pdf: '.pdf-preview-modal', script: '.script-execution-modal' }
+  const selectors = { text: '.text-preview-modal', log: '.log-preview-modal', markdown: '.md-dialog', pdf: '.pdf-preview-modal', script: '.script-execution-modal', search: '.search-modal' }
   const expanded = `document.documentElement.hasAttribute('data-window-expanded')`
   const open = async kind => {
     await execute(`window.fixtureOpen('${kind}')`)
@@ -270,14 +270,19 @@ async function verifyReadingDialogs(window, execute, until) {
       `${kind}: expected ${expectedWidth}×${expectedHeight}, got ${JSON.stringify(layout)}`)
   }
   const checkSharedSizes = async () => {
-    for (const kind of ['pdf', 'text', 'log', 'script', 'markdown']) {
+    for (const kind of ['pdf', 'text', 'log', 'script', 'search', 'markdown']) {
       await open(kind)
       await check(kind)
+      if (kind === 'search') {
+        await execute(`document.getElementById('content-search-tab').click()`)
+        await until(`document.getElementById('content-search-tab').getAttribute('aria-selected') === 'true'`)
+        await check(kind)
+      }
     }
   }
 
   window.setContentSize(1150, 740)
-  await until('innerWidth === 1150')
+  await until(`innerWidth === ${window.getContentBounds().width}`)
   assert.equal(await execute(expanded), false, 'resizing a normal window does not expand previews')
   await open('text')
   await check('text', 960, 680)
@@ -344,6 +349,36 @@ async function verifyReadingDialogs(window, execute, until) {
   await check('markdown', 1240, 820)
   await open('log')
   await check('log', 1040, 820)
+
+  await open('search')
+  await check('search', 1040, 790)
+  await execute(`document.getElementById('content-search-tab').click()`)
+  await until(`document.getElementById('content-search-tab').getAttribute('aria-selected') === 'true'`)
+  await execute(`{
+    const query = document.querySelector('#content-search-panel .search-query-field input')
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(query, 'retained query')
+    query.dispatchEvent(new Event('input', { bubbles: true }))
+    window.searchBeforeResize = document.querySelector('.search-modal')
+  }`)
+  const preservedSearch = `document.querySelector('.search-modal') === window.searchBeforeResize &&
+    document.getElementById('content-search-tab').getAttribute('aria-selected') === 'true' &&
+    document.querySelector('#content-search-panel .search-query-field input').value === 'retained query'`
+  window.maximize()
+  await until(expanded)
+  await check('search')
+  assert.equal(await execute(preservedSearch), true, 'maximizing retains search inputs and active tab')
+  const enteredFullscreen = once(window, 'enter-full-screen')
+  window.setFullScreen(true)
+  await enteredFullscreen
+  await until(expanded)
+  await check('search')
+  const leftFullscreen = once(window, 'leave-full-screen')
+  window.setFullScreen(false)
+  await leftFullscreen
+  window.unmaximize()
+  await until(`!${expanded}`)
+  await check('search', 1040, 790)
+  assert.equal(await execute(preservedSearch), true, 'restoring retains search inputs and active tab')
 }
 
 function checkLayout() {

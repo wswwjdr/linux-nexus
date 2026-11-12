@@ -78,7 +78,7 @@ export default function SearchDialog({ sessionId, profileId, currentPath, visibl
     <div className="modal-backdrop search-backdrop" onMouseDown={(event) => {
       if (event.target === event.currentTarget) requestClose()
     }}>
-      <section className="modal search-modal" role="dialog" aria-labelledby="search-dialog-title">
+      <section className="modal search-modal" data-modal-size="reading-expanded" role="dialog" aria-labelledby="search-dialog-title">
         <header className="search-dialog-header">
           <div className="search-dialog-heading">
             <h2 id="search-dialog-title">{tr('common.searchFiles')}</h2>
