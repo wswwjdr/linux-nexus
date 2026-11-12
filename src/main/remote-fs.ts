@@ -76,7 +76,7 @@ function remoteType(kind: string): RemoteEntry['type'] {
 export async function listRemoteDirectory(client: RemoteCommandTarget, remotePath: string): Promise<RemoteEntry[]> {
   const normalizedPath = normalizedRemotePath(remotePath)
   const { stdout } = await runRemoteCommand(client,
-    'find -- "$1" -mindepth 1 -maxdepth 1 -printf \'%f\\0%y\\0%Y\\0%s\\0%T@\\0%m\\0\'',
+    'find -H -- "$1" -mindepth 1 -maxdepth 1 -printf \'%f\\0%y\\0%Y\\0%s\\0%T@\\0%m\\0\'',
     [normalizedPath],
   )
   const fields = nulFields(stdout)

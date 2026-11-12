@@ -169,6 +169,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
           <div className="files-session-panel" id={'session-panel-' + activeSession.id} role="tabpanel" aria-labelledby={'session-tab-' + activeSession.id}>
             <FileBrowser
               sessionId={connectedSessionId}
+              fileIdentity={activeSession.fileIdentity}
               currentPath={currentPath}
               entries={entries}
               loading={loading}

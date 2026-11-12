@@ -6,7 +6,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import type { DroppedUploadEntry, RemoteEntry } from '@shared/types'
+import type { DroppedUploadEntry, FileIdentity, RemoteEntry } from '@shared/types'
 import type { DirectoryLoadOptions, FileViewMode, SortColumn, SortDirection } from '@/app-types'
 import { formatDate, formatSize, getParentPath } from '@/app-utils'
 import FileEntryCollection from './FileEntryCollection'
@@ -16,6 +16,7 @@ import { isSelectionBackground, useFileSelection } from './useFileSelection'
 
 interface FileBrowserProps {
   sessionId: string
+  fileIdentity: FileIdentity | undefined
   currentPath: string
   entries: RemoteEntry[]
   loading: boolean
@@ -41,6 +42,7 @@ interface FileBrowserProps {
 
 export default function FileBrowser({
   sessionId,
+  fileIdentity,
   currentPath,
   entries,
   loading,
@@ -277,6 +279,8 @@ export default function FileBrowser({
   return (
     <div className="file-browser" onContextMenu={handleBackgroundContextMenu}>
       <FilePathBar
+        sessionId={sessionId}
+        fileIdentity={fileIdentity}
         currentPath={currentPath}
         breadcrumbs={breadcrumbs}
         viewMode={viewMode}

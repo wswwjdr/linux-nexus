@@ -36,6 +36,7 @@ test('resolves relative and chained links using the remote filesystem and report
     const setup = spawnSync(bash, ['-c', String.raw`set -eu
 export MSYS=winsymlinks:sys
 mkdir -p releases/v1 releases/v2
+mkdir -p releases/v1/child
 touch "releases/owner's notes.txt"
 ln -s releases/v1/ current
 ln -s current chained
@@ -56,6 +57,10 @@ readlink --canonicalize-existing --zero -- .
     const resolveLink = (name: string) => resolveRemoteSymlink(sessionId, `${remoteRoot}/${name}`)
     for (const name of ['current', 'chained']) {
       assert.deepEqual(await resolveLink(name), { type: 'directory', path: `${remoteRoot}/releases/v1` })
+      const children = await listRemoteDirectory(filesSession(sessionId).commands, `${remoteRoot}/${name}/`)
+      assert.deepEqual(children.map(({ name, path, type }) => ({ name, path, type })), [
+        { name: 'child', path: `${remoteRoot}/${name}/child`, type: 'directory' },
+      ])
     }
     const updated = spawnSync(bash, ['-c', 'export MSYS=winsymlinks:sys; ln -sfn releases/v2/ current'], { cwd: directory, encoding: 'utf8', timeout: 10_000 })
     assert.equal(updated.status, 0, updated.stderr)

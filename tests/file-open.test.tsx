@@ -79,7 +79,7 @@ async function mount(viewMode: 'details' | 'icons' = 'details') {
     const [highlightedPath, setHighlightedPath] = useState<string | null>(null)
     const browserEntries = highlightedPath ? [targetFile] : entries
     return createElement(FileBrowser, {
-      sessionId: current, currentPath: highlightedPath ? '/srv/releases' : '/srv', entries: browserEntries, loading: false, viewMode, breadcrumbs: [], sort: sessions[0].sort, sortedEntries: browserEntries,
+      sessionId: current, fileIdentity: undefined, currentPath: highlightedPath ? '/srv/releases' : '/srv', entries: browserEntries, loading: false, viewMode, breadcrumbs: [], sort: sessions[0].sort, sortedEntries: browserEntries,
       selectedPaths, operationActive: false, highlightedPath,
       onViewModeChange: noop, onNavigate: async (path, reveal) => {
         navigated.push(path)

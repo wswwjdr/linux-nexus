@@ -93,8 +93,18 @@
 .nav-group-end { margin-right: 9px; }
 .breadcrumbs { display: flex; min-width: 0; align-items: center; gap: 7px; overflow: hidden; color:var(--text-secondary); }
 .path-edit-form { min-width: 0; flex: 1; display: flex; align-items: center; gap: 3px; }
-.path-edit-input { min-width: 0; flex: 1; height: 31px; padding: 0 8px; border:1px solid var(--line-strong); border-radius: var(--radius); color:var(--text-primary); background:var(--surface); font-family: 'Cascadia Code', Consolas, monospace; font-size: 11px; }
+.path-completion-anchor { position: relative; min-width: 0; flex: 1; }
+.path-edit-input { width: 100%; min-width: 0; height: 31px; padding: 0 8px; border:1px solid var(--line-strong); border-radius: var(--radius); color:var(--text-primary); background:var(--surface); font-family: 'Cascadia Code', Consolas, monospace; font-size: 11px; }
 .path-edit-input:focus { border-color:var(--border-accent); outline:2px solid var(--focus-outline); }
+.path-completion-popup { position: absolute; z-index: 6; top: calc(100% + 5px); left: 0; right: 0; padding: 4px; border:1px solid var(--line); border-radius: var(--radius); background:var(--surface-raised); box-shadow: var(--shadow-menu); }
+.path-completion-list { max-height: min(280px, 40vh); overflow-y: auto; overscroll-behavior: contain; }
+.path-completion-option { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 5px 8px; border-radius: 3px; color:var(--text-primary); cursor: pointer; }
+.path-completion-option > svg { flex: 0 0 auto; color:var(--text-secondary); }
+.path-completion-option > span { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; font-family: 'Cascadia Code', Consolas, monospace; font-size: 11px; }
+.path-completion-option:hover { background:var(--surface-hover); }
+.path-completion-option[aria-selected="true"] { color:var(--text-accent); background:var(--surface-selected); }
+.path-completion-status { display: flex; align-items: center; gap: 7px; padding: 8px; color:var(--text-secondary); font-size: 11px; overflow-wrap: anywhere; }
+.path-completion-status.error { color:var(--text-danger); }
 .path-edit-button { flex: 0 0 auto; color:var(--text-secondary); }
 .breadcrumb-piece { display: inline-flex; min-width: 0; flex: 0 0 auto; align-items: center; gap: 7px; }
 .breadcrumb-piece svg { color:var(--text-secondary); }
