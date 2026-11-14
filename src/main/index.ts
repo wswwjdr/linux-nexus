@@ -10,6 +10,8 @@ import { registerIpc } from './ipc'
 import { registerPreviewProtocol } from './preview-protocol'
 import { clearPreviewAssets, getMainWindow, messageFromError, setMainWindow } from './runtime'
 import { configureStateFiles, readAppSettings, readState } from './state-store'
+import { configureAssistantStorage } from './assistant-storage'
+import { stopAllAssistantTasks } from './assistant-runtime'
 import { applyTheme, themeBackgroundColor } from './theme'
 import { configurePerformanceMonitorInterval, stopAllPerformanceMonitors } from './performance-monitor'
 import { publishWindowLayoutChanges } from './window-layout'
@@ -125,6 +127,7 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null)
   const userDataDirectory = app.getPath('userData')
   configureStateFiles(join(userDataDirectory, 'servers.json'), join(userDataDirectory, 'settings.json'))
+  configureAssistantStorage(userDataDirectory)
   try {
     applyLanguage('system')
     const settings = readAppSettings()
@@ -163,6 +166,7 @@ app.on('before-quit', event => {
   event.preventDefault()
   quitting = true
   void (async () => {
+    await stopAllAssistantTasks()
     await stopAllSessions()
     clearPreviewAssets()
     for (const name of ['linux-nexus-preview', 'linux-nexus-downloads']) {

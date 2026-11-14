@@ -15,6 +15,7 @@ Linux Nexus brings remote file management and an SSH terminal into one desktop a
 | Feature | What you can do |
 | --- | --- |
 | Remote file manager | Browse list and icon views, search filenames and contents, copy, move, rename, delete, and extract archives |
+| Agent Assistant | Run SSH operations with command approval, live logs, and editable prompts |
 | SSH terminal and multiple servers | Connect to multiple servers and switch between file manager and terminal tabs |
 | Uploads and downloads | Transfer files and folders, track progress, cancel tasks, and configure concurrency |
 | Previews and editing | Edit text files; preview Markdown, images, PDF, audio, video, and logs |
@@ -78,11 +79,12 @@ Build artifacts are written to `release/`.
 
 ## Documentation
 
-Detailed user documentation is currently available in Chinese:
+The Agent Assistant guide is available in English. The other guides are in Chinese.
 
 - [Server connections and security](docs/服务器连接与安全.md)
 - [Multiple sessions and SSH terminals](docs/多会话与SSH终端.md)
 - [File browsing and operations](docs/文件浏览与操作.md)
+- [Agent Assistant](docs/assistant.md)
 - [File transfers](docs/文件传输.md)
 - [File search](docs/文件搜索.md)
 - [File previews](docs/文件预览.md)

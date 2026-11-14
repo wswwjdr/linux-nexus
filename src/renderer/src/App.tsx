@@ -1,10 +1,12 @@
 import { type MessageValue, msg, tr } from '@shared/i18n/messages'
 import { useLanguage } from '@/i18n'
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
-import { Cloud, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, RefreshCw, Search, Settings, Shield, Terminal, Upload } from 'lucide-react'
+import { Bot, Cloud, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, RefreshCw, Search, Settings, Shield, Terminal, Upload } from 'lucide-react'
 import GlobalToast from './GlobalToast'
 import type { SessionFileWorkspaceActions } from './features/files/FileSessionWorkspace'
 import { useScriptExecution } from './features/files/useScriptExecution'
+import type { AssistantTurn } from '@shared/types/assistant'
+import { AssistantPanel } from './features/files/AssistantPanel'
 import { useFileMenuActions } from './features/files/useFileMenuActions'
 import SessionWorkspaceView from './features/sessions/SessionWorkspaceView'
 import DialogLayer from './components/DialogLayer'
@@ -51,12 +53,26 @@ import {
   readRecentConnections,
 } from './app-utils'
 
+/** Renders the desktop workspace starting from the bootstrapped application settings. */
 export default function App({ initialSettings }: { initialSettings: AppSettings }) {
   useLanguage()
   const [sessions, setSessions] = useState<SessionTab[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [sessionChooserOpen, setSessionChooserOpen] = useState(false)
   const [shortcutGuideOpen, setShortcutGuideOpen] = useState(false)
+  const [assistantVisible, setAssistantVisible] = useState(false)
+  const [assistantTasks, setAssistantTasks] = useState<Record<string, Record<string, AssistantTurn['status'] | 'question' | 'pending'>>>({})
+  useEffect(() => window.remoteFiles.onAssistantEvent((event) => {
+    if (event.kind !== 'turn') return
+    const { sessionId, taskId, turn } = event
+    const status = turn.approvals.length ? 'pending' : turn.questions.length ? 'question' : turn.status
+    setAssistantTasks((current) => {
+      const tasks = { ...current[sessionId] }
+      if (turn.status === 'running') tasks[taskId] = status
+      else delete tasks[taskId]
+      return { ...current, [sessionId]: tasks }
+    })
+  }), [])
   const [entryProperties, setEntryProperties] = useState<{ sessionId: string; path: string; anchor: HTMLElement | null } | null>(null)
   const [rootRequest, setRootRequest] = useState<{
     sessionId: string
@@ -549,6 +565,10 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
     patchSession,
     showToast,
   })
+  const assistantOpen = Boolean(assistantVisible && connectedSessionId && activeSession?.kind === 'files')
+  const assistantStatuses = Object.values(connectedSessionId ? assistantTasks[connectedSessionId] ?? {} : {})
+  const assistantStatus = assistantStatuses.find((status) => status === 'pending')
+    ?? assistantStatuses.find((status) => status === 'question') ?? assistantStatuses[0]
   const modalOpen = Boolean(
     profileDialog || profileDeleteDialog || createDirectoryDialog || renameEntryDialog || entryProperties || settingsForm
       || pendingHostKey || commandAliases.pendingHostKey || commandAliases.overwriteConfirmation
@@ -561,6 +581,19 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
   const refreshDirectory = () => {
     if (connectedSessionId) void loadDirectory(connectedSessionId, currentPath)
   }
+
+  useEffect(() => window.remoteFiles.onAssistantEvent((event) => {
+    if (event.kind !== 'turn') return
+    const { sessionId, turn } = event
+    if (turn.status === 'running' || !turn.tools.some(({ command, elapsedMs }) => command && elapsedMs !== undefined)) return
+    const owner = sessionsRef.current.find(({ id }) => id === sessionId)
+    if (!owner) return
+    for (const session of sessionsRef.current) {
+      if (session.profileId === owner.profileId && session.kind === 'files' && session.status === 'connected') {
+        void loadDirectory(session.id, session.currentPath, { quiet: true })
+      }
+    }
+  }), [])
 
   useRemoteFileShortcuts({
     activeSession,
@@ -696,6 +729,11 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
                 <button className="icon-button toolbar-button" title={tr('common.searchFiles')} aria-label={tr('common.searchFiles')} onClick={openSearch}>
                   <Search size={16} />
                 </button>
+                <button className="icon-button toolbar-button"
+                  title={tr(assistantStatus ? `assistant.${assistantStatus}` : 'assistant.title')}
+                  aria-label={tr('assistant.title')} aria-pressed={assistantOpen} onClick={() => setAssistantVisible((open) => !open)}>
+                  {assistantStatus ? <LoaderCircle className="spin" size={16} /> : <Bot size={16} />}
+                </button>
                 <button className="icon-button toolbar-button" title={tr('common.newSshTerminal')} aria-label={tr('common.newSshTerminal')} disabled={rootRequest?.sessionId === connectedSessionId} onClick={openTerminalForCurrentPath}>
                   <Terminal size={16} />
                 </button>
@@ -716,6 +754,12 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
         </header>
 
         <SessionWorkspaceView
+          assistant={assistantOpen && activeSession ? (controls) => <AssistantPanel key={activeSession.id} sessionId={activeSession.id}
+            server={connectedProfile ? `${connectedProfile.name} (${connectedProfile.username}@${connectedProfile.host})` : ''}
+            directory={currentPath} selectedPaths={activeSession.selectedPaths} controls={controls} fileIdentity={activeSession.fileIdentity ?? 'login'}
+            onClose={() => setAssistantVisible(false)}
+            onOpenExternalLink={(url) => void window.remoteFiles.openExternalUrl(url).catch((error) =>
+              showToast('error', msg('common.cannotOpenLink', { value1: errorMessage(error) })))} /> : undefined}
           state={{
             sessions,
             profiles,

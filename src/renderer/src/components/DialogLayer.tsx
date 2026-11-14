@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { DialogLayerProps } from './dialogs/types'
 import { ProfileDialogs } from './dialogs/ProfileDialogs'
 import { DirectoryDialogs } from './dialogs/DirectoryDialogs'
@@ -8,11 +8,12 @@ import { SecurityDialogs } from './dialogs/SecurityDialogs'
 export type { DialogLayerProps } from './dialogs/types'
 
 export default function DialogLayer(props: DialogLayerProps) {
+  const settingsDismiss = useRef<() => void>(null)
   const aliasHostKeyVisible = !props.pendingHostKey && Boolean(props.pendingAliasHostKey)
 
   useEffect(() => {
     const dismissOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'Escape') return
+      if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('dialog[open]')) return
 
       if (props.pendingHostKey || props.pendingAliasHostKey) {
         event.preventDefault()
@@ -27,7 +28,7 @@ export default function DialogLayer(props: DialogLayerProps) {
       }
       if (props.settingsForm) {
         event.preventDefault()
-        if (!props.aliasOperationBusy) props.onCloseSettings()
+        if (!props.aliasOperationBusy) settingsDismiss.current?.()
         return
       }
       if (props.profileDialog) {
@@ -41,7 +42,6 @@ export default function DialogLayer(props: DialogLayerProps) {
   }, [
     props.onCloseProfile,
     props.onCloseCreateDirectory,
-    props.onCloseSettings,
     props.onDismissHostKey,
     props.onDismissAliasHostKey,
     props.pendingHostKey,
@@ -58,7 +58,7 @@ export default function DialogLayer(props: DialogLayerProps) {
     <>
       <ProfileDialogs {...props} />
       <DirectoryDialogs {...props} />
-      <SettingsDialog {...props} />
+      <SettingsDialog {...props} dismissRef={settingsDismiss} />
       <SecurityDialogs {...props} />
     </>
   )

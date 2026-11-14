@@ -9,6 +9,7 @@ export interface ActiveSession {
   kind: 'files' | 'terminal'
   shell?: ClientChannel
   profileId: string
+  hostFingerprint?: string
 }
 
 export interface TransferItem {

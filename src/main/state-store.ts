@@ -79,7 +79,8 @@ function validateStoredState(value: unknown, verifyPasswordCiphertexts = false):
   return { ...value, commandAliases } as unknown as StoredState
 }
 
-function parseJsonFile(filePath: string): unknown {
+/** Reads and parses configuration JSON at filePath, or reports the read failure. */
+export function parseJsonFile(filePath: string): unknown {
   let contents: string
   try {
     contents = readFileSync(filePath, 'utf8')
@@ -93,7 +94,8 @@ function parseJsonFile(filePath: string): unknown {
   }
 }
 
-function atomicWriteJson(filePath: string, value: unknown): void {
+/** Atomically replaces the JSON file at filePath with value. */
+export function atomicWriteJson(filePath: string, value: unknown): void {
   const temporaryFile = filePath + '.' + process.pid + '.' + randomUUID() + '.tmp'
   let descriptor: number | null = null
   try {
@@ -108,7 +110,7 @@ function atomicWriteJson(filePath: string, value: unknown): void {
       try { closeSync(descriptor) } catch { /* Preserve the original write error. */ }
     }
     try { unlinkSync(temporaryFile) } catch { /* The temporary file may not exist. */ }
-    throw new LocalizedError(msg('errors.cannotSafelySaveConfigurationFile', { "filePath": filePath, "value2": messageFromError(error) }))
+    throw new LocalizedError(msg('errors.cannotSafelySaveConfigurationFile', { "filePath": filePath, "value2": messageFromError(error) }), { cause: error })
   }
 }
 

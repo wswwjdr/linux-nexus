@@ -82,6 +82,10 @@ export async function stopAllSessions(): Promise<void> {
   await Promise.all([...ids].map(stopSession))
 }
 
+/**
+ * Connects profileId as a file or terminal session with the supplied id, terminal size,
+ * initial path and optional root source, returning its connection result.
+ */
 export function connectProfile(
   sessionId: string,
   profileId: string,
@@ -102,6 +106,7 @@ export function connectProfile(
     const connection = new AbortController()
     let settled = false
     let keyIssue: ConnectResult | null = null
+    let hostFingerprint: string | undefined
     const isCurrentAttempt = () => pendingConnections.get(sessionId)?.client === client
 
     const finish = (result: ConnectResult) => {
@@ -131,7 +136,7 @@ export function connectProfile(
           finish({ ok: false, reason: 'other', message: msg('errors.connectionCancelled') })
           return
         }
-        const activeSession: ActiveSession = { sessionId, client, kind, profileId, shell }
+        const activeSession: ActiveSession = { sessionId, client, kind, profileId, shell, hostFingerprint }
         const fileIdentity = effectiveUid === undefined ? undefined : initializeFileIdentity(activeSession, effectiveUid)
         sessions.set(sessionId, activeSession)
         if (shell) {
@@ -241,6 +246,7 @@ export function connectProfile(
         const fingerprint = 'SHA256:' + createHash('sha256').update(hash).digest('base64').replace(/=+$/, '')
         const previousFingerprint = readState().hostKeys[endpointKey(profile)]
         if (previousFingerprint === fingerprint) {
+          hostFingerprint = fingerprint
           callback(true)
           return
         }

@@ -68,6 +68,29 @@ function mockClient(createChannel: (command: string) => MockChannel): Client {
   return client
 }
 
+test('sudo keeps the merged PTY authentication exchange out of command output', async () => {
+  const password = Buffer.from('fixture password\n')
+  const channel = new MockChannel()
+  const client = new EventEmitter() as Client & EventEmitter
+  client.exec = (command, options, callback) => {
+    assert.equal(options.pty.term, 'dumb')
+    const prompt = command.match(/LINUX_NEXUS_SUDO_[\da-f-]+:/)![0]
+    const ready = command.match(/LINUX_NEXUS_ROOT_[\da-f-]+\n/)![0]
+    callback(undefined, channel as unknown as ClientChannel)
+    queueMicrotask(() => {
+      channel.emit('data', Buffer.from(prompt.slice(0, 10)))
+      channel.emit('data', Buffer.from(prompt.slice(10)))
+      assert.deepEqual(channel.input, [password])
+      channel.emit('data', Buffer.from(ready.slice(0, 10)))
+      channel.emit('data', Buffer.from(ready.slice(10) + 'command output\n'))
+      channel.complete()
+    })
+    return client
+  }
+  const result = await executeSudoCommand(client, ':', password, { pty: { term: 'dumb' } })
+  assert.equal(result.stdout.toString(), 'command output\n')
+})
+
 test('sudo keeps password, ready marker and binary file bytes separate', async () => {
   const password = Buffer.from('test sudo credential\n')
   const binary = Buffer.from([0x00, 0x0a, 0xff, 0x0d])

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { AssistantEvent, AssistantRequest } from '@shared/types/assistant'
 import type {
   ConnectionClosedEvent,
   FileRootExpiredEvent,
@@ -26,6 +27,14 @@ import type {
 } from '@shared/types'
 
 const api: RemoteFilesTransport = {
+  /** Sends a validated assistant request to the main process. */
+  assistant: (request: AssistantRequest) => ipcRenderer.invoke('assistant:request', request),
+  /** Subscribes to assistant updates and returns a function to remove the listener. */
+  onAssistantEvent: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: AssistantEvent) => callback(value)
+    ipcRenderer.on('assistant:event', listener)
+    return () => ipcRenderer.removeListener('assistant:event', listener)
+  },
   getBootstrap: () => ipcRenderer.invoke('app:bootstrap'),
   onWindowExpanded: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, expanded: boolean) => callback(expanded)

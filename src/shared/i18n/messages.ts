@@ -84,6 +84,7 @@ export function messageFromUnknown(error: unknown): MessageValue {
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: MessageValue }
 
 const diagnosticKeys: Record<string, MessageKey> = {
+  "textSizeLimit": "errors.textExceedsThePreviewLimit",
   "aliasSymlink": "errors.remoteAliasSymlink",
   "aliasNotRegular": "errors.remoteAliasNotRegular",
   "aliasExists": "errors.remoteAliasExists",

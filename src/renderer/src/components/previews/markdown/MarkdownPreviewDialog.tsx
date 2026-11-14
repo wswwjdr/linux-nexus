@@ -1,6 +1,6 @@
-import { msg, renderMessage, type MessageValue, tr } from '@shared/i18n/messages'
+import { tr } from '@shared/i18n/messages'
 import { useLanguage } from '@/i18n'
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ComponentPropsWithoutRef } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { BookOpen, List, X } from 'lucide-react'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -8,21 +8,7 @@ import rehypeHighlight from 'rehype-highlight'
 import type { PreviewResult } from '@shared/types'
 import { markdownImageUrl } from '@shared/markdown-resources'
 import { collectHeadings, headingIds } from './markdown-headings'
-
-function CodeBlock({ children, ...props }: ComponentPropsWithoutRef<'pre'>) {
-  useLanguage()
-  const [notice, setNotice] = useState<MessageValue>('')
-  useEffect(() => {
-    if (!notice) return
-    const timer = window.setTimeout(() => setNotice(''), 2000)
-    return () => window.clearTimeout(timer)
-  }, [notice])
-  return <div className="md-code-block"><button className="md-copy-code" onClick={async (event) => {
-    const text = event.currentTarget.parentElement!.querySelector('code')!.textContent!
-    try { await navigator.clipboard.writeText(text); setNotice(msg('previews.copied')) }
-    catch { setNotice(msg('previews.copyFailedSelectTheCodeManually')) }
-  }}>{tr('previews.copyCode')}</button><pre {...props}>{children}</pre>{notice && <span role="status" className="md-copy-notice">{renderMessage(notice)}</span>}</div>
-}
+import { MarkdownCodeBlock, MarkdownTable, markdownExternalUrl } from './MarkdownBlocks'
 
 function MarkdownImage({ src, alt }: { src: string | null; alt?: string }) {
   useLanguage()
@@ -78,7 +64,7 @@ export default function MarkdownPreviewDialog({ result, active, onClose, onOpenE
     <ReactMarkdown skipHtml remarkPlugins={[remarkGfm, [headingIds, { ids }]]} rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]}
       urlTransform={(url, key) => key === 'src' ? markdownImageUrl(url, result.resourceBaseUrl) ?? '' : defaultUrlTransform(url)}
       components={{
-        pre: ({ node: _node, ...props }) => <CodeBlock {...props} />,
+        pre: ({ node: _node, ...props }) => <MarkdownCodeBlock {...props} />,
         img: ({ src, alt }) => <MarkdownImage key={typeof src === 'string' ? src : ''} src={typeof src === 'string' ? src : null} alt={alt} />,
         a: ({ href, children }) => {
           if (href?.startsWith('#')) {
@@ -86,12 +72,11 @@ export default function MarkdownPreviewDialog({ result, active, onClose, onOpenE
             try { fragment = decodeURIComponent(href.slice(1)) } catch { return <span>{children}</span> }
             return <a href={href} onClick={(event) => { event.preventDefault(); jump(prefix + fragment) }}>{children}</a>
           }
-          let url: URL
-          try { url = new URL(href!) } catch { return <span className="md-disabled-link">{children}</span> }
-          if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return <span className="md-disabled-link">{children}</span>
-          return <a href={url.href} rel="noreferrer" onClick={(event) => { event.preventDefault(); onOpenExternalLink(url.href) }}>{children}</a>
+          const url = markdownExternalUrl(href)
+          if (!url) return <span className="md-disabled-link">{children}</span>
+          return <a href={url} rel="noreferrer" onClick={(event) => { event.preventDefault(); onOpenExternalLink(url) }}>{children}</a>
         },
-        table: ({ node: _node, ...props }) => <div className="md-table-scroll"><table {...props} /></div>,
+        table: ({ node: _node, ...props }) => <MarkdownTable {...props} />,
       }}
     >{result.content}</ReactMarkdown>
   ), [result.content, result.resourceBaseUrl, ids, prefix, jump, onOpenExternalLink])

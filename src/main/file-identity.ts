@@ -101,6 +101,12 @@ export function fileCommands(session: ActiveSession): FileCommandScope {
   return state.commands
 }
 
+/** Returns the active identity and revocable command scope for a file connection. */
+export function assistantFileIdentity(session: ActiveSession): { identity: FileIdentity; commands: FileCommandScope } {
+  const commands = fileCommands(session)
+  return { identity: stateFor(session).identity, commands }
+}
+
 function connectedFileSession(sessionId: unknown): ActiveSession {
   const session = typeof sessionId === 'string' ? sessions.get(sessionId) : undefined
   if (session?.kind !== 'files') throw new LocalizedError(msg('errors.fileSessionIsNotConnected'))

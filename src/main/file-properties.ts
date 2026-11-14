@@ -23,15 +23,22 @@ function timestamp(value: string): string {
   return date.toISOString()
 }
 
+/** Reads the metadata of remotePath in the connected file session. */
 export async function getRemoteEntryProperties(sessionId: string, remotePath: string): Promise<RemoteEntryProperties> {
   const session = filesSession(sessionId)
+  return readRemoteEntryProperties(session.commands, remotePath)
+}
+
+/** Returns remote file metadata through the supplied command scope and cancellation signal. */
+export async function readRemoteEntryProperties(commands: Parameters<typeof runRemoteCommand>[0], remotePath: string,
+  signal?: AbortSignal): Promise<RemoteEntryProperties> {
   const path = normalizedRemotePath(remotePath)
-  const { stdout } = await runRemoteCommand(session.commands, [
+  const { stdout } = await runRemoteCommand(commands, [
     'set -eu',
     'export LC_ALL=C',
     'stat --printf=\'%f\\0%s\\0%a\\0%A\\0%u\\0%U\\0%g\\0%G\\0%X\\0%Y\\0%Z\\0%W\\0\' -- "$1"',
     'if [[ -L "$1" ]]; then readlink --zero -- "$1"; else printf "\\0"; fi',
-  ].join('\n'), [path], commandOptions)
+  ].join('\n'), [path], { ...commandOptions, signal })
   const fields = stdout.toString('utf8').split('\0')
   if (fields.length !== 14 || fields.pop() !== '') invalidProperties()
   const [mode, size, permissions, symbolicPermissions, uid, owner, gid, group, accessed, modified, changed, created, target] = fields

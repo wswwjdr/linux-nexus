@@ -91,42 +91,58 @@ function parseVersion(hashLine: string, identity: string): TextFileVersion {
 
 export const textPreviewStrategy: PreviewStrategy<TextPreviewResult> = {
   types: ['text', 'markdown'],
+  /** Builds the requested text or Markdown preview from the versioned remote file. */
   async preview({ type, sessionId, profileId, client, remotePath, name, limitBytes, encoding }) {
-    const { stdout } = await runRemoteCommand(client, `set -eu
-before=$(stat -c '%d:%i:%s:%y:%z' -- "$1")
-hash=$(sha256sum < "$1"); hash=\${hash%% *}
-printf '%s\\0%s\\0' "$hash" "$before"
-cat -- "$1"
-[[ $(stat -c '%d:%i:%s:%y:%z' -- "$1") == "$before" ]] || { printf '%s\\n' 'LINUX_NEXUS_DIAGNOSTIC:readChanged' >&2; exit 1; }`, [remotePath], { maxStdoutBytes: limitBytes + 1024 })
-    const first = stdout.indexOf(0)
-    const second = stdout.indexOf(0, first + 1)
-    if (first !== 64 || second < 0) throw new LocalizedError(msg('errors.serverReturnedAnInvalidTextVersionFormat'))
-    const version = parseVersion(stdout.subarray(0, first).toString(), stdout.subarray(first + 1, second).toString())
-    const buffer = stdout.subarray(second + 1)
-    if (buffer.length > limitBytes) throw new LocalizedError(msg('errors.textExceedsThePreviewLimit'))
-    if (createHash('sha256').update(buffer).digest('hex') !== version.hash) throw new LocalizedError(msg('errors.fileChangedWhileBeingReadReopenIt'))
-    const decoded = decodeText(buffer, encoding)
+    const result = await readVersionedText(client, remotePath, limitBytes, encoding)
     if (type === 'markdown') {
       const token = randomUUID()
       registerMarkdownResources(token, sessionId, profileId)
-      return { type, name, content: decoded.content, token,
+      return { type, name, content: result.content, token,
         resourceBaseUrl: 'remote-preview://' + token + remotePath.split('/').map(encodeURIComponent).join('/') }
     }
-    return { type: 'text', name, ...decoded, version, lineEnding: detectTextLineEnding(decoded.content) }
+    return { type: 'text', name, ...result }
   },
 }
 
+/** Reads a regular text file at remotePath with a byte limit and an optional encoding and cancellation signal. */
+export async function readVersionedText(client: Parameters<typeof runRemoteCommand>[0], remotePath: string,
+  limitBytes: number, encoding?: TextEncoding, signal?: AbortSignal) {
+  const { stdout } = await runRemoteCommand(client, `set -eu
+[[ -f "$1" && ! -L "$1" ]]
+before=$(stat -c '%d:%i:%s:%y:%z' -- "$1")
+[[ $(stat -c '%s' -- "$1") -le "$2" ]] || { printf '%s\\n' 'LINUX_NEXUS_DIAGNOSTIC:textSizeLimit' >&2; exit 1; }
+hash=$(sha256sum < "$1"); hash=\${hash%% *}
+printf '%s\\0%s\\0' "$hash" "$before"
+cat -- "$1"
+[[ $(stat -c '%d:%i:%s:%y:%z' -- "$1") == "$before" ]] || { printf '%s\\n' 'LINUX_NEXUS_DIAGNOSTIC:readChanged' >&2; exit 1; }`, [remotePath, String(limitBytes)], { maxStdoutBytes: limitBytes + 1024, signal })
+  const first = stdout.indexOf(0)
+  const second = stdout.indexOf(0, first + 1)
+  if (first !== 64 || second < 0) throw new LocalizedError(msg('errors.serverReturnedAnInvalidTextVersionFormat'))
+  const version = parseVersion(stdout.subarray(0, first).toString(), stdout.subarray(first + 1, second).toString())
+  const buffer = stdout.subarray(second + 1)
+  if (buffer.length > limitBytes) throw new LocalizedError(msg('errors.textExceedsThePreviewLimit'))
+  if (createHash('sha256').update(buffer).digest('hex') !== version.hash) throw new LocalizedError(msg('errors.fileChangedWhileBeingReadReopenIt'))
+  const decoded = decodeText(buffer, encoding)
+  return { ...decoded, version, lineEnding: detectTextLineEnding(decoded.content) }
+}
+
+/** Saves the requested file through the current file session and returns its committed version or conflict. */
 export async function saveTextFile(sessionId: string, remotePath: string, content: string, lineEnding: unknown, options: TextSaveOptions): Promise<TextSaveResult> {
+  return saveVersionedText(filesSession(sessionId).commands, remotePath, content, lineEnding, options)
+}
+
+/** Saves text using the supplied command scope and version, optionally cancelling with signal. */
+export async function saveVersionedText(commands: Parameters<typeof runRemoteCommand>[0], remotePath: string,
+  content: string, lineEnding: unknown, options: TextSaveOptions, signal?: AbortSignal): Promise<TextSaveResult> {
   if (typeof content !== 'string' || !options || typeof options !== 'object'
     || !options.version || !hashPattern.test(options.version.hash) || typeof options.version.identity !== 'string'
     || (options.encoding !== 'utf8' && options.encoding !== 'gbk') || typeof options.bom !== 'boolean' || typeof options.force !== 'boolean'
     || (lineEnding !== null && lineEnding !== '\n' && lineEnding !== '\r\n' && lineEnding !== '\r')) throw new LocalizedError(msg('errors.invalidTextSaveParameters'))
-  const session = filesSession(sessionId)
   const path = normalizedRemotePath(remotePath)
   const bytes = encodeEditedText(content, lineEnding, options.encoding, options.bom)
   if (bytes.length > readPreviewLimits().textMiB * 1024 * 1024) throw new LocalizedError(msg('errors.savedTextExceedsThePreviewLimit'))
   try {
-    const { stdout } = await runRemoteCommand(session.commands, buildTextSaveCommand(), [path, options.version.hash, options.version.identity, options.force ? '1' : '0', String(bytes.length)], { stdin: [bytes, commitRecord(createHash('sha256').update(bytes).digest('hex'))], maxStdoutBytes: 1024 })
+    const { stdout } = await runRemoteCommand(commands, buildTextSaveCommand(), [path, options.version.hash, options.version.identity, options.force ? '1' : '0', String(bytes.length)], { signal, stdin: [bytes, commitRecord(createHash('sha256').update(bytes).digest('hex'))], maxStdoutBytes: 1024 })
     const [hash, identity] = stdout.toString().trimEnd().split('\n')
     const version = parseVersion(hash, identity)
     if (version.hash !== createHash('sha256').update(bytes).digest('hex')) throw new LocalizedError(msg('errors.fileChangedAgainAfterSavingReloadItYourDraftHas'))

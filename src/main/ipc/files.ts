@@ -34,7 +34,9 @@ export function registerFilesIpc(): void {
   ipcMain.handle('files:name-search-cancel', (_event, requestId: string) => cancelNameSearch(requestId))
   ipcMain.handle('files:content-search', (_event, request: ContentSearchRequest) => startContentSearch(request))
   ipcMain.handle('files:content-search-cancel', (_event, requestId: string) => cancelContentSearch(requestId))
-  ipcMain.handle('files:script-execution-start', (_event, request: ScriptExecutionRequest) => startScriptExecution(request))
+  ipcMain.handle('files:script-execution-start', (_event, request: ScriptExecutionRequest) => {
+    return startScriptExecution(request)
+  })
   ipcMain.handle('files:script-execution-cancel', (_event, requestId: unknown) => {
     if (typeof requestId !== 'string' || !requestId) throw new LocalizedError(msg('errors.invalidScriptExecutionRequestId'))
     return cancelScriptExecution(requestId)
@@ -64,10 +66,12 @@ export function registerFilesIpc(): void {
       () => { if (!event.sender.isDestroyed()) event.sender.send('files:transfer-queued', { requestId }) }))
   })
   ipcMain.handle('files:transfer-cancel', (_event, requestId: string) => cancelTransfer(requestId))
-  ipcMain.handle('files:create-directory', (_event, sessionId: string, remoteDirectory: string, name: string) =>
-    createRemoteDirectory(sessionId, remoteDirectory, name))
-  ipcMain.handle('files:rename', (_event, sessionId: string, remotePath: string, name: string) =>
-    renameRemoteEntry(sessionId, remotePath, name))
+  ipcMain.handle('files:create-directory', (_event, sessionId: string, remoteDirectory: string, name: string) => {
+    return createRemoteDirectory(sessionId, remoteDirectory, name)
+  })
+  ipcMain.handle('files:rename', (_event, sessionId: string, remotePath: string, name: string) => {
+    return renameRemoteEntry(sessionId, remotePath, name)
+  })
   ipcMain.handle('files:path-copy', (_event, sessionId: string, remotePath: string) => copyRemotePath(sessionId, remotePath))
   ipcMain.handle('files:delete', (_event, sessionId: string, remotePaths: unknown) => {
     if (!Array.isArray(remotePaths) || remotePaths.some((remotePath) => typeof remotePath !== 'string')) {
@@ -77,10 +81,12 @@ export function registerFilesIpc(): void {
   })
   ipcMain.handle('files:preview', (_event, sessionId: string, remotePath: string, type: Parameters<typeof previewFile>[2], encoding?: TextEncoding) =>
     previewFile(sessionId, remotePath, type, encoding))
-  ipcMain.handle('files:text-save', (_event, sessionId: string, remotePath: string, content: string, lineEnding: unknown, options: TextSaveOptions) =>
-    saveTextFile(sessionId, remotePath, content, lineEnding, options))
-  ipcMain.handle('files:text-save-install-dependencies', (_event, sessionId: string, packages: unknown, password: unknown) =>
-    installTextSaveDependencies(sessionId, packages, password))
+  ipcMain.handle('files:text-save', (_event, sessionId: string, remotePath: string, content: string, lineEnding: unknown, options: TextSaveOptions) => {
+    return saveTextFile(sessionId, remotePath, content, lineEnding, options)
+  })
+  ipcMain.handle('files:text-save-install-dependencies', (_event, sessionId: string, packages: unknown, password: unknown) => {
+    return installTextSaveDependencies(sessionId, packages, password)
+  })
   ipcMain.handle('files:preview-log', (_event, sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number) =>
     readLogPreview(sessionId, remotePath, beforeOffset, snapshotSize))
   ipcMain.handle('files:preview-release', (_event, token: string) => releasePreview(token))

@@ -9,8 +9,11 @@ import type { DroppedUploadEntry, TransferResult, OperationExecutionRequest, Ope
 import type { PreviewResult, TextLineEnding, LogPreviewPage, TextEncoding, TextSaveOptions, TextSaveResult, TextSavePackage, TextSaveInstallResult } from './previews'
 import type { PreviewType } from '../file-type-registry'
 import type { RemoteDirectoryStats, RemoteDirectoryUsageNode, RemoteEntryProperties } from './file-properties'
+import type { AssistantEvent, AssistantRequest, AssistantRequests } from './assistant'
 
 export interface RemoteFilesApi {
+  assistant<R extends AssistantRequest>(request: R): Promise<AssistantRequests[R['action']]['output']>
+  onAssistantEvent(callback: (event: AssistantEvent) => void): () => void
   getBootstrap(): Promise<AppBootstrap>
   onWindowExpanded(callback: (expanded: boolean) => void): () => void
   listProfiles(): Promise<ServerProfile[]>
@@ -88,7 +91,9 @@ export interface RemoteFilesApi {
 }
 
 export type RemoteFilesTransport = {
-  [K in keyof RemoteFilesApi]: RemoteFilesApi[K] extends (...args: infer A) => Promise<infer R>
+  [K in Exclude<keyof RemoteFilesApi, 'assistant'>]: RemoteFilesApi[K] extends (...args: infer A) => Promise<infer R>
     ? (...args: A) => Promise<IpcResult<R>>
     : RemoteFilesApi[K]
+} & {
+  assistant<R extends AssistantRequest>(request: R): Promise<IpcResult<AssistantRequests[R['action']]['output']>>
 }

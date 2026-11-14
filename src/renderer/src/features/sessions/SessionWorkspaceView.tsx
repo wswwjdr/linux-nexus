@@ -1,6 +1,7 @@
 import { renderMessage, tr } from '@shared/i18n/messages'
 import { useLanguage } from '@/i18n'
 import type { ComponentProps, RefObject } from 'react'
+import { AssistantSplit } from '../files/AssistantSplit'
 import { Cloud, Copy, LoaderCircle } from 'lucide-react'
 import FileBrowser from '../files/FileBrowser'
 import FileSessionWorkspace from '../files/FileSessionWorkspace'
@@ -86,6 +87,7 @@ interface SessionWorkspaceActions {
 }
 
 interface SessionWorkspaceViewProps {
+  assistant?: ComponentProps<typeof AssistantSplit>['assistant']
   state: SessionWorkspaceState
   actions: SessionWorkspaceActions
   sessionContextMenuRef: RefObject<HTMLDivElement | null>
@@ -167,6 +169,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
         <div className="session-content">
         {activeSession?.kind === 'files' && connectedSessionId ? (
           <div className="files-session-panel" id={'session-panel-' + activeSession.id} role="tabpanel" aria-labelledby={'session-tab-' + activeSession.id}>
+            <AssistantSplit assistant={props.assistant}>
             <FileBrowser
               sessionId={connectedSessionId}
               fileIdentity={activeSession.fileIdentity}
@@ -192,6 +195,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
               onDropMove={beginRemoteMove}
               onError={onError}
             />
+            </AssistantSplit>
           </div>
         ) : !activeSession ? (
           <ServerList

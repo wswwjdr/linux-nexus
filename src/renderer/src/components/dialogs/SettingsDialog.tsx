@@ -1,6 +1,9 @@
 import { type MessageValue, formatLocale, msg, renderMessage, tr } from '@shared/i18n/messages'
 import { languages, type LanguagePreference } from '@shared/i18n/languages'
 import { useLanguage } from '@/i18n'
+import { useImperativeHandle, useRef, useState, type Ref } from 'react'
+import type { PromptEditorHandle } from './AssistantPromptEditor'
+import { AssistantSettings } from './AssistantSettings'
 import { MAX_DIRECTORY_USAGE_ENTRY_LIMIT } from '@shared/app-settings'
 import { fileTypeMessages } from '@shared/preview-file-type'
 
@@ -25,9 +28,19 @@ const performanceThresholdFields: Array<{
   { label: msg('settings.1MinuteLoadPerCore'), warning: 'loadPerCoreWarning', critical: 'loadPerCoreCritical', unit: '', step: '0.1' },
 ]
 
-export function SettingsDialog(props: Pick<DialogLayerProps, "settingsForm" | "profiles" | "aliasSnapshot" | "aliasProfileId" | "aliasOperationBusy" | "aliasName" | "aliasCommand" | "onCloseSettings" | "onUpdateSettings" | "onAddFileTypeExtension" | "onRemoveFileTypeExtension" | "onResetFileTypeExtensions" | "onUpdateDefaultView" | "onUpdateLanguage" | "onUpdateTheme" | "onUpdateStartupProfile" | "onUpdateStartupKind" | "onSelectAliasProfile" | "onUpdateAliasName" | "onUpdateAliasCommand" | "onSyncAliases" | "onAddAlias" | "onRequestAliasDelete">) {
+/** Renders the General and Assistant settings pages using the supplied app settings handlers. */
+export function SettingsDialog(props: Pick<DialogLayerProps, "settingsForm" | "profiles" | "aliasSnapshot" | "aliasProfileId" | "aliasOperationBusy" | "aliasName" | "aliasCommand" | "onCloseSettings" | "onUpdateSettings" | "onAddFileTypeExtension" | "onRemoveFileTypeExtension" | "onResetFileTypeExtensions" | "onUpdateDefaultView" | "onUpdateLanguage" | "onUpdateTheme" | "onUpdateStartupProfile" | "onUpdateStartupKind" | "onSelectAliasProfile" | "onUpdateAliasName" | "onUpdateAliasCommand" | "onSyncAliases" | "onAddAlias" | "onRequestAliasDelete"> & { dismissRef: Ref<() => void> }) {
   useLanguage()
+  const [page, setPage] = useState<'general' | 'assistant'>('general')
   const { settingsForm, profiles, aliasSnapshot, aliasProfileId, aliasOperationBusy, aliasName, aliasCommand, onCloseSettings, onUpdateSettings, onAddFileTypeExtension, onRemoveFileTypeExtension, onResetFileTypeExtensions, onUpdateDefaultView, onUpdateTheme, onUpdateLanguage, onUpdateStartupProfile, onUpdateStartupKind, onSelectAliasProfile, onUpdateAliasName, onUpdateAliasCommand, onSyncAliases, onAddAlias, onRequestAliasDelete } = props
+  const assistantNavigation = useRef<PromptEditorHandle>(null)
+
+  /** Runs next after resolving any pending assistant prompt edits. */
+  function navigate(next: () => void): void {
+    if (assistantNavigation.current) assistantNavigation.current.leave(next)
+    else next()
+  }
+  useImperativeHandle(props.dismissRef, () => () => navigate(onCloseSettings))
   const invalidPerformanceThresholds = Boolean(settingsForm && performanceThresholdFields.some(({ warning, critical }) => {
     const warningText = settingsForm.performanceThresholds[warning]
     const criticalText = settingsForm.performanceThresholds[critical]
@@ -46,13 +59,17 @@ export function SettingsDialog(props: Pick<DialogLayerProps, "settingsForm" | "p
   return (
     <>
       {settingsForm && (
-              <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !aliasOperationBusy && onCloseSettings()}>
+              <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !aliasOperationBusy && navigate(onCloseSettings)}>
                 <section className="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
                   <div className="modal-heading settings-modal-heading">
                     <h2 id="settings-modal-title">{tr('settings.applicationSettings')}</h2>
-                    <button className="icon-button modal-close" title={tr('common.close')} aria-label={tr('settings.closeSettings')} disabled={aliasOperationBusy} onClick={onCloseSettings}><X size={18} /></button>
+                    <button className="icon-button modal-close" title={tr('common.close')} aria-label={tr('settings.closeSettings')} disabled={aliasOperationBusy} onClick={() => navigate(onCloseSettings)}><X size={18} /></button>
                   </div>
-                  <div className="settings-form-content">
+                  <div className="assistant-actions settings-pages">
+                    <button type="button" className="text-button" aria-pressed={page === 'general'} onClick={() => navigate(() => setPage('general'))}>{tr('assistant.general')}</button>
+                    <button type="button" className="text-button" aria-pressed={page === 'assistant'} onClick={() => setPage('assistant')}>{tr('assistant.title')}</button>
+                  </div>
+                  {page === 'assistant' ? <AssistantSettings profiles={profiles} navigationRef={assistantNavigation} /> : <div className="settings-form-content">
                     <fieldset className="settings-section settings-section-language">
                       <legend>{tr('settings.language')}</legend>
                       <label className="field">
@@ -297,7 +314,7 @@ export function SettingsDialog(props: Pick<DialogLayerProps, "settingsForm" | "p
                       </div>
                       <p className="command-alias-note">{tr('settings.bashOnlyAddingOrDeletingAliasesModifiesBashrcOnThe')}</p>
                     </details>
-                  </div>
+                  </div>}
                 </section>
               </div>
             )}

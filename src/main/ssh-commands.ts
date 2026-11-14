@@ -1,5 +1,5 @@
 import { type MessageValue, msg, LocalizedError } from '../shared/i18n/messages'
-import type { Client, ClientChannel } from 'ssh2'
+import type { Client, ClientChannel, PseudoTtyOptions } from 'ssh2'
 import { shellQuote } from '../shared/shell.ts'
 import { randomUUID } from 'node:crypto'
 
@@ -62,6 +62,8 @@ export interface RemoteCommandOptions {
   maxStderrBytes?: number
   timeoutMs?: number | null
   keepStdinOpen?: boolean
+  pty?: PseudoTtyOptions
+  managedTermination?: boolean
 }
 export interface RemoteCommandResult { stdout: Buffer; stderr: string; exitCode: number | null }
 export interface RemoteCommandExecutor {
@@ -161,7 +163,15 @@ function executeSshCommand(client: Client, command: string, options: RemoteComma
       if (!stream) { finish(new RemoteTerminationError(reason, 'unknown')); return }
       if (grace) return
       // Arm before sending: peers and test transports may acknowledge synchronously.
-      grace = setTimeout(() => { stream?.close(); finish(new RemoteTerminationError(reason!, 'unknown')) }, 2000)
+      grace = setTimeout(() => {
+        if (options.managedTermination) {
+          grace = setTimeout(() => { stream?.close(); finish(new RemoteTerminationError(reason!, 'unknown')) }, 2000)
+          try { stream?.signal('KILL') } catch { /* The peer may already have closed. */ }
+        } else {
+          stream?.close()
+          finish(new RemoteTerminationError(reason!, 'unknown'))
+        }
+      }, 2000)
       try { stream.signal('TERM') } catch { /* The peer may already have closed. */ }
     }
     const cancel = () => stop('cancelled')
@@ -171,21 +181,60 @@ function executeSshCommand(client: Client, command: string, options: RemoteComma
       try { stream?.signal('TERM') } catch { /* The peer may already have closed. */ }
       stream?.close()
     }
+    /** Answers the isolated sudo prompt without forwarding authentication output to callers. */
+    const onAuthenticationPrompt = (chunk: Buffer) => {
+      authStderr += chunk.toString('utf8')
+      const promptIndex = authStderr.indexOf(authentication!.prompt)
+      if (promptIndex >= 0) {
+        if (!authentication!.password) {
+          onError(new SudoAuthenticationError(true, msg('errors.serverRequiresASudoPassword')))
+        } else if (sentPassword) {
+          onError(new SudoAuthenticationError(false, msg('errors.incorrectSudoPasswordOrServerRequiresMultiStepAuthentication')))
+        } else {
+          sentPassword = true
+          authStderr = ''
+          try { stream!.write(authentication!.password) }
+          catch { onError(new SudoAuthenticationError(false, msg('errors.cannotSendAuthenticationDataToRemoteSudo'))) }
+        }
+      } else if (authStderr.length > 8192) {
+        onError(new SudoAuthenticationError(false, msg('errors.serverReturnedAnUnrecognizedSudoAuthenticationPrompt')))
+      }
+    }
     const onData = (chunk: Buffer) => {
       let bytes = Buffer.from(chunk)
       if (authentication && !authenticated) {
         if (reason) return
-        const needed = authentication.ready.length - readyBytes.length
-        readyBytes = Buffer.concat([readyBytes, bytes.subarray(0, needed)])
-        if (!authentication.ready.subarray(0, readyBytes.length).equals(readyBytes)) {
-          onError(new SudoAuthenticationError(false, msg('errors.serverReturnedAnInvalidSudoStartupMarker')))
-          return
+        if (options.pty) {
+          // A remote PTY combines stderr and stdout. Buffer this handshake until the ready marker.
+          readyBytes = Buffer.concat([readyBytes, bytes])
+          const index = readyBytes.indexOf(authentication.ready)
+          if (index === -1) {
+            if (readyBytes.length > 8192) {
+              onError(new SudoAuthenticationError(false, msg('errors.serverReturnedAnInvalidSudoStartupMarker')))
+              return
+            }
+            const promptIndex = readyBytes.indexOf(authentication.prompt)
+            if (promptIndex >= 0) {
+              onAuthenticationPrompt(readyBytes.subarray(0, promptIndex + authentication.prompt.length))
+              readyBytes = readyBytes.subarray(promptIndex + authentication.prompt.length)
+            }
+            return
+          }
+          bytes = readyBytes.subarray(index + authentication.ready.length)
+          readyBytes = Buffer.alloc(0)
+        } else {
+          const needed = authentication.ready.length - readyBytes.length
+          readyBytes = Buffer.concat([readyBytes, bytes.subarray(0, needed)])
+          if (!authentication.ready.subarray(0, readyBytes.length).equals(readyBytes)) {
+            onError(new SudoAuthenticationError(false, msg('errors.serverReturnedAnInvalidSudoStartupMarker')))
+            return
+          }
+          if (readyBytes.length < authentication.ready.length) return
+          bytes = bytes.subarray(needed)
         }
-        if (readyBytes.length < authentication.ready.length) return
         authenticated = true
         clearTimeout(authTimer)
         queueMicrotask(() => { if (!settled && !reason) startInput() })
-        bytes = bytes.subarray(needed)
         if (!bytes.length) return
       }
       outputBytes += bytes.length
@@ -205,21 +254,7 @@ function executeSshCommand(client: Client, command: string, options: RemoteComma
     const onStderr = (chunk: Buffer) => {
       if (authentication && !authenticated) {
         if (reason) return
-        authStderr += chunk.toString('utf8')
-        if (authStderr.includes(authentication.prompt)) {
-          if (!authentication.password) {
-            onError(new SudoAuthenticationError(true, msg('errors.serverRequiresASudoPassword')))
-          } else if (sentPassword) {
-            onError(new SudoAuthenticationError(false, msg('errors.incorrectSudoPasswordOrServerRequiresMultiStepAuthentication')))
-          } else {
-            sentPassword = true
-            authStderr = ''
-            try { stream!.write(authentication.password) }
-            catch { onError(new SudoAuthenticationError(false, msg('errors.cannotSendAuthenticationDataToRemoteSudo'))) }
-          }
-        } else if (authStderr.length > 8192) {
-          onError(new SudoAuthenticationError(false, msg('errors.serverReturnedAnUnrecognizedSudoAuthenticationPrompt')))
-        }
+        onAuthenticationPrompt(chunk)
         return
       }
       try { options.onStderr?.(chunk) } catch (error) { onError(asError(error)); return }
@@ -227,11 +262,15 @@ function executeSshCommand(client: Client, command: string, options: RemoteComma
       if (chunk.length > remaining) truncated = true
       if (remaining > 0) { const bytes = Buffer.from(chunk.subarray(0, remaining)); stderr.push(bytes); errorBytes += bytes.length }
     }
-    const onExit = (code: number | null) => { exitCode = typeof code === 'number' ? code : null }
+    let exitSignal: string | undefined
+    const onExit = (code: number | null, name?: string) => {
+      exitCode = typeof code === 'number' ? code : null
+      exitSignal = name
+    }
     const onClose = (code: number | null) => {
       const complete = () => {
         if (exitCode === null && typeof code === 'number') exitCode = code
-        finish(reason ? new RemoteTerminationError(reason, exitCode === null ? 'unknown' : 'exited') : undefined)
+        finish(reason ? new RemoteTerminationError(reason, exitCode === null && !(options.managedTermination && exitSignal) ? 'unknown' : 'exited') : undefined)
       }
       if (pending) void pending.then(complete, error => finish(asError(error))); else complete()
     }
@@ -267,7 +306,8 @@ function executeSshCommand(client: Client, command: string, options: RemoteComma
       onError(new SudoAuthenticationError(false, msg('errors.sudoAuthenticationTimedOutCheckTheServerAuthenticationPolicy')))
     }, 15_000)
     try {
-      client.exec(command, (error, channel) => {
+      /** Attaches the command's streams after SSH accepts the exec request. */
+      const attach = (error: Error | undefined, channel: ClientChannel) => {
         if (error) { finish(error); return }
         stream = channel
         if (settled) { try { channel.signal('TERM') } catch {} channel.destroy(); return }
@@ -275,7 +315,9 @@ function executeSshCommand(client: Client, command: string, options: RemoteComma
         channel.once('exit', onExit); channel.once('close', onClose)
         channel.stderr.on('data', onStderr); channel.on('data', onData)
         if (!authentication) startInput()
-      })
+      }
+      if (options.pty) client.exec(command, { pty: options.pty }, attach)
+      else client.exec(command, attach)
     } catch (error) { finish(asError(error)) }
   })
 }
