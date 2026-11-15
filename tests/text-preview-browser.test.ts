@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
-test('text search reveals long lines and distant matches in Chromium without losing search focus', { timeout: 45_000 }, async () => {
+test('text preview keeps line numbers aligned while editing, scrolling, resizing, and searching in Chromium', { timeout: 45_000 }, async () => {
   const { default: electron } = await import('electron')
   const env = { ...process.env }
   delete env.ELECTRON_RUN_AS_NODE

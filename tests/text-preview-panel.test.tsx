@@ -11,6 +11,7 @@ Object.defineProperties(globalThis, {
   document: { configurable: true, value: dom.window.document },
   navigator: { configurable: true, value: dom.window.navigator },
   HTMLElement: { configurable: true, value: dom.window.HTMLElement },
+  ResizeObserver: { configurable: true, value: class { observe() {} disconnect() {} } },
   IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true },
 })
 
