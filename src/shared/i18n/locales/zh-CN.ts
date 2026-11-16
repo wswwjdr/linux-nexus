@@ -20,7 +20,8 @@ export default {
     "nextPage": "下一页",
     "monitorSwitch": "实时监控",
     "closePanel": "关闭监控面板",
-    "off": "当前标签的监控已关闭",
+    "off": "此服务器的监控已关闭",
+    "disconnected": "等待服务器连接",
     "waiting": "等待采样",
     "waitingForCounters": "等待下一次采样以计算变化率。",
     "lastSuccessfulSample": "上次成功采样于 {{time}}",
@@ -49,7 +50,8 @@ export default {
     "noResources": "没有可显示的资源",
     "sourceFailed": "无法读取 {{source}}（退出码 {{code}}）",
     "invalidSwitch": "监控开关值无效",
-    "focusFailed": "切换监控标签失败：{{detail}}",
+    "invalidProfileId": "性能监控的服务器配置编号无效",
+    "snapshotFailed": "读取服务器监控状态失败：{{detail}}",
     "switchFailed": "修改监控开关失败：{{detail}}"
   },
   assistant: {
@@ -949,7 +951,6 @@ export default {
     "serverConfigurationNotFound": "找不到服务器配置",
     "invalidRemoteOperationId": "远端操作编号无效",
     "invalidSessionConnectionParameters": "会话连接参数无效",
-    "invalidPerformanceMonitoringSessionId": "性能监控会话编号无效",
     "invalidTerminalInput": "终端输入无效",
     "invalidTerminalDimensions": "终端尺寸无效",
     "theServerSelectedForStartupConnectionDoesNotExist": "启动连接所选服务器不存在",

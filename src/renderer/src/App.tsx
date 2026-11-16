@@ -141,7 +141,7 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
     setPanelOpen: setPerformancePanelOpen,
     setEnabled: setPerformanceEnabled,
     refresh: refreshPerformance,
-  } = usePerformanceMonitoring(connectedSessionId, showToast)
+  } = usePerformanceMonitoring(connectedProfileId, showToast)
   const setSearchOpen = useCallback((sessionId: string, open: boolean) => {
     setSearchOpenSessionIds((current) => {
       if (current.has(sessionId) === open) return current
@@ -535,6 +535,15 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
     setSearchOpen,
     showToast,
   })
+
+  /**
+   * Closes a workspace tab and dismisses its monitor panel if the tab was selected.
+   * @param sessionId Tab being closed.
+   */
+  function closeWorkspaceSession(sessionId: string) {
+    if (sessionId === activeSessionId) setPerformancePanelOpen(false)
+    closeSession(sessionId)
+  }
   const { openEntryContextMenu, openDirectoryContextMenu, dispatchFileMenuAction } = useFileMenuActions({
     activeSession,
     connectedSessionId,
@@ -693,7 +702,7 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
             )}
           </div>
           <div className="topbar-actions">
-            {connectedSessionId && (
+            {connectedProfileId && (
               <PerformanceMonitor
                 state={performanceMonitorState}
                 thresholds={performanceThresholds}
@@ -785,7 +794,7 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
           }}
           actions={{
             sessions: {
-              closeSession,
+              closeSession: closeWorkspaceSession,
               openSessionContextMenu,
               handleSessionTabContextMenuKeyDown,
               duplicateSession,

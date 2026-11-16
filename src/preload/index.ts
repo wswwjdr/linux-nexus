@@ -59,11 +59,25 @@ const api: RemoteFilesTransport = {
   },
   writeTerminal: (sessionId: string, data: string) => ipcRenderer.invoke('terminal:write', sessionId, data),
   resizeTerminal: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
-  /** Selects sessionId as the focused connection and returns its monitor state. */
-  focusPerformanceMonitor: (sessionId: string | null) => ipcRenderer.invoke('performance:focus', sessionId),
-  /** Sets the monitor switch for sessionId to enabled and returns the resulting state. */
-  setPerformanceMonitorEnabled: (sessionId: string, enabled: boolean) => ipcRenderer.invoke('performance:set-enabled', sessionId, enabled),
-  refreshPerformanceMonitor: (sessionId: string) => ipcRenderer.invoke('performance:refresh', sessionId),
+  /**
+   * Reads a server's current monitor snapshot.
+   * @param profileId Server configuration ID.
+   * @returns The current monitor state.
+   */
+  getPerformanceMonitorState: (profileId: string) => ipcRenderer.invoke('performance:snapshot', profileId),
+  /**
+   * Changes a server's shared monitor switch.
+   * @param profileId Server configuration ID.
+   * @param enabled Desired switch value.
+   * @returns The updated monitor state.
+   */
+  setPerformanceMonitorEnabled: (profileId: string, enabled: boolean) => ipcRenderer.invoke('performance:set-enabled', profileId, enabled),
+  /**
+   * Requests fresh samples for a server.
+   * @param profileId Server configuration ID.
+   * @returns A promise that resolves when the request is accepted.
+   */
+  refreshPerformanceMonitor: (profileId: string) => ipcRenderer.invoke('performance:refresh', profileId),
   getAppSettings: () => ipcRenderer.invoke('settings:get'),
   updateAppSettings: (patch: AppSettingsPatch) => ipcRenderer.invoke('settings:update', patch),
   listCommandAliasSnapshots: () => ipcRenderer.invoke('aliases:list'),

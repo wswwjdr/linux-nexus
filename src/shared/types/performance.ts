@@ -60,7 +60,8 @@ export interface PerformanceMetric<T> {
 }
 
 export interface PerformanceMonitorState {
-  sessionId: string | null
+  profileId: string
+  connected: boolean
   version: number
   enabled: boolean
   sampling: boolean

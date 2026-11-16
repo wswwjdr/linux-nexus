@@ -5,8 +5,10 @@ import { randomUUID } from 'node:crypto'
 import type { SaveProfileInput, ServerProfile } from '@shared/types'
 import { connectionIdentityChanged } from '@shared/command-aliases'
 import { stopSessionsForProfile } from '../connections'
+import { removePerformanceMonitor } from '../performance-monitor'
 import { readAppSettings, readState, writeAppSettings, writeState } from '../state-store'
 
+/** Registers handlers for saved server configurations and their lifecycle. */
 export function registerProfilesIpc(): void {
   ipcMain.handle('profiles:list', () => readState().profiles)
   ipcMain.handle('profiles:save', async (_event, input: SaveProfileInput) => {
@@ -45,15 +47,15 @@ export function registerProfilesIpc(): void {
       pinned: previousProfile?.pinned ?? false,
     }
     if (!password && !state.passwords[id]) throw new LocalizedError(msg('errors.enterAnSshPassword'))
+    const identityChanged = previousProfile !== undefined && connectionIdentityChanged(previousProfile, savedProfile)
     if (existingIndex === -1) state.profiles.push(savedProfile)
     else {
       state.profiles[existingIndex] = savedProfile
-      if (connectionIdentityChanged(previousProfile, savedProfile)) {
-        delete state.commandAliases[id]
-      }
+      if (identityChanged) delete state.commandAliases[id]
     }
     if (password) state.passwords[id] = safeStorage.encryptString(password).toString('base64')
     writeState(state)
+    if (identityChanged) removePerformanceMonitor(id)
     stopSessionsForProfile(id)
     return savedProfile
   })
@@ -71,7 +73,6 @@ export function registerProfilesIpc(): void {
   })
 
   ipcMain.handle('profiles:delete', (_event, profileId: string) => {
-    stopSessionsForProfile(profileId)
     const state = readState()
     const settings = readAppSettings()
     if (settings.startupConnection?.profileId === profileId) {
@@ -81,5 +82,7 @@ export function registerProfilesIpc(): void {
     delete state.passwords[profileId]
     delete state.commandAliases[profileId]
     writeState(state)
+    removePerformanceMonitor(profileId)
+    stopSessionsForProfile(profileId)
   })
 }

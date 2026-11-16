@@ -6,12 +6,14 @@ import { registerRemoteOperationsIpc } from './ipc/remoteOperations'
 import { registerSessionsIpc } from './ipc/sessions'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerAssistantIpc } from './ipc/assistant'
+import { registerPerformanceIpc } from './ipc/performance'
 
 /** Registers all application IPC endpoints before the window starts. */
 export function registerIpc(): void {
   registerAssistantIpc()
   registerProfilesIpc()
   registerSessionsIpc()
+  registerPerformanceIpc()
   registerSettingsIpc()
   registerAliasesIpc()
   registerHostKeysIpc()

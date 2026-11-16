@@ -29,9 +29,9 @@ export interface RemoteFilesApi {
   onFileRootExpired(callback: (event: FileRootExpiredEvent) => void): () => void
   writeTerminal(sessionId: string, data: string): Promise<void>
   resizeTerminal(sessionId: string, cols: number, rows: number): Promise<void>
-  focusPerformanceMonitor(sessionId: string | null): Promise<PerformanceMonitorState>
-  setPerformanceMonitorEnabled(sessionId: string, enabled: boolean): Promise<PerformanceMonitorState>
-  refreshPerformanceMonitor(sessionId: string): Promise<void>
+  getPerformanceMonitorState(profileId: string): Promise<PerformanceMonitorState>
+  setPerformanceMonitorEnabled(profileId: string, enabled: boolean): Promise<PerformanceMonitorState>
+  refreshPerformanceMonitor(profileId: string): Promise<void>
   getAppSettings(): Promise<AppSettings>
   updateAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
   listCommandAliasSnapshots(): Promise<CommandAliasSnapshot[]>

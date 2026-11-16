@@ -20,7 +20,8 @@ export default {
     "nextPage": "Next page",
     "monitorSwitch": "Live monitoring",
     "closePanel": "Close monitoring panel",
-    "off": "Monitoring is off for this tab",
+    "off": "Monitoring is off for this server",
+    "disconnected": "Waiting for a server connection",
     "waiting": "Waiting for sample",
     "waitingForCounters": "Waiting for another sample to calculate rates.",
     "lastSuccessfulSample": "Last successful sample at {{time}}",
@@ -49,7 +50,8 @@ export default {
     "noResources": "No resources reported",
     "sourceFailed": "Could not read {{source}} (exit {{code}})",
     "invalidSwitch": "Invalid monitoring switch value",
-    "focusFailed": "Could not select the monitoring tab: {{detail}}",
+    "invalidProfileId": "Invalid server configuration ID for performance monitoring",
+    "snapshotFailed": "Could not read the server monitoring state: {{detail}}",
     "switchFailed": "Could not change the monitoring switch: {{detail}}"
   },
   assistant: {
@@ -949,7 +951,6 @@ export default {
     "serverConfigurationNotFound": "Server configuration not found",
     "invalidRemoteOperationId": "Invalid remote operation ID",
     "invalidSessionConnectionParameters": "Invalid session connection parameters",
-    "invalidPerformanceMonitoringSessionId": "Invalid performance monitoring session ID",
     "invalidTerminalInput": "Invalid terminal input",
     "invalidTerminalDimensions": "Invalid terminal dimensions",
     "theServerSelectedForStartupConnectionDoesNotExist": "The server selected for startup connection does not exist",

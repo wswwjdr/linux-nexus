@@ -18,8 +18,8 @@ interface PerformanceMonitorProps {
 }
 
 /**
- * Connects the toolbar trigger and dashboard to the active monitoring session.
- * @param props Session state, thresholds and panel and sampling actions.
+ * Connects the toolbar trigger and dashboard to the selected server's monitor.
+ * @param props Server state, thresholds and panel and sampling actions.
  * @returns Toolbar summary and, when open, the monitoring dashboard.
  */
 export default function PerformanceMonitor({ state, thresholds, open, onOpenChange, onEnabledChange, onRefresh }: PerformanceMonitorProps) {
@@ -45,6 +45,7 @@ export default function PerformanceMonitor({ state, thresholds, open, onOpenChan
   const hasErrors = samples.some((metric) => metric.error)
   let statusText: string
   if (!state) statusText = tr('performance.waiting')
+  else if (!state.connected) statusText = tr('performance.disconnected')
   else if (!enabled) statusText = tr('performance.off')
   else if (state.sampling) statusText = tr('common.readingServerMetrics')
   else if (hasErrors) statusText = tr(latestAt ? 'performance.partialFailure' : 'common.samplingFailedRetryingAutomatically')
@@ -70,7 +71,10 @@ export default function PerformanceMonitor({ state, thresholds, open, onOpenChan
      * @param event Pointer press from the workspace.
      */
     function dismissOutside(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) onOpenChange(false)
+      if (rootRef.current?.contains(event.target as Node)) return
+      // The selected tab's profile determines whether the panel stays open.
+      if (event.target instanceof Element && event.target.closest('.session-tabbar .session-tab-select') && event.button === 0) return
+      onOpenChange(false)
     }
 
     /**
@@ -127,12 +131,12 @@ export default function PerformanceMonitor({ state, thresholds, open, onOpenChan
         </div>
         <div className="performance-popover-actions">
           <label className="performance-switch">
-            <input ref={switchRef} type="checkbox" role="switch" checked={enabled} disabled={!state}
+            <input ref={switchRef} type="checkbox" role="switch" checked={enabled} disabled={!state?.connected}
               onChange={(event) => onEnabledChange(event.currentTarget.checked)} />
             {tr('performance.monitorSwitch')}
           </label>
           <button type="button" className="icon-button subtle" title={tr('common.refreshNow')} aria-label={tr('common.refreshPerformanceMetricsNow')}
-            disabled={!enabled} onClick={onRefresh}>
+            disabled={!enabled || !state?.connected} onClick={onRefresh}>
             <RefreshCw className={state?.sampling ? 'spin' : ''} size={16} aria-hidden="true" />
           </button>
           <button ref={closeRef} type="button" className="icon-button subtle" title={tr('performance.closePanel')}
@@ -142,13 +146,13 @@ export default function PerformanceMonitor({ state, thresholds, open, onOpenChan
         </div>
       </header>
       <div className="performance-body">
-        {enabled ? <>
+        {enabled && state?.connected ? <>
           {metrics.uptime?.error && <MetricNotice metric={metrics.uptime} />}
           <PerformanceOverview metrics={metrics} thresholds={thresholds} />
           <PerformanceResources metrics={metrics} thresholds={thresholds} />
         </> : <div className="performance-empty">
           <Gauge size={28} aria-hidden="true" />
-          <p>{tr(state ? 'performance.enableHint' : 'performance.waiting')}</p>
+          <p>{state?.connected ? tr('performance.enableHint') : statusText}</p>
         </div>}
       </div>
     </section>}

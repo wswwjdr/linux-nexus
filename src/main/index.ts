@@ -108,7 +108,6 @@ function createWindow(): void {
   }
 
   window.on('closed', () => {
-    stopAllPerformanceMonitors()
     setMainWindow(null)
     clearPreviewAssets()
   })
@@ -165,6 +164,7 @@ app.on('before-quit', event => {
   if (!hasSingleInstanceLock || quitting) return
   event.preventDefault()
   quitting = true
+  stopAllPerformanceMonitors()
   void (async () => {
     await stopAllAssistantTasks()
     await stopAllSessions()

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { act, createElement } from 'react'
+import React, { act, createElement } from 'react'
 import { JSDOM } from 'jsdom'
 import { DEFAULT_PERFORMANCE_THRESHOLDS } from '../src/shared/app-settings.ts'
 import { setLanguage } from '../src/shared/i18n/messages.ts'
+import type { PerformanceMonitorState } from '../src/shared/types/performance.ts'
 import { performanceUiFixture } from './helpers/performance-fixture.ts'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })
@@ -164,5 +165,125 @@ test('performance popover isolates background wheel events only while open', asy
     act(() => root.unmount())
     host.remove()
     background.remove()
+  }
+})
+
+test('the selected server keeps its latest state when background updates and snapshots arrive out of order', async () => {
+  const [{ createRoot }, { usePerformanceMonitoring }] = await Promise.all([
+    import('react-dom/client'),
+    import('../src/renderer/src/features/performance/usePerformanceMonitoring.ts'),
+  ])
+  const host = document.createElement('div')
+  const root = createRoot(host)
+  const pending = new Map<string, (state: PerformanceMonitorState) => void>()
+  const controls: [string, boolean?][] = []
+  let listener: ((state: PerformanceMonitorState) => void) | undefined
+  const api = {
+    /**
+     * Records a snapshot request until the test delivers its response.
+     * @param profileId Requested server configuration.
+     * @returns The pending snapshot response.
+     */
+    getPerformanceMonitorState(profileId: string) {
+      return new Promise<PerformanceMonitorState>((resolve) => pending.set(profileId, resolve))
+    },
+    /**
+     * Connects the renderer to the mocked stream of versioned states.
+     * @param callback Listener for pushed snapshots.
+     * @returns A function to stop listening.
+     */
+    onPerformanceUpdate(callback: (state: PerformanceMonitorState) => void) {
+      listener = callback
+      return () => { listener = undefined }
+    },
+    /**
+     * Records a switch action.
+     * @param profileId Server whose switch is changing.
+     * @param enabled Desired switch value.
+     * @returns The server's acknowledgement.
+     */
+    async setPerformanceMonitorEnabled(profileId: string, enabled: boolean) {
+      controls.push([profileId, enabled])
+      return snapshot(profileId, 100, enabled)
+    },
+    /**
+     * Records the server targeted by a refresh.
+     * @param profileId Server to refresh.
+     * @returns A resolved acknowledgement.
+     */
+    async refreshPerformanceMonitor(profileId: string) {
+      controls.push([profileId])
+    },
+  }
+  Object.defineProperty(window, 'remoteFiles', { configurable: true, value: api })
+
+  /**
+   * Creates a snapshot with the requested server and version.
+   * @param profileId Target server configuration.
+   * @param version Snapshot sequence number.
+   * @param enabled Whether monitoring is enabled.
+   * @returns The simulated server state.
+   */
+  function snapshot(profileId: string, version: number, enabled: boolean): PerformanceMonitorState {
+    return { profileId, version, connected: true, enabled, sampling: false, metrics: {} }
+  }
+
+  /** Throws if an IPC action unexpectedly fails during the test. */
+  function showToast() { assert.fail('Unexpected monitor IPC error') }
+
+  /**
+   * Exposes the hook through controls and a visible snapshot for assertions.
+   * @param props Selected server configuration.
+   * @returns A small renderer using the shared monitor hook.
+   */
+  function MonitorHarness({ profileId }: { profileId: string }) {
+    const monitor = usePerformanceMonitoring(profileId, showToast)
+    return <>
+      <output>{monitor.state && `${monitor.state.profileId}:${monitor.state.version}:${monitor.state.enabled}`}</output>
+      <button id="panel" onClick={() => monitor.setPanelOpen(true)} aria-expanded={monitor.panelOpen} />
+      <button id="enable" onClick={() => monitor.setEnabled(true)} />
+      <button id="refresh" onClick={monitor.refresh} />
+    </>
+  }
+
+  /**
+   * Selects the specified server in the test renderer.
+   * @param profileId Newly selected configuration.
+   */
+  function select(profileId: string) {
+    act(() => root.render(createElement(MonitorHarness, { profileId })))
+  }
+
+  try {
+    select('a')
+    act(() => listener!(snapshot('a', 5, true)))
+    act(() => host.querySelector<HTMLButtonElement>('#panel')!.click())
+    select('a')
+    assert.equal(host.querySelector('#panel')?.getAttribute('aria-expanded'), 'true')
+
+    select('b')
+    assert.equal(host.querySelector('#panel')?.getAttribute('aria-expanded'), 'false')
+    act(() => {
+      listener!(snapshot('b', 7, false))
+      listener!(snapshot('a', 8, true))
+    })
+    await act(async () => {
+      pending.get('a')!(snapshot('a', 1, false))
+      pending.get('b')!(snapshot('b', 6, true))
+    })
+    assert.equal(host.querySelector('output')?.textContent, 'b:7:false')
+
+    select('a')
+    assert.equal(host.querySelector('output')?.textContent, 'a:8:true')
+    assert.equal(host.querySelector('#panel')?.getAttribute('aria-expanded'), 'false')
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('#enable')!.click()
+      host.querySelector<HTMLButtonElement>('#refresh')!.click()
+    })
+    assert.deepEqual(controls, [['a', true], ['a']])
+    assert.equal(host.querySelector('output')?.textContent, 'a:100:true')
+  } finally {
+    act(() => root.unmount())
+    Reflect.deleteProperty(window, 'remoteFiles')
   }
 })

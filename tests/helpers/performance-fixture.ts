@@ -46,7 +46,7 @@ export function performanceUiFixture(coreCount = 8): PerformanceMonitorState {
   /** Wraps value in a successful metric snapshot with the common fixture timestamp. */
   const metric = <T>(value: T) => ({ latest: { sampledAt, value }, error: null })
   return {
-    sessionId: 'files', version: 1, enabled: true, sampling: false,
+    profileId: 'server', connected: true, version: 1, enabled: true, sampling: false,
     metrics: {
       cpu: metric({ percent: 100 / coreCount, logical: Array.from({ length: coreCount }, (_, id) => ({ id, percent: id === 0 ? 100 : 0 })) }),
       memory: metric({ totalBytes: 8 * gibibyte, usedBytes: 4 * gibibyte, availableBytes: 4 * gibibyte, percent: 50 }),

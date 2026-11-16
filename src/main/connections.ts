@@ -14,7 +14,7 @@ import { getMainWindow, sessions, type ActiveSession } from './runtime'
 import { endpointKey, passwordFor, profileFromState, readState } from './state-store'
 import { clearPreviewAssetsForSession } from './previews'
 import { cancelRemoteOperationsForSession } from './remote-operations'
-import { removePerformanceMonitorForSession } from './performance-monitor'
+import { registerPerformanceConnection, unregisterPerformanceConnection } from './performance-monitor'
 import { cancelClientTasks, runRemoteCommand } from './ssh-commands'
 import { filesSession, listRemoteDirectory } from './remote-fs'
 import { verifyFileSessionCapabilities } from './file-session-capabilities'
@@ -31,11 +31,16 @@ function sendConnectionClosed(sessionId: string, profileId: string, message: Mes
   }
 }
 
+/**
+ * Releases a failed connection and reports the reason to its workspace tab.
+ * @param activeSession Exact connection that failed.
+ * @param message Reason shown to the user.
+ */
 function failActiveSession(activeSession: ActiveSession, message: MessageValue): void {
   if (sessions.get(activeSession.sessionId) !== activeSession) return
   sessions.delete(activeSession.sessionId)
+  unregisterPerformanceConnection(activeSession)
   void revokeFileIdentity(activeSession)
-  removePerformanceMonitorForSession(activeSession.sessionId)
   void cancelRemoteOperationsForSession(activeSession.sessionId)
   failScriptExecutionsForSession(activeSession.sessionId, message)
   failNameSearchesForSession(activeSession.sessionId, message)
@@ -46,8 +51,12 @@ function failActiveSession(activeSession: ActiveSession, message: MessageValue):
   sendConnectionClosed(activeSession.sessionId, activeSession.profileId, message)
 }
 
+/**
+ * Stops a pending or live session and releases its connection resources.
+ * @param sessionId Session to stop.
+ * @returns A promise that resolves once the connection has been closed or was absent.
+ */
 export function stopSession(sessionId: string): Promise<void> {
-  removePerformanceMonitorForSession(sessionId)
   pendingConnections.get(sessionId)?.cancel()
   cancelNameSearchesForSession(sessionId)
   cancelContentSearchesForSession(sessionId)
@@ -57,9 +66,10 @@ export function stopSession(sessionId: string): Promise<void> {
   clearPreviewAssetsForSession(sessionId)
   const activeSession = sessions.get(sessionId)
   if (!activeSession) return Promise.resolve()
+  sessions.delete(sessionId)
+  unregisterPerformanceConnection(activeSession)
   const commands = cancelClientTasks(activeSession.client)
   const fileCommands = revokeFileIdentity(activeSession)
-  sessions.delete(sessionId)
   return Promise.all([commands, fileCommands, remoteOperations, ...transfers.map((transfer) => transfer.settled)])
     .then(() => { activeSession.client.end() })
 }
@@ -131,6 +141,12 @@ export function connectProfile(
         finish({ ok: false, reason: 'other', message: msg('errors.connectionCancelled') })
         return
       }
+      /**
+       * Registers the initialized session and completes the connection attempt.
+       * @param shell Interactive channel for a terminal session.
+       * @param effectiveUid Login UID for a file session.
+       * @param initialOutput Buffered terminal output to display on activation.
+       */
       const activate = (shell?: ActiveSession['shell'], effectiveUid?: number, initialOutput?: Buffer) => {
         if (!isCurrentAttempt()) {
           finish({ ok: false, reason: 'other', message: msg('errors.connectionCancelled') })
@@ -139,6 +155,7 @@ export function connectProfile(
         const activeSession: ActiveSession = { sessionId, client, kind, profileId, shell, hostFingerprint }
         const fileIdentity = effectiveUid === undefined ? undefined : initializeFileIdentity(activeSession, effectiveUid)
         sessions.set(sessionId, activeSession)
+        registerPerformanceConnection(activeSession)
         if (shell) {
           const stdoutDecoder = new StringDecoder('utf8')
           const stderrDecoder = new StringDecoder('utf8')
