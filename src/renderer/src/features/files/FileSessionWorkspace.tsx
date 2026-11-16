@@ -8,7 +8,7 @@ import ConfirmationDialog from '@/components/ConfirmationDialog'
 import LogPreviewDialog from '@/components/previews/LogPreviewDialog'
 import PreviewDialog from '@/components/previews/PreviewDialog'
 import type { PreviewSearchHandle } from '@/components/previews/usePreviewSearch'
-import SearchDialog from '@/features/search/SearchDialog'
+import SearchDialog, { type SearchDialogHandle } from '@/features/search/SearchDialog'
 import { usePreview } from '@/hooks/usePreview'
 import type { ScriptExecutionDialogState, SessionTab } from '@/app-types'
 import type { FileContextMenuContext, FileMenuAction } from './file-menu'
@@ -17,6 +17,7 @@ import ScriptSessionDialogs from './ScriptSessionDialogs'
 import FileOpenDialog from './FileOpenDialog'
 
 export interface SessionFileWorkspaceActions {
+  toggleSearch: () => void
   requestSearch: (preferTextSearch?: boolean) => void
   openFile: (entry: Pick<RemoteEntry, 'name' | 'path'>) => void
   previewFile: (entry: Pick<RemoteEntry, 'name' | 'path'>, type: PreviewType) => Promise<void>
@@ -76,6 +77,7 @@ export default function FileSessionWorkspace({
   const [confirmDiscardForSearch, setConfirmDiscardForSearch] = useState(false)
   const [fileToOpen, setFileToOpen] = useState<Pick<RemoteEntry, 'name' | 'path'> | null>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
+  const searchDialogRef = useRef<SearchDialogHandle>(null)
   const textSearchRef = useRef<PreviewSearchHandle>(null)
   const previewOpen = Boolean(preview.previewDialog || preview.logPreviewDialog)
   const openFile = useCallback((entry: Pick<RemoteEntry, 'name' | 'path'>) => {
@@ -101,6 +103,12 @@ export default function FileSessionWorkspace({
     if (preview.textDirty) setConfirmDiscardForSearch(true)
     else openSearch()
   }, [active, fileToOpen, confirmDiscardForSearch, openSearch, preview.textDirty, preview.textSaveConfirmation, preview.textSaving])
+  /** Opens file search or requests closure through the mounted search dialog. */
+  const toggleSearch = useCallback(() => {
+    if (!active || session.status !== 'connected') return
+    if (searchOpen) searchDialogRef.current?.requestClose()
+    else requestSearch()
+  }, [active, requestSearch, searchOpen, session.status])
   useEffect(() => {
     if (active && searchOpen && !previewOpen && !propertiesOpen && !confirmDiscardForSearch && !fileToOpen) {
       const timer = window.setTimeout(() => (workspaceRef.current?.querySelector<HTMLInputElement>('.search-tab-panel:not([hidden]) .search-query-field input:not(:disabled)') ?? workspaceRef.current?.querySelector<HTMLButtonElement>('.search-modal .modal-close'))?.focus(), 0)
@@ -111,11 +119,12 @@ export default function FileSessionWorkspace({
     onRegisterWorkspaceActions(session.id, {
       previewFile: preview.previewFile,
       previewLogFile: preview.previewLogFile,
+      toggleSearch,
       requestSearch,
       openFile,
     })
     return () => onRegisterWorkspaceActions(session.id, null)
-  }, [onRegisterWorkspaceActions, preview.previewFile, preview.previewLogFile, requestSearch, openFile, session.id])
+  }, [onRegisterWorkspaceActions, preview.previewFile, preview.previewLogFile, toggleSearch, requestSearch, openFile, session.id])
 
   useEffect(() => {
     if (session.status !== 'disconnected') return
@@ -166,6 +175,7 @@ export default function FileSessionWorkspace({
     <div ref={workspaceRef} className={'session-workspace-layer' + (active ? ' active' : '')} aria-hidden={!active}>
       {searchOpen && (
         <SearchDialog
+          ref={searchDialogRef}
           sessionId={session.id}
           profileId={session.profileId}
           currentPath={session.currentPath}

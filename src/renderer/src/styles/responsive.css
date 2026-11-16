@@ -18,8 +18,6 @@
   .performance-summary-button { min-width: 118px; gap: 6px; padding: 0 6px; }
   .performance-summary-item { gap: 0; }
   .performance-summary-item small { display: none; }
-  .upload-button { width: 32px; padding: 0; justify-content: center; font-size: 0; }
-  .upload-button svg { flex: 0 0 auto; }
   .file-table .permission-col { display: none; }
   .file-table th.permission-col, .file-table td.permission-col { display: none; }
   .file-table .name-col { width: 60%; }

@@ -1,6 +1,6 @@
 import { useLanguage } from '@/i18n'
 import { tr } from '@shared/i18n/messages'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { FileSearch, FileText, X } from 'lucide-react'
 import type { FileTypeExtensions } from '@shared/types'
 import ConfirmationDialog from '@/components/ConfirmationDialog'
@@ -9,7 +9,12 @@ import { NameSearchPane } from '@/features/search/NameSearchPane'
 import type { SearchPaneHandle } from '@/features/search/SearchPaneShared'
 import type { FileContextMenuContext, FileMenuAction } from '@/features/files/file-menu'
 
+export interface SearchDialogHandle {
+  requestClose: () => void
+}
+
 interface SearchDialogProps {
+  ref?: Ref<SearchDialogHandle>
   sessionId: string
   profileId: string
   currentPath: string
@@ -22,7 +27,12 @@ interface SearchDialogProps {
 
 type SearchTab = 'name' | 'content'
 
-export default function SearchDialog({ sessionId, profileId, currentPath, visible, previewOpen, fileTypeExtensions, onClose, onMenuAction }: SearchDialogProps) {
+/**
+ * Renders the session's search panes with shared confirmation for closing a running search.
+ * @param props Session context, dialog handle, visibility and event callbacks.
+ * @returns The file search dialog and its optional close confirmation.
+ */
+export default function SearchDialog({ ref, sessionId, profileId, currentPath, visible, previewOpen, fileTypeExtensions, onClose, onMenuAction }: SearchDialogProps) {
   useLanguage()
   const [activeTab, setActiveTab] = useState<SearchTab>('name')
   const [running, setRunning] = useState({ name: false, content: false })
@@ -47,10 +57,13 @@ export default function SearchDialog({ sessionId, profileId, currentPath, visibl
     setMenuOpen((current) => current.content === value ? current : { ...current, content: value })
   }, [])
 
+  /** Closes an idle dialog or asks before cancelling active searches. */
   const requestClose = useCallback(() => {
+    if (stateRef.current.confirmClose) return
     if (stateRef.current.running.name || stateRef.current.running.content) setConfirmClose(true)
     else onClose()
   }, [onClose])
+  useImperativeHandle(ref, () => ({ requestClose }), [requestClose])
 
   useEffect(() => {
     const dismissOnEscape = (event: KeyboardEvent) => {

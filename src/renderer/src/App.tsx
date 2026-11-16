@@ -1,7 +1,7 @@
 import { LocalizedError, type MessageValue, msg, tr } from '@shared/i18n/messages'
 import { useLanguage } from '@/i18n'
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
-import { Bot, Cloud, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, RefreshCw, Search, Settings, Shield, Terminal, Upload } from 'lucide-react'
+import { Bot, Cloud, FileUp, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, RefreshCw, Search, Settings, Shield, Terminal } from 'lucide-react'
 import GlobalToast from './GlobalToast'
 import type { SessionFileWorkspaceActions } from './features/files/FileSessionWorkspace'
 import { useScriptExecution } from './features/files/useScriptExecution'
@@ -589,6 +589,7 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
     patchSession,
     showToast,
   })
+  const searchOpen = connectedSessionId !== null && searchOpenSessionIds.has(connectedSessionId)
   const assistantOpen = Boolean(assistantVisible && connectedSessionId && activeSession?.kind === 'files')
   const assistantStatuses = Object.values(connectedSessionId ? assistantTasks[connectedSessionId] ?? {} : {})
   const assistantStatus = assistantStatuses.find((status) => status === 'pending')
@@ -637,8 +638,11 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
     pasteRemoteEntries: () => pasteRemoteEntries(currentPath, 'force'),
   })
 
-  const openSearch = () => {
-    if (activeSession?.kind === 'files' && activeSession.status === 'connected') workspaceActionsRef.current.get(activeSession.id)?.requestSearch()
+  /** Toggles the active file session's search from the top toolbar. */
+  const toggleSearch = () => {
+    if (!modalOpen && activeSession?.kind === 'files' && activeSession.status === 'connected') {
+      workspaceActionsRef.current.get(activeSession.id)?.toggleSearch()
+    }
   }
 
   const openTerminalForCurrentPath = () => {
@@ -751,7 +755,8 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
                         : activeSession.fileIdentity === 'sudo-root' ? tr('common.leaveRootMode') : tr('common.enterRootMode')}
                   </button>
                 )}
-                <button className="icon-button toolbar-button" title={tr('common.searchFiles')} aria-label={tr('common.searchFiles')} onClick={openSearch}>
+                <button className="icon-button toolbar-button" title={tr('common.searchFiles')} aria-label={tr('common.searchFiles')}
+                  aria-haspopup="dialog" aria-expanded={searchOpen} onClick={toggleSearch}>
                   <Search size={16} />
                 </button>
                 <button className="icon-button toolbar-button"
@@ -762,10 +767,10 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
                 <button className="icon-button toolbar-button" title={tr('common.newSshTerminal')} aria-label={tr('common.newSshTerminal')} disabled={rootRequest?.sessionId === connectedSessionId} onClick={openTerminalForCurrentPath}>
                   <Terminal size={16} />
                 </button>
-                <button className="text-button upload-button" title={tr('common.uploadFilesToTheCurrentDirectory')} aria-label={tr('common.uploadFilesToTheCurrentDirectory')} onClick={() => uploadFiles()}>
-                  <Upload size={15} />{tr('common.uploadFiles')}</button>
-                <button className="text-button upload-button" title={tr('common.uploadAFolderToTheCurrentDirectory')} aria-label={tr('common.uploadAFolderToTheCurrentDirectory')} onClick={() => uploadFolder()}>
-                  <FolderUp size={15} />{tr('common.uploadFolder')}</button>
+                <button className="icon-button toolbar-button upload-button" title={tr('common.uploadFilesToTheCurrentDirectory')} aria-label={tr('common.uploadFilesToTheCurrentDirectory')} onClick={() => uploadFiles()}>
+                  <FileUp size={16} /></button>
+                <button className="icon-button toolbar-button upload-button" title={tr('common.uploadAFolderToTheCurrentDirectory')} aria-label={tr('common.uploadAFolderToTheCurrentDirectory')} onClick={() => uploadFolder()}>
+                  <FolderUp size={16} /></button>
                 <button className="icon-button toolbar-button" title={tr('common.refreshDirectoryF5')} aria-label={tr('common.refreshDirectory')} aria-keyshortcuts="F5" disabled={loading} onClick={refreshDirectory}>
                   <RefreshCw className={loading ? 'spin' : ''} size={17} />
                 </button>

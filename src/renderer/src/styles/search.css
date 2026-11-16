@@ -15,6 +15,7 @@
 .search-dialog-body { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(260px, 310px) minmax(0, 1fr); gap: 20px; }
 .search-controls { min-height: 0; overflow: auto; padding-right: 15px; border-right:1px solid var(--line); }
 .search-controls .field { margin-bottom: 11px; }
+.search-controls .field input:focus { outline-offset: -2px; }
 .search-query-field input { height: 38px; }
 .search-field-error { margin: -5px 0 10px; color:var(--text-danger); font-size: 11px; line-height: 1.45; }
 .search-option-field { margin: 0 0 13px; }
