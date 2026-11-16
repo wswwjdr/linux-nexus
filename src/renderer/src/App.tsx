@@ -1,4 +1,4 @@
-import { type MessageValue, msg, tr } from '@shared/i18n/messages'
+import { LocalizedError, type MessageValue, msg, tr } from '@shared/i18n/messages'
 import { useLanguage } from '@/i18n'
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { Bot, Cloud, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, RefreshCw, Search, Settings, Shield, Terminal, Upload } from 'lucide-react'
@@ -334,6 +334,13 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
     }
   }, [sessionContextMenu])
 
+  /**
+   * Loads a session directory and locates the requested entry when present.
+   * @param sessionId Connected file session to update.
+   * @param remotePath Directory to load.
+   * @param options Whether to suppress errors and which entry to locate or select.
+   * @returns Whether the active request reached the requested directory or selected entry.
+   */
   const loadDirectory = async (sessionId: string, remotePath: string, { quiet = false, reveal }: DirectoryLoadOptions = {}) => {
     if (!sessionsRef.current.some((session) => session.id === sessionId && session.status === 'connected')) return false
     const requestId = (directoryLoadIdsRef.current.get(sessionId) ?? 0) + 1
@@ -344,6 +351,7 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
       if (directoryLoadIdsRef.current.get(sessionId) !== requestId
         || !sessionsRef.current.some((session) => session.id === sessionId && session.status === 'connected')) return false
       const revealedEntry = reveal && nextEntries.find((entry) => entry.path === reveal.path)
+      if (reveal?.select && !revealedEntry) throw new LocalizedError(msg('errors.remoteNavigationTargetUnavailable'))
       updateSession(sessionId, (session) => ({
         ...session,
         entries: nextEntries,

@@ -9,7 +9,7 @@ import { installTextSaveDependencies } from '../previews/text-save-dependencies'
 import { cancelNameSearch, startNameSearch } from '../name-search'
 import { cancelContentSearch, startContentSearch } from '../content-search'
 import { cancelScriptExecution, startScriptExecution } from '../script-execution-runtime'
-import { filesSession, renameRemoteEntry, resolveRemoteSymlink } from '../remote-fs'
+import { filesSession, renameRemoteEntry, resolveRemoteNavigationTarget } from '../remote-fs'
 import { getRemoteDirectoryStats, getRemoteEntryProperties } from '../file-properties'
 import { cancelRemoteDirectoryUsageTree, getRemoteDirectoryUsageTree } from '../directory-usage-tree'
 import { cancelFileRootEntry, enterFileRoot, leaveFileRoot } from '../file-identity'
@@ -28,8 +28,8 @@ export function registerFilesIpc(): void {
     cancelRemoteDirectoryUsageTree(requestId))
   ipcMain.handle('files:list', (_event, sessionId: string, remotePath: string) =>
     listDirectory(sessionId, remotePath))
-  ipcMain.handle('files:resolve-symlink', (_event, sessionId: string, remotePath: string) =>
-    resolveRemoteSymlink(sessionId, remotePath))
+  ipcMain.handle('files:resolve-navigation-target', (_event, sessionId: string, remotePath: string) =>
+    resolveRemoteNavigationTarget(sessionId, remotePath))
   ipcMain.handle('files:name-search', (_event, request: NameSearchRequest) => startNameSearch(request))
   ipcMain.handle('files:name-search-cancel', (_event, requestId: string) => cancelNameSearch(requestId))
   ipcMain.handle('files:content-search', (_event, request: ContentSearchRequest) => startContentSearch(request))

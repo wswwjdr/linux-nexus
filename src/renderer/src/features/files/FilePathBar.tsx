@@ -21,9 +21,15 @@ interface FilePathBarProps {
   entryCount: number
   onViewModeChange: (mode: FileViewMode) => void
   onNavigate: (path: string) => Promise<boolean>
+  onSubmitPath: (path: string) => Promise<boolean>
 }
 
-function PathEditor({ sessionId, currentPath, onNavigate, onClose }: Pick<FilePathBarProps, 'sessionId' | 'currentPath' | 'onNavigate'> & { onClose: () => void }) {
+/**
+ * Edits a remote path and submits it with directory completion available.
+ * @param props Session, current path, submit handler and close handler for this editor.
+ * @returns The path editor form.
+ */
+function PathEditor({ sessionId, currentPath, onSubmitPath, onClose }: Pick<FilePathBarProps, 'sessionId' | 'currentPath' | 'onSubmitPath'> & { onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -58,13 +64,17 @@ function PathEditor({ sessionId, currentPath, onNavigate, onClose }: Pick<FilePa
     return () => document.removeEventListener('pointerdown', dismissOutside, true)
   }, [onClose])
 
+  /**
+   * Submits the draft and closes the editor when navigation succeeds.
+   * @param event Path form submission.
+   */
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (submitting) return
     completion.dismiss()
     setSubmitting(true)
     try {
-      if (await onNavigate(draft) && mounted.current) onClose()
+      if (await onSubmitPath(draft) && mounted.current) onClose()
     } finally {
       if (mounted.current) setSubmitting(false)
     }
@@ -145,6 +155,11 @@ export default function FilePathBar(props: FilePathBarProps) {
   return <FilePathBarContent key={JSON.stringify([props.sessionId, props.fileIdentity, props.currentPath])} {...props} />
 }
 
+/**
+ * Renders directory navigation controls and the editable path field.
+ * @param props Current file browser location, view state and handlers.
+ * @returns The file browser path bar.
+ */
 function FilePathBarContent({
   sessionId,
   currentPath,
@@ -153,6 +168,7 @@ function FilePathBarContent({
   entryCount,
   onViewModeChange,
   onNavigate,
+  onSubmitPath,
 }: FilePathBarProps) {
   useLanguage()
   const [pathEditing, setPathEditing] = useState(false)
@@ -167,7 +183,7 @@ function FilePathBarContent({
         <ArrowUp size={16} />
       </button>
       {pathEditing ? (
-        <PathEditor sessionId={sessionId} currentPath={currentPath} onNavigate={onNavigate} onClose={closeEditor} />
+        <PathEditor sessionId={sessionId} currentPath={currentPath} onSubmitPath={onSubmitPath} onClose={closeEditor} />
       ) : (
         <>
           <nav className="breadcrumbs" aria-label={tr('files.currentPath')}>

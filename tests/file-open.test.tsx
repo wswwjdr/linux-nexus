@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { act, createElement, Fragment, useState } from 'react'
 import { JSDOM } from 'jsdom'
-import type { FileTypeExtensions, PreviewResult, RemoteEntry, RemoteFilesApi, RemoteSymlinkTarget } from '../src/shared/types.ts'
+import type { FileTypeExtensions, PreviewResult, RemoteEntry, RemoteFilesApi, RemoteNavigationTarget } from '../src/shared/types.ts'
 import { defaultFileTypeExtensions } from '../src/shared/app-settings.ts'
 import FileBrowser from '../src/renderer/src/features/files/FileBrowser.tsx'
 import FileSessionWorkspace, { type SessionFileWorkspaceActions } from '../src/renderer/src/features/files/FileSessionWorkspace.tsx'
@@ -56,13 +56,15 @@ async function mount(viewMode: 'details' | 'icons' = 'details') {
   let current = 'first'
   let extensions = defaultFileTypeExtensions()
   const targetFile = { ...entry('os-release'), path: '/srv/releases/os-release' }
-  let resolveDirectoryLink = async (): Promise<RemoteSymlinkTarget> => ({ type: 'directory', path: '/srv/releases/v1' })
+  let resolveDirectoryLink = async (): Promise<RemoteNavigationTarget> => ({ type: 'directory', path: '/srv/releases/v1' })
   window.remoteFiles = {
-    resolveRemoteSymlink: async (sessionId: string, path: string): Promise<RemoteSymlinkTarget> => {
+    resolveRemoteNavigationTarget: async (sessionId: string, path: string): Promise<RemoteNavigationTarget> => {
       linkRequests.push({ sessionId, path })
       if (path === '/srv/current') return resolveDirectoryLink()
       if (path === '/srv/file-link') return { type: 'file', path: targetFile.path }
-      throw new LocalizedError(msg('errors.remoteSymlinkTargetUnavailable'))
+      if (path === '/srv/folder') return { type: 'directory', path }
+      if (path === targetFile.path) return { type: 'file', path }
+      throw new LocalizedError(msg('errors.remoteNavigationTargetUnavailable'))
     },
     previewFile: async (sessionId: string, path: string, type: string): Promise<PreviewResult> => {
       calls.push({ sessionId, path, type })
@@ -115,7 +117,7 @@ async function mount(viewMode: 'details' | 'icons' = 'details') {
     await flush()
   }
   return { host, calls, notices, navigated, linkRequests, contexts, actions, blocking, opened, sessions, render, row, flush, doubleClick,
-    setDirectoryLinkResolver(resolve: () => Promise<RemoteSymlinkTarget>) { resolveDirectoryLink = resolve },
+    setDirectoryLinkResolver(resolve: () => Promise<RemoteNavigationTarget>) { resolveDirectoryLink = resolve },
     unmount() { act(() => root.unmount()); host.remove() } }
 }
 
@@ -159,7 +161,7 @@ for (const view of ['details', 'icons'] as const) {
       assert.deepEqual(fixture.navigated, ['/srv/releases/v1', '/srv/releases/v2'])
       await fixture.doubleClick(fixture.row('broken'))
       assert.equal(fixture.notices.length, 1)
-      assert.match(fixture.notices[0], /无法访问符号链接目标/)
+      assert.match(fixture.notices[0], /无法访问目标路径/)
       await fixture.doubleClick(fixture.row('file-link'))
       assert.deepEqual(fixture.navigated, ['/srv/releases/v1', '/srv/releases/v2', '/srv/releases'])
       const target = fixture.row('releases/os-release')
@@ -175,7 +177,7 @@ for (const view of ['details', 'icons'] as const) {
 test('ignores a pending link resolution after switching sessions', async () => {
   const fixture = await mount()
   try {
-    const pending = Promise.withResolvers<RemoteSymlinkTarget>()
+    const pending = Promise.withResolvers<RemoteNavigationTarget>()
     fixture.setDirectoryLinkResolver(() => pending.promise)
     await fixture.doubleClick(fixture.row('current'))
     assert.deepEqual(fixture.linkRequests, [{ sessionId: 'first', path: '/srv/current' }])
@@ -184,6 +186,43 @@ test('ignores a pending link resolution after switching sessions', async () => {
     await fixture.flush()
     assert.deepEqual(fixture.navigated, [])
   } finally { fixture.unmount() }
+})
+
+test('address bar enters directories and selects files in their parent directory', async (t) => {
+  const fixture = await mount()
+  t.after(fixture.unmount)
+  /**
+   * Submits a path through the browser's address bar.
+   * @param path Remote path to type into the editor.
+   */
+  const submitPath = async (path: string) => {
+    mouse(fixture.host.querySelector('.path-edit-button')!, 'click')
+    const input = fixture.host.querySelector<HTMLInputElement>('.path-edit-input')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!.call(input, path)
+      input.dispatchEvent(new dom.window.InputEvent('input', { bubbles: true }))
+    })
+    await act(async () => {
+      input.form!.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }))
+    })
+  }
+
+  await submitPath('/srv/folder')
+  assert.deepEqual(fixture.navigated, ['/srv/folder'])
+  assert.equal(fixture.host.querySelector('.path-edit-input'), null)
+
+  await submitPath('/srv/releases/os-release')
+  assert.deepEqual(fixture.navigated, ['/srv/folder', '/srv/releases'])
+  assert.equal(fixture.host.querySelector('.path-edit-input'), null)
+  const row = fixture.row('releases/os-release')
+  assert.equal(row.querySelector('button')?.getAttribute('aria-pressed'), 'true')
+  assert.equal(document.activeElement, row)
+  assert.deepEqual(fixture.calls, [])
+
+  await submitPath('/srv/missing')
+  assert.deepEqual(fixture.navigated, ['/srv/folder', '/srv/releases'])
+  assert.equal(fixture.host.querySelector<HTMLInputElement>('.path-edit-input')?.value, '/srv/missing')
+  assert.match(fixture.notices[0], /无法访问目标路径/)
 })
 
 test('multiple previews require a choice; keyboard, cancellation and focus restoration work', async () => {

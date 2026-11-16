@@ -69,10 +69,10 @@ export default function FileBrowser({
   const contentRef = useRef<HTMLDivElement>(null)
   const hoverCardRef = useRef<HTMLDivElement>(null)
   const hoverTimerRef = useRef<number | null>(null)
-  const pendingLinkOpen = useRef<symbol | null>(null)
+  const pendingNavigation = useRef<symbol | null>(null)
   useLayoutEffect(() => () => {
-    pendingLinkOpen.current = null
-  }, [sessionId, currentPath, loading])
+    pendingNavigation.current = null
+  }, [sessionId, fileIdentity, currentPath, loading])
   const [hoveredEntry, setHoveredEntry] = useState<{
     entry: RemoteEntry
     anchorLeft: number
@@ -129,25 +129,48 @@ export default function FileBrowser({
     setHoveredEntry(null)
   }
 
-  const openEntry = async (entry: RemoteEntry) => {
-    cancelEntryDetails()
-    pendingLinkOpen.current = null
-    if (entry.type === 'directory') void onNavigate(entry.path)
-    else if (entry.type === 'file') onOpenFile(entry)
-    else if (entry.type === 'symlink' && !loading) {
-      const request = Symbol()
-      pendingLinkOpen.current = request
-      try {
-        const target = await window.remoteFiles.resolveRemoteSymlink(sessionId, entry.path)
-        if (pendingLinkOpen.current !== request) return
-        if (target.type === 'directory') void onNavigate(target.path)
-        else void onNavigate(getParentPath(target.path), { path: target.path, select: true })
-      } catch (error) {
-        if (pendingLinkOpen.current === request) onError(error)
-      } finally {
-        if (pendingLinkOpen.current === request) pendingLinkOpen.current = null
-      }
+  /**
+   * Navigates to a known directory and supersedes any pending path resolution.
+   * @param path Directory to load.
+   * @param reveal Entry to locate after the directory loads.
+   * @returns Whether the directory was loaded successfully.
+   */
+  const navigateDirectory = (path: string, reveal?: DirectoryLoadOptions['reveal']) => {
+    pendingNavigation.current = null
+    return onNavigate(path, reveal)
+  }
+
+  /**
+   * Resolves a submitted path or symbolic link and navigates to its target.
+   * @param path Remote path to resolve.
+   * @returns Whether the directory or file target was reached.
+   */
+  const navigateToPath = async (path: string): Promise<boolean> => {
+    const request = Symbol()
+    pendingNavigation.current = request
+    try {
+      const target = await window.remoteFiles.resolveRemoteNavigationTarget(sessionId, path)
+      if (pendingNavigation.current !== request) return false
+      if (target.type === 'directory') return navigateDirectory(target.path)
+      return navigateDirectory(getParentPath(target.path), { path: target.path, select: true })
+    } catch (error) {
+      if (pendingNavigation.current === request) onError(error)
+      return false
+    } finally {
+      if (pendingNavigation.current === request) pendingNavigation.current = null
     }
+  }
+
+  /**
+   * Opens a browser entry using its type-specific interaction.
+   * @param entry Entry activated in the file list.
+   */
+  const openEntry = (entry: RemoteEntry) => {
+    cancelEntryDetails()
+    pendingNavigation.current = null
+    if (entry.type === 'directory') void navigateDirectory(entry.path)
+    else if (entry.type === 'file') onOpenFile(entry)
+    else if (entry.type === 'symlink' && !loading) void navigateToPath(entry.path)
   }
 
   const hideEntryDetailsOnBlur = (event: ReactFocusEvent<HTMLElement>) => {
@@ -286,7 +309,8 @@ export default function FileBrowser({
         viewMode={viewMode}
         entryCount={entries.length}
         onViewModeChange={onViewModeChange}
-        onNavigate={onNavigate}
+        onNavigate={navigateDirectory}
+        onSubmitPath={navigateToPath}
       />
       <div
         className={'file-content-wrap' + (selectionRectangle ? ' selecting' : '')}
@@ -323,7 +347,7 @@ export default function FileBrowser({
           onEntryDragOver={handleEntryDragOver}
           onEntryDragLeave={handleEntryDragLeave}
           onEntryDrop={handleEntryDrop}
-          onOpenEntry={(entry) => void openEntry(entry)}
+          onOpenEntry={openEntry}
           onTileMouseEnter={scheduleEntryDetails}
           onTileMouseLeave={(event) => {
             if (event.relatedTarget instanceof Node && hoverCardRef.current?.contains(event.relatedTarget)) return

@@ -35,7 +35,8 @@ async function mount() {
   } as Pick<RemoteFilesApi, 'listDirectory'> as RemoteFilesApi
   let props: ComponentProps<typeof FilePathBar> = {
     sessionId: 'first', fileIdentity: 'login', currentPath: '/srv', breadcrumbs: [], viewMode: 'details', entryCount: 4,
-    onViewModeChange: () => {}, onNavigate: async (path) => { navigations.push(path); return true },
+    onViewModeChange: () => {}, onNavigate: async () => true,
+    onSubmitPath: async (path) => { navigations.push(path); return true },
   }
   const render = (patch: Partial<typeof props> = {}) => {
     props = { ...props, ...patch }
@@ -191,7 +192,7 @@ test('empty directories and read errors remain visible and do not block manual n
   ui.change('/missing/')
   await ui.reject(2, new LocalizedError(msg('errors.invalidRemotePath')))
   assert.match(ui.host.textContent!, /无法读取目录提示/)
-  ui.render({ onNavigate: async () => false })
+  ui.render({ onSubmitPath: async () => false })
   await ui.submit()
   assert.equal(ui.input().value, '/missing/')
   assert.equal(ui.input().disabled, false)
@@ -243,7 +244,7 @@ test('an old navigation result cannot close a newly opened editor', async (t) =>
   const ui = await mount()
   t.after(ui.cleanup)
   let finish!: (success: boolean) => void
-  ui.render({ onNavigate: () => new Promise<boolean>(resolve => { finish = resolve }) })
+  ui.render({ onSubmitPath: () => new Promise<boolean>(resolve => { finish = resolve }) })
   ui.edit()
   ui.change('/next')
   await ui.submit()

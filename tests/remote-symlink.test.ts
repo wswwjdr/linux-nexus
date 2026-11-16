@@ -6,14 +6,14 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import test from 'node:test'
 import type { Client, ClientChannel } from 'ssh2'
-import { filesSession, listRemoteDirectory, resolveRemoteSymlink } from '../src/main/remote-fs.ts'
+import { filesSession, listRemoteDirectory, resolveRemoteNavigationTarget } from '../src/main/remote-fs.ts'
 import { sessions } from '../src/main/runtime.ts'
 
 const git = process.platform === 'win32' ? spawnSync('where.exe', ['git'], { encoding: 'utf8' }).stdout?.trim().split(/\r?\n/)[0] : undefined
 const bash = process.env.LINUX_NEXUS_TEST_BASH ?? (git ? resolve(dirname(git), '../bin/bash.exe') : 'bash')
 const hasReadlink = spawnSync(bash, ['-c', 'readlink --canonicalize-existing --zero -- .']).status === 0
 
-test('resolves relative and chained links using the remote filesystem and reports unavailable targets', { skip: !hasReadlink && 'Bash and GNU readlink are required' }, async () => {
+test('resolves directories, files and symbolic links for navigation using the remote filesystem', { skip: !hasReadlink && 'Bash and GNU readlink are required' }, async () => {
   const directory = mkdtempSync(join(tmpdir(), 'linux-nexus-symlink-'))
   const sessionId = 'symlink-session'
   const client = new EventEmitter() as Client & EventEmitter
@@ -54,9 +54,18 @@ readlink --canonicalize-existing --zero -- .
       ['broken', 'symlink', undefined], ['chained', 'symlink', 'directory'], ['current', 'symlink', 'directory'],
       ['device', 'symlink', undefined], ['file-link', 'symlink', 'file'], ['loop', 'symlink', undefined],
     ])
-    const resolveLink = (name: string) => resolveRemoteSymlink(sessionId, `${remoteRoot}/${name}`)
+    /**
+     * Looks up a navigation target within the test directory.
+     * @param name Path relative to the fixture directory.
+     * @returns The remote path and type.
+     */
+    const resolveTarget = (name: string) => resolveRemoteNavigationTarget(sessionId, `${remoteRoot}/${name}`)
+    assert.deepEqual(await resolveTarget('releases/v1/'), { type: 'directory', path: `${remoteRoot}/releases/v1` })
+    const regularFile = "releases/owner's notes.txt"
+    assert.deepEqual(await resolveTarget(regularFile), { type: 'file', path: `${remoteRoot}/${regularFile}` })
+    await assert.rejects(listRemoteDirectory(filesSession(sessionId).commands, `${remoteRoot}/${regularFile}`))
     for (const name of ['current', 'chained']) {
-      assert.deepEqual(await resolveLink(name), { type: 'directory', path: `${remoteRoot}/releases/v1` })
+      assert.deepEqual(await resolveTarget(name), { type: 'directory', path: `${remoteRoot}/releases/v1` })
       const children = await listRemoteDirectory(filesSession(sessionId).commands, `${remoteRoot}/${name}/`)
       assert.deepEqual(children.map(({ name, path, type }) => ({ name, path, type })), [
         { name: 'child', path: `${remoteRoot}/${name}/child`, type: 'directory' },
@@ -64,10 +73,10 @@ readlink --canonicalize-existing --zero -- .
     }
     const updated = spawnSync(bash, ['-c', 'export MSYS=winsymlinks:sys; ln -sfn releases/v2/ current'], { cwd: directory, encoding: 'utf8', timeout: 10_000 })
     assert.equal(updated.status, 0, updated.stderr)
-    assert.deepEqual(await resolveLink('current'), { type: 'directory', path: `${remoteRoot}/releases/v2` })
-    assert.deepEqual(await resolveLink('file-link'), { type: 'file', path: `${remoteRoot}/releases/owner's notes.txt` })
-    for (const name of ['broken', 'loop']) await assert.rejects(resolveLink(name), /无法访问符号链接目标/)
-    await assert.rejects(resolveLink('device'), /符号链接只能打开普通文件或文件夹/)
+    assert.deepEqual(await resolveTarget('current'), { type: 'directory', path: `${remoteRoot}/releases/v2` })
+    assert.deepEqual(await resolveTarget('file-link'), { type: 'file', path: `${remoteRoot}/${regularFile}` })
+    for (const name of ['missing', 'broken', 'loop']) await assert.rejects(resolveTarget(name), /无法访问目标路径/)
+    await assert.rejects(resolveTarget('device'), /导航目标必须是普通文件或目录/)
   } finally {
     sessions.delete(sessionId)
     rmSync(directory, { recursive: true, force: true })

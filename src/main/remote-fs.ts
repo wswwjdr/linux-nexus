@@ -1,6 +1,6 @@
 import { formatLocale, msg, LocalizedError } from '../shared/i18n/messages'
 import { posix } from 'node:path'
-import type { RemoteEntry, RemoteSymlinkTarget } from '@shared/types'
+import type { RemoteEntry, RemoteNavigationTarget } from '@shared/types'
 import { sessions } from './runtime'
 import { fileCommands } from './file-identity'
 import { runRemoteCommand, type RemoteCommandTarget } from './ssh-commands'
@@ -16,22 +16,33 @@ export function normalizedRemotePath(remotePath: string): string {
   return posix.resolve('/', remotePath)
 }
 
-export async function resolveRemoteSymlink(sessionId: string, remotePath: string): Promise<RemoteSymlinkTarget> {
+/**
+ * Resolves a path for file browser navigation, following a symbolic link at the target.
+ * @param sessionId Connected file session that supplies the remote filesystem and identity.
+ * @param remotePath Path to resolve from the remote root.
+ * @returns The normalized directory or regular file path and its type.
+ */
+export async function resolveRemoteNavigationTarget(sessionId: string, remotePath: string): Promise<RemoteNavigationTarget> {
   const session = filesSession(sessionId)
   const path = normalizedRemotePath(remotePath)
   const { stdout } = await runRemoteCommand(session.commands, [
-    'if [[ ! -L "$1" ]] || ! IFS= read -r -d "" target < <(readlink --canonicalize-existing --zero -- "$1"); then',
-    '  printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:symlinkTargetUnavailable" >&2; exit 1',
+    'target=$1',
+    'if [[ -L "$1" ]] && ! IFS= read -r -d "" target < <(readlink --canonicalize-existing --zero -- "$1"); then',
+    '  printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:navigationTargetUnavailable" >&2; exit 1',
     'fi',
-    'if [[ -d "$target" ]]; then kind=d; elif [[ -f "$target" ]]; then kind=f; else',
-    '  printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:symlinkTargetUnsupported" >&2; exit 1',
+    'if [[ -d "$target" ]]; then kind=d',
+    'elif [[ -f "$target" ]]; then kind=f',
+    'elif [[ -e "$target" ]]; then',
+    '  printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:navigationTargetUnsupported" >&2; exit 1',
+    'else',
+    '  printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:navigationTargetUnavailable" >&2; exit 1',
     'fi',
     'printf "%s\\0%s\\0" "$kind" "$target"',
   ].join('\n'), [path])
   const fields = nulFields(stdout)
   const [kind, target] = fields
   if (fields.length !== 2 || stdout.at(-1) !== 0 || (kind !== 'd' && kind !== 'f') || !posix.isAbsolute(target) || posix.resolve(target) !== target) {
-    throw new LocalizedError(msg('errors.serverReturnedInvalidSymlinkTarget'))
+    throw new LocalizedError(msg('errors.serverReturnedInvalidNavigationTarget'))
   }
   return { type: kind === 'd' ? 'directory' : 'file', path: target }
 }
@@ -73,10 +84,16 @@ function remoteType(kind: string): RemoteEntry['type'] {
   return kind === 'd' ? 'directory' : kind === 'f' ? 'file' : kind === 'l' ? 'symlink' : 'other'
 }
 
+/**
+ * Lists the direct children of a remote directory.
+ * @param client Command target that supplies the remote filesystem and identity.
+ * @param remotePath Directory to read, including a symbolic link to a directory.
+ * @returns Entries addressed through the requested directory path.
+ */
 export async function listRemoteDirectory(client: RemoteCommandTarget, remotePath: string): Promise<RemoteEntry[]> {
   const normalizedPath = normalizedRemotePath(remotePath)
   const { stdout } = await runRemoteCommand(client,
-    'find -H -- "$1" -mindepth 1 -maxdepth 1 -printf \'%f\\0%y\\0%Y\\0%s\\0%T@\\0%m\\0\'',
+    'cd -P -- "$1" && exec find -- . -mindepth 1 -maxdepth 1 -printf \'%f\\0%y\\0%Y\\0%s\\0%T@\\0%m\\0\'',
     [normalizedPath],
   )
   const fields = nulFields(stdout)
