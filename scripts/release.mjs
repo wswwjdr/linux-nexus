@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { lstat, readFile, realpath, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { load } from 'js-yaml'
@@ -28,9 +29,17 @@ function run(command, args) {
  * @param {string} major Maintainer-selected major version.
  */
 function pushTag(major) {
+  if (!run('git', ['ls-tree', '--name-only', 'HEAD', '--', publicKeyPath])) {
+    const nextStep = existsSync(publicKeyPath)
+      ? `The public key exists locally. Commit ${publicKeyPath} before tagging.`
+      : `Generate a signing key with npm run release:key, then commit ${publicKeyPath}. See README.md for setup.`
+    console.error(nextStep)
+    console.error('Configure UPDATE_SIGNING_KEY in GitHub Actions before retrying.')
+    process.exitCode = 1
+    return
+  }
   const tag = createReleaseTag(major)
   const ref = `refs/tags/${tag}`
-  run('git', ['cat-file', '-e', `HEAD:${publicKeyPath}`])
   if (run('git', ['tag', '--list', tag]) || run('git', ['ls-remote', '--tags', 'origin', ref])) {
     throw new Error(`Tag ${tag} already exists. Use the next Beijing minute for a new release.`)
   }
