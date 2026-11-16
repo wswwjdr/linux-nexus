@@ -1,4 +1,5 @@
 import { type MessageValue, msg, renderMessage, tr } from '@shared/i18n/messages'
+import { shellQuoteIfNeeded } from '@shared/shell'
 import { useLanguage } from '@/i18n'
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type UIEvent } from 'react'
 import { CheckCircle2, CircleX, LoaderCircle, Square, X } from 'lucide-react'
@@ -20,6 +21,11 @@ const statusLabels: Record<ScriptExecutionDialogState['status'], MessageValue> =
   failed: msg('common.executionFailed'),
 }
 
+/**
+ * 显示脚本命令、执行状态和实时输出。
+ * @param props 弹窗是否处于活动会话、当前执行状态以及关闭和停止回调。
+ * @returns 脚本执行弹窗。
+ */
 export default function ScriptExecutionDialog({ active, execution, onClose, onStop }: ScriptExecutionDialogProps) {
   useLanguage()
   const outputRef = useRef<HTMLPreElement>(null)
@@ -28,6 +34,8 @@ export default function ScriptExecutionDialog({ active, execution, onClose, onSt
   const outputSizeRef = useRef({ width: 0, height: 0 })
   const [atBottom, setAtBottom] = useState(true)
   const isRunning = execution.status === 'starting' || execution.status === 'running' || execution.status === 'cancelling'
+  const { scriptPath, command } = execution.request
+  const showScriptPath = command !== scriptPath && command !== shellQuoteIfNeeded(scriptPath)
   onCloseRef.current = onClose
 
   useEffect(() => {
@@ -80,14 +88,14 @@ export default function ScriptExecutionDialog({ active, execution, onClose, onSt
         <div className="modal-heading">
           <div className="script-execution-heading-copy">
             <h2 id={`script-execution-title-${execution.request.sessionId}`}>{execution.name}</h2>
-            <div className="script-command-file" title={execution.request.scriptPath}>{execution.request.scriptPath}</div>
+            {showScriptPath && <div className="script-command-file" title={scriptPath}>{scriptPath}</div>}
           </div>
           <button className="icon-button modal-close" title={tr('common.close')} aria-label={tr('common.closeExecutionWindow')} onClick={onClose}><X size={18} /></button>
         </div>
 
         <div className="script-execution-command">
           <span>{tr('common.command')}</span>
-          <code>{execution.request.command}</code>
+          <code>{command}</code>
         </div>
 
         <div className={'script-execution-status ' + execution.status} role="status">
