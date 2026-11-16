@@ -15,7 +15,7 @@ The defaults are 100 model steps per request and a 120-second timeout per model 
 
 ## Run a task
 
-Open the Assistant from the file manager toolbar. The task includes the current remote directory and selected files. Ask for a project’s backend port, a log analysis, or a build or deployment. The model chooses each command using the task and observed results.
+Open the Assistant from the file manager toolbar. The Assistant appends the current remote directory to the task prompt. Ask for a project’s backend port, a log analysis, or a build or deployment. The model chooses each command using the task and observed results.
 
 Manual mode is the default. The app shows the command and its working directory, and waits for approval before running it or sending ordinary input. Automatic mode runs operations within the task’s authorization. The app remembers the selection for each verified server and effective identity and applies it to the next turn.
 

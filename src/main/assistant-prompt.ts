@@ -1,8 +1,11 @@
 import { posix } from 'node:path'
 import { z } from 'zod'
 
-export const assistantPath = z.string().min(1).max(4096)
-  .refine((path) => path.startsWith('/') && posix.resolve('/', path) === path && !path.includes('\0'))
+const absolutePath = z.string().min(1).max(4096)
+  .refine((path) => path.startsWith('/') && !path.includes('\0'))
+
+export const assistantPath = absolutePath.refine((path) => posix.resolve('/', path) === path)
+export const assistantDirectory = absolutePath.transform((path) => posix.resolve('/', path))
 
 export const defaultAssistantPrompt = {
   en: [

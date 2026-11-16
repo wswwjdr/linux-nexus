@@ -771,7 +771,7 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
         <SessionWorkspaceView
           assistant={assistantOpen && activeSession ? (controls) => <AssistantPanel key={activeSession.id} sessionId={activeSession.id}
             server={connectedProfile ? `${connectedProfile.name} (${connectedProfile.username}@${connectedProfile.host})` : ''}
-            directory={currentPath} selectedPaths={activeSession.selectedPaths} controls={controls} fileIdentity={activeSession.fileIdentity ?? 'login'}
+            directory={currentPath} controls={controls} fileIdentity={activeSession.fileIdentity ?? 'login'}
             onClose={() => setAssistantVisible(false)}
             onOpenExternalLink={(url) => void window.remoteFiles.openExternalUrl(url).catch((error) =>
               showToast('error', msg('common.cannotOpenLink', { value1: errorMessage(error) })))} /> : undefined}

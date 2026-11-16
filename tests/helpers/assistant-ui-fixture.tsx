@@ -89,7 +89,7 @@ async function verify(): Promise<void> {
   const controls = { side: 'right' as const, expanded: false, narrow: false, swap() {}, expand() {} }
   root.render(<>{['observer', 'second'].map((sessionId, index) => <div className="assistant-pane"
     key={sessionId} style={{ width: index ? 520 : 880 }}><AssistantPanel sessionId={sessionId} server="test"
-      directory="/project" selectedPaths={[]} fileIdentity="login" controls={controls} onClose={() => {}}
+      directory="/project" fileIdentity="login" controls={controls} onClose={() => {}}
       onOpenExternalLink={() => {}} /></div>)}</>)
   await tick()
   const [wide, narrow] = document.querySelectorAll('.assistant-panel')
@@ -215,7 +215,7 @@ async function prepareAssistantScroll() {
   host.style.height = '450px'
   host.style.display = 'flex'
   const root = createRoot(host)
-  root.render(<AssistantPanel sessionId="observer" server="test" directory="/" selectedPaths={[]} fileIdentity="login"
+  root.render(<AssistantPanel sessionId="observer" server="test" directory="/" fileIdentity="login"
     controls={{ side: 'right', expanded: false, narrow: false, swap() {}, expand() {} }} onClose={() => {}}
     onOpenExternalLink={() => {}} />)
   await tick()

@@ -5,7 +5,7 @@ import { ipcMain } from './trusted-ipc'
 import { fetchAssistantModels, normalizeAssistantUrl, probeAssistantProvider } from '../assistant-provider'
 import { assistantId, assistantModeSchema, assistantPromptSchema, encryptAssistantData, limitsSchema, modelId, publicAssistantProvider, readAssistantSettings, saveAssistantSettings } from '../assistant-storage'
 import { setAssistantMode, assistantPromptSettings, setAssistantPrompt, assistantOutput, approveAssistantAction, answerAssistantQuestion, assistantSnapshot, deleteAssistantConversation, renameAssistantConversation, startAssistantTask, stopAssistantTask, supplementAssistantTask } from '../assistant-runtime'
-import { assistantPath } from '../assistant-prompt'
+import { assistantDirectory } from '../assistant-prompt'
 
 const connection = {
   id: assistantId.optional(),
@@ -30,7 +30,7 @@ const request = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('snapshot'), input: z.strictObject({ ...session, refresh: z.boolean().optional() }) }),
   z.strictObject({ action: z.literal('start'), input: z.strictObject({
     ...session, conversationId: assistantId.optional(), providerId: assistantId, model: modelId, prompt: z.string().trim().min(1).max(16000),
-    directory: assistantPath, selectedPaths: z.array(assistantPath).max(32), shareHistory: z.boolean(),
+    directory: assistantDirectory, shareHistory: z.boolean(),
   }) }),
   z.strictObject({ action: z.literal('stop'), input: z.strictObject({ ...session, taskId: assistantId }) }),
   z.strictObject({ action: z.literal('answer'), input: z.strictObject({ ...task, questionId: assistantId, text: z.string().min(1).max(16000) }) }),

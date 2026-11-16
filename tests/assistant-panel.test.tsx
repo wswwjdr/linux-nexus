@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { act, createElement } from 'react'
 import { JSDOM } from 'jsdom'
-import type { AssistantSnapshot } from '../src/shared/types/assistant'
+import type { RemoteFilesApi } from '../src/shared/types'
+import type { AssistantRequest, AssistantRequests, AssistantSnapshot } from '../src/shared/types/assistant'
 import { AssistantMarkdown } from '../src/renderer/src/features/files/AssistantMarkdown'
 import { AssistantPanel } from '../src/renderer/src/features/files/AssistantPanel'
 import { AssistantSplit } from '../src/renderer/src/features/files/AssistantSplit'
@@ -53,17 +54,39 @@ test('history button follows the sidebar and expanded tool failures display one 
       text: '', mode: 'manual', status: 'done', approvals: [], questions: [], supplements: [], transcript: [], activity: [{ kind: 'tool', id: 'search' }],
       tools: [{ id: 'search', name: 'exec_command', path: '/project', status: 'failed', error: output }],
     }] }] }
-  window.remoteFiles = {
-    assistant: async ({ action }) => action === 'snapshot' ? snapshot : { providers: [{ id: 'provider', name: 'Test',
-      defaultModel: 'mock', models: ['mock'] }] },
+  const responses: Partial<{ [Action in keyof AssistantRequests]: AssistantRequests[Action]['output'] }> = {
+    snapshot,
+    settings: {
+      providers: [{ id: 'provider', name: 'Test', baseUrl: 'https://example.com', hasKey: false,
+        defaultModel: 'mock', models: ['mock'] }],
+      limits: { steps: 100, modelTimeoutSeconds: 120 },
+    },
+  }
+  const remoteFiles = {
+    /**
+     * Handles assistant IPC calls made by the panel in this test.
+     * @param request The request sent by the panel.
+     * @returns The fixture response for the requested action.
+     */
+    async assistant<R extends AssistantRequest>(request: R): Promise<AssistantRequests[R['action']]['output']> {
+      const action: R['action'] = request.action
+      const response = responses[action]
+      if (response === undefined) throw new Error(`Unexpected assistant request: ${action}`)
+      return response
+    },
+    /**
+     * Stubs event registration because the fixture emits no events.
+     * @returns A no-op unsubscribe function.
+     */
     onAssistantEvent: () => () => {},
-  } as typeof window.remoteFiles
+  } satisfies Pick<RemoteFilesApi, 'assistant' | 'onAssistantEvent'>
+  Object.defineProperty(dom.window, 'remoteFiles', { value: remoteFiles })
   const { createRoot } = await import('react-dom/client')
   const host = document.getElementById('root')!
   const root = createRoot(host)
   try {
     await act(async () => root.render(createElement(AssistantPanel, { sessionId: 'session', server: 'server',
-      directory: '/project', selectedPaths: [], fileIdentity: 'login', onClose: () => {}, onOpenExternalLink: () => {},
+      directory: '/project', fileIdentity: 'login', onClose: () => {}, onOpenExternalLink: () => {},
       controls: { side: 'right', expanded: false, narrow: false, swap: () => {}, expand: () => {} },
     })))
     const toggle = host.querySelector<HTMLButtonElement>('.assistant-header button[aria-expanded]')!

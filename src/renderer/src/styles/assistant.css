@@ -210,7 +210,6 @@
 .assistant-question { margin: 0; padding: 8px; background: var(--surface-soft); border-radius: var(--radius); white-space: pre-wrap; overflow-wrap: anywhere; }
 .assistant-context { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
 .assistant-context code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.assistant-context span { flex: none; }
 .assistant-composer-bar { display: flex; align-items: center; justify-content: end; flex-wrap: wrap; gap: 6px; font-size: 12px; }
 .assistant-composer-bar select { flex: 1; max-width: 100%; margin-right: auto; }
 .assistant-markdown.md-article {

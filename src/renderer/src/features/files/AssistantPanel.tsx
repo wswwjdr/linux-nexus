@@ -13,7 +13,6 @@ interface Props {
   sessionId: string
   server: string
   directory: string
-  selectedPaths: string[]
   controls: { side: 'left' | 'right'; expanded: boolean; narrow: boolean; swap: () => void; expand: () => void }
   onOpenExternalLink: (url: string) => void
   onClose: () => void
@@ -43,8 +42,12 @@ function reduceEvent(snapshot: AssistantSnapshot, event: AssistantEvent): Assist
   }
 }
 
-/** Shows history and live task updates for the connected file tab and accepts reviewed edits. */
-export function AssistantPanel({ sessionId, server, directory, selectedPaths, controls, onClose, onOpenExternalLink, fileIdentity }: Props) {
+/**
+ * Shows conversation history and live task updates for the connected file tab.
+ * @param props Connected session, current remote directory, layout controls, and callbacks.
+ * @returns The assistant panel for the file tab.
+ */
+export function AssistantPanel({ sessionId, server, directory, controls, onClose, onOpenExternalLink, fileIdentity }: Props) {
   const composer = useRef<HTMLTextAreaElement>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
   const historyId = useId()
@@ -144,7 +147,10 @@ export function AssistantPanel({ sessionId, server, directory, selectedPaths, co
     }
   }
 
-  /** Sends the current prompt and its visible directory context to the main process. */
+  /**
+   * Sends the draft with the current directory, or supplements a running task.
+   * @param event Prompt form submission.
+   */
   function submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
     if (!snapshot || !prompt.trim() || busy) return
@@ -157,7 +163,7 @@ export function AssistantPanel({ sessionId, server, directory, selectedPaths, co
     }
     if (!provider || !model || (sharing && !shareHistory)) return
     void run(async () => {
-      const started = await window.remoteFiles.assistant({ action: 'start', input: { sessionId, directory, selectedPaths,
+      const started = await window.remoteFiles.assistant({ action: 'start', input: { sessionId, directory,
         conversationId: conversationId || undefined, providerId, model, prompt: prompt.trim(), shareHistory } })
       const latest = await window.remoteFiles.assistant({ action: 'snapshot', input: { sessionId } })
       setSnapshot((current) => !current || latest.sequence >= current.sequence ? latest : current)
@@ -268,7 +274,6 @@ export function AssistantPanel({ sessionId, server, directory, selectedPaths, co
             onChange={(event) => setShareHistory(event.target.checked)} />{tr('assistant.share')}</label>}
           <div className="assistant-context" title={tr('assistant.privacy')}>
             <code title={directory}>{directory}</code>
-            {selectedPaths.length > 0 && <span title={selectedPaths.join('\n')}>{tr('assistant.selected', { count: selectedPaths.length })}</span>}
           </div>
           <textarea ref={composer} aria-label={tr('assistant.prompt')} placeholder={tr('assistant.prompt')} value={prompt} maxLength={16000}
             onChange={(event) => changePrompt(event.target.value)} onKeyDown={(event) => {

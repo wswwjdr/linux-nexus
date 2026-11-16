@@ -8,6 +8,7 @@ import { once } from 'node:events'
 import { setTimeout as pause } from 'node:timers/promises'
 import type { Client } from 'ssh2'
 import { applyLanguage } from '../../src/main/language'
+import { assistantDirectory } from '../../src/main/assistant-prompt'
 import { sessions } from '../../src/main/runtime'
 import { configureStateFiles, endpointKey, writeState } from '../../src/main/state-store'
 import { approveAssistantAction, assistantPromptSettings, assistantSnapshot, deleteAssistantConversation, renameAssistantConversation, setAssistantMode, setAssistantPrompt, startAssistantTask, stopAssistantTask } from '../../src/main/assistant-runtime'
@@ -83,16 +84,17 @@ async function verify(): Promise<void> {
 
 /** Exercises task-scoped approvals and next-turn settings through the actual main process runtime. */
 async function verifyRuntime(directory: string): Promise<void> {
-  const received: Array<{ command: string; prompt: string; mode: string }> = []
+  const received: Array<{ command: string; prompt: string; mode: string; directoryLine: string }> = []
   const server = createServer(async (request, response) => {
     const body = JSON.parse((await Array.fromAsync(request)).join(''))
-    const context = body.messages.filter(({ role }) => role === 'user').at(-1)
-    const data = JSON.parse(context.content)
+    const message = body.messages.filter(({ role }) => role === 'user').at(-1)
+    const [context, command, directoryLine] = message.content.split('\n\n')
+    const { mode } = JSON.parse(context)
     const hasResult = body.messages.at(-1).role === 'tool'
-    if (!hasResult) received.push({ command: data.request, prompt: body.messages[0].content, mode: data.mode })
+    if (!hasResult) received.push({ command, prompt: body.messages[0].content, mode, directoryLine })
     const delta = hasResult ? { content: 'Done' } : { tool_calls: [{
       index: 0, id: 'fixture-call', type: 'function', function: { name: 'exec_command',
-        arguments: JSON.stringify({ command: data.request, purpose: 'Fixture' }) },
+        arguments: JSON.stringify({ command, purpose: 'Fixture' }) },
     }] }
     response.setHeader('Content-Type', 'text/event-stream')
     for (const [part, finish] of [[{ role: 'assistant', ...delta }, null], [{}, hasResult ? 'stop' : 'tool_calls']]) {
@@ -124,7 +126,7 @@ async function verifyRuntime(directory: string): Promise<void> {
     assert.throws(() => setAssistantPrompt('Missing server', randomUUID()))
     setAssistantPrompt('Global fixture')
     setAssistantPrompt('Server fixture', profile.id)
-    const input = { sessionId: 'owner', directory: '/project', selectedPaths: [], providerId: provider.id, model: 'mock', shareHistory: false }
+    const input = { sessionId: 'owner', directory: assistantDirectory.parse('/project/'), providerId: provider.id, model: 'mock', shareHistory: false }
     const a = startAssistantTask({ ...input, prompt: 'printf a' })
     const b = startAssistantTask({ ...input, prompt: 'printf b' })
     assert.throws(() => startAssistantTask({ ...input, conversationId: a.conversationId, prompt: 'Concurrent turn in the same chat' }))
@@ -142,6 +144,7 @@ async function verifyRuntime(directory: string): Promise<void> {
     setAssistantMode('owner', 'automatic')
     await until(() => turn(a.taskId).status === 'done')
     assert.equal(turn(a.taskId).tools[0].status, 'rejected')
+    assert.equal(turn(a.taskId).tools[0].path, '/project')
     const reloaded = assistantSnapshot('observer', true).conversations.find(({ id }) => id === a.conversationId)!
     assert.equal(reloaded.title, 'Renamed')
     assert.deepEqual(reloaded.turns[0].transcript.map(({ role }) => role), ['user', 'assistant', 'tool', 'assistant'])
@@ -155,13 +158,14 @@ async function verifyRuntime(directory: string): Promise<void> {
     assert.equal(turn(b.taskId).approvals.length, 0)
     assert.equal(turn(b.taskId).tools[0].status, 'stopped')
     // The next turn resolves the global prompt and the newly selected automatic mode.
+    applyLanguage('zh-CN')
     const c = startAssistantTask({ ...input, prompt: 'printf c' })
     await until(() => turn(c.taskId).status !== 'running')
     assert.equal(turn(c.taskId).mode, 'automatic')
     assert.deepEqual(received.sort((left, right) => left.command.localeCompare(right.command)), [
-      { command: 'printf a', prompt: 'Server fixture', mode: 'manual' },
-      { command: 'printf b', prompt: 'Server fixture', mode: 'manual' },
-      { command: 'printf c', prompt: 'Global fixture', mode: 'automatic' },
+      { command: 'printf a', prompt: 'Server fixture', mode: 'manual', directoryLine: 'Current directory: /project' },
+      { command: 'printf b', prompt: 'Server fixture', mode: 'manual', directoryLine: 'Current directory: /project' },
+      { command: 'printf c', prompt: 'Global fixture', mode: 'automatic', directoryLine: '当前目录是：/project' },
     ])
   } finally {
     server.closeAllConnections()

@@ -1,6 +1,5 @@
 import { experimental_createSteering, generateText, InvalidToolInputError, isStepCount, NoSuchToolError, ToolLoopAgent, type ModelMessage } from 'ai'
 import { createHash, randomUUID } from 'node:crypto'
-import { posix } from 'node:path'
 import { i18n, LocalizedError, messageFromUnknown, msg, renderMessage } from '../shared/i18n/messages'
 import type { AssistantApproval, AssistantConversation, AssistantEvent, AssistantEventChange, AssistantMode, AssistantQuestion, AssistantRequests, AssistantSnapshot, AssistantTurn } from '../shared/types/assistant'
 import { assistantFileIdentity } from './file-identity'
@@ -151,7 +150,16 @@ export function assistantOutput({ sessionId, taskId, executionId, page }: Assist
   return readAssistantOutput(serverKey, chat.id, executionId, page)
 }
 
-/** Builds bounded model context from earlier finished turns and the current request. */
+/**
+ * Builds model messages and appends the current directory to the user's prompt.
+ * @param previous Earlier turns available for replay or summarization.
+ * @param input Validated task input with the normalized current directory.
+ * @param model Chat model used to summarize older turns.
+ * @param timeout Timeout for the summary request in milliseconds.
+ * @param signal Signal that cancels the task and any summary request.
+ * @param runtimeContext Session information and prior execution state for the model.
+ * @returns Model messages ending with the current user request.
+ */
 async function modelMessages(previous: AssistantTurn[], input: StartInput, model: ReturnType<typeof assistantChatModel>,
   timeout: number, signal: AbortSignal, runtimeContext: object): Promise<ModelMessage[]> {
   const turns = previous.filter((turn) => turn.status === 'done' || turn.status === 'limit')
@@ -177,11 +185,20 @@ async function modelMessages(previous: AssistantTurn[], input: StartInput, model
   for (const turn of recent) {
     messages.push(...turn.transcript)
   }
-  messages.push({ role: 'user', content: JSON.stringify({ ...runtimeContext, directory: input.directory, selectedPaths: input.selectedPaths, request: input.prompt }) })
+  // Quote paths that contain line breaks so the directory remains on a single line.
+  const path = /[\r\n\u2028\u2029]/u.test(input.directory)
+    ? JSON.stringify(input.directory).replace(/\u2028/gu, '\\u2028').replace(/\u2029/gu, '\\u2029')
+    : input.directory
+  const directoryLine = renderMessage(msg('assistant.currentDirectory', { path }))
+  messages.push({ role: 'user', content: `${JSON.stringify(runtimeContext)}\n\n${input.prompt}\n\n${directoryLine}` })
   return messages
 }
 
-/** Creates a task and persists its initial state before contacting the provider. */
+/**
+ * Creates a task and persists its initial state before contacting the provider.
+ * @param input Validated request with the prompt and current remote directory.
+ * @returns Conversation and task IDs for tracking the new turn.
+ */
 export function startAssistantTask(input: StartInput): AssistantRequests['start']['output'] {
   if (shuttingDown) throw new LocalizedError(msg('assistant.taskEnded'))
   const context = contextFor(input.sessionId)
@@ -189,7 +206,6 @@ export function startAssistantTask(input: StartInput): AssistantRequests['start'
   const mode = readAssistantMode(serverKey, context.identity)
   const language = i18n.language as SupportedLanguage
   const instructions = readAssistantPrompt(profilePromptKey(context.profileId)) ?? readAssistantPrompt('global') ?? defaultAssistantPrompt[language]
-  if (input.selectedPaths.some((path) => posix.dirname(path) !== input.directory)) throw new LocalizedError(msg('assistant.invalid'))
   const provider = assistantProvider(input.providerId)
   if (!provider.models.includes(input.model)) throw new LocalizedError(msg('assistant.providerMissing'))
   const { conversations: history } = currentHistory(serverKey)

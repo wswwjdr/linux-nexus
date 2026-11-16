@@ -127,7 +127,7 @@ export default {
     providerDeleteConfirm: "删除此模型服务商？",
     maximize: "最大化",
     restore: "还原大小",
-    selected: "已选 {{count}} 项",
+    currentDirectory: "当前目录是：{{path}}",
     identityLogin: "登录用户",
     identityRoot: "Root 登录",
     identitySudo: "已切换至 Root",

@@ -127,7 +127,7 @@ export default {
     providerDeleteConfirm: "Delete this model provider?",
     maximize: "Maximize",
     restore: "Restore size",
-    selected: "{{count}} selected",
+    currentDirectory: "Current directory: {{path}}",
     identityLogin: "Login user",
     identityRoot: "Root login",
     identitySudo: "Elevated root",

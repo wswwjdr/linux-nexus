@@ -105,7 +105,7 @@ export interface AssistantRequests {
   promptSettings: { input: { profileId?: string }; output: AssistantPromptSettings }
   savePrompt: { input: { profileId?: string; prompt: string | null }; output: AssistantPromptSettings }
   snapshot: { input: { sessionId: string; refresh?: boolean }; output: AssistantSnapshot }
-  start: { input: { sessionId: string; conversationId?: string; providerId: string; model: string; prompt: string; directory: string; selectedPaths: string[]; shareHistory: boolean }; output: { conversationId: string; taskId: string } }
+  start: { input: { sessionId: string; conversationId?: string; providerId: string; model: string; prompt: string; directory: string; shareHistory: boolean }; output: { conversationId: string; taskId: string } }
   stop: { input: { sessionId: string; taskId: string }; output: void }
   answer: { input: { sessionId: string; taskId: string; questionId: string; text: string }; output: void }
   approve: { input: { sessionId: string; taskId: string; approvalId: string; approved: boolean }; output: void }
