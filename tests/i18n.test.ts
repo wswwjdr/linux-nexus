@@ -84,9 +84,14 @@ test('dates and filename ordering use the selected locale without changing timez
   }
 })
 
-test('both READMEs keep working links and the same screenshot set', () => {
+test('both READMEs reference existing local files and use the same screenshot set', () => {
   const links = (file: string) => [...readFileSync(file, 'utf8').matchAll(/\]\(([^)]+)\)/g)].map(match => match[1])
-  for (const file of ['README.md', 'README.en.md']) for (const target of links(file)) assert.ok(existsSync(resolve(target)), `${file}: ${target}`)
+  for (const file of ['README.md', 'README.en.md']) {
+    for (const target of links(file)) {
+      if (/^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i.test(target)) continue
+      assert.ok(existsSync(resolve(target.split('#', 1)[0])), `${file}: ${target}`)
+    }
+  }
   const shots = (file: string) => links(file).filter(link => link.endsWith('.png')).sort()
   assert.deepEqual(shots('README.md'), shots('README.en.md'))
 })

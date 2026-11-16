@@ -1,114 +1,98 @@
-import { formatLocale, renderMessage, tr } from '@shared/i18n/messages'
-import { useLanguage } from '@/i18n'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { Gauge, RefreshCw, X } from 'lucide-react'
+import { tr } from '@shared/i18n/messages'
 import type { PerformanceMonitorState, PerformanceThresholds } from '@shared/types'
-import type { PerformanceSeries } from '@shared/performance'
-import { performanceSeverity, performanceTrendPaths } from '@shared/performance'
+import { PerformanceOverview } from '@/features/performance/PerformanceOverview'
+import { PerformanceResources } from '@/features/performance/PerformanceResources'
+import { MetricNotice } from '@/features/performance/PerformanceReadings'
+import { current, percent, sampleTime, severity, uptime } from '@/features/performance/presentation'
+import { useLanguage } from '@/i18n'
 
 interface PerformanceMonitorProps {
   state: PerformanceMonitorState | null
   thresholds: PerformanceThresholds
   open: boolean
   onOpenChange: (open: boolean) => void
-  onRefresh: (sessionId: string) => void
+  onEnabledChange: (enabled: boolean) => void
+  onRefresh: () => void
 }
 
-const WINDOW_MS = 15 * 60 * 1000
-
-function percent(value: number | null): string {
-  return value === null ? '…' : Math.round(value) + '%'
-}
-
-function formatBytes(bytes: number): string {
-  const gibibytes = bytes / (1024 ** 3)
-  return gibibytes >= 1 ? gibibytes.toFixed(1) + ' GiB' : (bytes / (1024 ** 2)).toFixed(0) + ' MiB'
-}
-
-function formatUptime(seconds: number): string {
-  const days = Math.floor(seconds / 86400)
-  const hours = Math.floor(seconds % 86400 / 3600)
-  const minutes = Math.floor(seconds % 3600 / 60)
-  return days > 0 ? tr('common.dH', { "days": days, "hours": hours }) : hours > 0 ? tr('common.hM', { "hours": hours, "minutes": minutes }) : tr('common.min', { "minutes": minutes })
-}
-
-function metricSeverity(value: number | null, warning: number, critical: number): 'normal' | 'warning' | 'critical' | 'unavailable' {
-  if (value === null) return 'unavailable'
-  if (value >= critical) return 'critical'
-  if (value >= warning) return 'warning'
-  return 'normal'
-}
-
-function MetricTrend({
-  label,
-  value,
-  history,
-  nowMs,
-  warning,
-  critical,
-  series,
-}: {
-  label: string
-  value: number | null
-  history: PerformanceMonitorState['history']
-  nowMs: number
-  warning: number
-  critical: number
-  series: 'cpu' | 'memory' | 'disk'
-}) {
-  useLanguage()
-  const severity = metricSeverity(value, warning, critical)
-  const key: PerformanceSeries = series === 'cpu' ? 'cpuPercent' : series === 'memory' ? 'memoryPercent' : 'diskPercent'
-  const paths = performanceTrendPaths(history, key, nowMs, WINDOW_MS)
-  return (
-    <div className={'performance-trend-row ' + severity}>
-      <div className="performance-trend-heading">
-        <span>{label}</span>
-        <strong>{percent(value)}</strong>
-      </div>
-      <div className="performance-trend-scale" aria-hidden="true">
-        <span>100%</span>
-        <span>50%</span>
-        <span>0%</span>
-      </div>
-      <svg className={'performance-trend-chart ' + series} viewBox="0 0 600 40" preserveAspectRatio="none" role="img" aria-label={tr('common.overTheLast15MinutesVerticalAxis0100', { "label": label })}>
-        <title>{tr('common.trendTitle', { label })}</title>
-        <path className="performance-trend-grid" d="M0 4H600 M0 19H600 M0 34H600" />
-        {paths.map((path, index) => <path className="performance-trend-line" d={path} key={index} />)}
-      </svg>
-    </div>
-  )
-}
-
-export default function PerformanceMonitor({ state, thresholds, open, onOpenChange, onRefresh }: PerformanceMonitorProps) {
+/**
+ * Connects the toolbar trigger and dashboard to the active monitoring session.
+ * @param props Session state, thresholds and panel and sampling actions.
+ * @returns Toolbar summary and, when open, the monitoring dashboard.
+ */
+export default function PerformanceMonitor({ state, thresholds, open, onOpenChange, onEnabledChange, onRefresh }: PerformanceMonitorProps) {
   useLanguage()
   const rootRef = useRef<HTMLDivElement>(null)
-  const [nowMs, setNowMs] = useState(Date.now())
-  const snapshot = state?.snapshot ?? null
-  const severity = state?.status === 'error' || !snapshot
-    ? 'unavailable'
-    : performanceSeverity(snapshot, thresholds)
-  const summaryLabel = state?.status === 'error'
-    ? tr('common.performanceMetricsUnavailable')
-    : severity === 'critical' ? tr('common.serverPerformanceMetricsAreCriticallyHigh')
-      : severity === 'warning' ? tr('common.serverPerformanceMetricsAreElevated')
-        : snapshot ? tr('common.serverPerformanceMetricsAreNormal') : tr('common.collectingServerPerformanceMetrics')
+  const summaryRef = useRef<HTMLButtonElement>(null)
+  const switchRef = useRef<HTMLInputElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const enabled = state?.enabled ?? false
+  const metrics = state?.metrics ?? {}
+  const cpu = current(metrics.cpu)
+  const memory = current(metrics.memory)
+  const root = current(metrics.mounts)?.find((mount) => mount.target === '/')
+  const load = current(metrics.load)
+  const uptimeSeconds = current(metrics.uptime)
+  const statuses = [
+    severity(cpu?.percent, thresholds.cpu), severity(memory?.percent, thresholds.memory),
+    severity(root?.percent, thresholds.disk), severity(cpu?.logical.length && load ? load[0] / cpu.logical.length : null, thresholds.loadPerCore),
+  ]
+  const level = enabled ? (['critical', 'warning', 'normal'] as const).find((status) => statuses.includes(status)) ?? 'unavailable' : 'unavailable'
+  const samples = Object.values(metrics)
+  const latestAt = Math.max(0, ...samples.map((metric) => metric.error ? 0 : metric.latest?.sampledAt ?? 0))
+  const hasErrors = samples.some((metric) => metric.error)
+  let statusText: string
+  if (!state) statusText = tr('performance.waiting')
+  else if (!enabled) statusText = tr('performance.off')
+  else if (state.sampling) statusText = tr('common.readingServerMetrics')
+  else if (hasErrors) statusText = tr(latestAt ? 'performance.partialFailure' : 'common.samplingFailedRetryingAutomatically')
+  else statusText = tr(latestAt ? 'performance.live' : 'performance.waiting')
+  const summaryLabel = level === 'critical' ? tr('common.serverPerformanceMetricsAreCriticallyHigh')
+    : level === 'warning' ? tr('common.serverPerformanceMetricsAreElevated') : statusText
+
+  /**
+   * Closes the dashboard and restores focus to its toolbar entry.
+   */
+  const close = useCallback(() => {
+    onOpenChange(false)
+    summaryRef.current?.focus()
+  }, [onOpenChange])
 
   useEffect(() => {
     if (!open) return
-    setNowMs(Date.now())
-    const clock = window.setInterval(() => setNowMs(Date.now()), 1_000)
-    const dismissOutside = (event: PointerEvent) => {
+    const focusTarget = switchRef.current?.disabled ? closeRef.current : switchRef.current
+    focusTarget?.focus()
+
+    /**
+     * Dismisses the panel when the pointer acts outside it.
+     * @param event Pointer press from the workspace.
+     */
+    function dismissOutside(event: PointerEvent) {
       if (!rootRef.current?.contains(event.target as Node)) onOpenChange(false)
     }
-    const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onOpenChange(false)
+
+    /**
+     * Dismisses the panel with Escape and restores toolbar focus.
+     * @param event Keyboard event dispatched inside the window.
+     */
+    function dismissOnEscape(event: KeyboardEvent) {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.preventDefault()
+      close()
     }
-    const blockBackgroundWheel = (event: WheelEvent) => {
+
+    /**
+     * Keeps the workspace still when the wheel is used outside the monitor.
+     * @param event Wheel event dispatched inside the document.
+     */
+    function blockBackgroundWheel(event: WheelEvent) {
       if (rootRef.current?.contains(event.target as Node)) return
       event.preventDefault()
       event.stopPropagation()
     }
+
     document.addEventListener('pointerdown', dismissOutside, true)
     document.addEventListener('wheel', blockBackgroundWheel, { capture: true, passive: false })
     window.addEventListener('keydown', dismissOnEscape)
@@ -116,74 +100,57 @@ export default function PerformanceMonitor({ state, thresholds, open, onOpenChan
       document.removeEventListener('pointerdown', dismissOutside, true)
       document.removeEventListener('wheel', blockBackgroundWheel, true)
       window.removeEventListener('keydown', dismissOnEscape)
-      window.clearInterval(clock)
     }
-  }, [open, onOpenChange])
+  }, [open, onOpenChange, close])
 
-  const history = state?.history ?? []
-  const statusText = state?.status === 'error'
-    ? tr('common.samplingFailedRetryingAutomatically')
-    : snapshot ? tr('common.lastUpdated', { "value1": new Date(snapshot.sampledAt).toLocaleTimeString(formatLocale()) }) : tr('common.readingServerMetrics')
-
-  return (
-    <div className="performance-monitor" ref={rootRef}>
-      <button
-        type="button"
-        className={'performance-summary-button ' + severity}
-        aria-label={tr('common.cpuMemoryDisk', { "summaryLabel": summaryLabel, "value2": percent(snapshot?.cpuPercent ?? null), "value3": percent(snapshot?.memoryPercent ?? null), "value4": percent(snapshot?.diskPercent ?? null) })}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        title={summaryLabel}
-        onClick={() => onOpenChange(!open)}
-      >
-        <Gauge size={15} aria-hidden="true" />
-        <span className="performance-summary-item"><small>CPU</small>{percent(snapshot?.cpuPercent ?? null)}</span>
-        <span className="performance-summary-item"><small>{tr('common.memory')}</small>{percent(snapshot?.memoryPercent ?? null)}</span>
-        <span className="performance-summary-item"><small>{tr('common.disk')}</small>{percent(snapshot?.diskPercent ?? null)}</span>
-      </button>
-
-      {open && (
-        <section className="performance-popover" role="dialog" aria-label={tr('common.serverPerformanceMonitoring')}>
-          <header className="performance-popover-header">
-            <div>
-              <h2>{tr('common.serverPerformance')}</h2>
-              <span className={'performance-status ' + severity} role="status" aria-live="off">{severity === 'normal' ? tr('common.normal') : severity === 'warning' ? tr('settings.warning') : severity === 'critical' ? tr('settings.critical') : tr('common.unavailable')} · {statusText}</span>
+  return <div className="performance-monitor" ref={rootRef}>
+    <button ref={summaryRef} type="button" className={`performance-summary-button ${level}`}
+      aria-label={tr('common.cpuMemoryDisk', { summaryLabel, value2: percent(cpu?.percent), value3: percent(memory?.percent), value4: percent(root?.percent) })}
+      aria-expanded={open} aria-haspopup="dialog" title={summaryLabel} onClick={() => onOpenChange(!open)}>
+      <Gauge size={15} aria-hidden="true" />
+      <span className="performance-summary-item"><small>CPU</small>{percent(cpu?.percent)}</span>
+      <span className="performance-summary-item"><small>{tr('common.memory')}</small>{percent(memory?.percent)}</span>
+      <span className="performance-summary-item"><small>{tr('common.disk')}</small>{percent(root?.percent)}</span>
+    </button>
+    {open && <section className="performance-popover" role="dialog" aria-label={tr('common.serverPerformanceMonitoring')}>
+      <header className="performance-popover-header">
+        <div className="performance-title">
+          <span className="performance-title-icon"><Gauge size={22} aria-hidden="true" /></span>
+          <div>
+            <h2>{tr('common.serverPerformance')}</h2>
+            <div className="performance-meta">
+              <span className={`performance-status ${hasErrors && enabled ? 'warning' : enabled && latestAt ? 'live' : ''}`}>{statusText}</span>
+              {enabled && !!latestAt && <span>{tr('common.lastUpdated', { value1: sampleTime(latestAt) })}</span>}
+              {enabled && uptimeSeconds !== undefined && <span>{tr('common.uptime')} <strong>{uptime(uptimeSeconds)}</strong></span>}
             </div>
-            <div className="performance-popover-actions">
-              <button type="button" className="icon-button subtle" title={tr('common.refreshNow')} aria-label={tr('common.refreshPerformanceMetricsNow')} disabled={!state || state.status === 'sampling'} onClick={() => state && onRefresh(state.sessionId)}>
-                <RefreshCw className={state?.status === 'sampling' ? 'spin' : ''} size={15} />
-              </button>
-              <button type="button" className="icon-button subtle" title={tr('common.close')} aria-label={tr('common.closePerformanceMonitoring')} onClick={() => onOpenChange(false)}><X size={15} /></button>
-            </div>
-          </header>
-
-          {state?.message && <p className="performance-error">{renderMessage(state.message)}</p>}
-          {snapshot ? (
-            <>
-              <div className="performance-trends">
-                <MetricTrend label={tr('settings.cpuUsage')} value={snapshot.cpuPercent} history={history} nowMs={nowMs} warning={thresholds.cpu.warning} critical={thresholds.cpu.critical} series="cpu" />
-                <MetricTrend label={tr('settings.memoryUsage')} value={snapshot.memoryPercent} history={history} nowMs={nowMs} warning={thresholds.memory.warning} critical={thresholds.memory.critical} series="memory" />
-                <MetricTrend label={tr('settings.rootPartitionUsage')} value={snapshot.diskPercent} history={history} nowMs={nowMs} warning={thresholds.disk.warning} critical={thresholds.disk.critical} series="disk" />
-                <div className="performance-trend-axis"><span>{tr('common.15MinAgo')}</span><span>{tr('common.now')}</span></div>
-              </div>
-              <div className="performance-details">
-                <div className={'performance-detail-load ' + metricSeverity(snapshot.loadAverage[0] / snapshot.cpuCores, thresholds.loadPerCore.warning, thresholds.loadPerCore.critical)}>
-                  <span>{tr('common.systemLoad')}</span>
-                  <div>
-                    {snapshot.loadAverage.map((load, index) => <span key={index}>{tr('common.loadWindow', { minutes: index === 0 ? 1 : index === 1 ? 5 : 15 })}<strong>{load.toFixed(2)}</strong></span>)}
-                  </div>
-                </div>
-                <dl>
-                  <div><dt>{tr('common.uptime')}</dt><dd>{formatUptime(snapshot.uptimeSeconds)}</dd></div>
-                  <div><dt>{tr('common.logicalCpus')}</dt><dd>{tr('common.cpuCores', { count: snapshot.cpuCores })}</dd></div>
-                  <div><dt>{tr('common.memory')}</dt><dd>{formatBytes(snapshot.memoryUsedBytes)} / {formatBytes(snapshot.memoryTotalBytes)}</dd></div>
-                  <div><dt>{tr('common.rootPartition')}</dt><dd>{formatBytes(snapshot.diskUsedBytes)} / {formatBytes(snapshot.diskTotalBytes)}</dd></div>
-                </dl>
-              </div>
-            </>
-          ) : !state?.message ? <p className="performance-empty">{tr('common.metricsAppearAfterTheFirstSampleCpuUsageRequiresA')}</p> : null}
-        </section>
-      )}
-    </div>
-  )
+          </div>
+        </div>
+        <div className="performance-popover-actions">
+          <label className="performance-switch">
+            <input ref={switchRef} type="checkbox" role="switch" checked={enabled} disabled={!state}
+              onChange={(event) => onEnabledChange(event.currentTarget.checked)} />
+            {tr('performance.monitorSwitch')}
+          </label>
+          <button type="button" className="icon-button subtle" title={tr('common.refreshNow')} aria-label={tr('common.refreshPerformanceMetricsNow')}
+            disabled={!enabled} onClick={onRefresh}>
+            <RefreshCw className={state?.sampling ? 'spin' : ''} size={16} aria-hidden="true" />
+          </button>
+          <button ref={closeRef} type="button" className="icon-button subtle" title={tr('performance.closePanel')}
+            aria-label={tr('performance.closePanel')} onClick={close}>
+            <X size={17} aria-hidden="true" />
+          </button>
+        </div>
+      </header>
+      <div className="performance-body">
+        {enabled ? <>
+          {metrics.uptime?.error && <MetricNotice metric={metrics.uptime} />}
+          <PerformanceOverview metrics={metrics} thresholds={thresholds} />
+          <PerformanceResources metrics={metrics} thresholds={thresholds} />
+        </> : <div className="performance-empty">
+          <Gauge size={28} aria-hidden="true" />
+          <p>{tr(state ? 'performance.enableHint' : 'performance.waiting')}</p>
+        </div>}
+      </div>
+    </section>}
+  </div>
 }

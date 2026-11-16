@@ -11,25 +11,58 @@ export interface PerformanceThresholds {
   loadPerCore: PerformanceThreshold
 }
 
-export interface PerformanceSnapshot {
-  sampledAt: string
-  cpuPercent: number | null
-  memoryPercent: number
-  memoryUsedBytes: number
-  memoryTotalBytes: number
-  diskPercent: number
-  diskUsedBytes: number
-  diskTotalBytes: number
-  loadAverage: [number, number, number]
-  uptimeSeconds: number
-  cpuCores: number
+export interface CpuUsage {
+  percent: number | null
+  logical: { id: number; percent: number | null }[]
+}
+
+export interface ResourceCapacity {
+  totalBytes: number
+  usedBytes: number
+  availableBytes: number
+  percent: number | null
+}
+
+export interface MountUsage extends ResourceCapacity {
+  target: string
+  fsType: string
+}
+
+export interface DiskActivity {
+  id: string
+  name: string
+  readBytesPerSecond: number | null
+  writeBytesPerSecond: number | null
+  readsPerSecond: number | null
+  writesPerSecond: number | null
+}
+
+export interface NetworkActivity {
+  name: string
+  receiveBytesPerSecond: number | null
+  transmitBytesPerSecond: number | null
+}
+
+export interface PerformanceMetricValues {
+  cpu: CpuUsage
+  memory: ResourceCapacity
+  swap: ResourceCapacity
+  load: [number, number, number]
+  uptime: number
+  mounts: MountUsage[]
+  disks: DiskActivity[]
+  network: NetworkActivity[]
+}
+
+export interface PerformanceMetric<T> {
+  latest: { sampledAt: number; value: T } | null
+  error: MessageValue | null
 }
 
 export interface PerformanceMonitorState {
-  sessionId: string
+  sessionId: string | null
   version: number
-  status: 'inactive' | 'sampling' | 'ready' | 'error'
-  snapshot: PerformanceSnapshot | null
-  message: MessageValue | null
-  history: PerformanceSnapshot[][]
+  enabled: boolean
+  sampling: boolean
+  metrics: { [K in keyof PerformanceMetricValues]?: PerformanceMetric<PerformanceMetricValues[K]> }
 }

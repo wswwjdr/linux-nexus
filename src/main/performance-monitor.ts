@@ -1,265 +1,203 @@
-import { messageFromUnknown, msg, LocalizedError } from '../shared/i18n/messages'
-import { executeRemoteCommand } from './ssh-commands'
-import { DEFAULT_APP_SETTINGS } from '../shared/app-settings.ts'
-import type { PerformanceMonitorState, PerformanceSnapshot } from '../shared/types.ts'
-import { createPerformanceSnapshot, parsePerformanceReport } from '../shared/performance.ts'
-import { getMainWindow, sessions, type ActiveSession } from './runtime.ts'
+import { LocalizedError, messageFromUnknown, msg } from '../shared/i18n/messages'
+import { DEFAULT_APP_SETTINGS } from '../shared/app-settings'
+import type { PerformanceMonitorState } from '../shared/types/performance'
+import { getMainWindow, sessions, type ActiveSession } from './runtime'
+import { runRemoteCommand } from './ssh-commands'
+import { calculatePerformanceMetrics, MOUNT_CAPACITY_COMMAND, parseMountCapacity, parsePerformanceSample, PERFORMANCE_COMMAND } from './performance-sampling'
 
 const COMMAND_TIMEOUT_MS = 4_500
-const MAX_STDOUT_BYTES = 16 * 1024
-const MAX_STDERR_BYTES = 2 * 1024
-const HISTORY_WINDOW_MS = 15 * 60 * 1000
+const MIN_MOUNT_INTERVAL_MS = 15_000
+const MAX_STDOUT_BYTES = 1024 * 1024
+const MAX_STDERR_BYTES = 4096
+const kernelMetrics = ['uptime', 'cpu', 'load', 'memory', 'swap', 'disks', 'network'] as const
+type Metrics = PerformanceMonitorState['metrics']
+type RawSample = ReturnType<typeof parsePerformanceSample>
 
-export const PERFORMANCE_COMMAND = `LC_ALL=C; export LC_ALL
-printf 'cpu '; awk '$1 == "cpu" { for (i = 2; i <= 9; i++) printf "%s%s", $i, i == 9 ? ORS : OFS }' /proc/stat
-printf 'mem '; awk '/^MemTotal:/ { total = $2 } /^MemAvailable:/ { available = $2 } END { if (total == "" || available == "") exit 1; printf "%.0f %.0f\\n", total, available }' /proc/meminfo
-printf 'load '; awk '{ print $1, $2, $3 }' /proc/loadavg
-printf 'uptime '; awk '{ print $1 }' /proc/uptime
-printf 'cores '; getconf _NPROCESSORS_ONLN
-printf 'disk '; df -P -B1 / | awk 'NR == 2 { print $2, $3, $4, $5 }'`
-
-interface SessionPerformanceMonitor {
-  sessionId: string
+interface SamplingRun {
   session: ActiveSession
-  timer: NodeJS.Timeout | null
-  controller: AbortController | null
-  previousCpuTicks: number[] | null
-  inFlight: boolean
-  sampleRequested: boolean
-  active: boolean
-  generation: number
-  rescheduleAfterSample: boolean
-  segmentOpen: boolean
-  state: PerformanceMonitorState
+  previous: RawSample | null
+  metrics: Metrics
 }
 
-const monitors = new Map<string, SessionPerformanceMonitor>()
-let sampleIntervalSeconds = DEFAULT_APP_SETTINGS.performanceSampleIntervalSeconds
-let nextVersion = 0
-
-function cloneState(state: PerformanceMonitorState): PerformanceMonitorState {
-  return { ...state, history: state.history.map((segment) => [...segment]) }
+interface SamplingLane {
+  kind: 'kernel' | 'mounts'
+  timer?: NodeJS.Timeout
+  attempt?: { run: SamplingRun; controller: AbortController }
 }
 
-function current(monitor: SessionPerformanceMonitor): boolean {
-  return monitor.active
-    && monitors.get(monitor.sessionId) === monitor
-    && sessions.get(monitor.sessionId) === monitor.session
+const kernel: SamplingLane = { kind: 'kernel' }
+const mounts: SamplingLane = { kind: 'mounts' }
+const lanes = [kernel, mounts]
+const enabled = new Map<string, ActiveSession>()
+let focused: ActiveSession | null = null
+let run: SamplingRun | null = null
+let version = 0
+let intervalMs = 1000 * DEFAULT_APP_SETTINGS.performanceSampleIntervalSeconds
+
+/** Returns the latest monitor state for the focused connection. */
+export function getPerformanceMonitorState(): PerformanceMonitorState {
+  return {
+    sessionId: focused?.sessionId ?? null,
+    enabled: run !== null,
+    sampling: Boolean(run && lanes.some((lane) => lane.attempt?.run === run)),
+    metrics: run?.metrics ?? {},
+    version,
+  }
 }
 
-function publish(monitor: SessionPerformanceMonitor): PerformanceMonitorState {
-  pruneHistory(monitor, Date.now())
-  monitor.state.version = ++nextVersion
-  const state = cloneState(monitor.state)
+/** Publishes the current view with a version shared by responses and notifications. */
+function publish(): PerformanceMonitorState {
+  version += 1
+  const state = getPerformanceMonitorState()
   const window = getMainWindow()
-  if (window && !window.isDestroyed()) window.webContents.send('performance:update', state)
+  if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+    window.webContents.send('performance:update', state)
+  }
   return state
 }
 
-function pruneHistory(monitor: SessionPerformanceMonitor, now: number): void {
-  const earliest = now - HISTORY_WINDOW_MS
-  monitor.state.history = monitor.state.history.flatMap((segment) => {
-    const retained = segment.filter((snapshot) => Date.parse(snapshot.sampledAt) >= earliest)
-    return retained.length ? [retained] : []
-  })
+/** Tests whether target can still apply results to the focused live connection. */
+function isCurrent(target: SamplingRun): boolean {
+  return run === target && sessions.get(target.session.sessionId) === target.session
 }
 
-async function readRemoteReport(monitor: SessionPerformanceMonitor, generation: number): Promise<string> {
-  const controller = new AbortController()
-  monitor.controller = controller
-  try {
-    if (!current(monitor) || monitor.generation !== generation) throw new LocalizedError(msg('errors.performanceSamplingStopped'))
-    const result = await executeRemoteCommand(monitor.session.client, PERFORMANCE_COMMAND, {
-      signal: controller.signal, timeoutMs: COMMAND_TIMEOUT_MS, maxStdoutBytes: MAX_STDOUT_BYTES, maxStderrBytes: MAX_STDERR_BYTES,
-    })
-    return result.stdout.toString('utf8')
-  } finally { if (monitor.controller === controller) monitor.controller = null }
+/** Invalidates the current sampling run and cancels both of its lanes. */
+function stop(): void {
+  run = null
+  for (const lane of lanes) {
+    clearTimeout(lane.timer)
+    lane.timer = undefined
+    lane.attempt?.controller.abort()
+  }
 }
 
-function scheduleNextSample(monitor: SessionPerformanceMonitor, sampleStartedAt: number): void {
-  if (!current(monitor)) return
-  const delay = monitor.rescheduleAfterSample
-    ? sampleIntervalSeconds * 1000
-    : Math.max(0, sampleStartedAt + sampleIntervalSeconds * 1000 - Date.now())
-  monitor.rescheduleAfterSample = false
-  monitor.timer = setTimeout(() => {
-    monitor.timer = null
-    void sample(monitor)
+/** Schedules the next request in lane using the latest interval setting. */
+function schedule(lane: SamplingLane): void {
+  clearTimeout(lane.timer)
+  const delay = lane.kind === 'mounts' ? Math.max(MIN_MOUNT_INTERVAL_MS, intervalMs) : intervalMs
+  lane.timer = setTimeout(() => {
+    lane.timer = undefined
+    if (run) start(lane, run)
   }, delay)
 }
 
-async function sample(monitor: SessionPerformanceMonitor): Promise<void> {
-  if (!current(monitor)) return
-  if (monitor.inFlight) {
-    monitor.sampleRequested = true
-    return
-  }
-  monitor.inFlight = true
-  monitor.sampleRequested = false
-  const generation = monitor.generation
-  const sampleStartedAt = Date.now()
-  monitor.state.status = 'sampling'
-  monitor.state.message = null
-  publish(monitor)
+/** Starts sampling for target when lane is idle, returning whether a request was started. */
+function start(lane: SamplingLane, target: SamplingRun): boolean {
+  if (!isCurrent(target) || lane.attempt) return false
+  clearTimeout(lane.timer)
+  lane.timer = undefined
+  const attempt = { run: target, controller: new AbortController() }
+  lane.attempt = attempt
+  void collect(lane, attempt).finally(() => {
+    lane.attempt = undefined
+    if (!run) return
+    if (isCurrent(target)) schedule(lane)
+    else if (isCurrent(run)) start(lane, run)
+    publish()
+  })
+  return true
+}
+
+/** Reads one SSH response and merges the lane's fresh values or errors into its live run. */
+async function collect(lane: SamplingLane, { run: target, controller }: NonNullable<SamplingLane['attempt']>): Promise<void> {
+  const keys = lane.kind === 'mounts' ? ['mounts'] as const : kernelMetrics
   try {
-    const output = await readRemoteReport(monitor, generation)
-    if (!current(monitor) || monitor.generation !== generation) return
-    const raw = parsePerformanceReport(output)
-    const snapshot = createPerformanceSnapshot(raw, monitor.previousCpuTicks)
-    monitor.previousCpuTicks = raw.cpuTicks
-    appendSnapshot(monitor, snapshot)
-    monitor.state.snapshot = snapshot
-    monitor.state.status = 'ready'
-    monitor.state.message = null
-    publish(monitor)
+    const result = await runRemoteCommand(target.session.client,
+      lane.kind === 'mounts' ? MOUNT_CAPACITY_COMMAND : PERFORMANCE_COMMAND, [], {
+        signal: controller.signal, timeoutMs: COMMAND_TIMEOUT_MS, maxStdoutBytes: MAX_STDOUT_BYTES, maxStderrBytes: MAX_STDERR_BYTES,
+      })
+    if (!isCurrent(target)) return
+    const output = result.stdout.toString('utf8')
+    const sampledAt = Date.now()
+    if (lane.kind === 'mounts') {
+      target.metrics = { ...target.metrics, mounts: { latest: { sampledAt, value: parseMountCapacity(output) }, error: null } }
+      return
+    }
+    const raw = parsePerformanceSample(output)
+    const values = calculatePerformanceMetrics(raw, target.previous)
+    const metrics = { ...target.metrics }
+
+    /** Applies a checked result for key, retaining its last good value if this source failed. */
+    function update<K extends keyof typeof values>(key: K): void {
+      const result = values[key]
+      const metric = result.value === undefined
+        ? { latest: metrics[key]?.latest ?? null, error: result.error }
+        : { latest: { sampledAt, value: result.value }, error: null }
+      Object.assign(metrics, { [key]: metric })
+    }
+
+    for (const key of kernelMetrics) update(key)
+    target.previous = raw
+    target.metrics = metrics
   } catch (error) {
-    if (!current(monitor) || monitor.generation !== generation) return
-    monitor.previousCpuTicks = null
-    monitor.segmentOpen = false
-    monitor.state.status = 'error'
-    monitor.state.message = messageFromUnknown(error)
-    publish(monitor)
-  } finally {
-    monitor.inFlight = false
-    if (!current(monitor)) return
-    if (monitor.sampleRequested) {
-      monitor.sampleRequested = false
-      void sample(monitor)
-    } else {
-      scheduleNextSample(monitor, sampleStartedAt)
+    if (!isCurrent(target)) return
+    if (!(error instanceof LocalizedError)) {
+      console.error('Performance sampling failed', error)
     }
+    if (lane.kind === 'kernel') target.previous = null
+    const message = messageFromUnknown(error)
+    const metrics = { ...target.metrics }
+    for (const key of keys) Object.assign(metrics, { [key]: { latest: metrics[key]?.latest ?? null, error: message } })
+    target.metrics = metrics
   }
 }
 
-function appendSnapshot(monitor: SessionPerformanceMonitor, snapshot: PerformanceSnapshot): void {
-  if (!monitor.segmentOpen) {
-    monitor.state.history.push([])
-    monitor.segmentOpen = true
+/** Starts both sampling lanes for session with fresh counter baselines. */
+function begin(session: ActiveSession): void {
+  const target: SamplingRun = { session, previous: null, metrics: {} }
+  run = target
+  for (const lane of lanes) start(lane, target)
+}
+
+/** Switches monitoring ownership to the connected session identified by sessionId, or clears focus. */
+export function focusPerformanceMonitor(sessionId: string | null): PerformanceMonitorState {
+  const session = sessionId === null ? null : sessions.get(sessionId) ?? null
+  if (focused === session) return getPerformanceMonitorState()
+  stop()
+  focused = session
+  if (session && enabled.get(session.sessionId) === session) begin(session)
+  return publish()
+}
+
+/** Sets the monitor switch for the currently focused connection and returns its new state. */
+export function setPerformanceMonitorEnabled(sessionId: string, value: boolean): PerformanceMonitorState {
+  if (focused?.sessionId !== sessionId || sessions.get(sessionId) !== focused) return getPerformanceMonitorState()
+  if (value === Boolean(run)) return getPerformanceMonitorState()
+  if (value) {
+    enabled.set(sessionId, focused)
+    begin(focused)
+  } else {
+    enabled.delete(sessionId)
+    stop()
   }
-  monitor.state.history[monitor.state.history.length - 1].push(snapshot)
-  pruneHistory(monitor, Date.now())
+  return publish()
 }
 
-function createMonitor(sessionId: string, session: ActiveSession): SessionPerformanceMonitor {
-  return {
-    sessionId,
-    session,
-    timer: null,
-    controller: null,
-    previousCpuTicks: null,
-    inFlight: false,
-    sampleRequested: false,
-    active: false,
-    generation: 0,
-    rescheduleAfterSample: false,
-    segmentOpen: false,
-    state: {
-      sessionId,
-      version: nextVersion,
-      status: 'inactive',
-      snapshot: null,
-      message: null,
-      history: [],
-    },
-  }
-}
-
-export function getPerformanceMonitorState(sessionId: string): PerformanceMonitorState {
-  const monitor = monitors.get(sessionId)
-  if (!monitor) {
-    return {
-      sessionId,
-      version: nextVersion,
-      status: 'inactive',
-      snapshot: null,
-      message: null,
-      history: [],
-    }
-  }
-  pruneHistory(monitor, Date.now())
-  return cloneState(monitor.state)
-}
-
-export function activatePerformanceMonitor(sessionId: string): PerformanceMonitorState {
-  const session = sessions.get(sessionId)
-  if (!session) throw new LocalizedError(msg('errors.sshSessionIsNotConnected'))
-  let monitor = monitors.get(sessionId)
-  if (monitor && monitor.session !== session) {
-    removePerformanceMonitorForSession(sessionId)
-    monitor = undefined
-  }
-  if (!monitor) {
-    monitor = createMonitor(sessionId, session)
-    monitors.set(sessionId, monitor)
-  }
-  if (monitor.active) return getPerformanceMonitorState(sessionId)
-  monitor.active = true
-  monitor.generation += 1
-  monitor.previousCpuTicks = null
-  monitor.segmentOpen = false
-  monitor.state.status = 'sampling'
-  monitor.state.message = null
-  monitor.sampleRequested = monitor.inFlight
-  publish(monitor)
-  if (!monitor.inFlight) void sample(monitor)
-  return getPerformanceMonitorState(sessionId)
-}
-
-export function deactivatePerformanceMonitor(sessionId: string): void {
-  const monitor = monitors.get(sessionId)
-  if (!monitor || !monitor.active) return
-  monitor.active = false
-  monitor.generation += 1
-  monitor.sampleRequested = false
-  monitor.segmentOpen = false
-  if (monitor.timer) clearTimeout(monitor.timer)
-  monitor.timer = null
-  monitor.controller?.abort()
-  monitor.controller = null
-  monitor.state.status = 'inactive'
-  monitor.state.message = null
-  publish(monitor)
-}
-
-export function removePerformanceMonitorForSession(sessionId: string): void {
-  const monitor = monitors.get(sessionId)
-  if (!monitor) return
-  monitor.active = false
-  monitor.generation += 1
-  monitor.sampleRequested = false
-  if (monitor.timer) clearTimeout(monitor.timer)
-  monitor.timer = null
-  monitor.controller?.abort()
-  monitor.controller = null
-  monitors.delete(sessionId)
-  nextVersion += 1
-}
-
-export function configurePerformanceMonitorInterval(seconds: number): void {
-  sampleIntervalSeconds = seconds
-  for (const monitor of monitors.values()) {
-    if (!monitor.active) continue
-    if (monitor.inFlight) {
-      monitor.rescheduleAfterSample = true
-      continue
-    }
-    if (monitor.timer) clearTimeout(monitor.timer)
-    monitor.timer = setTimeout(() => {
-      monitor.timer = null
-      void sample(monitor)
-    }, sampleIntervalSeconds * 1000)
-  }
-}
-
-export function stopAllPerformanceMonitors(): void {
-  for (const sessionId of monitors.keys()) removePerformanceMonitorForSession(sessionId)
-  monitors.clear()
-}
-
+/** Refreshes both lanes for the matching active session, reusing in-flight work. */
 export function refreshPerformanceMonitor(sessionId: string): void {
-  const monitor = monitors.get(sessionId)
-  if (!monitor || !current(monitor)) throw new LocalizedError(msg('errors.performanceMonitoringIsNotEnabled'))
-  if (monitor.timer) clearTimeout(monitor.timer)
-  monitor.timer = null
-  void sample(monitor)
+  if (run?.session.sessionId !== sessionId) return
+  const kernelStarted = start(kernel, run)
+  const mountsStarted = start(mounts, run)
+  if (kernelStarted || mountsStarted) publish()
+}
+
+/** Applies seconds as the new sampling interval and replaces outstanding timers. */
+export function configurePerformanceMonitorInterval(seconds: number): void {
+  intervalMs = seconds * 1000
+  if (!run) return
+  for (const lane of lanes) if (lane.timer) schedule(lane)
+}
+
+/** Forgets the switch and releases resources belonging to the disconnected sessionId. */
+export function removePerformanceMonitorForSession(sessionId: string): void {
+  enabled.delete(sessionId)
+  if (focused?.sessionId === sessionId) focusPerformanceMonitor(null)
+}
+
+/** Disposes all monitoring state when the application window closes. */
+export function stopAllPerformanceMonitors(): void {
+  enabled.clear()
+  stop()
+  focused = null
+  version += 1
 }

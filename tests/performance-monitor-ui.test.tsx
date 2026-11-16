@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { act, createElement } from 'react'
 import { JSDOM } from 'jsdom'
-import type { PerformanceMonitorState, PerformanceSnapshot } from '../src/shared/types.ts'
 import { DEFAULT_PERFORMANCE_THRESHOLDS } from '../src/shared/app-settings.ts'
+import { setLanguage } from '../src/shared/i18n/messages.ts'
+import { performanceUiFixture } from './helpers/performance-fixture.ts'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })
 Object.defineProperties(globalThis, {
@@ -16,70 +17,101 @@ Object.defineProperties(globalThis, {
   IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true, writable: true },
 })
 
-test('expanded performance monitor displays readable metrics and keeps refresh and dismissal actions available', async () => {
+test('the monitor starts off and displays all live resources after enabling, with keyboard focus restored on dismissal', async () => {
   const [{ createRoot }, { default: PerformanceMonitor }] = await Promise.all([
     import('react-dom/client'),
     import('../src/renderer/src/components/PerformanceMonitor.tsx'),
   ])
-  const now = new Date().toISOString()
-  const snapshot: PerformanceSnapshot = {
-    sampledAt: now,
-    cpuPercent: 24,
-    memoryPercent: 46,
-    memoryUsedBytes: 460,
-    memoryTotalBytes: 1000,
-    diskPercent: 61,
-    diskUsedBytes: 610,
-    diskTotalBytes: 1000,
-    loadAverage: [0.35, 0.42, 0.38],
-    uptimeSeconds: 12345,
-    cpuCores: 8,
-  }
-  const state: PerformanceMonitorState = {
-    sessionId: 'session-1',
-    version: 1,
-    status: 'ready',
-    snapshot,
-    message: null,
-    history: [[snapshot]],
-  }
-  const refreshed: string[] = []
+  const state = performanceUiFixture(256)
+  let refreshed = 0
+  const enabledChanges: boolean[] = []
   const openChanges: boolean[] = []
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
 
   try {
-    act(() => root.render(createElement(PerformanceMonitor, {
-      state,
+    /** Renders the panel with the supplied monitor state. */
+    const render = (monitor: typeof state) => act(() => root.render(createElement(PerformanceMonitor, {
+      state: monitor,
       thresholds: DEFAULT_PERFORMANCE_THRESHOLDS,
       open: true,
       onOpenChange: (open: boolean) => openChanges.push(open),
-      onRefresh: (sessionId: string) => refreshed.push(sessionId),
+      onEnabledChange: (enabled: boolean) => enabledChanges.push(enabled),
+      onRefresh: () => { refreshed += 1 },
     })))
-
+    render({ ...state, enabled: false, metrics: {} })
+    const toggle = host.querySelector<HTMLInputElement>('[role="switch"]')!
+    assert.equal(document.activeElement, toggle)
+    assert.match(host.textContent!, /监控已关闭/)
+    assert.equal(host.querySelector<HTMLButtonElement>('[aria-label="立即刷新性能指标"]')?.disabled, true)
+    act(() => toggle.click())
+    assert.deepEqual(enabledChanges, [true])
+    render(state)
     const dialog = host.querySelector('[role="dialog"]')
     assert.ok(dialog)
-    assert.equal(host.querySelectorAll('.performance-trend-row').length, 3)
-    for (const [label, percent] of [
-      ['CPU 使用率', '24%'],
-      ['内存使用率', '46%'],
-      ['根分区使用率', '61%'],
-    ]) {
-      const row = [...host.querySelectorAll('.performance-trend-row')].find((element) => element.textContent?.includes(label))
-      assert.ok(row, `missing ${label}`)
-      assert.ok(row.textContent?.includes(percent), `missing ${percent} for ${label}`)
-      assert.ok(row.querySelector('svg[role="img"][aria-label]'), `${label} should have an accessible trend chart`)
-    }
+    assert.match(dialog.textContent!, /0\.4%/)
+    assert.match(dialog.textContent!, /CPU 0（100%）/)
+    assert.match(dialog.textContent!, /未配置交换空间/)
+    assert.equal(dialog.querySelectorAll('.performance-cpu-list li').length, 16)
+    assert.match(dialog.textContent!, /严重/)
+    assert.equal(dialog.querySelector('[role="tab"][aria-selected="true"]')?.textContent, '存储')
+    const expand = [...dialog.querySelectorAll('button')].find((button) => button.textContent?.includes('256'))!
+    act(() => expand.click())
+    assert.equal(expand.getAttribute('aria-expanded'), 'true')
+    assert.equal(dialog.querySelectorAll('.performance-cpu-list li').length, 256)
+    act(() => expand.click())
+    assert.equal(dialog.querySelectorAll('.performance-cpu-list li').length, 16)
+
+    const storage = dialog.querySelector('[role="tab"][aria-selected="true"]')!
+    act(() => storage.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
+    const io = dialog.querySelector('[role="tab"][aria-selected="true"]')!
+    assert.equal(document.activeElement, io)
+    assert.match(dialog.querySelector('[role="tabpanel"]')!.textContent!, /等待下一次采样/)
+    act(() => io.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'End', bubbles: true })))
+    assert.match(dialog.querySelector('[role="tabpanel"]')!.textContent!, /eth0/)
+    act(() => (storage as HTMLButtonElement).click())
 
     act(() => host.querySelector<HTMLButtonElement>('[aria-label="立即刷新性能指标"]')?.click())
-    assert.deepEqual(refreshed, ['session-1'])
+    assert.equal(refreshed, 1)
+    act(() => setLanguage('en'))
+    assert.match(dialog.textContent!, /Busiest: CPU 0 \(100%\)/)
+    assert.match(dialog.textContent!, /Local mount points/)
+    const { latest } = state.metrics.mounts!
+    const overlay = latest!.value[1]
+    render({ ...state, metrics: { ...state.metrics, mounts: {
+      latest: { sampledAt: latest!.sampledAt, value: [
+        { ...latest!.value[0], fsType: 'overlay' },
+        ...Array.from({ length: 23 }, (_, index) => ({ ...overlay, target: overlay.target + index })),
+      ] },
+      error: null,
+    } } })
+    const group = dialog.querySelector<HTMLDetailsElement>('.performance-resource-group')!
+    assert.equal(group.open, false)
+    assert.match(group.querySelector('summary')!.textContent!, /Overlay mounts \(23\)/)
+    assert.equal(dialog.querySelector('.performance-table tbody th')?.textContent, '/')
+    act(() => group.querySelector('summary')!.click())
+    assert.equal(group.open, true)
+    assert.equal(group.querySelectorAll('tbody tr').length, 10)
+    const longName = group.querySelector<HTMLDetailsElement>('.performance-resource-name')!
+    act(() => longName.querySelector('summary')!.click())
+    assert.equal(longName.open, true)
+    assert.equal(longName.textContent, overlay.target + '0')
+    act(() => group.querySelector<HTMLButtonElement>('[aria-label="Next page"]')!.click())
+    act(() => group.querySelector<HTMLButtonElement>('[aria-label="Next page"]')!.click())
+    assert.equal(group.querySelectorAll('tbody tr').length, 3)
+    assert.match(group.textContent!, /Page 3 of 3/)
+    render({ ...state, metrics: { ...state.metrics, mounts: { latest: state.metrics.mounts!.latest, error: 'df failed' } } })
+    assert.match(dialog.textContent!, /Last successful sample at.*df failed/)
+    assert.match(dialog.textContent!, /61%/)
+    assert.doesNotMatch(host.querySelector('.performance-summary-button')!.textContent!, /61%/)
 
-    act(() => host.querySelector<HTMLButtonElement>('[aria-label="关闭性能监控"]')?.click())
-    act(() => window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape' })))
-    assert.deepEqual(openChanges, [false, false])
+    act(() => window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', cancelable: true })))
+    assert.deepEqual(openChanges, [false])
+    assert.equal(document.activeElement, host.querySelector('.performance-summary-button'))
   } finally {
     act(() => root.unmount())
+    setLanguage('zh-CN')
     host.remove()
   }
 })
@@ -105,6 +137,7 @@ test('performance popover isolates background wheel events only while open', asy
     thresholds: DEFAULT_PERFORMANCE_THRESHOLDS,
     open,
     onOpenChange: () => {},
+    onEnabledChange: () => {},
     onRefresh: () => {},
   })))
 
@@ -116,7 +149,7 @@ test('performance popover isolates background wheel events only while open', asy
     render(true)
     assert.equal(wheel(background).defaultPrevented, true)
     assert.equal(backgroundWheelCount, 1, 'background handlers must not receive wheel events while open')
-    const content = host.querySelector('.performance-empty')!
+    const content = host.querySelector('.performance-popover')!
     assert.equal(wheel(content).defaultPrevented, false, 'popover content must retain native scrolling')
 
     render(false)

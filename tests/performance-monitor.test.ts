@@ -1,173 +1,173 @@
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import test from 'node:test'
+import { setImmediate as settle } from 'node:timers/promises'
+import test, { type TestContext } from 'node:test'
 import type { BrowserWindow } from 'electron'
 import type { ClientChannel } from 'ssh2'
 import type { PerformanceMonitorState } from '../src/shared/types.ts'
 import {
-  activatePerformanceMonitor,
-  configurePerformanceMonitorInterval,
-  deactivatePerformanceMonitor,
-  getPerformanceMonitorState,
-  refreshPerformanceMonitor,
-  removePerformanceMonitorForSession,
-  stopAllPerformanceMonitors,
+  configurePerformanceMonitorInterval, focusPerformanceMonitor, getPerformanceMonitorState, refreshPerformanceMonitor,
+  removePerformanceMonitorForSession, setPerformanceMonitorEnabled, stopAllPerformanceMonitors,
 } from '../src/main/performance-monitor.ts'
+import { MOUNT_CAPACITY_COMMAND, PERFORMANCE_COMMAND } from '../src/main/performance-sampling.ts'
 import { sessions, setMainWindow, type ActiveSession } from '../src/main/runtime.ts'
-
-const report = [
-  'cpu 100 0 50 800 0 0 0 0',
-  'mem 1000000 250000',
-  'load 0.10 0.20 0.30',
-  'uptime 12345.6',
-  'cores 4',
-  'disk 1000000000 250000000 750000000 25%',
-].join('\n')
+import { buildRemoteCommand } from '../src/main/ssh-commands.ts'
+import { mountFixture, performanceFixture } from './helpers/performance-fixture.ts'
 
 class FakeChannel extends EventEmitter {
   readonly stderr = new EventEmitter()
-  closed = false
+  cancelled = false
 
+  /** Leaves stdout open, matching the outgoing stdin half-close. */
   end(): void {}
-  signal(): void { this.close() }
-  close(): void {
-    if (this.closed) return
-    this.closed = true
-    queueMicrotask(() => {
-      this.emit('exit', 255)
-      this.emit('close')
-    })
+
+  /** Records a cancellation without settling, so the test can send a late reply. */
+  signal(): void { this.cancelled = true }
+
+  /** Finishes the SSH channel with no exit status. */
+  close(): void { this.emit('close') }
+
+  /** Sends output and closes the channel with an exit status. */
+  complete(output: string, code = 0): void {
+    if (output) this.emit('data', Buffer.from(output))
+    this.emit('exit', code)
+    this.close()
   }
 }
 
 class FakeClient extends EventEmitter {
-  readonly commands: string[] = []
-  nextFailures = 0
-  activeCommands = 0
-  maxConcurrentCommands = 0
+  readonly kernel: FakeChannel[] = []
+  readonly mounts: FakeChannel[] = []
 
-  exec(command: string, callback: (error: Error | undefined, channel: ClientChannel) => void): void {
-    this.commands.push(command)
+  /** Attaches an idle channel to the requested sampler for controlled completion in tests. */
+  exec(command: string, attach: (error: undefined, channel: ClientChannel) => void): void {
     const channel = new FakeChannel()
-    const shouldFail = this.nextFailures > 0
-    if (shouldFail) this.nextFailures -= 1
-    this.activeCommands += 1
-    this.maxConcurrentCommands = Math.max(this.maxConcurrentCommands, this.activeCommands)
-    channel.once('close', () => { this.activeCommands -= 1 })
-    callback(undefined, channel as unknown as ClientChannel)
-    setTimeout(() => {
-      if (channel.closed) return
-      if (shouldFail) {
-        channel.stderr.emit('data', Buffer.from('sample failed'))
-        channel.emit('exit', 1)
-      } else {
-        const sampleNumber = this.commands.length
-        const currentReport = report.replace(
-          'cpu 100 0 50 800 0 0 0 0',
-          `cpu ${100 + sampleNumber * 10} 0 ${50 + sampleNumber * 5} ${800 + sampleNumber * 15} 0 0 0 0`,
-        )
-        channel.emit('data', Buffer.from(currentReport))
-        channel.emit('exit', 0)
-      }
-      channel.emit('close')
-    }, 10)
+    assert.ok(command === buildRemoteCommand(PERFORMANCE_COMMAND) || command === buildRemoteCommand(MOUNT_CAPACITY_COMMAND))
+    const requests = command === buildRemoteCommand(MOUNT_CAPACITY_COMMAND) ? this.mounts : this.kernel
+    requests.push(channel)
+    attach(undefined, channel as unknown as ClientChannel)
   }
 }
 
-function waitForState(
-  sessionId: string,
-  predicate: (state: PerformanceMonitorState) => boolean,
-  timeoutMs = 2_000,
-): Promise<PerformanceMonitorState> {
-  const current = getPerformanceMonitorState(sessionId)
-  if (predicate(current)) return Promise.resolve(current)
-  return new Promise((resolve, reject) => {
-    const interval = setInterval(() => {
-      const state = getPerformanceMonitorState(sessionId)
-      if (!predicate(state)) return
-      clearInterval(interval)
-      clearTimeout(timeout)
-      resolve(state)
-    }, 5)
-    const timeout = setTimeout(() => {
-      clearInterval(interval)
-      reject(new Error('Timed out waiting for performance monitor state'))
-    }, timeoutMs)
-  })
+/** Installs a fake connected SSH session and returns its client. */
+function connect(sessionId: string): FakeClient {
+  const client = new FakeClient()
+  sessions.set(sessionId, { sessionId, client, profileId: sessionId, kind: 'files' } as unknown as ActiveSession)
+  return client
 }
 
-test('suspends by session, preserves segmented history, and clears it when the session closes', async (t) => {
+/** Configures deterministic timers and returns the emitted monitor events for assertions. */
+function setup(t: TestContext): PerformanceMonitorState[] {
   const updates: PerformanceMonitorState[] = []
-  const fakeWindow = {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 10_000 })
+  setMainWindow({
     isDestroyed: () => false,
-    webContents: { send: (_channel: string, update: PerformanceMonitorState) => updates.push(update) },
-  } as unknown as BrowserWindow
-  const client = new FakeClient()
-  const session = {
-    sessionId: 'session-1',
-    profileId: 'profile-1',
-    kind: 'files',
-    client,
-  } as unknown as ActiveSession
-  sessions.set(session.sessionId, session)
-  setMainWindow(fakeWindow)
-  configurePerformanceMonitorInterval(1)
-  t.after(() => {
+    webContents: {
+      isDestroyed: () => false,
+      send: (_channel: string, update: PerformanceMonitorState) => updates.push(update),
+    },
+  } as unknown as BrowserWindow)
+  t.after(async () => {
     stopAllPerformanceMonitors()
-    sessions.clear()
+    t.mock.timers.tick(2_000)
+    await settle()
     setMainWindow(null)
+    sessions.clear()
     configurePerformanceMonitorInterval(3)
   })
+  return updates
+}
 
-  const activated = activatePerformanceMonitor(session.sessionId)
-  assert.equal(activated.status, 'sampling')
-  const firstSample = await waitForState(session.sessionId, (state) => state.status === 'ready' && state.history[0]?.length === 1)
-  assert.equal(firstSample.snapshot?.cpuPercent, null)
+test('starts only when enabled and quickly switches tabs without overlapping or applying stale replies', async (t) => {
+  const updates = setup(t)
+  const a = connect('a')
+  const b = connect('b')
+  const initial = focusPerformanceMonitor('a')
+  assert.equal(initial.enabled, false)
+  refreshPerformanceMonitor('a')
+  t.mock.timers.tick(5_000)
+  assert.equal(a.kernel.length + a.mounts.length, 0)
+  assert.equal(setPerformanceMonitorEnabled('b', true).sessionId, 'a')
 
-  const secondSample = await waitForState(session.sessionId, (state) => state.history[0]?.length >= 2)
-  assert.equal(typeof secondSample.history[0][1].cpuPercent, 'number')
-  assert.equal(client.maxConcurrentCommands, 1)
+  assert.equal(setPerformanceMonitorEnabled('a', true).enabled, true)
+  refreshPerformanceMonitor('a')
+  assert.equal(a.kernel.length, 1)
+  assert.equal(a.mounts.length, 1)
+  focusPerformanceMonitor('b')
+  assert.equal(a.kernel[0].cancelled, true)
+  assert.equal(a.mounts[0].cancelled, true)
+  setPerformanceMonitorEnabled('b', true)
+  focusPerformanceMonitor('a')
+  assert.equal(b.kernel.length + b.mounts.length, 0)
+  a.kernel[0].complete(performanceFixture({ at: 500 }))
+  a.mounts[0].complete(mountFixture)
+  await settle()
+  assert.deepEqual(getPerformanceMonitorState().metrics, {})
+  assert.equal(a.kernel.length, 2)
+  assert.equal(a.mounts.length, 2)
+  a.kernel[1].complete(performanceFixture({ at: 100 }))
+  a.mounts[1].complete(mountFixture)
+  await settle()
+  const resumed = getPerformanceMonitorState()
+  assert.equal(resumed.metrics.uptime?.latest?.value, 100)
+  assert.equal(resumed.metrics.cpu?.latest?.value.percent, null)
 
-  const commandCountBeforeIntervalChange = client.commands.length
-  configurePerformanceMonitorInterval(2)
-  await new Promise((resolve) => setTimeout(resolve, 1_100))
-  assert.equal(client.commands.length, commandCountBeforeIntervalChange)
-  await waitForState(session.sessionId, (state) => state.history[0]?.length >= 3, 1_500)
+  refreshPerformanceMonitor('a')
+  a.kernel[2].complete(performanceFixture({ at: 103, step: 1 }))
+  await settle()
+  assert.equal(getPerformanceMonitorState().metrics.cpu?.latest?.value.percent, 12.5)
+  setPerformanceMonitorEnabled('a', false)
+  assert.equal(a.mounts[2].cancelled, true)
+  assert.deepEqual(getPerformanceMonitorState().metrics, {})
+  focusPerformanceMonitor('b')
+  assert.equal(getPerformanceMonitorState().enabled, true)
+  removePerformanceMonitorForSession('b')
+  connect('b')
+  assert.equal(focusPerformanceMonitor('b').enabled, false)
+  assert.ok(updates.every((state, index) => index === 0 || state.version > updates[index - 1].version))
+})
+
+test('capacity timeout is isolated, intervals are rescheduled, and stale capacity is marked on failure', async (t) => {
+  setup(t)
+  const client = connect('host')
+  focusPerformanceMonitor('host')
   configurePerformanceMonitorInterval(1)
+  setPerformanceMonitorEnabled('host', true)
+  client.kernel[0].complete(performanceFixture())
+  await settle()
+  assert.ok(getPerformanceMonitorState().metrics.memory?.latest)
+  assert.equal(getPerformanceMonitorState().metrics.mounts, undefined)
 
-  const commandCountBeforePause = client.commands.length
-  deactivatePerformanceMonitor(session.sessionId)
-  assert.equal(getPerformanceMonitorState(session.sessionId).status, 'inactive')
-  await new Promise((resolve) => setTimeout(resolve, 1_100))
-  assert.equal(client.commands.length, commandCountBeforePause)
-  assert.equal(getPerformanceMonitorState(session.sessionId).history.length, 1)
+  configurePerformanceMonitorInterval(2)
+  t.mock.timers.tick(1_999)
+  assert.equal(client.kernel.length, 1)
+  t.mock.timers.tick(1)
+  client.kernel[1].complete(performanceFixture({ at: 102, step: 1 }))
+  await settle()
+  assert.equal(getPerformanceMonitorState().metrics.cpu?.latest?.value.percent, 12.5)
+  t.mock.timers.tick(2_500)
+  assert.equal(client.mounts[0].cancelled, true)
+  client.mounts[0].close()
+  client.kernel[2].complete(performanceFixture({ at: 104, step: 2, failedSource: 'network' }))
+  await settle()
+  assert.ok(getPerformanceMonitorState().metrics.mounts?.error)
+  assert.ok(getPerformanceMonitorState().metrics.network?.error)
+  assert.equal(getPerformanceMonitorState().metrics.cpu?.error, null)
+  assert.equal(client.mounts.length, 1)
 
-  activatePerformanceMonitor(session.sessionId)
-  const resumedFirstSample = await waitForState(session.sessionId, (state) => state.history.length === 2 && state.history[1]?.length === 1)
-  assert.equal(resumedFirstSample.history[1][0].cpuPercent, null)
-  const resumedSecondSample = await waitForState(session.sessionId, (state) => state.history[1]?.length >= 2)
-  assert.equal(typeof resumedSecondSample.history[1][1].cpuPercent, 'number')
-  assert.equal(updates.some((state) => state.version > resumedSecondSample.version), false)
+  refreshPerformanceMonitor('host')
+  refreshPerformanceMonitor('host')
+  assert.equal(client.mounts.length, 2)
+  assert.equal(client.kernel.length, 4)
+  client.mounts[1].complete(mountFixture)
+  client.kernel[3].complete(performanceFixture({ at: 106, step: 3 }))
+  await settle()
+  assert.equal(getPerformanceMonitorState().metrics.mounts?.latest?.value[0].target, '/')
+  assert.equal(getPerformanceMonitorState().metrics.network?.latest?.value[0].receiveBytesPerSecond, null)
 
-  client.nextFailures = 1
-  refreshPerformanceMonitor(session.sessionId)
-  const failed = await waitForState(session.sessionId, (state) => state.status === 'error')
-  assert.match(failed.message ?? '', /sample failed/)
-  const recovered = await waitForState(session.sessionId, (state) => state.status === 'ready' && state.history.length === 3)
-  assert.equal(recovered.history[2][0].cpuPercent, null)
-  assert.equal(client.maxConcurrentCommands, 1)
-
-  deactivatePerformanceMonitor(session.sessionId)
-  removePerformanceMonitorForSession(session.sessionId)
-  const cleared = getPerformanceMonitorState(session.sessionId)
-  assert.equal(cleared.status, 'inactive')
-  assert.deepEqual(cleared.history, [])
-
-  activatePerformanceMonitor(session.sessionId)
-  await waitForState(session.sessionId, (state) => state.history[0]?.length === 1)
-  stopAllPerformanceMonitors()
-  assert.deepEqual(getPerformanceMonitorState(session.sessionId).history, [])
-  for (let index = 1; index < updates.length; index += 1) {
-    assert.ok(updates[index].version > updates[index - 1].version)
-  }
+  refreshPerformanceMonitor('host')
+  client.mounts[2].complete('', 1)
+  await settle()
+  assert.ok(getPerformanceMonitorState().metrics.mounts?.error)
+  assert.equal(getPerformanceMonitorState().metrics.mounts?.latest?.value[0].target, '/')
 })

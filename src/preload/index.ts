@@ -59,9 +59,10 @@ const api: RemoteFilesTransport = {
   },
   writeTerminal: (sessionId: string, data: string) => ipcRenderer.invoke('terminal:write', sessionId, data),
   resizeTerminal: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
-  getPerformanceMonitorState: (sessionId: string) => ipcRenderer.invoke('performance:state', sessionId),
-  activatePerformanceMonitor: (sessionId: string) => ipcRenderer.invoke('performance:activate', sessionId),
-  deactivatePerformanceMonitor: (sessionId: string) => ipcRenderer.invoke('performance:deactivate', sessionId),
+  /** Selects sessionId as the focused connection and returns its monitor state. */
+  focusPerformanceMonitor: (sessionId: string | null) => ipcRenderer.invoke('performance:focus', sessionId),
+  /** Sets the monitor switch for sessionId to enabled and returns the resulting state. */
+  setPerformanceMonitorEnabled: (sessionId: string, enabled: boolean) => ipcRenderer.invoke('performance:set-enabled', sessionId, enabled),
   refreshPerformanceMonitor: (sessionId: string) => ipcRenderer.invoke('performance:refresh', sessionId),
   getAppSettings: () => ipcRenderer.invoke('settings:get'),
   updateAppSettings: (patch: AppSettingsPatch) => ipcRenderer.invoke('settings:update', patch),

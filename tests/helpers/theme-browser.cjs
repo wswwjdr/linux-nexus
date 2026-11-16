@@ -135,6 +135,30 @@ app.whenReady().then(async () => {
           await js(`new Promise(resolve => window.terminal.write('deploy@nexus:~$ systemctl status nexus\\r\\n\\x1b[32m● nexus.service — Active (running)\\x1b[0m\\r\\nCPU 3.2%   Memory 248 MiB\\r\\n', resolve))`)
         }
         assert.deepEqual(await js(`(${checkTheme.toString()})()`), [], `${mode}/${scene}`)
+        if (scene === 'performance-ready') {
+          assert.equal(await js(`(() => {
+            const panel = document.querySelector('.performance-popover')
+            const cores = document.querySelector('.performance-cpu-list')
+            const body = panel.querySelector('.performance-body')
+            return panel.getBoundingClientRect().width > 1000
+              && cores.children.length === 16 && cores.scrollHeight <= cores.clientHeight + 1
+              && body.clientWidth >= body.scrollWidth
+              && document.activeElement.getAttribute('role') === 'switch'
+          })()`), true)
+          await js('document.querySelector(".performance-core-card button").click()')
+          await waitFor('document.querySelector(".performance-cpu-list").children.length === 256')
+          assert.equal(await js(`(() => {
+            const body = document.querySelector('.performance-body')
+            const header = document.querySelector('.performance-popover-header')
+            const top = header.getBoundingClientRect().top
+            body.scrollTop = 200
+            const headerStayed = header.getBoundingClientRect().top === top && body.scrollTop > 0
+            body.scrollTop = 0
+            return headerStayed
+          })()`), true)
+          await js('document.querySelector(".performance-core-card button").click()')
+          await waitFor('document.querySelector(".performance-cpu-list").children.length === 16')
+        }
         if (scene === 'grid') assert.equal(await js('Boolean(document.querySelector(".file-icon-grid"))'), true)
         if (scene === 'files') {
           // Hidden Chromium windows do not advance paint-driven transitions without capturePage.
@@ -158,6 +182,12 @@ app.whenReady().then(async () => {
           await window.webContents.capturePage(undefined, { stayHidden: true })
           await tick()
           writeFileSync(join(screenshots, `${mode}-${scene}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
+          if (mode === 'light' && scene === 'performance-ready') {
+            await js('window.showScene("performance-overview")')
+            await waitFor('document.querySelector(".performance-cpu-list").children.length === 8')
+            await window.webContents.capturePage(undefined, { stayHidden: true })
+            writeFileSync(join(screenshots, 'performance-overview.png'), (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
+          }
         }
       }
       // A theme change must leave the actual xterm instance, buffer and output subscription alive.
@@ -207,6 +237,29 @@ app.whenReady().then(async () => {
       await tick()
       writeFileSync(join(screenshots, 'english-menu-small.png'), (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
     }
+    await js('window.showScene("performance-ready")')
+    await waitFor('Boolean(document.querySelector(".performance-popover"))')
+    assert.equal(await js(`(() => {
+      const panel = document.querySelector('.performance-popover')
+      const bounds = panel.getBoundingClientRect()
+      const body = panel.querySelector('.performance-body')
+      const group = panel.querySelector('.performance-resource-group')
+      const tables = [...panel.querySelectorAll('.performance-table-viewport')]
+      return /Live monitoring/.test(panel.textContent) && /Overlay mounts/.test(panel.textContent)
+        && bounds.left >= 0 && bounds.right <= innerWidth && bounds.bottom <= innerHeight
+        && !group.open && body.scrollWidth <= body.clientWidth + 1
+        && tables.every(table => table.clientWidth >= table.scrollWidth)
+    })()`), true)
+    if (screenshots) writeFileSync(join(screenshots, 'english-performance-small.png'), (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
+    assert.equal(await js(`(() => {
+      const group = document.querySelector('.performance-resource-group')
+      group.querySelector('summary').click()
+      const path = group.querySelector('.performance-resource-name')
+      path.querySelector('summary').click()
+      const table = group.querySelector('.performance-table-viewport')
+      return group.open && path.open && path.textContent.includes('/var/lib/docker/')
+        && table.scrollWidth <= table.clientWidth + 1
+    })()`), true)
     window.setSize(1160, 760)
     // Restart the main theme module and reload the renderer using the persisted settings.
     delete require.cache[require.resolve(mainBundle)]

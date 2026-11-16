@@ -1,70 +1,58 @@
-import { type MessageValue, msg } from '@shared/i18n/messages'
-import { useCallback, useEffect, useState, type MutableRefObject } from 'react'
+import { msg } from '@shared/i18n/messages'
 import type { PerformanceMonitorState } from '@shared/types'
-import type { SessionTab } from '@/app-types'
+import { useCallback, useEffect, useState } from 'react'
 import type { ToastNotice } from '@/GlobalToast'
 import { errorMessage } from '@/app-utils'
 
-interface UsePerformanceMonitoringOptions {
-  connectedSessionId: string | null
-  sessionsRef: MutableRefObject<SessionTab[]>
-  showToast: (kind: ToastNotice['kind'], message: MessageValue, action?: ToastNotice['action']) => void
-}
+type Notify = (kind: ToastNotice['kind'], message: ToastNotice['message']) => void
 
-export function usePerformanceMonitoring({ connectedSessionId, sessionsRef, showToast }: UsePerformanceMonitoringOptions) {
-  const [states, setStates] = useState<Record<string, PerformanceMonitorState>>({})
-  const [panelOpen, setPanelOpen] = useState(false)
+/** Connects the active SSH tab to the monitor service and exposes its current state and controls. */
+export function usePerformanceMonitoring(connectedSessionId: string | null, showToast: Notify) {
+  const [state, setState] = useState<PerformanceMonitorState | null>(null)
+  const [openSessionId, setOpenSessionId] = useState<string | null>(null)
 
-  useEffect(() => window.remoteFiles.onPerformanceUpdate((event: PerformanceMonitorState) => {
-    if (!sessionsRef.current.some((session) => session.id === event.sessionId)) return
-    setStates((current) => {
-      const previous = current[event.sessionId]
-      return previous && previous.version >= event.version
-        ? current
-        : { ...current, [event.sessionId]: event }
-    })
-  }), [])
-
-  useEffect(() => {
-    setPanelOpen(false)
-    if (!connectedSessionId) return
-    const sessionId = connectedSessionId
-    let cancelled = false
-    void window.remoteFiles.activatePerformanceMonitor(sessionId)
-      .then(() => window.remoteFiles.getPerformanceMonitorState(sessionId))
-      .then((state) => {
-        if (cancelled) return
-        setStates((current) => {
-          const previous = current[sessionId]
-          return previous && previous.version > state.version
-            ? current
-            : { ...current, [sessionId]: state }
-        })
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) showToast('error', msg('common.couldNotStartPerformanceMonitoring', { "value1": errorMessage(error) }))
-      })
-    return () => {
-      cancelled = true
-      void window.remoteFiles.deactivatePerformanceMonitor(sessionId).catch((error: unknown) => {
-        showToast('error', msg('common.couldNotStopPerformanceMonitoring', { "value1": errorMessage(error) }))
-      })
-    }
-  }, [connectedSessionId, showToast])
-
-  const removeSessionStates = useCallback((sessionIds: string[]) => {
-    setStates((current) => {
-      const next = { ...current }
-      for (const sessionId of sessionIds) delete next[sessionId]
-      return next
-    })
+  /** Accepts only monitor states at least as recent as the current renderer state. */
+  const accept = useCallback((next: PerformanceMonitorState) => {
+    setState((current) => !current || next.version > current.version ? next : current)
   }, [])
 
-  const refresh = useCallback((sessionId: string) => {
-    void window.remoteFiles.refreshPerformanceMonitor(sessionId).catch((error: unknown) => {
-      showToast('error', msg('common.couldNotRefreshPerformanceMonitoring', { "value1": errorMessage(error) }))
-    })
-  }, [showToast])
+  useEffect(() => window.remoteFiles.onPerformanceUpdate(accept), [accept])
 
-  return { states, panelOpen, setPanelOpen, removeSessionStates, refresh }
+  useEffect(() => {
+    setOpenSessionId(null)
+    let active = true
+    void window.remoteFiles.focusPerformanceMonitor(connectedSessionId).then(accept).catch((error: unknown) => {
+      if (active) showToast('error', msg('performance.focusFailed', { detail: errorMessage(error) }))
+    })
+    return () => { active = false }
+  }, [accept, connectedSessionId, showToast])
+
+  /** Opens or closes the panel for the currently connected tab. */
+  const setPanelOpen = useCallback((open: boolean) => {
+    setOpenSessionId(open ? connectedSessionId : null)
+  }, [connectedSessionId])
+
+  /** Sets the active tab's monitoring switch to enabled. */
+  const setEnabled = useCallback((enabled: boolean) => {
+    if (!connectedSessionId) return
+    void window.remoteFiles.setPerformanceMonitorEnabled(connectedSessionId, enabled).then(accept).catch((error: unknown) => {
+      showToast('error', msg('performance.switchFailed', { detail: errorMessage(error) }))
+    })
+  }, [accept, connectedSessionId, showToast])
+
+  /** Requests fresh readings for the active tab. */
+  const refresh = useCallback(() => {
+    if (!connectedSessionId) return
+    void window.remoteFiles.refreshPerformanceMonitor(connectedSessionId).catch((error: unknown) => {
+      showToast('error', msg('common.couldNotRefreshPerformanceMonitoring', { value1: errorMessage(error) }))
+    })
+  }, [connectedSessionId, showToast])
+
+  return {
+    state: state?.sessionId === connectedSessionId ? state : null,
+    panelOpen: connectedSessionId !== null && openSessionId === connectedSessionId,
+    setPanelOpen,
+    setEnabled,
+    refresh,
+  }
 }

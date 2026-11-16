@@ -35,7 +35,6 @@ interface UseSessionOperationsOptions {
   loadDirectory: (sessionId: string, remotePath: string, options?: DirectoryLoadOptions) => Promise<boolean>
   removeSessionWorkspaceState: (sessionIds: string[]) => void
   removeSessionScriptStates: (sessionIds: string[]) => void
-  removeSessionPerformanceState: (sessionIds: string[]) => void
   workspaceActionsRef: MutableRefObject<Map<string, SessionFileWorkspaceActions>>
   directoryLoadIdsRef: MutableRefObject<Map<string, number>>
   connectingSessionsRef: MutableRefObject<Set<string>>
@@ -43,6 +42,7 @@ interface UseSessionOperationsOptions {
   showToast: (kind: ToastNotice['kind'], message: MessageValue, action?: ToastNotice['action']) => void
 }
 
+/** Provides connection, tab and workspace operations using the supplied application state and callbacks. */
 export function useSessionOperations({
   sessions,
   sessionsRef,
@@ -66,7 +66,6 @@ export function useSessionOperations({
   loadDirectory,
   removeSessionWorkspaceState,
   removeSessionScriptStates,
-  removeSessionPerformanceState,
   workspaceActionsRef,
   directoryLoadIdsRef,
   connectingSessionsRef,
@@ -256,7 +255,6 @@ export function useSessionOperations({
     setPendingHostKeys((current) => current.filter((pending) => pending.sessionId !== sessionId))
     removeSessionWorkspaceState([sessionId])
     removeSessionScriptStates([sessionId])
-    removeSessionPerformanceState([sessionId])
     workspaceActionsRef.current.delete(sessionId)
     if (activeSessionId === sessionId) {
       const next = remaining[previousIndex] ?? remaining[previousIndex - 1]

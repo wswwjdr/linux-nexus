@@ -3,8 +3,9 @@ import { ipcMain } from './trusted-ipc'
 import type { SessionKind } from '@shared/types'
 import { connectProfile, resizeTerminal, stopSession, writeTerminal } from '../connections'
 import { sessions } from '../runtime'
-import { activatePerformanceMonitor, deactivatePerformanceMonitor, getPerformanceMonitorState, refreshPerformanceMonitor } from '../performance-monitor'
+import { focusPerformanceMonitor, refreshPerformanceMonitor, setPerformanceMonitorEnabled } from '../performance-monitor'
 
+/** Registers trusted handlers for SSH sessions, terminal I/O, and monitor controls. */
 export function registerSessionsIpc(): void {
   ipcMain.handle('connection:connect', (_event, sessionId: string, profileId: string, kind: SessionKind, cols: number, rows: number, startPath: string, rootSourceSessionId?: string) => {
     if (typeof sessionId !== 'string' || !sessionId || typeof profileId !== 'string' || !profileId
@@ -19,17 +20,16 @@ export function registerSessionsIpc(): void {
     return connectProfile(sessionId, profileId, kind, cols, rows, startPath, rootSourceSessionId)
   })
   ipcMain.handle('connection:disconnect', (_event, sessionId: string) => stopSession(sessionId))
-  ipcMain.handle('performance:state', (_event, sessionId: unknown) => {
-    if (typeof sessionId !== 'string' || !sessionId) throw new LocalizedError(msg('errors.invalidPerformanceMonitoringSessionId'))
-    return getPerformanceMonitorState(sessionId)
+  ipcMain.handle('performance:focus', (_event, sessionId: unknown) => {
+    if (sessionId !== null && (typeof sessionId !== 'string' || !sessionId)) {
+      throw new LocalizedError(msg('errors.invalidPerformanceMonitoringSessionId'))
+    }
+    return focusPerformanceMonitor(sessionId)
   })
-  ipcMain.handle('performance:activate', (_event, sessionId: unknown) => {
+  ipcMain.handle('performance:set-enabled', (_event, sessionId: unknown, enabled: unknown) => {
     if (typeof sessionId !== 'string' || !sessionId) throw new LocalizedError(msg('errors.invalidPerformanceMonitoringSessionId'))
-    return activatePerformanceMonitor(sessionId)
-  })
-  ipcMain.handle('performance:deactivate', (_event, sessionId: unknown) => {
-    if (typeof sessionId !== 'string' || !sessionId) throw new LocalizedError(msg('errors.invalidPerformanceMonitoringSessionId'))
-    deactivatePerformanceMonitor(sessionId)
+    if (typeof enabled !== 'boolean') throw new LocalizedError(msg('performance.invalidSwitch'))
+    return setPerformanceMonitorEnabled(sessionId, enabled)
   })
   ipcMain.handle('performance:refresh', (_event, sessionId: unknown) => {
     if (typeof sessionId !== 'string' || !sessionId) throw new LocalizedError(msg('errors.invalidPerformanceMonitoringSessionId'))

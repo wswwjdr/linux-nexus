@@ -136,12 +136,12 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
     toggleSort,
   } = useFileListing({ activeSession, viewModeDefault, patchSession })
   const {
-    states: performanceMonitorStates,
+    state: performanceMonitorState,
     panelOpen: performancePanelOpen,
     setPanelOpen: setPerformancePanelOpen,
-    removeSessionStates: removeSessionPerformanceState,
+    setEnabled: setPerformanceEnabled,
     refresh: refreshPerformance,
-  } = usePerformanceMonitoring({ connectedSessionId, sessionsRef, showToast })
+  } = usePerformanceMonitoring(connectedSessionId, showToast)
   const setSearchOpen = useCallback((sessionId: string, open: boolean) => {
     setSearchOpenSessionIds((current) => {
       if (current.has(sessionId) === open) return current
@@ -245,7 +245,6 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
         connectingSessionsRef.current.delete(session.id)
       }
       removeSessionWorkspaceState(affectedSessions.map(({ id }) => id))
-      removeSessionPerformanceState(affectedSessions.map(({ id }) => id))
       for (const session of affectedSessions) workspaceActionsRef.current.delete(session.id)
       if (activeSessionId && !remaining.some((session) => session.id === activeSessionId)) {
         setActiveSessionId(remaining.at(-1)?.id ?? null)
@@ -302,13 +301,12 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
       if (!session) return
       setEntryProperties((current) => current?.sessionId === event.sessionId ? null : current)
       removeScriptSessionStates([event.sessionId])
-      removeSessionPerformanceState([event.sessionId])
       setRootRequest((current) => current?.sessionId === event.sessionId ? null : current)
       patchSession(event.sessionId, { status: 'disconnected', error: event.message, loading: false, fileIdentity: undefined })
       if (activeSessionId === event.sessionId) showToast('error', msg('common.connectionDisconnected', { "message": event.message }))
     })
     return removeClosedListener
-  }, [activeSessionId, patchSession, removeScriptSessionStates, removeSessionPerformanceState, showToast])
+  }, [activeSessionId, patchSession, removeScriptSessionStates, showToast])
 
   useEffect(() => {
     if (!sessionContextMenu) return
@@ -531,7 +529,6 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
     loadDirectory,
     removeSessionWorkspaceState,
     removeSessionScriptStates: removeScriptSessionStates,
-    removeSessionPerformanceState,
     workspaceActionsRef,
     directoryLoadIdsRef,
     connectingSessionsRef,
@@ -698,10 +695,11 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
           <div className="topbar-actions">
             {connectedSessionId && (
               <PerformanceMonitor
-                state={performanceMonitorStates[connectedSessionId] ?? null}
+                state={performanceMonitorState}
                 thresholds={performanceThresholds}
                 open={performancePanelOpen}
                 onOpenChange={setPerformancePanelOpen}
+                onEnabledChange={setPerformanceEnabled}
                 onRefresh={refreshPerformance}
               />
             )}

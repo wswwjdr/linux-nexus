@@ -59,7 +59,7 @@ async function mountTabs(
       setCreateDirectoryDialog: noOp, patchSession: noOp,
       updateSession: (id, update) => setSessions((current) => current.map((tab) => tab.id === id ? update(tab) : tab)),
       loadDirectory, removeSessionWorkspaceState: noOp,
-      removeSessionScriptStates: noOp, removeSessionPerformanceState: noOp,
+      removeSessionScriptStates: noOp,
       workspaceActionsRef: useRef(new Map()), directoryLoadIdsRef: useRef(new Map()),
       connectingSessionsRef: useRef(new Set()), setSearchOpen: noOp, showToast: noOp,
     })

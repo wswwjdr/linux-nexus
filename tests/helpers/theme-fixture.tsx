@@ -15,7 +15,7 @@ import TerminalPanel from '../../src/renderer/src/components/TerminalPanel'
 import { useProfileManagement } from '../../src/renderer/src/hooks/useProfileManagement'
 import { SettingsDialog } from '../../src/renderer/src/components/dialogs/SettingsDialog'
 import PerformanceMonitor from '../../src/renderer/src/components/PerformanceMonitor'
-import type { PerformanceSnapshot, PerformanceMonitorState } from '../../src/shared/types'
+import { performanceUiFixture } from './performance-fixture'
 import { DEFAULT_APP_SETTINGS } from '../../src/shared/app-settings'
 import '../../src/renderer/src/styles.css'
 
@@ -30,19 +30,8 @@ const entries = ['应用配置', 'deployment', 'app.log', 'README.md', 'deploy.s
 const viewportRef = createRef<HTMLDivElement>()
 const hoverCardRef = createRef<HTMLDivElement>()
 const anchorRef = createRef<HTMLElement>()
-const snapshot: PerformanceSnapshot = {
-  sampledAt: new Date().toISOString(), cpuPercent: 24, memoryPercent: 46, diskPercent: 61,
-  memoryUsedBytes: 4 * 1024 ** 3, memoryTotalBytes: 8 * 1024 ** 3,
-  diskUsedBytes: 61 * 1024 ** 3, diskTotalBytes: 100 * 1024 ** 3,
-  loadAverage: [.35, .42, .38], uptimeSeconds: 123456, cpuCores: 8,
-}
-const monitorState: PerformanceMonitorState = {
-  sessionId: 'files', version: 1, status: 'ready', snapshot, message: null,
-  history: [Array.from({ length: 30 }, (_, i) => ({ ...snapshot,
-    sampledAt: new Date(Date.now() - (29 - i) * 30_000).toISOString(),
-    cpuPercent: 24 + Math.sin(i) * 12, memoryPercent: 46 + Math.sin(i / 3) * 5, diskPercent: 61,
-  }))],
-}
+const monitorState = performanceUiFixture(256)
+const monitorOverview = performanceUiFixture()
 const fixtureWindow = window as any
 fixtureWindow.settingsApi = createRemoteFilesApi(fixtureWindow.remoteFilesTransport)
 const showToast = (_kind: string, message: string) => { fixtureWindow.lastToast = message }
@@ -98,8 +87,9 @@ function Fixture() {
       <button className="icon-button toolbar-button" aria-label="设置"><Settings size={16} /></button>
       <span className="topbar-separator" /><span className="connected-host">deploy@192.0.2.10</span>
     </div><div className="topbar-actions">
-      {scene === 'performance-ready' && <PerformanceMonitor state={monitorState} thresholds={DEFAULT_APP_SETTINGS.performanceThresholds}
-        open onOpenChange={noop} onRefresh={noop} />}
+      {(scene === 'performance-ready' || scene === 'performance-overview') && <PerformanceMonitor
+        state={scene === 'performance-ready' ? monitorState : monitorOverview} thresholds={DEFAULT_APP_SETTINGS.performanceThresholds}
+        open onOpenChange={noop} onEnabledChange={noop} onRefresh={noop} />}
       <button className="icon-button toolbar-button" aria-label="搜索"><Search size={16} /></button>
       <button className="icon-button toolbar-button" aria-label="终端"><TerminalIcon size={16} /></button>
       <button className="text-button"><Upload size={15} /> 上传文件</button>

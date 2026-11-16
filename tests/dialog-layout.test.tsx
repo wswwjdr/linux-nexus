@@ -72,7 +72,9 @@ test('dialogs fit window and session bounds with reachable actions at small wind
     }} onCloseSettings={noop} onUpdateSettings={noop} onAddFileTypeExtension={noop} onRemoveFileTypeExtension={noop} onResetFileTypeExtensions={noop} onUpdateDefaultView={noop} onUpdateTheme={noop} onUpdateStartupProfile={noop} onUpdateStartupKind={noop} onSelectAliasProfile={noop} onUpdateAliasName={noop} onUpdateAliasCommand={noop} onSyncAliases={noop} onAddAlias={noop} onRequestAliasDelete={noop} />),
     fixture('search', <SearchDialog sessionId="session" profileId="server" currentPath="/" visible previewOpen={false} fileTypeExtensions={DEFAULT_APP_SETTINGS.fileTypeExtensions} onClose={noop} onMenuAction={noop} />),
     fixture('rename', <RemoteEntryRenameDialog state={{ sessionId: 'session', profileId: 'server', entry: { name: 'test.txt', path: '/test.txt', type: 'file', size: 0, modifiedAt: null, permissions: '' } }} onSubmit={async () => {}} onClose={noop} />),
-    fixture('performance', <PerformanceMonitor state={{ sessionId: 'session', version: 1, status: 'error', snapshot: null, history: [], message: longText }} thresholds={DEFAULT_APP_SETTINGS.performanceThresholds} open onOpenChange={noop} onRefresh={noop} />),
+    fixture('performance', <PerformanceMonitor state={{ sessionId: 'session', version: 1, enabled: true, sampling: false,
+      metrics: { cpu: { latest: null, error: longText } } }} thresholds={DEFAULT_APP_SETTINGS.performanceThresholds}
+      open onOpenChange={noop} onEnabledChange={noop} onRefresh={noop} />),
   ]
   // Portal dialogs must render into a document before their markup can be tested.
   const { createRoot } = await import('react-dom/client')
@@ -119,7 +121,7 @@ test('dialogs fit window and session bounds with reachable actions at small wind
       host.remove()
     }
   }
-  const css = (await Promise.all(['foundation', 'workspace', 'dialogs', 'audio-preview', 'rich-previews', 'search', 'remote-operations', 'responsive', 'theme'].map((name) => readFile(new URL(`../src/renderer/src/styles/${name}.css`, import.meta.url), 'utf8')))).join('\n')
+  const css = (await Promise.all(['foundation', 'workspace', 'performance', 'dialogs', 'audio-preview', 'rich-previews', 'search', 'remote-operations', 'responsive', 'theme'].map((name) => readFile(new URL(`../src/renderer/src/styles/${name}.css`, import.meta.url), 'utf8')))).join('\n')
   const directory = await mkdtemp(join(tmpdir(), 'linux-nexus-dialog-layout-'))
   try {
     const input = join(directory, 'fixtures.json')
