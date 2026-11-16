@@ -5,6 +5,7 @@ import type { PendingHostKey, RecentConnection, SessionTab, BrowserContextMenu, 
 import type { SessionFileWorkspaceActions } from '@/features/files/FileSessionWorkspace'
 import type { ToastNotice } from '@/GlobalToast'
 import { connectFailureText, errorMessage, getParentPath } from '@/app-utils'
+import { useDependencyConfirmation } from '@/features/dependencies/DependencyProvider'
 
 interface SessionContextMenuState {
   sessionId: string
@@ -72,6 +73,8 @@ export function useSessionOperations({
   setSearchOpen,
   showToast,
 }: UseSessionOperationsOptions) {
+  const confirmDependencies = useDependencyConfirmation()
+  const connectionAttempts = useRef(new Map<string, AbortController>())
   const startupConnectionAttemptedRef = useRef(false)
 
   useEffect(() => {
@@ -86,12 +89,15 @@ export function useSessionOperations({
     openSession(profile, startupConnection.kind)
   }, [profileDataLoaded, startupConnection, profiles, showToast])
 
+  /** Opens the given `session` using `profile` and waits for host trust or dependency preparation when requested. */
   const connectSession = async (session: SessionTab, profile: ServerProfile) => {
     if (connectingSessionsRef.current.has(session.id)) return
     connectingSessionsRef.current.add(session.id)
+    const controller = new AbortController()
+    connectionAttempts.current.set(session.id, controller)
     patchSession(session.id, { status: 'connecting', error: null })
     try {
-      const result = await window.remoteFiles.connect(
+      let result = await window.remoteFiles.connect(
         session.id,
         profile.id,
         session.kind,
@@ -101,8 +107,17 @@ export function useSessionOperations({
         session.rootSourceSessionId,
       )
       if (!sessionsRef.current.some((candidate) => candidate.id === session.id)) {
-        if (result.ok) await window.remoteFiles.disconnect(session.id)
+        if (result.ok || result.reason === 'dependencies') await window.remoteFiles.disconnect(session.id)
         return
+      }
+      if (!result.ok && result.reason === 'dependencies') {
+        const ready = await confirmDependencies(result.issue, session.id, profile.name, controller.signal)
+        if (controller.signal.aborted) return
+        if (!ready) {
+          patchSession(session.id, { status: 'disconnected' })
+          return
+        }
+        result = { ok: true, path: '/', fileIdentity: ready.fileIdentity }
       }
       if (!result.ok) {
         const latestSession = sessionsRef.current.find((candidate) => candidate.id === session.id)
@@ -153,6 +168,7 @@ export function useSessionOperations({
       patchSession(session.id, { status: 'disconnected', error: message })
       if (activeSessionId === session.id) showToast('error', message)
     } finally {
+      connectionAttempts.current.delete(session.id)
       connectingSessionsRef.current.delete(session.id)
     }
   }
@@ -243,10 +259,12 @@ export function useSessionOperations({
     void connectSession(session, profile)
   }
 
+  /** Closes the tab and cancels the connection attempt or active SSH session for `sessionId`. */
   const closeSession = (sessionId: string) => {
     const previousSessions = sessionsRef.current
     const closing = previousSessions.find((session) => session.id === sessionId)
     if (!closing) return
+    connectionAttempts.current.get(sessionId)?.abort()
     const previousIndex = previousSessions.findIndex((session) => session.id === sessionId)
     directoryLoadIdsRef.current.delete(sessionId)
     const remaining = previousSessions.filter((session) => session.id !== sessionId)

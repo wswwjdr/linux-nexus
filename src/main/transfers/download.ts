@@ -7,6 +7,7 @@ import { getMainWindow, messageFromError, type TransferItem } from '../runtime'
 import { readAppSettings } from '../state-store'
 import { iterateRemoteTree, filesSession, remotePathType, remoteFileSize } from '../remote-fs'
 import { transferFileStream } from './stream-transfer'
+import { verifyFileOperation } from '../file-dependencies'
 import {
   assertWindowsPath,
   findPathCollisions,
@@ -164,6 +165,7 @@ async function chooseDownloadDirectory(signal: AbortSignal): Promise<string | nu
   return destination.canceled || !destination.filePaths[0] ? null : destination.filePaths[0]
 }
 
+/** Checks tools and downloads the requested paths as a cancellable transfer for this session. */
 export async function downloadEntries(
   event: Electron.IpcMainInvokeEvent,
   requestId: string,
@@ -172,6 +174,7 @@ export async function downloadEntries(
   signal: AbortSignal,
 ): Promise<TransferResult> {
   signal.throwIfAborted()
+  await verifyFileOperation(session, 'download', signal)
   const destination = await chooseDownloadDirectory(signal)
   if (!destination) return { status: 'not-started' }
 

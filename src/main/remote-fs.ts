@@ -4,6 +4,9 @@ import type { RemoteEntry, RemoteNavigationTarget } from '@shared/types'
 import { sessions } from './runtime'
 import { fileCommands } from './file-identity'
 import { runRemoteCommand, type RemoteCommandTarget } from './ssh-commands'
+import { fileCapabilities, operationCapabilityReport, requireCapabilities } from './server-capabilities'
+import { offerFileDependencies } from './file-dependencies'
+import { DependencyRequiredError } from '../shared/dependency-error'
 
 export function filesSession(sessionId: string) {
   const activeSession = sessions.get(sessionId)
@@ -25,8 +28,12 @@ export function normalizedRemotePath(remotePath: string): string {
 export async function resolveRemoteNavigationTarget(sessionId: string, remotePath: string): Promise<RemoteNavigationTarget> {
   const session = filesSession(sessionId)
   const path = normalizedRemotePath(remotePath)
+  const required = fileCapabilities['resolve-link']
   const { stdout } = await runRemoteCommand(session.commands, [
     'target=$1',
+    'if [[ -L "$1" ]]; then',
+    requireCapabilities(required),
+    'fi',
     'if [[ -L "$1" ]] && ! IFS= read -r -d "" target < <(readlink --canonicalize-existing --zero -- "$1"); then',
     '  printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:navigationTargetUnavailable" >&2; exit 1',
     'fi',
@@ -38,7 +45,11 @@ export async function resolveRemoteNavigationTarget(sessionId: string, remotePat
     '  printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:navigationTargetUnavailable" >&2; exit 1',
     'fi',
     'printf "%s\\0%s\\0" "$kind" "$target"',
-  ].join('\n'), [path])
+  ].join('\n'), [path]).catch(error => {
+    const report = operationCapabilityReport(error, required)
+    if (report) throw new DependencyRequiredError(offerFileDependencies(sessionId, session.commands, 'resolve-link', required, report))
+    throw error
+  })
   const fields = nulFields(stdout)
   const [kind, target] = fields
   if (fields.length !== 2 || stdout.at(-1) !== 0 || (kind !== 'd' && kind !== 'f') || !posix.isAbsolute(target) || posix.resolve(target) !== target) {

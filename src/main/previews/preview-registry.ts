@@ -10,6 +10,8 @@ import { pdfPreviewStrategy } from './strategies/pdf-preview'
 import { textPreviewStrategy } from './strategies/text-preview'
 import { previewSizeError, type PreviewStrategy, type PreviewType } from './preview-strategy'
 import { releasePreview } from './preview-assets'
+import { verifyFileOperation } from '../file-dependencies'
+import type { FileCapabilityPurpose } from '../server-capabilities'
 
 const previewLimitKeyByType: Record<PreviewType, keyof PreviewLimits> = {
   text: 'textMiB',
@@ -26,6 +28,11 @@ const previewStrategies: readonly PreviewStrategy[] = [
   imagePreviewStrategy,
   mediaPreviewStrategy,
 ]
+
+const previewDependencies: Record<PreviewType, FileCapabilityPurpose> = {
+  audio: 'media-preview', video: 'media-preview', pdf: 'media-preview',
+  image: 'image-preview', text: 'text-preview', markdown: 'markdown-preview',
+}
 
 const strategyByType = new Map<PreviewType, PreviewStrategy>()
 for (const strategy of previewStrategies) {
@@ -47,6 +54,7 @@ export async function previewFile(sessionId: string, remotePath: string, type: P
   return session.commands.track(previewInSession(session, remotePath, type, encoding))
 }
 
+/** Checks tools and opens the requested `type` for `remotePath` within `session`, using the optional text `encoding`. */
 async function previewInSession(session: ReturnType<typeof filesSession>, remotePath: string, type: PreviewType, encoding?: TextEncoding): Promise<PreviewResult> {
   if (!previewTypes.includes(type)) throw new LocalizedError(msg('errors.invalidPreviewType'))
   const normalizedPath = normalizedRemotePath(remotePath)
@@ -54,6 +62,7 @@ async function previewInSession(session: ReturnType<typeof filesSession>, remote
   if (!previewTypesForFile(normalizedPath, settings.fileTypeExtensions).includes(type)) {
     throw new LocalizedError(msg('errors.thisPreviewTypeIsNotConfiguredForTheFile'))
   }
+  await verifyFileOperation(session, previewDependencies[type])
   if (await remotePathType(session.commands, normalizedPath) !== 'file') throw new LocalizedError(msg('errors.onlyRegularFilesCanBePreviewed'))
 
   const limits: PreviewLimits = settings

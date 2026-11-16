@@ -6,6 +6,9 @@ import type {
   OperationExecutionStrategy,
 } from '@shared/types'
 import { archiveBaseName, archiveFormatForName, type RemoteArchiveFormat } from '@shared/archive'
+import { archiveCapabilities, fileCapabilities, operationCapabilityReport, requireCapabilities } from './server-capabilities'
+import { offerFileDependencies } from './file-dependencies'
+import { DependencyRequiredError } from '../shared/dependency-error'
 import { buildRemoteCommand, executeRemoteCommand, RemoteCommandError } from './ssh-commands'
 import { filesSession, normalizedRemotePath } from './remote-fs'
 
@@ -114,6 +117,7 @@ function operationCommandParts(
     return {
       script: [
         'set -eu',
+        requireCapabilities(fileCapabilities[intent.operation]),
         'target=$1; shift',
         '[[ -d "$target" ]] || { printf "%s\\n" "LINUX_NEXUS_DIAGNOSTIC:targetDirectory" >&2; exit 1; }',
         'for source in "$@"; do [[ ! -L "$source" && ( -f "$source" || -d "$source" ) ]] || { printf "LINUX_NEXUS_DIAGNOSTIC:sourceType: %s\\n" "$source" >&2; exit 1; }; done',
@@ -146,6 +150,7 @@ function operationCommandParts(
     script: [
       'set -euo pipefail',
       'archive=$1; output=$2',
+      requireCapabilities(archiveCapabilities[format]),
       'mkdir -p -- "$output"',
       archiveUnpackCommand(format, strategy),
     ].join('\n'),
@@ -161,18 +166,24 @@ function buildOperationCommand(
   return buildRemoteCommand(parts.script, parts.args)
 }
 
+/** Executes the validated operation in `value`, returning a dependency proposal if its preflight blocks. */
 export function executeRemoteOperation(value: OperationExecutionRequest): Promise<OperationExecutionResult> {
   const intent = validateRequest(value)
   if (activeOperations.has(intent.requestId)) throw new LocalizedError(msg('errors.duplicateRemoteOperationId'))
   const session = filesSession(intent.sessionId)
+  const format = intent.archivePath ? archiveFormatForName(intent.archivePath) : undefined
   const command = buildOperationCommand(intent, value.strategy)
   const controller = new AbortController()
   const promise = executeRemoteCommand(session.commands, command, { signal: controller.signal, timeoutMs: 86_400_000, collectStdout: false })
     .then((): OperationExecutionResult => ({ status: 'completed', requestId: value.requestId, operation: intent.operation, command }))
     .catch((error: unknown): OperationExecutionResult => {
       if (controller.signal.aborted) return { status: 'cancelled', requestId: value.requestId, operation: intent.operation, command }
+      const required = intent.operation === 'extract' && format ? archiveCapabilities[format]
+        : intent.operation === 'copy' || intent.operation === 'move' ? fileCapabilities[intent.operation] : []
+      const report = operationCapabilityReport(error, required)
+      if (report) throw new DependencyRequiredError(offerFileDependencies(session.sessionId, session.commands, intent.operation, required, report))
       // UnZip exit 1 can also mean skipped files; accept only this exact compatibility warning.
-      if (intent.operation === 'extract' && archiveFormatForName(intent.archivePath!) === 'zip'
+      if (intent.operation === 'extract' && format === 'zip'
         && error instanceof RemoteCommandError && error.exitCode === 1
         && error.stderr.trim().replace(/^warning:[ \t]+/, 'warning: ')
           === `warning: ${intent.archivePath} appears to use backslashes as path separators`) {

@@ -7,6 +7,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { OperationExecutionStrategy } from '@shared/types'
 import { runRemoteCommand, type RemoteCommandTarget } from '../ssh-commands'
 import { buildUploadCommand } from './upload-command'
+import { readRemoteBytes } from '../remote-byte-reader'
 
 export const TRANSFER_CHUNK_SIZE = 256 * 1024
 
@@ -26,6 +27,7 @@ async function writeAll(file: Awaited<ReturnType<typeof open>>, chunk: Buffer): 
   }
 }
 
+/** Streams a known-size file between the specified paths and reports progress under the command scope and cancellation signal. */
 export async function transferFileStream(
   direction: Direction,
   client: RemoteCommandTarget,
@@ -76,22 +78,11 @@ export async function transferFileStream(
   const file = await open(temporaryPath, 'wx')
   let completed = false
   let fileOpen = true
-  let received = 0
   try {
-    await runRemoteCommand(client,
-      'dd if="$1" iflag=skip_bytes,count_bytes skip=0 count="$2" status=none',
-      [sourcePath, String(size)],
-      {
-        signal, timeoutMs: 86_400_000,
-        collectStdout: false,
-        onStdout: async (chunk) => {
-          received += chunk.length
-          await writeAll(file, chunk)
-          onProgress(chunk.length)
-        },
-      },
-    )
-    if (received !== size) throw new LocalizedError(msg('errors.serverFileChangedDuringDownload'))
+    await readRemoteBytes(client, sourcePath, {
+      length: size, signal, timeoutMs: 86_400_000, error: msg('errors.serverFileChangedDuringDownload'),
+      onChunk: async chunk => { await writeAll(file, chunk); onProgress(chunk.length) },
+    })
     await file.sync()
     await file.close()
     fileOpen = false

@@ -11,13 +11,15 @@ import { cancelContentSearchesForSession, failContentSearchesForSession } from '
 import { cancelScriptExecutionsForSession, failScriptExecutionsForSession } from './script-execution-runtime'
 import { cancelTransfersForSession } from './transfers'
 import { getMainWindow, sessions, type ActiveSession } from './runtime'
-import { endpointKey, passwordFor, profileFromState, readState } from './state-store'
+import { archivePreparationKey, archivePreparationSeen, endpointKey, passwordFor, profileFromState, readState, saveArchivePreparation } from './state-store'
 import { clearPreviewAssetsForSession } from './previews'
 import { cancelRemoteOperationsForSession } from './remote-operations'
 import { registerPerformanceConnection, unregisterPerformanceConnection } from './performance-monitor'
 import { cancelClientTasks, runRemoteCommand } from './ssh-commands'
 import { filesSession, listRemoteDirectory } from './remote-fs'
-import { verifyFileSessionCapabilities } from './file-session-capabilities'
+import { archiveSetupCapabilities, capabilitiesReady, checkCapabilities, inspectServer, type ServerEnvironment } from './server-capabilities'
+import type { DependencyCheckResult } from '@shared/types'
+import { createDependencyPlan } from './dependency-plans'
 import { initializeFileIdentity, revokeFileIdentity, rootTerminalScope } from './file-identity'
 
 const pendingConnections = new Map<string, { profileId: string; client: Client; cancel: () => void }>()
@@ -115,17 +117,20 @@ export function connectProfile(
     const client = new Client()
     const connection = new AbortController()
     let settled = false
-    let keyIssue: ConnectResult | null = null
+    let preparingEnvironment = false
+    let keyIssue: Extract<ConnectResult, { reason: 'host-key-unknown' | 'host-key-changed' }> | null = null
     let hostFingerprint: string | undefined
     const isCurrentAttempt = () => pendingConnections.get(sessionId)?.client === client
 
-    const finish = (result: ConnectResult) => {
+    /** Completes the pending attempt and reports late connection failures after a proposal was shown. */
+    const finish = (result: Exclude<ConnectResult, { reason: 'dependencies' }>, notify = true) => {
       if (settled) return
       settled = true
       if (pendingConnections.get(sessionId)?.client === client) pendingConnections.delete(sessionId)
       if (!result.ok) {
         connection.abort()
         client.end()
+        if (notify && preparingEnvironment && 'message' in result) sendConnectionClosed(sessionId, profileId, result.message)
       }
       resolve(result)
     }
@@ -133,7 +138,7 @@ export function connectProfile(
     pendingConnections.set(sessionId, {
       profileId,
       client,
-      cancel: () => finish({ ok: false, reason: 'other', message: msg('errors.connectionCancelled') }),
+      cancel: () => finish({ ok: false, reason: 'other', message: msg('errors.connectionCancelled') }, false),
     })
 
     client.on('ready', () => {
@@ -144,16 +149,19 @@ export function connectProfile(
       /**
        * Registers the initialized session and completes the connection attempt.
        * @param shell Interactive channel for a terminal session.
-       * @param effectiveUid Login UID for a file session.
+       * @param environment Verified login environment for a file session.
        * @param initialOutput Buffered terminal output to display on activation.
+       * @param archiveKey Key to record after the first successful directory listing.
+       * @returns The initial file session identity, if applicable.
        */
-      const activate = (shell?: ActiveSession['shell'], effectiveUid?: number, initialOutput?: Buffer) => {
+      const activate = (shell?: ActiveSession['shell'], environment?: ServerEnvironment, initialOutput?: Buffer, archiveKey?: string) => {
         if (!isCurrentAttempt()) {
           finish({ ok: false, reason: 'other', message: msg('errors.connectionCancelled') })
           return
         }
-        const activeSession: ActiveSession = { sessionId, client, kind, profileId, shell, hostFingerprint }
-        const fileIdentity = effectiveUid === undefined ? undefined : initializeFileIdentity(activeSession, effectiveUid)
+        const platform = environment && { endpoint: endpointKey(profile), environment, pendingArchivePreparation: archiveKey }
+        const activeSession: ActiveSession = { sessionId, client, kind, profileId, shell, hostFingerprint, platform }
+        const fileIdentity = environment && initializeFileIdentity(activeSession, environment.effectiveUid)
         sessions.set(sessionId, activeSession)
         registerPerformanceConnection(activeSession)
         if (shell) {
@@ -181,20 +189,56 @@ export function connectProfile(
           if (startPath && !rootScope) shell.write('cd ' + shellQuoteIfNeeded(posix.resolve('/', startPath)) + '\n')
         }
         finish({ ok: true, path: kind === 'files' ? '/' : startPath, fileIdentity })
+        return fileIdentity
       }
 
       if (kind === 'files') {
-        void verifyFileSessionCapabilities(client).then(() => runRemoteCommand(client, 'printf "%s" "$EUID"')).then(
-          ({ stdout }) => {
-            const uid = stdout.toString('ascii')
-            if (!/^\d+$/.test(uid)) {
-              finish({ ok: false, reason: 'other', message: msg('errors.serverReturnedAnInvalidLoginUid') })
-              return
+        /** Inspects this connection attempt using the supplied cancellation signal. */
+        const inspect = async (signal: AbortSignal) => {
+          const environment = await inspectServer(client, signal)
+          return { environment, report: environment.base }
+        }
+        /** Checks optional archive tools for the first visit using the verified login environment. */
+        const prepareArchives = async (environment: ServerEnvironment): Promise<DependencyCheckResult> => {
+          if (!hostFingerprint) throw new Error('SSH host identity missing after verification')
+          const key = archivePreparationKey(profile, hostFingerprint)
+          if (archivePreparationSeen(profileId, key)) return { status: 'ready', fileIdentity: activate(undefined, environment) }
+
+          /** Activates the session with the supplied environment and defers recording setup to the first listing. */
+          const enter = (verified: ServerEnvironment) => ({
+            status: 'ready' as const, fileIdentity: activate(undefined, verified, undefined, key),
+          })
+          const report = await checkCapabilities(client, archiveSetupCapabilities, connection.signal)
+          connection.signal.throwIfAborted()
+          if (capabilitiesReady(report)) return enter(environment)
+
+          const issue = createDependencyPlan({
+            sessionId, endpoint: endpointKey(profile), client, signal: connection.signal, purpose: 'archive-setup',
+            inspect: async signal => ({ environment: await inspectServer(client, signal), report: await checkCapabilities(client, archiveSetupCapabilities, signal) }),
+            onReady: enter, onSkip: enter,
+            onDiscard: () => finish({ ok: false, reason: 'other', message: msg('errors.connectionCancelled') }, false),
+          }, { environment, report })
+          return { status: 'missing', issue }
+        }
+        void inspect(connection.signal).then(async inspection => {
+          if (!isCurrentAttempt()) return
+          if (capabilitiesReady(inspection.report)) {
+            const result = await prepareArchives(inspection.environment)
+            if (result.status === 'missing') {
+              preparingEnvironment = true
+              resolve({ ok: false, reason: 'dependencies', issue: result.issue })
             }
-            activate(undefined, Number(uid))
-          },
-          (error: unknown) => finish({ ok: false, reason: 'other', message: messageFromUnknown(error) }),
-        )
+            return
+          }
+          const issue = createDependencyPlan({
+            sessionId, endpoint: endpointKey(profile), client, signal: connection.signal, purpose: 'connection', inspect,
+            onReady: prepareArchives,
+            onDiscard: () => finish({ ok: false, reason: 'other', message: msg('errors.connectionCancelled') }, false),
+          }, inspection)
+          // Keep the authenticated connection pending while the user reviews the proposal.
+          preparingEnvironment = true
+          resolve({ ok: false, reason: 'dependencies', issue })
+        }).catch((error: unknown) => finish({ ok: false, reason: 'other', message: messageFromUnknown(error) }))
       } else if (rootScope) {
         rootScope.openRootTerminal(client, { term: 'xterm-256color', cols, rows }, startPath, connection.signal, (result) => {
           if ('error' in result) finish({ ok: false, reason: 'other', message: messageFromUnknown(result.error) })
@@ -288,8 +332,16 @@ export function resizeTerminal(sessionId: string, cols: number, rows: number): v
   shell.setWindow(rows, cols, 0, 0)
 }
 
-export function listDirectory(sessionId: string, remotePath: string): Promise<RemoteEntry[]> {
-  return listRemoteDirectory(filesSession(sessionId).commands, remotePath)
+/** Lists `remotePath` for `sessionId` and records archive preparation after its first successful listing. */
+export async function listDirectory(sessionId: string, remotePath: string): Promise<RemoteEntry[]> {
+  const session = sessions.get(sessionId)
+  const entries = await listRemoteDirectory(filesSession(sessionId).commands, remotePath)
+  const platform = session?.platform
+  if (session && platform?.pendingArchivePreparation && sessions.get(sessionId) === session) {
+    saveArchivePreparation(session.profileId, platform.pendingArchivePreparation)
+    platform.pendingArchivePreparation = undefined
+  }
+  return entries
 }
 
 export function copyRemotePath(sessionId: string, remotePath: string): void {

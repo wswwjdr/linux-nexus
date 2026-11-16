@@ -5,7 +5,6 @@ import type { TextEncoding, TextSaveOptions, ContentSearchRequest, NameSearchReq
 import { copyRemotePath, createRemoteDirectory, deleteRemoteEntries, listDirectory } from '../connections'
 import { cancelTransfer, downloadEntries, executeSelectedUpload, selectUploadSources, uploadSelectionContext, cancelUploadSelection, validateDownloadPaths, withTransferLock } from '../transfers'
 import { previewFile, readLogPreview, releasePreview, saveTextFile } from '../previews'
-import { installTextSaveDependencies } from '../previews/text-save-dependencies'
 import { cancelNameSearch, startNameSearch } from '../name-search'
 import { cancelContentSearch, startContentSearch } from '../content-search'
 import { cancelScriptExecution, startScriptExecution } from '../script-execution-runtime'
@@ -13,15 +12,16 @@ import { filesSession, renameRemoteEntry, resolveRemoteNavigationTarget } from '
 import { getRemoteDirectoryStats, getRemoteEntryProperties } from '../file-properties'
 import { cancelRemoteDirectoryUsageTree, getRemoteDirectoryUsageTree } from '../directory-usage-tree'
 import { cancelFileRootEntry, enterFileRoot, leaveFileRoot } from '../file-identity'
+import { withFileCapabilities } from '../file-dependencies'
 
 export function registerFilesIpc(): void {
   ipcMain.handle('files:root-enter', (_event, sessionId: unknown, password?: unknown) => enterFileRoot(sessionId, password))
   ipcMain.handle('files:root-cancel', (_event, sessionId: unknown) => cancelFileRootEntry(sessionId))
   ipcMain.handle('files:root-leave', (_event, sessionId: unknown) => leaveFileRoot(sessionId))
   ipcMain.handle('files:properties', (_event, sessionId: string, remotePath: string) =>
-    getRemoteEntryProperties(sessionId, remotePath))
+    withFileCapabilities(sessionId, 'properties', () => getRemoteEntryProperties(sessionId, remotePath)))
   ipcMain.handle('files:directory-stats', (_event, sessionId: string, remotePath: string) =>
-    getRemoteDirectoryStats(sessionId, remotePath))
+    withFileCapabilities(sessionId, 'directory-stats', () => getRemoteDirectoryStats(sessionId, remotePath)))
   ipcMain.handle('files:directory-usage-tree', (_event, sessionId: string, remotePath: string, requestId: unknown) =>
     getRemoteDirectoryUsageTree(sessionId, remotePath, requestId, readAppSettings().directoryUsageEntryLimit))
   ipcMain.handle('files:directory-usage-tree-cancel', (_event, requestId: unknown) =>
@@ -67,25 +67,22 @@ export function registerFilesIpc(): void {
   })
   ipcMain.handle('files:transfer-cancel', (_event, requestId: string) => cancelTransfer(requestId))
   ipcMain.handle('files:create-directory', (_event, sessionId: string, remoteDirectory: string, name: string) => {
-    return createRemoteDirectory(sessionId, remoteDirectory, name)
+    return withFileCapabilities(sessionId, 'create-directory', () => createRemoteDirectory(sessionId, remoteDirectory, name))
   })
   ipcMain.handle('files:rename', (_event, sessionId: string, remotePath: string, name: string) => {
-    return renameRemoteEntry(sessionId, remotePath, name)
+    return withFileCapabilities(sessionId, 'rename', () => renameRemoteEntry(sessionId, remotePath, name))
   })
   ipcMain.handle('files:path-copy', (_event, sessionId: string, remotePath: string) => copyRemotePath(sessionId, remotePath))
   ipcMain.handle('files:delete', (_event, sessionId: string, remotePaths: unknown) => {
     if (!Array.isArray(remotePaths) || remotePaths.some((remotePath) => typeof remotePath !== 'string')) {
       throw new LocalizedError(msg('errors.invalidDeletionPath'))
     }
-    return deleteRemoteEntries(sessionId, remotePaths as string[])
+    return withFileCapabilities(sessionId, 'delete', () => deleteRemoteEntries(sessionId, remotePaths as string[]))
   })
   ipcMain.handle('files:preview', (_event, sessionId: string, remotePath: string, type: Parameters<typeof previewFile>[2], encoding?: TextEncoding) =>
     previewFile(sessionId, remotePath, type, encoding))
   ipcMain.handle('files:text-save', (_event, sessionId: string, remotePath: string, content: string, lineEnding: unknown, options: TextSaveOptions) => {
     return saveTextFile(sessionId, remotePath, content, lineEnding, options)
-  })
-  ipcMain.handle('files:text-save-install-dependencies', (_event, sessionId: string, packages: unknown, password: unknown) => {
-    return installTextSaveDependencies(sessionId, packages, password)
   })
   ipcMain.handle('files:preview-log', (_event, sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number) =>
     readLogPreview(sessionId, remotePath, beforeOffset, snapshotSize))

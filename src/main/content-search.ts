@@ -3,6 +3,7 @@ import { posix } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { executeRemoteCommand, RemoteCommandError, RemoteTerminationError } from './ssh-commands'
 import { fileCommands } from './file-identity'
+import { verifyFileOperation } from './file-dependencies'
 import type {
   ContentSearchEvent,
   ContentSearchLineMatch,
@@ -47,6 +48,7 @@ interface ContentSearchTask {
 }
 
 const activeSearches = new Map<string, ContentSearchTask>()
+const pendingSearches = new Map<string, { sessionId: string; controller: AbortController }>()
 const RESULT_BATCH_SIZE = 10
 const MAX_QUERY_LENGTH = 4096
 const MAX_PATH_LENGTH = 4096
@@ -271,16 +273,23 @@ function processField(task: ContentSearchTask, field: string): void {
   if (marker === 'F') finishSearch(task, 'failed', diagnosticMessage(decodeBase64(fields[1])) || msg('errors.remoteContentSearchFailed'))
 }
 
-export function startContentSearch(input: ContentSearchRequest): string {
+/** Preflights the tools for `input` and starts the search, returning its request ID. */
+export async function startContentSearch(input: ContentSearchRequest): Promise<string> {
   const request = validateRequest(input)
-  if (activeSearches.has(request.requestId)) throw new LocalizedError(msg('errors.contentSearchRequestIdIsAlreadyInUse'))
+  if (activeSearches.has(request.requestId) || pendingSearches.has(request.requestId)) throw new LocalizedError(msg('errors.contentSearchRequestIdIsAlreadyInUse'))
   const session = sessions.get(request.sessionId)
   if (!session || session.kind !== 'files' || session.profileId !== request.profileId) throw new LocalizedError(msg('errors.fileSessionIsNotConnected'))
   const commands = fileCommands(session)
+  const controller = new AbortController()
+  pendingSearches.set(request.requestId, { sessionId: request.sessionId, controller })
+  try {
+    await verifyFileOperation({ sessionId: session.sessionId, profileId: session.profileId, commands }, 'content-search', controller.signal)
+    controller.signal.throwIfAborted()
+  } finally { pendingSearches.delete(request.requestId) }
 
   const task: ContentSearchTask = {
     request,
-    controller: new AbortController(),
+    controller,
     finished: false,
     cancelled: false,
     remoteDone: false,
@@ -341,7 +350,9 @@ export function startContentSearch(input: ContentSearchRequest): string {
   return command
 }
 
+/** Cancels the running search for `requestId`, including its initial dependency check. */
 export function cancelContentSearch(requestId: string): boolean {
+  pendingSearches.get(requestId)?.controller.abort()
   const task = activeSearches.get(requestId)
   if (!task) return false
   task.cancelled = true
@@ -349,13 +360,17 @@ export function cancelContentSearch(requestId: string): boolean {
   return true
 }
 
+/** Cancels all active searches or preflight requests owned by `sessionId`. */
 export function cancelContentSearchesForSession(sessionId: string): void {
+  for (const pending of pendingSearches.values()) if (pending.sessionId === sessionId) pending.controller.abort()
   for (const task of activeSearches.values()) {
     if (task.request.sessionId === sessionId) cancelContentSearch(task.request.requestId)
   }
 }
 
+/** Cancels pending checks and reports `message` for active searches on a failed `sessionId`. */
 export function failContentSearchesForSession(sessionId: string, message: MessageValue): void {
+  for (const pending of pendingSearches.values()) if (pending.sessionId === sessionId) pending.controller.abort()
   for (const task of activeSearches.values()) {
     if (task.request.sessionId === sessionId) { finishSearch(task, 'failed', message); task.controller.abort() }
   }

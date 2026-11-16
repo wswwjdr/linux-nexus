@@ -50,6 +50,7 @@
 .session-launcher-backdrop { z-index: 7; padding: 20px; }
 .session-launcher { padding: 20px; border-radius: 6px; }
 .confirmation-backdrop { z-index: 9; }
+.confirmation-backdrop-priority { z-index: 12; }
 .confirmation-dialog { width: min(100%, 430px); padding: 23px; }
 .confirmation-heading { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 17px; }
 .confirmation-icon { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; border:1px solid; border-radius: 6px; }

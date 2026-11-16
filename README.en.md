@@ -38,8 +38,8 @@ This README describes the current source code. For features included in a publis
 | --- | --- |
 | Local PC | Windows x64; the current build target is an x64 NSIS installer |
 | Connection | A reachable SSH server with username and password authentication; default port `22` |
-| File sessions | Ubuntu, Debian, CentOS 7/8, CentOS Stream 8/9/10, or RHEL 8/9/10, passing command capability checks at connection time |
-| Server tools | Bash, GNU coreutils, GNU findutils, GNU grep, GNU tar, and sed; archive extraction requires tools for the selected format |
+| File sessions | Linux servers with Bash and the `find` features needed for directory browsing |
+| Dependency setup | Initial archive setup can be skipped. Supported features can offer installation and rechecks through apt-get, dnf, or yum |
 | Download destination | A local file system with hard-link support, such as NTFS |
 | Remote text saves | The server needs `acl` and `attr` tools; the app can install missing packages after confirmation |
 

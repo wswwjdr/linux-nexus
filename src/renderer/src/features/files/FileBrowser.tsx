@@ -9,6 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent as ReactF
 import type { DroppedUploadEntry, FileIdentity, RemoteEntry } from '@shared/types'
 import type { DirectoryLoadOptions, FileViewMode, SortColumn, SortDirection } from '@/app-types'
 import { formatDate, formatSize, getParentPath } from '@/app-utils'
+import { DependencyCancelledError, useFileDependencyAction } from '@/features/dependencies/DependencyProvider'
 import FileEntryCollection from './FileEntryCollection'
 import FilePathBar, { type Breadcrumb } from './FilePathBar'
 import { useFileDragAndDrop } from './useFileDragAndDrop'
@@ -66,11 +67,13 @@ export default function FileBrowser({
   onError,
 }: FileBrowserProps) {
   useLanguage()
+  const withDependencies = useFileDependencyAction()
   const contentRef = useRef<HTMLDivElement>(null)
   const hoverCardRef = useRef<HTMLDivElement>(null)
   const hoverTimerRef = useRef<number | null>(null)
-  const pendingNavigation = useRef<symbol | null>(null)
+  const pendingNavigation = useRef<AbortController | null>(null)
   useLayoutEffect(() => () => {
+    pendingNavigation.current?.abort()
     pendingNavigation.current = null
   }, [sessionId, fileIdentity, currentPath, loading])
   const [hoveredEntry, setHoveredEntry] = useState<{
@@ -136,6 +139,7 @@ export default function FileBrowser({
    * @returns Whether the directory was loaded successfully.
    */
   const navigateDirectory = (path: string, reveal?: DirectoryLoadOptions['reveal']) => {
+    pendingNavigation.current?.abort()
     pendingNavigation.current = null
     return onNavigate(path, reveal)
   }
@@ -146,15 +150,16 @@ export default function FileBrowser({
    * @returns Whether the directory or file target was reached.
    */
   const navigateToPath = async (path: string): Promise<boolean> => {
-    const request = Symbol()
+    pendingNavigation.current?.abort()
+    const request = new AbortController()
     pendingNavigation.current = request
     try {
-      const target = await window.remoteFiles.resolveRemoteNavigationTarget(sessionId, path)
+      const target = await withDependencies(() => window.remoteFiles.resolveRemoteNavigationTarget(sessionId, path), sessionId, path, request.signal)
       if (pendingNavigation.current !== request) return false
       if (target.type === 'directory') return navigateDirectory(target.path)
       return navigateDirectory(getParentPath(target.path), { path: target.path, select: true })
     } catch (error) {
-      if (pendingNavigation.current === request) onError(error)
+      if (pendingNavigation.current === request && !(error instanceof DependencyCancelledError)) onError(error)
       return false
     } finally {
       if (pendingNavigation.current === request) pendingNavigation.current = null
@@ -167,6 +172,7 @@ export default function FileBrowser({
    */
   const openEntry = (entry: RemoteEntry) => {
     cancelEntryDetails()
+    pendingNavigation.current?.abort()
     pendingNavigation.current = null
     if (entry.type === 'directory') void navigateDirectory(entry.path)
     else if (entry.type === 'file') onOpenFile(entry)

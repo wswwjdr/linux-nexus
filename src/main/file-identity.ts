@@ -1,5 +1,5 @@
-import { msg, LocalizedError } from '../shared/i18n/messages'
-import type { FileIdentity, FileElevationResult } from '@shared/types'
+import { msg, LocalizedError, messageFromUnknown } from '../shared/i18n/messages'
+import type { FileIdentity, FileElevationResult, FileRootExitResult } from '@shared/types'
 import { getMainWindow, sessions, type ActiveSession } from './runtime'
 import { executeRemoteCommand, executeSudoCommand, RemoteTerminationError, SudoAuthenticationError,
   type RemoteCommandExecutor, type RemoteCommandOptions } from './ssh-commands'
@@ -12,6 +12,7 @@ import { clearPreviewAssetsForSession } from './previews/preview-assets'
 import { waitWithSignal } from './stream-utils'
 import { openSudoTerminal, type RootTerminalResult } from './root-terminal'
 import type { PseudoTtyOptions } from 'ssh2'
+import { baseCapabilities, capabilitiesReady, checkCapabilities, inspectServer } from './server-capabilities.ts'
 
 export class FileCommandScope implements RemoteCommandExecutor {
   private readonly controller = new AbortController()
@@ -129,6 +130,12 @@ export function revokeFileIdentity(session: ActiveSession): Promise<boolean> {
   return state.commands.revoke()
 }
 
+/**
+ * Verifies sudo and the new identity's command capabilities before switching the file session.
+ * @param sessionId Active file session identifier supplied by IPC.
+ * @param value Optional password for the remote sudo prompt.
+ * @returns The new identity or an authentication or cancellation status.
+ */
 export async function enterFileRoot(sessionId: unknown, value?: unknown): Promise<FileElevationResult> {
   const session = connectedFileSession(sessionId)
   if (value !== undefined && (typeof value !== 'string' || !value || value.length > 4096 || /[\0\r\n]/.test(value))) {
@@ -144,7 +151,14 @@ export async function enterFileRoot(sessionId: unknown, value?: unknown): Promis
     await state.commands.waitForIdle(transition.signal)
     transition.signal.throwIfAborted()
     password = value === undefined ? undefined : Buffer.from(value + '\n')
-    await executeSudoCommand(session.client, ':', password, { signal: transition.signal })
+    if (session.platform) {
+      const report = await checkCapabilities({
+        execute: (command, options) => executeSudoCommand(session.client, command, password, options ?? {}),
+      }, baseCapabilities, transition.signal)
+      if (!capabilitiesReady(report)) throw new LocalizedError(msg('errors.fileIdentityCapabilitiesMissing', {
+        tools: [...report.missing, ...report.incompatible].join(', '),
+      }))
+    } else await executeSudoCommand(session.client, ':', password, { signal: transition.signal })
     transition.signal.throwIfAborted()
     void state.commands.revoke()
     clearPreviewAssetsForSession(session.sessionId)
@@ -170,7 +184,13 @@ export function cancelFileRootEntry(sessionId: unknown): void {
   if (state.identity === 'login') state.transition?.abort()
 }
 
-export async function leaveFileRoot(sessionId: unknown, expired = false): Promise<{ remoteStateUnknown: boolean }> {
+/**
+ * Revokes elevated commands and refreshes the normal login's environment.
+ * @param sessionId Active file session identifier.
+ * @param expired Whether sudo authentication expired and the renderer needs an event.
+ * @returns Any uncertainty about stopped commands or problems with the login environment.
+ */
+export async function leaveFileRoot(sessionId: unknown, expired = false): Promise<FileRootExitResult> {
   const session = connectedFileSession(sessionId)
   const state = stateFor(session)
   if (state.transition) throw new LocalizedError(msg('errors.switchingFileSessionIdentity'))
@@ -185,14 +205,26 @@ export async function leaveFileRoot(sessionId: unknown, expired = false): Promis
   cancelTransfersForSession(session.sessionId)
   clearPreviewAssetsForSession(session.sessionId)
   const remoteStateUnknown = await stopped
+  const result: FileRootExitResult = { remoteStateUnknown }
+  if (session.platform && !transition.signal.aborted) {
+    try {
+      const environment = await inspectServer(session.client, transition.signal)
+      session.platform.environment = environment
+      if (!capabilitiesReady(environment.base)) result.environmentIssue = msg('errors.fileIdentityCapabilitiesMissing', {
+        tools: [...environment.base.missing, ...environment.base.incompatible].join(', '),
+      })
+    } catch (error) {
+      if (!transition.signal.aborted) result.environmentIssue = messageFromUnknown(error)
+    }
+  }
   if (sessions.get(session.sessionId) === session) {
     state.commands = new FileCommandScope(session.client)
     state.identity = 'login'
     state.transition = undefined
     const contents = getMainWindow()?.webContents
     if (expired && contents && !contents.isDestroyed()) {
-      contents.send('files:root-expired', { sessionId: session.sessionId, remoteStateUnknown })
+      contents.send('files:root-expired', { sessionId: session.sessionId, ...result })
     }
   }
-  return { remoteStateUnknown }
+  return result
 }

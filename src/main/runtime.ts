@@ -1,6 +1,7 @@
 import { type MessageValue, messageFromUnknown } from '../shared/i18n/messages'
 import type { BrowserWindow } from 'electron'
 import type { Client, ClientChannel } from 'ssh2'
+import type { ServerEnvironment } from './server-capabilities.ts'
 export { clearPreviewAssets } from './previews/preview-assets.ts'
 
 export interface ActiveSession {
@@ -10,6 +11,7 @@ export interface ActiveSession {
   shell?: ClientChannel
   profileId: string
   hostFingerprint?: string
+  platform?: { endpoint: string; environment: ServerEnvironment; pendingArchivePreparation?: string }
 }
 
 export interface TransferItem {

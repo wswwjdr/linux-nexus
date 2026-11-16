@@ -44,7 +44,7 @@ export interface OperationExecutionRequest {
   wrapInDirectory?: boolean
 }
 
-export interface OperationExecutionResult {
+export type OperationExecutionResult = {
   status: 'completed' | 'cancelled'
   requestId: string
   operation: RemoteOperationKind

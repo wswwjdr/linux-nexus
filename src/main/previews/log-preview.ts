@@ -2,21 +2,10 @@ import { msg, LocalizedError } from '../../shared/i18n/messages'
 import type { LogPreviewPage } from '@shared/types'
 import { readPreviewLimits } from '../state-store'
 import { filesSession, normalizedRemotePath, remoteFileSize, remotePathType } from '../remote-fs'
-import { runRemoteCommand } from '../ssh-commands'
+import { readRemoteBytes } from '../remote-byte-reader'
+import { verifyFileOperation } from '../file-dependencies'
 
 const LOG_PREVIEW_PAGE_BYTES = 256 * 1024
-
-async function readRemoteRange(client: ReturnType<typeof filesSession>['commands'], remotePath: string, startOffset: number, endOffset: number): Promise<Buffer> {
-  if (startOffset >= endOffset) return Buffer.alloc(0)
-  const length = endOffset - startOffset
-  const { stdout } = await runRemoteCommand(client,
-    'dd if="$1" iflag=skip_bytes,count_bytes skip="$2" count="$3" status=none',
-    [remotePath, String(startOffset), String(length)],
-    { maxStdoutBytes: length },
-  )
-  if (stdout.length !== length) throw new LocalizedError(msg('errors.logFileChangedReopenThePreview'))
-  return stdout
-}
 
 function utf8ContinuationLength(buffer: Buffer): number {
   let offset = 0
@@ -24,6 +13,7 @@ function utf8ContinuationLength(buffer: Buffer): number {
   return offset
 }
 
+/** Reads the next log page from the initial size snapshot identified by the offsets and path. */
 export async function readLogPreview(
   sessionId: string,
   remotePath: string,
@@ -43,6 +33,7 @@ export async function readLogPreview(
 
   const session = filesSession(sessionId)
   const normalizedPath = normalizedRemotePath(remotePath)
+  if (beforeOffset === undefined) await verifyFileOperation(session, 'log-preview')
   if (await remotePathType(session.commands, normalizedPath) !== 'file') throw new LocalizedError(msg('errors.onlyRegularFilesCanBePreviewed'))
 
   const currentSize = await remoteFileSize(session.commands, normalizedPath)
@@ -59,7 +50,9 @@ export async function readLogPreview(
 
   const pageBytes = Math.min(LOG_PREVIEW_PAGE_BYTES, remainingBytes, endOffset)
   const candidateStart = endOffset - pageBytes
-  const range = await readRemoteRange(session.commands, normalizedPath, candidateStart, endOffset)
+  const range = pageBytes ? await readRemoteBytes(session.commands, normalizedPath, {
+    offset: candidateStart, length: pageBytes, error: msg('errors.logFileChangedReopenThePreview'),
+  }) : Buffer.alloc(0)
   let skip = 0
   if (candidateStart > 0) {
     const firstLineBreak = range.indexOf(0x0a)

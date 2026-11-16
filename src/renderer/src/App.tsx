@@ -11,6 +11,7 @@ import { useFileMenuActions } from './features/files/useFileMenuActions'
 import SessionWorkspaceView from './features/sessions/SessionWorkspaceView'
 import DialogLayer from './components/DialogLayer'
 import ConfirmationDialog from './components/ConfirmationDialog'
+import { DependencyProvider } from './features/dependencies/DependencyProvider'
 import FileRootPasswordDialog from './components/dialogs/FileRootPasswordDialog'
 import UploadConfirmDialog from './components/UploadConfirmDialog'
 import { RemoteArchiveDialogs } from './components/RemoteArchiveDialogs'
@@ -32,6 +33,7 @@ import type {
   AppSettings,
   FileTypeExtensions,
   FileIdentity,
+  FileRootExpiredEvent,
   PerformanceThresholds,
   RemoteEntry,
   ServerProfile,
@@ -53,8 +55,13 @@ import {
   readRecentConnections,
 } from './app-utils'
 
-/** Renders the desktop workspace starting from the bootstrapped application settings. */
-export default function App({ initialSettings }: { initialSettings: AppSettings }) {
+/** Renders the desktop workspace with the initial settings in `props` and shared dependency confirmation. */
+export default function App(props: { initialSettings: AppSettings }) {
+  return <DependencyProvider><AppWorkspace {...props} /></DependencyProvider>
+}
+
+/** Renders the application workspace with its initial settings. */
+function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
   useLanguage()
   const [sessions, setSessions] = useState<SessionTab[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
@@ -455,11 +462,12 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
     }
   }
 
-  const handleRootExpired = useEffectEvent((event: { sessionId: string; remoteStateUnknown: boolean }) => {
+  const handleRootExpired = useEffectEvent((event: FileRootExpiredEvent) => {
     showToast('error', event.remoteStateUnknown
       ? msg('common.sudoPrivilegesExpiredRootModeEndedSomeRemoteTaskStates')
       : msg('common.sudoPrivilegesExpiredRootModeEnded'))
     void applyFileIdentity(event.sessionId, 'login')
+    if (event.environmentIssue) showToast('error', event.environmentIssue)
   })
   useEffect(() => window.remoteFiles.onFileRootExpired((event) => handleRootExpired(event)), [])
 
@@ -482,11 +490,13 @@ export default function App({ initialSettings }: { initialSettings: AppSettings 
     setRootRequest(null)
   }
 
+  /** Returns `sessionId` to its login identity and reports any capability or cancellation issues. */
   const leaveFileRoot = async (sessionId: string) => {
     setRootRequest({ sessionId, phase: 'leaving' })
     try {
-      const { remoteStateUnknown } = await window.remoteFiles.leaveFileRoot(sessionId)
+      const { remoteStateUnknown, environmentIssue } = await window.remoteFiles.leaveFileRoot(sessionId)
       if (remoteStateUnknown) showToast('info', msg('common.rootModeEndedSomeRemoteTaskStatesAreUnknown'))
+      if (environmentIssue) showToast('error', environmentIssue)
       await applyFileIdentity(sessionId, 'login')
     } catch (error) {
       showToast('error', errorMessage(error))

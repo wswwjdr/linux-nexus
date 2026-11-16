@@ -1,7 +1,8 @@
 import { msg, LocalizedError } from '../shared/i18n/messages'
 import { safeStorage } from 'electron'
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { dirname, join } from 'node:path'
 import type { AppSettings, CommandAliasSnapshot, PreviewLimits, ServerProfile } from '@shared/types'
 import { DEFAULT_APP_SETTINGS, DEFAULT_PREVIEW_LIMITS, defaultAppSettings, loadStoredAppSettings, validateAppSettings } from '@shared/app-settings'
 import { normalizeStoredCommandAliases } from '@shared/command-aliases'
@@ -125,6 +126,36 @@ export function readState(verifyPasswordCiphertexts = false): StoredState {
 
 export function writeState(state: StoredState): void {
   atomicWriteJson(stateFile, state)
+}
+
+/** Returns persisted archive preparation keys for the configured workspace. */
+function readArchivePreparation(): Record<string, string> {
+  const path = join(dirname(stateFile), 'archive-preparation.json')
+  if (!existsSync(path)) return Object.create(null)
+  const value = parseJsonFile(path)
+  if (!isRecord(value) || !Object.values(value).every(key => typeof key === 'string' && /^[a-f0-9]{64}$/.test(key))) {
+    throw new LocalizedError(msg('errors.invalidServerConfigurationStructure'))
+  }
+  return Object.assign(Object.create(null), value)
+}
+
+/** Returns the first-visit key for this profile's address, account and verified SSH identity. */
+export function archivePreparationKey(profile: ServerProfile, fingerprint: string): string {
+  return createHash('sha256').update(JSON.stringify([profile.host.toLowerCase(), profile.port, profile.username, fingerprint])).digest('hex')
+}
+
+/** Reports whether this profile already completed archive preparation for `key`. */
+export function archivePreparationSeen(profileId: string, key: string): boolean {
+  return readArchivePreparation()[profileId] === key
+}
+
+/** Records or removes the archive preparation key for `profileId`. */
+export function saveArchivePreparation(profileId: string, key?: string): void {
+  const values = readArchivePreparation()
+  if (values[profileId] === key) return
+  if (key) values[profileId] = key
+  else delete values[profileId]
+  atomicWriteJson(join(dirname(stateFile), 'archive-preparation.json'), values)
 }
 
 /**

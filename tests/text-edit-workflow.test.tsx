@@ -3,6 +3,8 @@ import test from 'node:test'
 import { act, createElement } from 'react'
 import { JSDOM } from 'jsdom'
 import { usePreview } from '../src/renderer/src/hooks/usePreview.ts'
+import { DependencyProvider } from '../src/renderer/src/features/dependencies/DependencyProvider.tsx'
+import { DependencyRequiredError } from '../src/shared/dependency-error.ts'
 import { defaultFileTypeExtensions } from '../src/shared/app-settings.ts'
 const dom = new JSDOM('<html><body></body></html>', { url: 'http://localhost' })
 Object.defineProperties(globalThis, {
@@ -17,50 +19,60 @@ test('dependency installation requires confirmation and resumes the original sav
   const saves: boolean[] = []
   const installs: (string | undefined)[] = []
   let installed = false
+  const issue = { id: 'plan-for-save', purpose: 'text-save' as const, missing: ['getfacl', 'getfattr'], incompatible: [], manager: 'apt-get' as const, packages: ['acl', 'attr'] }
   Object.assign(window, { remoteFiles: {
     previewFile: async () => ({ type: 'text', name: 'config.txt', content: 'old', lineEnding: '\n', encoding: 'utf8', bom: false, version }),
     saveTextFile: async (sessionId: string, path: string, draft: string, lineEnding: string, options: { force: boolean }) => {
       assert.equal(draft, 'new')
       saves.push(options.force)
-      if (!installed) return { status: 'missing-dependencies', packages: ['acl', 'attr'] }
+      if (!installed) throw new DependencyRequiredError(issue)
       return options.force ? { status: 'saved', version: next } : { status: 'conflict' }
     },
-    installTextSaveDependencies: async (sessionId: string, packages: string[], password?: string) => {
-      assert.equal(sessionId, 's')
-      assert.deepEqual(packages, ['acl', 'attr'])
+    installDependencies: async (id: string, password?: string) => {
+      assert.equal(id, issue.id)
       installs.push(password)
       if (!password) return { status: 'password-required' }
-      if (password !== 'correct') throw new Error('sudo authentication failed')
+      if (password !== 'correct') return { status: 'password-required', message: 'sudo authentication failed' }
       installed = true
       return { status: 'installed' }
     },
+    recheckDependencies: async (id: string) => { assert.equal(id, issue.id); return { status: 'ready' } },
+    cancelDependencies: async () => {},
   } })
   let state!: ReturnType<typeof usePreview>
   function Harness() { state = usePreview({ sessionId: 's', fileTypeExtensions: defaultFileTypeExtensions(), showToast: () => {} }); return null }
   const root = createRoot(document.createElement('div'))
   try {
-    await act(async () => root.render(createElement(Harness)))
+    await act(async () => root.render(createElement(DependencyProvider, { children: createElement(Harness) })))
     await act(async () => state.previewFile({ name: 'config.txt', path: '/config.txt' }, 'text'))
     act(() => state.updateTextDraft('new'))
     act(() => state.requestTextSave())
-    await act(async () => state.confirmTextSave())
-    assert.equal(state.textSaveConfirmation?.kind, 'install')
+    await act(async () => { void state.confirmTextSave() })
+    assert.match(document.querySelector('[role=alertdialog]')!.textContent!, /acl, attr/)
     assert.deepEqual(installs, [])
-    act(() => state.cancelTextSave())
+    await act(async () => (document.querySelector('.modal-close') as HTMLButtonElement).click())
     assert.equal(state.textSaveConfirmation, null)
     assert.equal(state.textDraft, 'new')
     assert.deepEqual(installs, [])
 
     act(() => state.requestTextSave())
-    await act(async () => state.confirmTextSave())
-    await act(async () => state.confirmTextSave())
+    await act(async () => { void state.confirmTextSave() })
+    await act(async () => (document.querySelector('.warning-button') as HTMLButtonElement).click())
     assert.deepEqual(installs, [undefined])
-    assert.equal(state.textSaveConfirmation?.kind === 'install' && state.textSaveConfirmation.passwordRequired, true)
-    await act(async () => state.confirmTextSave('incorrect'))
-    assert.equal(state.textSaveError, 'sudo authentication failed')
+    async function submitPassword(value: string) {
+      const input = document.querySelector('input[type=password]') as HTMLInputElement
+      assert.ok(input)
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+        input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+      })
+      await act(async () => (document.querySelector('.warning-button') as HTMLButtonElement).click())
+    }
+    await submitPassword('incorrect')
+    assert.match(document.querySelector('[role=alert]')!.textContent!, /sudo authentication failed/)
     assert.equal(state.textDraft, 'new')
     assert.deepEqual(saves, [false, false])
-    await act(async () => state.confirmTextSave('correct'))
+    await submitPassword('correct')
     assert.equal(state.textSaveConfirmation?.kind, 'conflict')
     assert.deepEqual(saves, [false, false, false])
     await act(async () => state.confirmTextSave())

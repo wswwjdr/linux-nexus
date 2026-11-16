@@ -131,8 +131,10 @@ const api: RemoteFilesTransport = {
   openExternalUrl: (url: string) => ipcRenderer.invoke('shell:open-external', url),
   saveTextFile: (sessionId: string, remotePath: string, content: string, lineEnding, options: TextSaveOptions) =>
     ipcRenderer.invoke('files:text-save', sessionId, remotePath, content, lineEnding, options),
-  installTextSaveDependencies: (sessionId, packages, password) =>
-    ipcRenderer.invoke('files:text-save-install-dependencies', sessionId, packages, password),
+  installDependencies: (id, password) => ipcRenderer.invoke('dependencies:install', id, password),
+  recheckDependencies: id => ipcRenderer.invoke('dependencies:recheck', id),
+  cancelDependencies: id => ipcRenderer.invoke('dependencies:cancel', id),
+  skipArchivePreparation: id => ipcRenderer.invoke('dependencies:skip-archive', id),
   readLogPreview: (sessionId: string, remotePath: string, beforeOffset?: number, snapshotSize?: number) =>
     ipcRenderer.invoke('files:preview-log', sessionId, remotePath, beforeOffset, snapshotSize),
   releasePreview: (token: string) => ipcRenderer.invoke('files:preview-release', token),

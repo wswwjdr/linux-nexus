@@ -5,6 +5,7 @@ import { HardDrive, Info, LoaderCircle, X } from 'lucide-react'
 import type { RemoteDirectoryStats, RemoteDirectoryUsageNode, RemoteEntryProperties } from '@shared/types'
 import { errorMessage, formatDate, formatSize } from '../app-utils'
 import DirectoryUsageTree from './DirectoryUsageTree'
+import { useFileDependencyAction } from '@/features/dependencies/DependencyProvider'
 
 interface PropertiesDialogProps {
   sessionId: string
@@ -31,6 +32,8 @@ function PropertiesDialogContent({ sessionId, path, returnFocus, onClose }: Prop
   const [directoryStats, setDirectoryStats] = useState<DirectoryStatsState>({ kind: 'idle' })
   const [directoryTree, setDirectoryTree] = useState<DirectoryTreeState | null>(null)
   const mountedRef = useRef(false)
+  const withDependencies = useFileDependencyAction()
+  const statsWait = useRef<AbortController | null>(null)
   const calculatingRef = useRef(false)
   const dialogRef = useRef<HTMLElement>(null)
   const treeRequest = useRef<string | null>(null)
@@ -57,19 +60,21 @@ function PropertiesDialogContent({ sessionId, path, returnFocus, onClose }: Prop
     dialogRef.current!.querySelector<HTMLButtonElement>('button')!.focus()
     return () => {
       mountedRef.current = false
+      statsWait.current?.abort()
       if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true })
     }
   }, [returnFocus])
 
   useEffect(() => {
     let active = true
+    const controller = new AbortController()
     setProperties({ kind: 'loading' })
-    void window.remoteFiles.getRemoteEntryProperties(sessionId, path).then(
+    void withDependencies(() => window.remoteFiles.getRemoteEntryProperties(sessionId, path), sessionId, path, controller.signal).then(
       (value) => { if (active) setProperties({ kind: 'ready', value }) },
       (error: unknown) => { if (active) setProperties({ kind: 'error', message: errorMessage(error) }) },
     )
-    return () => { active = false }
-  }, [sessionId, path, attempt])
+    return () => { active = false; controller.abort(); statsWait.current?.abort() }
+  }, [sessionId, path, attempt, withDependencies])
 
   useEffect(() => {
     const dismiss = (event: globalThis.KeyboardEvent) => {
@@ -103,17 +108,23 @@ function PropertiesDialogContent({ sessionId, path, returnFocus, onClose }: Prop
     setDirectoryTree(null)
   }
 
+  /** Checks directory statistics dependencies before calculating the displayed totals. */
   const calculateDirectoryStats = async () => {
     if (calculatingRef.current) return
     calculatingRef.current = true
+    const controller = new AbortController()
+    statsWait.current = controller
     setDirectoryStats({ kind: 'loading' })
     try {
-      const value = await window.remoteFiles.getRemoteDirectoryStats(sessionId, path)
-      if (mountedRef.current) setDirectoryStats({ kind: 'ready', value })
+      const value = await withDependencies(() => window.remoteFiles.getRemoteDirectoryStats(sessionId, path), sessionId, path, controller.signal)
+      if (mountedRef.current && !controller.signal.aborted) setDirectoryStats({ kind: 'ready', value })
     } catch (error) {
-      if (mountedRef.current) setDirectoryStats({ kind: 'error', message: errorMessage(error) })
+      if (mountedRef.current && !controller.signal.aborted) setDirectoryStats({ kind: 'error', message: errorMessage(error) })
     } finally {
-      calculatingRef.current = false
+      if (statsWait.current === controller) {
+        statsWait.current = null
+        calculatingRef.current = false
+      }
     }
   }
 

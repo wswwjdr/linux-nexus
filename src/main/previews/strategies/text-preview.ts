@@ -8,7 +8,11 @@ import { filesSession, normalizedRemotePath } from '../../remote-fs'
 import { runRemoteCommand, RemoteCommandError } from '../../ssh-commands'
 import { readPreviewLimits } from '../../state-store'
 import { type PreviewStrategy } from '../preview-strategy'
-import { missingTextSavePackages, requireTextSaveDependencies } from '../text-save-dependencies'
+import { fileCapabilities, operationCapabilityReport, requireCapabilities } from '../../server-capabilities'
+import { offerFileDependencies } from '../../file-dependencies'
+import { DependencyRequiredError } from '../../../shared/dependency-error'
+
+const textSaveCapabilities = fileCapabilities['text-save']
 
 type TextPreviewResult = Extract<PreviewResult, { type: 'text' | 'markdown' }>
 const hashPattern = /^[a-f0-9]{64}$/
@@ -43,13 +47,14 @@ export function encodeEditedText(content: string, lineEnding: TextLineEnding, en
   return bom ? Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), bytes]) : bytes
 }
 
+/** Returns the remote save script with a dependency gate before staging or updating the target. */
 export function buildTextSaveCommand(): string {
   return `set -euo pipefail
 destination=$1
 expected_hash=$2
 expected_identity=$3
 force=$4
-${requireTextSaveDependencies}
+${requireCapabilities(textSaveCapabilities)}
 [[ -f "$destination" && ! -L "$destination" && $(stat -c %h -- "$destination") == 1 ]] || { printf '%s\\n' 'LINUX_NEXUS_DIAGNOSTIC:hardlinkType' >&2; exit 1; }
 metadata() {
   stat -c '%u:%g:%a' -- "$1" || return
@@ -126,9 +131,24 @@ cat -- "$1"
   return { ...decoded, version, lineEnding: detectTextLineEnding(decoded.content) }
 }
 
-/** Saves the requested file through the current file session and returns its committed version or conflict. */
+/**
+ * Saves a draft in an active file session after verifying metadata tool availability.
+ * @param sessionId File session and current remote command identity.
+ * @param remotePath Destination on the server.
+ * @param content Edited draft.
+ * @param lineEnding Requested line ending, validated before writing.
+ * @param options Encoding, original version and overwrite policy.
+ * @returns The committed version, conflict status or dependency proposal.
+ */
 export async function saveTextFile(sessionId: string, remotePath: string, content: string, lineEnding: unknown, options: TextSaveOptions): Promise<TextSaveResult> {
-  return saveVersionedText(filesSession(sessionId).commands, remotePath, content, lineEnding, options)
+  const { commands } = filesSession(sessionId)
+  try {
+    return await saveVersionedText(commands, remotePath, content, lineEnding, options)
+  } catch (error) {
+    const report = operationCapabilityReport(error, textSaveCapabilities)
+    if (!report) throw error
+    throw new DependencyRequiredError(offerFileDependencies(sessionId, commands, 'text-save', textSaveCapabilities, report))
+  }
 }
 
 /** Saves text using the supplied command scope and version, optionally cancelling with signal. */
@@ -148,8 +168,6 @@ export async function saveVersionedText(commands: Parameters<typeof runRemoteCom
     if (version.hash !== createHash('sha256').update(bytes).digest('hex')) throw new LocalizedError(msg('errors.fileChangedAgainAfterSavingReloadItYourDraftHas'))
     return { status: 'saved', version }
   } catch (error) {
-    const packages = missingTextSavePackages(error)
-    if (packages) return { status: 'missing-dependencies', packages }
     if (error instanceof RemoteCommandError && error.exitCode === 73 && error.stderr.startsWith('LINUX_NEXUS_TEXT_CONFLICT:')) return { status: 'conflict' }
     throw error
   }

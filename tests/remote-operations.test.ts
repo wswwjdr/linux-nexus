@@ -9,6 +9,8 @@ import test from 'node:test'
 import type { Client, ClientChannel } from 'ssh2'
 import { cancelRemoteOperation, executeRemoteOperation } from '../src/main/remote-operations.ts'
 import { sessions } from '../src/main/runtime.ts'
+import { cancelDependencies } from '../src/main/dependency-plans.ts'
+import { DependencyRequiredError } from '../src/shared/dependency-error.ts'
 import { shellQuote } from '../src/shared/shell.ts'
 import type { OperationExecutionRequest } from '../src/shared/types.ts'
 
@@ -137,6 +139,42 @@ async function withFilesystem(action: (context: {
 }
 
 const filesystemTest = { skip: !bashAvailable && 'Bash is required for remote command filesystem tests' }
+
+test('a missing archive tool offers an installation before creating the extraction directory', filesystemTest, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nexus-archive-dependency-'))
+  const path = directory.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, drive: string) => '/' + drive.toLowerCase())
+  const remote = mockClient((command, _index, channel) => {
+    channel.onEnd = current => {
+      const missingUnzip = 'command() { if [[ $2 == unzip ]]; then return 1; fi; builtin command "$@"; }; export -f command; '
+      execFile(bash, ['-c', missingUnzip + command], { encoding: 'buffer' }, (error, stdout, stderr) => {
+        if (stderr.length) current.stderr.emit('data', stderr)
+        current.complete(stdout, typeof error?.code === 'number' ? error.code : 0)
+      })
+    }
+  })
+  sessions.set('session-1', { sessionId: 'session-1', profileId: 'test', kind: 'files', client: remote.client,
+    platform: { endpoint: 'test:22', environment: { distribution: { id: 'ubuntu', like: ['debian'] },
+      effectiveUid: 0, canSudo: false, managers: ['apt-get'], base: { missing: [], incompatible: [] } } },
+  })
+  try {
+    const operation = executeRemoteOperation({
+      requestId: 'archive-dependency', sessionId: 'session-1', operation: 'extract', sourcePaths: [],
+      targetDirectory: path, archivePath: path + '/release.zip', wrapInDirectory: true, strategy: 'force',
+    })
+    await assert.rejects(operation, error => {
+      assert.ok(error instanceof DependencyRequiredError)
+      cancelDependencies(error.issue.id)
+      assert.deepEqual(error.issue.packages, ['unzip'])
+      return true
+    })
+    assert.deepEqual(await readdir(directory), [])
+    assert.equal(remote.commands.length, 1)
+  } finally {
+    sessions.delete('session-1')
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 const specialName = process.platform === 'win32' ? "中文 ' $文件.txt" : "中文 ' $文件\n.txt"
 
 for (const strategy of ['force', 'skip'] as const) {

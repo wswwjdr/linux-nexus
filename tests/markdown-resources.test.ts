@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Client, ClientChannel } from 'ssh2'
 import { previewResponse } from '../src/main/preview-protocol'
-import { registerMarkdownResources, releasePreview, clearPreviewAssetsForSession, getPreviewAsset } from '../src/main/previews/preview-assets'
+import { registerMarkdownResources, registerRemotePreviewAsset, releasePreview, clearPreviewAssetsForSession, getPreviewAsset } from '../src/main/previews/preview-assets'
 import { sessions } from '../src/main/runtime'
 import { configureStateFiles } from '../src/main/state-store'
 import { defaultAppSettings } from '../src/shared/app-settings'
@@ -31,7 +31,8 @@ test('Markdown resource protocol validates file contracts, honors byte ranges an
         if (command.includes('denied.png')) { channel.stderr.emit('data', Buffer.from('permission denied')); complete('', 1) }
         else if (command.includes('stat -c %s')) complete(command.includes('huge.png') ? '2000000' : '6')
         else if (command.includes('if [[ -L')) complete(command.includes('symlink.png') ? 'l' : 'f')
-        else if (command.includes('slow.png')) channel.emit('data', Buffer.from('abc'))
+        else if (command.includes('/docs/slow.')) channel.emit('data', Buffer.from('abc'))
+        else if (command.includes('short.mp4')) complete('abc')
         else complete(command.includes(shellQuote('2')) && command.includes(shellQuote('3')) ? 'cde' : 'abcdef')
       })
       return channel
@@ -76,6 +77,27 @@ test('Markdown resource protocol validates file contracts, honors byte ranges an
     assert.equal(getPreviewAsset('document'), undefined)
     assert.equal((await request('/docs/a.png')).status, 404)
     assert.ok(signals.includes('TERM'))
+
+    registerRemotePreviewAsset('video', 'md-session', 'server', '/docs/slow.mp4', 6, 'video/mp4')
+    registerRemotePreviewAsset('next-seek', 'md-session', 'server', '/docs/sample.mp4', 6, 'video/mp4')
+    registerRemotePreviewAsset('short-video', 'md-session', 'server', '/docs/short.mp4', 6, 'video/mp4')
+    const controller = new AbortController()
+    const oldSeek = await previewResponse(new Request('remote-preview://video/slow.mp4', {
+      headers: { Range: 'bytes=0-5' }, signal: controller.signal,
+    }))
+    const oldReader = oldSeek.body!.getReader()
+    assert.equal(new TextDecoder().decode((await oldReader.read()).value), 'abc')
+    const previousCancellationCount = signals.length
+    controller.abort()
+    await oldReader.read().catch(() => {})
+    const nextSeek = await previewResponse(new Request('remote-preview://next-seek/sample.mp4', { headers: { Range: 'bytes=2-4' } }))
+    assert.equal(nextSeek.status, 206)
+    assert.equal(await nextSeek.text(), 'cde')
+    assert.equal(signals.length, previousCancellationCount + 1)
+    assert.ok(commands.some(command => command.includes('exec dd') && command.includes('bs=256K') && command.includes('/docs/sample.mp4')))
+    const truncated = await previewResponse(new Request('remote-preview://short-video/short.mp4'))
+    await assert.rejects(truncated.arrayBuffer())
+
     registerMarkdownResources('document', 'md-session', 'server')
     clearPreviewAssetsForSession('md-session')
     assert.equal((await request('/docs/a.png')).status, 404)

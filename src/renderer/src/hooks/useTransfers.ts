@@ -4,6 +4,7 @@ import type { DroppedUploadEntry, OperationExecutionStrategy, OperationStrategy,
 import type { TransferJob } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { errorMessage } from '@/app-utils'
+import { DependencyCancelledError, useFileDependencyAction } from '@/features/dependencies/DependencyProvider'
 
 interface UseTransfersOptions {
   activeSessionId: string | null
@@ -32,6 +33,8 @@ export function useTransfers({
   loadDirectory,
   showToast,
 }: UseTransfersOptions) {
+  const withDependencies = useFileDependencyAction()
+  const dependencyRuns = useRef(new Map<string, { sessionId: string; controller: AbortController }>())
   const [transfers, setTransfers] = useState<Record<string, TransferJob>>({})
   const [uploadSelection, setUploadSelection] = useState<UploadSelection | null>(null)
   const completionTimers = useRef(new Map<string, number>())
@@ -39,6 +42,7 @@ export function useTransfers({
   sessionIdsRef.current = sessionIds
 
   useEffect(() => {
+    for (const run of dependencyRuns.current.values()) if (!sessionIds.has(run.sessionId)) run.controller.abort()
     setTransfers((current) => {
       const next = { ...current }
       let changed = false
@@ -77,6 +81,7 @@ export function useTransfers({
   }, [activeSessionId, transfers])
 
   useEffect(() => () => {
+    for (const run of dependencyRuns.current.values()) run.controller.abort()
     for (const timer of completionTimers.current.values()) window.clearTimeout(timer)
     completionTimers.current.clear()
   }, [])
@@ -115,6 +120,7 @@ export function useTransfers({
     }
   }, [])
 
+  /** Runs a transfer after preparing its dependencies and updates its progress entry. */
   const runTransfer = async (
     name: MessageValue,
     direction: TransferJob['direction'],
@@ -124,6 +130,8 @@ export function useTransfers({
     const activeSessionId = requestedSessionId ?? sessionId
     if (!activeSessionId) return
     const requestId = requestedId ?? crypto.randomUUID()
+    const controller = new AbortController()
+    dependencyRuns.current.set(requestId, { sessionId: activeSessionId, controller })
     setTransfers((current) => ({
       ...current,
       [requestId]: {
@@ -141,7 +149,7 @@ export function useTransfers({
       },
     }))
     try {
-      const result = await operation(requestId)
+      const result = await withDependencies(() => operation(requestId), activeSessionId, refreshPath ?? currentPath, controller.signal)
       if (result.status === 'not-started') {
         setTransfers((current) => {
           const next = { ...current }
@@ -188,15 +196,17 @@ export function useTransfers({
         delete next[requestId]
         return next
       })
-      if (!sessionIdsRef.current.has(activeSessionId)) return
+      if (!sessionIdsRef.current.has(activeSessionId) || error instanceof DependencyCancelledError || controller.signal.aborted) return
       if (refreshPath !== undefined && direction === 'upload') await loadDirectory(activeSessionId, refreshPath)
       showToast('error', msg('transfers.failed', { "value1": direction === 'upload' ? msg('transfers.upload') : msg('transfers.download'), "value2": errorMessage(error) }))
-    }
+    } finally { dependencyRuns.current.delete(requestId) }
   }
 
+  /** Cancels the transfer and any waiting dependency confirmation for `requestId`. */
   const cancelTransfer = (requestId: string) => {
     const job = transfers[requestId]
     if (!job || (job.state !== 'running' && job.state !== 'queued')) return
+    dependencyRuns.current.get(requestId)?.controller.abort()
     const previousState = job.state
     setTransfers((current) => ({
       ...current,

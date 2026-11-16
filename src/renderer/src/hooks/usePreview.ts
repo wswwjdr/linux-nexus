@@ -1,11 +1,12 @@
 import { msg, type MessageValue, tr } from '@shared/i18n/messages'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { FileTypeExtensions, RemoteEntry, TextEncoding, TextFileVersion, TextLineEnding, TextSavePackage } from '@shared/types'
+import type { FileTypeExtensions, RemoteEntry, TextEncoding, TextFileVersion, TextLineEnding } from '@shared/types'
 import type { PreviewType } from '@shared/file-type-registry'
 import { previewTypesForFile } from '@shared/preview-file-type'
 import type { LogPreviewDialog, PreviewDialog } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
 import { errorMessage } from '@/app-utils'
+import { DependencyCancelledError, useFileDependencyAction } from '@/features/dependencies/DependencyProvider'
 
 interface UsePreviewOptions {
   sessionId: string | null
@@ -24,12 +25,11 @@ interface TextPreviewContext {
   version: TextFileVersion
 }
 
-type TextSaveConfirmation = { name: string; path: string } & (
-  | { kind: 'save' | 'conflict' }
-  | { kind: 'install'; packages: TextSavePackage[]; passwordRequired: boolean; force: boolean }
-)
+type TextSaveConfirmation = { name: string; path: string; kind: 'save' | 'conflict' }
 
 export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePreviewOptions) {
+  const withDependencies = useFileDependencyAction()
+  const dependencyWait = useRef<AbortController | null>(null)
   const [previewDialog, setPreviewDialog] = useState<PreviewDialog | null>(null)
   const [logPreviewDialog, setLogPreviewDialog] = useState<LogPreviewDialog | null>(null)
   const [textDraft, setTextDraft] = useState('')
@@ -70,6 +70,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
   }, [logPreviewDialog])
 
   useEffect(() => () => {
+    dependencyWait.current?.abort()
     previewRequestRef.current += 1
     const token = previewTokenRef.current
     previewTokenRef.current = null
@@ -77,6 +78,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
   }, [])
 
   const closePreview = useCallback(() => {
+    dependencyWait.current?.abort()
     previewRequestRef.current += 1
     const token = previewTokenRef.current
     previewTokenRef.current = null
@@ -104,9 +106,11 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     if (!sessionId) return
 
     const requestId = previewRequestRef.current
+    const controller = new AbortController()
+    dependencyWait.current = controller
     setPreviewDialog({ kind: 'loading', name: entry.name })
     try {
-      const result = await window.remoteFiles.previewFile(sessionId, entry.path, type)
+      const result = await withDependencies(() => window.remoteFiles.previewFile(sessionId, entry.path, type), sessionId, entry.path, controller.signal)
       if (requestId !== previewRequestRef.current) {
         if ('token' in result) void window.remoteFiles.releasePreview(result.token)
         return
@@ -130,10 +134,10 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     } catch (error) {
       if (requestId === previewRequestRef.current) {
         setPreviewDialog(null)
-        showToast('error', msg('previews.previewFailed', { "value1": errorMessage(error) }))
+        if (!(error instanceof DependencyCancelledError)) showToast('error', msg('previews.previewFailed', { "value1": errorMessage(error) }))
       }
-    }
-  }, [closePreview, fileTypeExtensions, sessionId, showToast])
+    } finally { if (dependencyWait.current === controller) dependencyWait.current = null }
+  }, [closePreview, fileTypeExtensions, sessionId, showToast, withDependencies])
 
   const previewLogFile = useCallback(async (entry: Pick<RemoteEntry, 'name' | 'path'>) => {
     closePreview()
@@ -141,9 +145,11 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
 
     const activeSessionId = sessionId
     const requestId = previewRequestRef.current
+    const controller = new AbortController()
+    dependencyWait.current = controller
     updateLogPreview({ kind: 'loading', name: entry.name })
     try {
-      const page = await window.remoteFiles.readLogPreview(activeSessionId, entry.path)
+      const page = await withDependencies(() => window.remoteFiles.readLogPreview(activeSessionId, entry.path), activeSessionId, entry.path, controller.signal)
       if (requestId !== previewRequestRef.current) return
       logStartAtBottomRef.current = true
       updateLogPreview({
@@ -156,10 +162,10 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     } catch (error) {
       if (requestId === previewRequestRef.current) {
         updateLogPreview(null)
-        showToast('error', msg('previews.reversePreviewFailed', { "value1": errorMessage(error) }))
+        if (!(error instanceof DependencyCancelledError)) showToast('error', msg('previews.reversePreviewFailed', { "value1": errorMessage(error) }))
       }
-    }
-  }, [closePreview, sessionId, showToast])
+    } finally { if (dependencyWait.current === controller) dependencyWait.current = null }
+  }, [closePreview, sessionId, showToast, withDependencies])
 
   const loadEarlierLogPreview = async () => {
     const current = logPreviewRef.current
@@ -223,11 +229,11 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     setTextSaveError(null)
   }
 
-  const confirmTextSave = async (password?: string) => {
+  /** Confirms the current save or force overwrite and resumes it after dependency preparation if necessary. */
+  const confirmTextSave = async () => {
     const context = textPreviewRef.current
     const confirmation = textSaveConfirmation
     if (!context || textSaving || !confirmation) return
-    if (confirmation.kind === 'install' && confirmation.passwordRequired && !password) return
     const content = textDraftRef.current
     if (content === context.originalContent && textEncoding === context.encoding) {
       setTextSaveConfirmation(null)
@@ -237,31 +243,18 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     const requestId = previewRequestRef.current
     const isCurrent = () => requestId === previewRequestRef.current && textPreviewRef.current === context
     const file = { name: context.name, path: context.path }
-    const force = confirmation.kind === 'install' ? confirmation.force : confirmation.kind === 'conflict'
+    const force = confirmation.kind === 'conflict'
+    const controller = new AbortController()
+    dependencyWait.current = controller
     setTextSaving(true)
     setTextSaveError(null)
     try {
-      if (confirmation.kind === 'install') {
-        const install = await window.remoteFiles.installTextSaveDependencies(context.sessionId, confirmation.packages, password)
-        if (!isCurrent()) return
-        if (install.status === 'password-required') {
-          setTextSaveConfirmation({ ...confirmation, passwordRequired: true })
-          return
-        }
-        setTextSaveConfirmation({ ...file, kind: force ? 'conflict' : 'save' })
-      }
-      const result = await window.remoteFiles.saveTextFile(context.sessionId, context.path, content, context.lineEnding, {
+      /** Saves the captured draft and version so a retry preserves the original conflict check. */
+      const save = () => window.remoteFiles.saveTextFile(context.sessionId, context.path, content, context.lineEnding, {
         version: context.version, encoding: textEncoding, bom: textEncoding === 'utf8' && context.bom, force,
       })
+      const result = await withDependencies(save, context.sessionId, context.path, controller.signal, () => setTextSaveConfirmation(null))
       if (!isCurrent()) return
-      if (result.status === 'missing-dependencies') {
-        if (confirmation.kind === 'install' && result.packages.some(packageName => confirmation.packages.includes(packageName))) {
-          setTextSaveError(msg('previews.afterInstallationTheSshSessionStillCannotFindCommandsProvided', { "value1": result.packages.join('、') }))
-          return
-        }
-        setTextSaveConfirmation({ ...file, kind: 'install', packages: result.packages, passwordRequired: false, force })
-        return
-      }
       if (result.status === 'conflict') {
         setTextSaveConfirmation({ ...file, kind: 'conflict' })
         setTextSaveError(msg('previews.theServerFileChangedCancelAndReloadOrExplicitlyChoose'))
@@ -275,9 +268,15 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
       setTextSaveConfirmation(null)
       showToast('info', msg('previews.fileSaved'))
     } catch (error) {
-      if (isCurrent()) setTextSaveError(errorMessage(error))
+      if (isCurrent() && !(error instanceof DependencyCancelledError)) {
+        setTextSaveConfirmation(confirmation)
+        setTextSaveError(errorMessage(error))
+      }
     } finally {
-      if (isCurrent()) setTextSaving(false)
+      if (isCurrent()) {
+        dependencyWait.current = null
+        setTextSaving(false)
+      }
     }
   }
 
@@ -294,9 +293,11 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
       if (!context || textSaving || textReloading) return
       if (textDirty && !window.confirm(tr('previews.reloadingDiscardsTheCurrentDraftContinue'))) return
       const requestId = ++previewRequestRef.current
+      const controller = new AbortController()
+      dependencyWait.current = controller
       setTextReloading(true)
       try {
-        const result = await window.remoteFiles.previewFile(context.sessionId, context.path, 'text', encoding)
+        const result = await withDependencies(() => window.remoteFiles.previewFile(context.sessionId, context.path, 'text', encoding), context.sessionId, context.path, controller.signal)
         if (previewRequestRef.current !== requestId || textPreviewRef.current !== context || result.type !== 'text') return
         textPreviewRef.current = { ...context, originalContent: result.content, lineEnding: result.lineEnding, encoding: result.encoding, bom: result.bom, version: result.version }
         textDraftRef.current = result.content
@@ -304,8 +305,12 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
         setTextEncoding(result.encoding)
         setTextDirty(false)
         setPreviewDialog({ kind: 'ready', result })
-      } catch (error) { showToast('error', msg('previews.couldNotReload', { "value1": errorMessage(error) })) }
-      finally { if (previewRequestRef.current === requestId) setTextReloading(false) }
+      } catch (error) {
+        if (previewRequestRef.current === requestId && !(error instanceof DependencyCancelledError)) showToast('error', msg('previews.couldNotReload', { "value1": errorMessage(error) }))
+      } finally {
+        if (dependencyWait.current === controller) dependencyWait.current = null
+        if (previewRequestRef.current === requestId) setTextReloading(false)
+      }
     },
     previewDialog,
     logPreviewDialog,

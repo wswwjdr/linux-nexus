@@ -81,7 +81,7 @@ export function messageFromUnknown(error: unknown): MessageValue {
   return diagnosticMessage(error instanceof Error ? error.message : String(error))
 }
 
-export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: MessageValue }
+export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: MessageValue; dependency?: import('../types/dependencies').DependencyIssue }
 
 const diagnosticKeys: Record<string, MessageKey> = {
   "textSizeLimit": "errors.textExceedsThePreviewLimit",
@@ -92,13 +92,6 @@ const diagnosticKeys: Record<string, MessageKey> = {
   "deleteType": "errors.remoteDeleteType",
   "directoryStatsType": "errors.remoteDirectoryStatsType",
   "searchDirectory": "errors.remoteSearchDirectory",
-  "distribution": "errors.remoteDistribution",
-  "unsupportedDistribution": "errors.remoteUnsupportedDistribution",
-  "missingCommand": "errors.remoteMissingCommand",
-  "gnuFind": "errors.remoteGnuFind",
-  "gnuCore": "errors.remoteGnuCore",
-  "gnuGrep": "errors.remoteGnuGrep",
-  "gnuTar": "errors.remoteGnuTar",
   "copyType": "errors.remoteCopyType",
   "targetDirectory": "errors.remoteTargetDirectory",
   "sourceType": "errors.remoteSourceType",
@@ -108,8 +101,6 @@ const diagnosticKeys: Record<string, MessageKey> = {
   "renameIncomplete": "errors.remoteRenameIncomplete",
   "navigationTargetUnavailable": "errors.remoteNavigationTargetUnavailable",
   "navigationTargetUnsupported": "errors.remoteNavigationTargetUnsupported",
-  "packageManager": "errors.remotePackageManager",
-  "installSudo": "errors.remoteInstallSudo",
   "incompleteBytes": "errors.remoteIncompleteBytes",
   "invalidCommit": "errors.remoteInvalidCommit",
   "hardlinkType": "errors.remoteHardlinkType",

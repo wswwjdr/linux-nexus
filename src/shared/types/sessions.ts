@@ -1,6 +1,8 @@
 import { type MessageValue } from '../i18n/messages'
+import type { DependencyIssue } from './dependencies'
 export type ConnectResult =
   | { ok: true; path: string; fileIdentity?: FileIdentity }
+  | { ok: false; reason: 'dependencies'; issue: DependencyIssue }
   | {
       ok: false
       reason: 'host-key-unknown'
@@ -32,9 +34,13 @@ export type FileElevationResult =
   | { status: 'password-required' }
   | { status: 'cancelled' }
 
-export interface FileRootExpiredEvent {
-  sessionId: string
+export interface FileRootExitResult {
   remoteStateUnknown: boolean
+  environmentIssue?: MessageValue
+}
+
+export interface FileRootExpiredEvent extends FileRootExitResult {
+  sessionId: string
 }
 
 export interface TerminalOutputEvent {

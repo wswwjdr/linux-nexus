@@ -5,7 +5,8 @@ import { PassThrough, Readable } from 'node:stream'
 import { waitForDrain } from './stream-utils'
 import { sessions } from './runtime'
 import { getPreviewAsset } from './previews/preview-assets'
-import { runRemoteCommand } from './ssh-commands'
+import { readRemoteBytes } from './remote-byte-reader'
+import { msg } from '../shared/i18n/messages'
 import { normalizedRemotePath, remoteFileSize, remotePathType } from './remote-fs'
 import { readAppSettings } from './state-store'
 import { fileCommands, type FileCommandScope } from './file-identity'
@@ -16,6 +17,7 @@ export function registerPreviewProtocol(): void {
   session.defaultSession.protocol.handle('remote-preview', previewResponse)
 }
 
+/** Serves the requested preview byte range and aborts its remote read with the request or token. */
 export async function previewResponse(request: Request): Promise<Response> {
   const url = new URL(request.url)
   const token = url.hostname
@@ -111,18 +113,15 @@ export async function previewResponse(request: Request): Promise<Response> {
   if (asset.kind === 'remote' && commands) {
     const start = range?.start ?? 0
     const length = range ? range.end - range.start + 1 : size
-    void runRemoteCommand(commands,
-      'dd if="$1" iflag=skip_bytes,count_bytes skip="$2" count="$3" status=none',
-      [asset.remotePath, String(start), String(length)],
-      {
-        signal: controller.signal,
-        collectStdout: false,
-        onStdout: async (chunk) => {
-          const writable = source as PassThrough
-          if (!writable.write(chunk)) await waitForDrain(writable, controller.signal)
-        },
+    void readRemoteBytes(commands, asset.remotePath, {
+      offset: registered.kind === 'markdown' && start === 0 ? undefined : start,
+      length, error: msg('errors.previewFileChangedDuringRead'),
+      signal: controller.signal,
+      onChunk: async chunk => {
+        const writable = source as PassThrough
+        if (!writable.write(chunk)) await waitForDrain(writable, controller.signal)
       },
-    ).then(() => (source as PassThrough).end(), (error: unknown) => (source as PassThrough).destroy(error instanceof Error ? error : new Error(String(error))))
+    }).then(() => (source as PassThrough).end(), (error: unknown) => (source as PassThrough).destroy(error instanceof Error ? error : new Error(String(error))))
   }
   return new Response(Readable.toWeb(source) as unknown as BodyInit, { status, headers })
 }

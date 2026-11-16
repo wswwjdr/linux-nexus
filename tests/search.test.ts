@@ -14,6 +14,7 @@ import type { ContentSearchEvent, ContentSearchRequest, NameSearchEvent, NameSea
 class SearchChannel extends EventEmitter {
   stderr = new EventEmitter()
   closeCalls = 0
+  end(): void { finishChannel(this) }
 
   signal(): void { this.close() }
   destroy(): void { this.close() }
@@ -32,6 +33,10 @@ function setupSearch(requestId: string) {
   const profileId = 'profile-' + requestId
   const client = Object.assign(new EventEmitter(), {
     exec: (command: string, callback: (error: Error | undefined, stream: ClientChannel) => void) => {
+      if (command.includes('LINUX_NEXUS_CAPABILITY:')) {
+        callback(undefined, new SearchChannel() as unknown as ClientChannel)
+        return
+      }
       commands.push(command)
       callback(undefined, channel as unknown as ClientChannel)
     },
@@ -207,7 +212,7 @@ test('filename cancellation closes its SSH channel once and emits a cancelled ev
   }
 })
 
-test('content search uses one find traversal and fixed-string grep with the chosen case option', () => {
+test('content search uses one find traversal and fixed-string grep with the chosen case option', async () => {
   const setup = setupSearch('content-command')
   try {
     const script = buildContentSearchScript()
@@ -220,11 +225,11 @@ test('content search uses one find traversal and fixed-string grep with the chos
     assert.doesNotMatch(script, /--extended-regexp|--perl-regexp/)
     assert.equal((script.match(/find -- "\$root"/g) ?? []).length, 1)
     assert.doesNotMatch(script, /inventory|matchedFiles.*100|RESULT_LIMIT/)
-    startContentSearch(setup.contentRequest)
+    await startContentSearch(setup.contentRequest)
     assert.ok(setup.commands[0].includes(buildContentSearchCommand(setup.contentRequest)))
     assert.match(setup.commands[0], /'needle' '1' '1048576'$/)
     assert.equal(cancelContentSearch(setup.contentRequest.requestId), true)
-    startContentSearch({ ...setup.contentRequest, ignoreCase: false })
+    await startContentSearch({ ...setup.contentRequest, ignoreCase: false })
     assert.match(setup.commands[1], /'needle' '0' '1048576'$/)
     assert.match(setup.commands[1], /grep_flags=\(-F -H -n -C 1 -Z --no-group-separator\)/)
     assert.equal(cancelContentSearch(setup.contentRequest.requestId), true)
@@ -233,11 +238,11 @@ test('content search uses one find traversal and fixed-string grep with the chos
   }
 })
 
-test('content protocol reconstructs matching lines and adjacent context from one streamed result', () => {
+test('content protocol reconstructs matching lines and adjacent context from one streamed result', async () => {
   const setup = setupSearch('content-result')
   const path = '/docs/notes file.txt'
   try {
-    startContentSearch(setup.contentRequest)
+    await startContentSearch(setup.contentRequest)
     record(setup.channel,
       'R', '31', base64(path),
       'L', base64('1-before'),
@@ -270,11 +275,11 @@ test('content protocol reconstructs matching lines and adjacent context from one
   }
 })
 
-test('content results preserve newline paths and keep matches when another file has a read error', () => {
+test('content results preserve newline paths and keep matches when another file has a read error', async () => {
   const setup = setupSearch('content-special-path')
   const path = '/docs/line\nbreak.txt'
   try {
-    startContentSearch(setup.contentRequest)
+    await startContentSearch(setup.contentRequest)
     record(setup.channel,
       'R', '12', base64(path),
       'L', base64('2:needle here'),
@@ -296,23 +301,23 @@ test('content results preserve newline paths and keep matches when another file 
   }
 })
 
-test('content search validates custom roots, query control characters, and the file-size ceiling', () => {
+test('content search validates custom roots, query control characters, and the file-size ceiling', async () => {
   const setup = setupSearch('content-invalid-input')
   try {
-    assert.throws(() => startContentSearch({ ...setup.contentRequest, rootPath: '/var/../etc' }), /规范化的绝对远端路径/)
-    assert.throws(() => startContentSearch({ ...setup.contentRequest, query: 'line\nbreak' }), /文本内容搜索条件无效/)
-    assert.throws(() => startContentSearch({ ...setup.contentRequest, maxFileSizeMiB: 102401 }), /文本内容搜索条件无效/)
-    assert.throws(() => startContentSearch({ ...setup.contentRequest, requestId: 'bad\0id' }), /文本内容搜索条件无效/)
-    assert.throws(() => startContentSearch({ ...setup.contentRequest, rootPath: '/bad\rpath' }), /文本内容搜索条件无效/)
+    await assert.rejects(startContentSearch({ ...setup.contentRequest, rootPath: '/var/../etc' }), /规范化的绝对远端路径/)
+    await assert.rejects(startContentSearch({ ...setup.contentRequest, query: 'line\nbreak' }), /文本内容搜索条件无效/)
+    await assert.rejects(startContentSearch({ ...setup.contentRequest, maxFileSizeMiB: 102401 }), /文本内容搜索条件无效/)
+    await assert.rejects(startContentSearch({ ...setup.contentRequest, requestId: 'bad\0id' }), /文本内容搜索条件无效/)
+    await assert.rejects(startContentSearch({ ...setup.contentRequest, rootPath: '/bad\rpath' }), /文本内容搜索条件无效/)
   } finally {
     setup.cleanup()
   }
 })
 
-test('content search reports oversized files, binary matches, and read errors independently', () => {
+test('content search reports oversized files, binary matches, and read errors independently', async () => {
   const setup = setupSearch('content-progress')
   try {
-    startContentSearch(setup.contentRequest)
+    await startContentSearch(setup.contentRequest)
     record(setup.channel, 'P', '2', '100', '0', '0', '3', '1', '2', base64('/docs/current'))
     record(setup.channel, 'D', '2', '100', '0', '0', '3', '1', '2')
     finishChannel(setup.channel)
@@ -327,10 +332,10 @@ test('content search reports oversized files, binary matches, and read errors in
   }
 })
 
-test('content cancellation closes the SSH channel and retains the current progress', () => {
+test('content cancellation closes the SSH channel and retains the current progress', async () => {
   const setup = setupSearch('content-cancel')
   try {
-    startContentSearch(setup.contentRequest)
+    await startContentSearch(setup.contentRequest)
     assert.equal(cancelContentSearch(setup.contentRequest.requestId), true)
     assert.equal(setup.channel.closeCalls, 1)
     const finished = setup.events.find((event) => event.type === 'finished')
@@ -341,11 +346,11 @@ test('content cancellation closes the SSH channel and retains the current progre
   }
 })
 
-test('content search retains streamed matches and reports an SSH interruption', () => {
+test('content search retains streamed matches and reports an SSH interruption', async () => {
   const setup = setupSearch('content-interrupted')
   const path = '/docs/notes.txt'
   try {
-    startContentSearch(setup.contentRequest)
+    await startContentSearch(setup.contentRequest)
     record(setup.channel, 'R', '31', base64(path), 'L', base64('2:needle'), 'Z')
     setup.channel.emit('close')
 

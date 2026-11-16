@@ -5,6 +5,7 @@ import { AlertTriangle, LoaderCircle, Search } from 'lucide-react'
 import type { ContentSearchEvent, ContentSearchProgress, ContentSearchRequest, ContentSearchResult } from '@shared/types'
 import { SearchHistory, SearchScopeControl, isNormalizedAbsoluteRemotePath, readSearchHistory } from './SearchShared'
 import { errorMessage, formatSize } from '@/app-utils'
+import { DependencyCancelledError, useFileDependencyAction } from '@/features/dependencies/DependencyProvider'
 import { ContentSearchResults } from './ContentSearchResults'
 import { ResultMenu, emptyContentProgress, historyScopeLabel, initialContentConditions, isContentConditions, openMenu, statusLabel, MAX_QUERY_LENGTH, CONTENT_HISTORY_KEY, type ContentConditions, type ResultMenuState, type SearchPaneHandle, type SearchPaneProps, type SearchStatus } from './SearchPaneShared'
 
@@ -29,6 +30,8 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
   const [error, setError] = useState<MessageValue | null>(null)
   const queryRef = useRef<HTMLInputElement>(null)
   const activeRequestRef = useRef<string | null>(null)
+  const dependencyRun = useRef<AbortController | null>(null)
+  const withDependencies = useFileDependencyAction()
   const menuAnchorRef = useRef<HTMLElement | null>(null)
   const receivedAtRef = useRef(Date.now())
   const running = status === 'running' || status === 'cancelling'
@@ -71,6 +74,7 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
     })
     return () => {
       removeListener()
+      dependencyRun.current?.abort()
       if (activeRequestRef.current) void window.remoteFiles.cancelContentSearch(activeRequestRef.current)
     }
   }, [])
@@ -96,6 +100,7 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
     window.localStorage.setItem(historyKey, JSON.stringify(next))
   }
 
+  /** Checks search dependencies and starts the search submitted by `event`. */
   const startSearch = async (event: FormEvent) => {
     event.preventDefault()
     if (running || !conditions.query || invalidFileSize || invalidPath) return
@@ -109,6 +114,8 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
       maxFileSizeMiB: conditions.maxFileSizeMiB,
     }
     activeRequestRef.current = request.requestId
+    const controller = new AbortController()
+    dependencyRun.current = controller
     setResults([])
     setMenu(null)
     setProgress(emptyContentProgress())
@@ -118,18 +125,20 @@ export const ContentSearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(f
     setError(null)
     remember(conditions)
     try {
-      await window.remoteFiles.startContentSearch(request)
+      await withDependencies(() => window.remoteFiles.startContentSearch(request), sessionId, request.rootPath, controller.signal)
     } catch (searchError) {
       if (activeRequestRef.current !== request.requestId) return
       activeRequestRef.current = null
-      setStatus('failed')
-      setError(errorMessage(searchError))
-    }
+      setStatus(searchError instanceof DependencyCancelledError || controller.signal.aborted ? 'cancelled' : 'failed')
+      if (!(searchError instanceof DependencyCancelledError) && !controller.signal.aborted) setError(errorMessage(searchError))
+    } finally { if (dependencyRun.current === controller) dependencyRun.current = null }
   }
 
+  /** Stops the current search, including any pending dependency request. */
   function cancelSearch() {
     const requestId = activeRequestRef.current
     if (!requestId || status === 'cancelling') return
+    dependencyRun.current?.abort()
     setStatus('cancelling')
     void window.remoteFiles.cancelContentSearch(requestId).then((cancelled) => {
       if (!cancelled && activeRequestRef.current === requestId) {

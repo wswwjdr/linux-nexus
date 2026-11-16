@@ -10,6 +10,7 @@ import type {
 } from '@shared/types'
 import type { BrowserContextMenu, SessionTab } from '@/app-types'
 import { errorMessage, getParentPath } from '@/app-utils'
+import { DependencyCancelledError, useFileDependencyAction } from '@/features/dependencies/DependencyProvider'
 
 interface ActiveOperation {
   requestId: string
@@ -71,6 +72,8 @@ export function useRemoteOperations({
   const [remoteClipboard, setRemoteClipboard] = useState<RemoteClipboard | null>(null)
   const [activeOperation, setActiveOperation] = useState<ActiveOperation | null>(null)
   const activeOperationRef = useRef<ActiveOperation | null>(null)
+  const withDependencies = useFileDependencyAction()
+  const dependencyWait = useRef<AbortController | null>(null)
   const [createDirectoryDialog, setCreateDirectoryDialog] = useState<{ name: string } | null>(null)
   const [creatingDirectory, setCreatingDirectory] = useState(false)
   const [renameEntryDialog, setRenameEntryDialog] = useState<RemoteEntryRenameDialogState | null>(null)
@@ -111,7 +114,7 @@ export function useRemoteOperations({
     const { name } = createDirectoryDialog
     setCreatingDirectory(true)
     try {
-      await window.remoteFiles.createRemoteDirectory(sessionId, directory, name)
+      await withDependencies(() => window.remoteFiles.createRemoteDirectory(sessionId, directory, name), sessionId, directory)
       setCreateDirectoryDialog(null)
       if (await loadDirectory(sessionId, directory)) showToast('info', msg('files.folderCreated'))
     } catch (error) {
@@ -137,7 +140,7 @@ export function useRemoteOperations({
       setRenameEntryDialog(null)
       return
     }
-    const targetPath = await window.remoteFiles.renameRemoteEntry(sessionId, entry.path, name)
+    const targetPath = await withDependencies(() => window.remoteFiles.renameRemoteEntry(sessionId, entry.path, name), sessionId, entry.path)
     const remapPath = (path: string) => path === entry.path
       || (entry.type === 'directory' && path.startsWith(entry.path + '/'))
       ? targetPath + path.slice(entry.path.length) : path
@@ -215,7 +218,7 @@ export function useRemoteOperations({
   const createArchiveDestinationDirectory = async (directory: string, name: string) => {
     const dialog = archiveDestinationDialog
     if (!dialog) return
-    await window.remoteFiles.createRemoteDirectory(dialog.sessionId, directory, name)
+    await withDependencies(() => window.remoteFiles.createRemoteDirectory(dialog.sessionId, directory, name), dialog.sessionId, directory)
   }
 
   const requestRemoteEntriesDeletion = (entries: RemoteEntry[]) => {
@@ -237,7 +240,7 @@ export function useRemoteOperations({
     setRemoteEntryDeleting(true)
     setRemoteEntryDeleteError(null)
     try {
-      await window.remoteFiles.deleteRemoteEntries(sessionId, entries.map((entry) => entry.path))
+      await withDependencies(() => window.remoteFiles.deleteRemoteEntries(sessionId, entries.map((entry) => entry.path)), sessionId, directory)
     } catch (error) {
       setRemoteEntryDeleteError(errorMessage(error))
       setRemoteEntryDeleting(false)
@@ -260,6 +263,14 @@ export function useRemoteOperations({
     showToast('info', msg('files.deletedItems', { "count": entries.length }))
   }
 
+  /**
+   * Runs the chosen file operation and retries an extraction if dependency setup succeeds.
+   * @param operation Operation selected in the file manager.
+   * @param sourcePaths Source paths for copy and move.
+   * @param targetDirectory Selected destination.
+   * @param strategy Existing destination handling.
+   * @param extra Optional archive settings and originating session identifier.
+   */
   const startRemoteOperation = async (
     operation: RemoteOperationKind,
     sourcePaths: string[],
@@ -282,12 +293,14 @@ export function useRemoteOperations({
       ...(extra?.archivePath ? { archivePath: extra.archivePath, wrapInDirectory: extra.wrapInDirectory } : {}),
     }
     const running = { requestId: request.requestId, sessionId: session.id, operation }
+    const controller = new AbortController()
+    dependencyWait.current = controller
     activeOperationRef.current = running
     setActiveOperation(running)
     const clipboardAtStart = remoteClipboard
     const label = operation === 'copy' ? msg('common.copy') : operation === 'move' ? msg('common.move') : msg('common.extract')
     try {
-      const result = await window.remoteFiles.executeOperation(request)
+      const result = await withDependencies(() => window.remoteFiles.executeOperation(request), session.id, request.archivePath ?? targetDirectory, controller.signal)
       showToast('info', result.status === 'cancelled' ? msg('files.cancelledCompletedChangesWillNotBeRolledBackRemoteProcess', { "label": label }) : msg('files.completed', { "label": label }))
       if (result.status === 'completed' && operation === 'move' && strategy === 'force') {
         setRemoteClipboard((current) => current === clipboardAtStart && current?.mode === 'cut'
@@ -296,8 +309,9 @@ export function useRemoteOperations({
           && current.sourcePaths.every((path, index) => path === request.sourcePaths[index]) ? null : current)
       }
     } catch (error) {
-      showToast('error', msg('files.failed', { "label": label, "value2": errorMessage(error) }))
+      if (!(error instanceof DependencyCancelledError)) showToast('error', msg('files.failed', { "label": label, "value2": errorMessage(error) }))
     } finally {
+      dependencyWait.current = null
       activeOperationRef.current = null
       setActiveOperation(null)
       const affectedDirectories = new Set([
@@ -326,8 +340,10 @@ export function useRemoteOperations({
     void startRemoteOperation(operation, remoteClipboard.sourcePaths, targetDirectory, strategy)
   }
 
+  /** Cancels the active server operation or its dependency confirmation. */
   const cancelActiveOperation = () => {
     if (activeOperationRef.current) {
+      dependencyWait.current?.abort()
       void window.remoteFiles.cancelOperation(activeOperationRef.current.requestId).catch((error) => showToast('error', msg('files.couldNotCancelOperation', { "value1": errorMessage(error) })))
     }
   }

@@ -92,7 +92,7 @@ test('downloads an SSH stdout stream into a local temporary file and atomically 
   try {
     await transferFileStream('download', client, '/home/remote.txt', destination, payload.length,
       new AbortController().signal, (bytes) => progress.push(bytes))
-    assert.ok(command.includes('dd if="$1" iflag=skip_bytes,count_bytes'))
+    assert.ok(command.includes('exec head -c "$2" -- "$1"'))
     assert.deepEqual(await readFile(destination), payload)
     assert.equal(progress.reduce((sum, value) => sum + value, 0), payload.length)
   } finally {

@@ -3,6 +3,7 @@ import { ipcMain } from './trusted-ipc'
 import type { SessionKind } from '@shared/types'
 import { connectProfile, resizeTerminal, stopSession, writeTerminal } from '../connections'
 import { sessions } from '../runtime'
+import { cancelDependencies, installDependencies, recheckDependencies, skipArchivePreparation } from '../dependency-plans'
 
 /** Registers trusted handlers for SSH sessions and terminal I/O. */
 export function registerSessionsIpc(): void {
@@ -19,6 +20,10 @@ export function registerSessionsIpc(): void {
     return connectProfile(sessionId, profileId, kind, cols, rows, startPath, rootSourceSessionId)
   })
   ipcMain.handle('connection:disconnect', (_event, sessionId: string) => stopSession(sessionId))
+  ipcMain.handle('dependencies:install', (_event, id: unknown, password: unknown) => installDependencies(id, password))
+  ipcMain.handle('dependencies:recheck', (_event, id: unknown) => recheckDependencies(id))
+  ipcMain.handle('dependencies:cancel', (_event, id: unknown) => cancelDependencies(id))
+  ipcMain.handle('dependencies:skip-archive', (_event, id: unknown) => skipArchivePreparation(id))
   ipcMain.handle('terminal:write', (_event, sessionId: string, data: string) => {
     if (typeof data !== 'string' || data.length > 65536) throw new LocalizedError(msg('errors.invalidTerminalInput'))
     writeTerminal(sessionId, data)

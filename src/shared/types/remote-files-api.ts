@@ -2,11 +2,12 @@ import { type IpcResult } from '../i18n/messages'
 import type { RemoteEntry, RemoteNavigationTarget, SaveProfileInput, ServerProfile, CommandAliasOperationResult, CommandAliasSnapshot } from './profiles'
 import type { NameSearchRequest, ContentSearchRequest, NameSearchEvent, ContentSearchEvent } from './search'
 import type { ScriptExecutionRequest, ScriptExecutionEvent } from './script-executions'
-import type { ConnectResult, TrustHostKeyInput, SessionKind, TerminalOutputEvent, ConnectionClosedEvent, FileElevationResult, FileRootExpiredEvent } from './sessions'
+import type { ConnectResult, TrustHostKeyInput, SessionKind, TerminalOutputEvent, ConnectionClosedEvent, FileElevationResult, FileRootExitResult, FileRootExpiredEvent } from './sessions'
 import type { PerformanceMonitorState } from './performance'
 import type { AppSettings, AppSettingsPatch, AppBootstrap } from './settings'
 import type { DroppedUploadEntry, TransferResult, OperationExecutionRequest, OperationExecutionResult, UploadSelectionRequest, UploadSelection, UploadExecutionRequest, TransferProgress, TransferQueuedEvent } from './transfers'
-import type { PreviewResult, TextLineEnding, LogPreviewPage, TextEncoding, TextSaveOptions, TextSaveResult, TextSavePackage, TextSaveInstallResult } from './previews'
+import type { PreviewResult, TextLineEnding, LogPreviewPage, TextEncoding, TextSaveOptions, TextSaveResult } from './previews'
+import type { DependencyCheckResult, DependencyInstallResult } from './dependencies'
 import type { PreviewType } from '../file-type-registry'
 import type { RemoteDirectoryStats, RemoteDirectoryUsageNode, RemoteEntryProperties } from './file-properties'
 import type { AssistantEvent, AssistantRequest, AssistantRequests } from './assistant'
@@ -25,7 +26,7 @@ export interface RemoteFilesApi {
   disconnect(sessionId: string): Promise<void>
   enterFileRoot(sessionId: string, password?: string): Promise<FileElevationResult>
   cancelFileRootEntry(sessionId: string): Promise<void>
-  leaveFileRoot(sessionId: string): Promise<{ remoteStateUnknown: boolean }>
+  leaveFileRoot(sessionId: string): Promise<FileRootExitResult>
   onFileRootExpired(callback: (event: FileRootExpiredEvent) => void): () => void
   writeTerminal(sessionId: string, data: string): Promise<void>
   resizeTerminal(sessionId: string, cols: number, rows: number): Promise<void>
@@ -77,7 +78,10 @@ export interface RemoteFilesApi {
     lineEnding: TextLineEnding,
     options: TextSaveOptions,
   ): Promise<TextSaveResult>
-  installTextSaveDependencies(sessionId: string, packages: TextSavePackage[], password?: string): Promise<TextSaveInstallResult>
+  installDependencies(id: string, password?: string): Promise<DependencyInstallResult>
+  recheckDependencies(id: string): Promise<DependencyCheckResult>
+  cancelDependencies(id: string): Promise<void>
+  skipArchivePreparation(id: string): Promise<Extract<DependencyCheckResult, { status: 'ready' }>>
   readLogPreview(
     sessionId: string,
     remotePath: string,

@@ -7,7 +7,6 @@ import { previewTypesForFile } from '@shared/preview-file-type'
 import ConfirmationDialog from '@/components/ConfirmationDialog'
 import LogPreviewDialog from '@/components/previews/LogPreviewDialog'
 import PreviewDialog from '@/components/previews/PreviewDialog'
-import TextSaveInstallDialog from '@/components/previews/TextSaveInstallDialog'
 import type { PreviewSearchHandle } from '@/components/previews/usePreviewSearch'
 import SearchDialog from '@/features/search/SearchDialog'
 import { usePreview } from '@/hooks/usePreview'
@@ -243,19 +242,7 @@ export default function FileSessionWorkspace({
         />
       )}
 
-      {active && preview.textSaveConfirmation?.kind === 'install' && (
-        <TextSaveInstallDialog
-          path={preview.textSaveConfirmation.path}
-          packages={preview.textSaveConfirmation.packages}
-          passwordRequired={preview.textSaveConfirmation.passwordRequired}
-          busy={preview.textSaving}
-          error={preview.textSaveError}
-          onConfirm={preview.confirmTextSave}
-          onCancel={preview.cancelTextSave}
-        />
-      )}
-
-      {active && preview.textSaveConfirmation && preview.textSaveConfirmation.kind !== 'install' && (
+      {active && preview.textSaveConfirmation && (
         <ConfirmationDialog
           eyebrow={tr('previews.saveRemoteFile')}
           title={tr('connections.saveChangesTo', { "name": preview.textSaveConfirmation.name })}

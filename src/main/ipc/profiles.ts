@@ -6,7 +6,7 @@ import type { SaveProfileInput, ServerProfile } from '@shared/types'
 import { connectionIdentityChanged } from '@shared/command-aliases'
 import { stopSessionsForProfile } from '../connections'
 import { removePerformanceMonitor } from '../performance-monitor'
-import { readAppSettings, readState, writeAppSettings, writeState } from '../state-store'
+import { readAppSettings, readState, writeAppSettings, writeState, saveArchivePreparation } from '../state-store'
 
 /** Registers handlers for saved server configurations and their lifecycle. */
 export function registerProfilesIpc(): void {
@@ -55,7 +55,10 @@ export function registerProfilesIpc(): void {
     }
     if (password) state.passwords[id] = safeStorage.encryptString(password).toString('base64')
     writeState(state)
-    if (identityChanged) removePerformanceMonitor(id)
+    if (identityChanged) {
+      saveArchivePreparation(id)
+      removePerformanceMonitor(id)
+    }
     stopSessionsForProfile(id)
     return savedProfile
   })
@@ -82,6 +85,7 @@ export function registerProfilesIpc(): void {
     delete state.passwords[profileId]
     delete state.commandAliases[profileId]
     writeState(state)
+    saveArchivePreparation(profileId)
     removePerformanceMonitor(profileId)
     stopSessionsForProfile(profileId)
   })

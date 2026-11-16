@@ -9,6 +9,7 @@ import { getMainWindow, messageFromError } from '../runtime'
 import { readAppSettings } from '../state-store'
 import { filesSession, normalizedRemotePath } from '../remote-fs'
 import { runRemoteCommand } from '../ssh-commands'
+import { verifyFileOperation } from '../file-dependencies'
 import { transferFileStream } from './stream-transfer'
 import {
   collectLocalTree,
@@ -315,6 +316,7 @@ async function uploadItems(
   }
 }
 
+/** Validates the selection and remote tools before consuming it and starting the upload. */
 export async function executeSelectedUpload(
   event: Electron.IpcMainInvokeEvent,
   selectionId: string,
@@ -328,6 +330,9 @@ export async function executeSelectedUpload(
     throw new LocalizedError(msg('errors.uploadSelectionExpiredSelectTheSourceAgain'))
   }
   if (stored.selection.strategy !== 'confirm' && stored.selection.strategy !== strategy) throw new LocalizedError(msg('errors.uploadStrategyDoesNotMatchTheSelectedStrategy'))
+  const { sessionId, profileId } = stored.selection
+  await verifyFileOperation({ sessionId, profileId, commands: stored.commands }, 'upload', signal)
+  if (uploadSelections.get(selectionId) !== stored) throw new LocalizedError(msg('errors.uploadSelectionExpiredSelectTheSourceAgain'))
   uploadSelections.delete(selectionId)
   return uploadItems(event, stored.selection.requestId, stored.selection.sessionId, stored.selection.profileId, stored.commands,
     stored.selection.remoteRoot, stored.items, stored.selection.failures, strategy, signal)
