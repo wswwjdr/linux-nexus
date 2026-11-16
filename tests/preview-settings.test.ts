@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { FileTypeExtensions } from '../src/shared/types.ts'
-import { applyAppSettingsPatch, DEFAULT_APP_SETTINGS, DEFAULT_PERFORMANCE_THRESHOLDS, validateAppSettings } from '../src/shared/app-settings.ts'
+import { applyAppSettingsPatch, DEFAULT_APP_SETTINGS, DEFAULT_PERFORMANCE_THRESHOLDS, loadStoredAppSettings, validateAppSettings } from '../src/shared/app-settings.ts'
 import { validateExternalUrl } from '../src/shared/external-url.ts'
 import { previewMimeType } from '../src/shared/preview-mime-type.ts'
 import { DEFAULT_FILE_TYPE_EXTENSIONS, normalizeFileTypeExtension, classifyFileTypeCategories } from '../src/shared/file-type-registry.ts'
@@ -14,12 +14,48 @@ function copyDefaultExtensions(): FileTypeExtensions {
 test('detailed usage has a default and accepts configured entry limits up to 500000', () => {
   const { directoryUsageEntryLimit, ...settings } = DEFAULT_APP_SETTINGS
   assert.equal(directoryUsageEntryLimit, 100_000)
-  assert.equal(validateAppSettings(settings).directoryUsageEntryLimit, 100_000)
+  assert.equal(loadStoredAppSettings(settings).directoryUsageEntryLimit, 100_000)
+  assert.throws(() => validateAppSettings(settings))
   for (const limit of [1, 250_000, 500_000]) {
     assert.equal(applyAppSettingsPatch(DEFAULT_APP_SETTINGS, { directoryUsageEntryLimit: limit }).directoryUsageEntryLimit, limit)
   }
   for (const limit of [0, 1.5, 500_001, '250000', null]) {
     assert.throws(() => applyAppSettingsPatch(DEFAULT_APP_SETTINGS, { directoryUsageEntryLimit: limit }))
+  }
+})
+
+test('fills missing stored settings at every level and preserves custom values', () => {
+  const stored = {
+    theme: 'dark',
+    textMiB: 17,
+    fileTypeExtensions: { text: [], pdf: ['.custom'] },
+    performanceThresholds: { cpu: { warning: 60 } },
+    startupConnection: null,
+  }
+
+  assert.deepEqual(loadStoredAppSettings(stored), {
+    ...DEFAULT_APP_SETTINGS,
+    theme: 'dark',
+    textMiB: 17,
+    fileTypeExtensions: { ...DEFAULT_APP_SETTINGS.fileTypeExtensions, text: [], pdf: ['.custom'] },
+    performanceThresholds: { ...DEFAULT_PERFORMANCE_THRESHOLDS, cpu: { warning: 60, critical: 90 } },
+  })
+})
+
+test('rejects malformed stored settings even when other fields are missing', () => {
+  for (const stored of [
+    null,
+    [],
+    { unknown: true },
+    { fileTypeExtensions: { unknown: [] } },
+    { performanceThresholds: { cpu: { unknown: 0 } } },
+    { fileTypeExtensions: [] },
+    { performanceThresholds: { cpu: null } },
+    { textMiB: '17' },
+    { directoryUsageEntryLimit: 500_001 },
+    { startupConnection: { profileId: 'server' } },
+  ]) {
+    assert.throws(() => loadStoredAppSettings(stored))
   }
 })
 

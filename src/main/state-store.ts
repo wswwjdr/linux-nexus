@@ -3,7 +3,7 @@ import { safeStorage } from 'electron'
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import type { AppSettings, CommandAliasSnapshot, PreviewLimits, ServerProfile } from '@shared/types'
-import { DEFAULT_APP_SETTINGS, DEFAULT_PREVIEW_LIMITS, defaultAppSettings, validateAppSettings } from '@shared/app-settings'
+import { DEFAULT_APP_SETTINGS, DEFAULT_PREVIEW_LIMITS, defaultAppSettings, loadStoredAppSettings, validateAppSettings } from '@shared/app-settings'
 import { normalizeStoredCommandAliases } from '@shared/command-aliases'
 import { messageFromError } from './runtime'
 
@@ -127,6 +127,10 @@ export function writeState(state: StoredState): void {
   atomicWriteJson(stateFile, state)
 }
 
+/**
+ * Reads existing settings without rewriting them, or creates the file on first use.
+ * @returns Validated settings with defaults for fields missing from disk.
+ */
 export function readAppSettings(): AppSettings {
   if (!existsSync(settingsFile)) {
     const defaults = defaultAppSettings()
@@ -135,7 +139,7 @@ export function readAppSettings(): AppSettings {
   }
   try {
     const stored = parseJsonFile(settingsFile)
-    return validateAppSettings(stored)
+    return loadStoredAppSettings(stored)
   } catch (error) {
     throw new LocalizedError(msg('errors.invalidApplicationSettings', { "settingsFile": settingsFile, "value2": messageFromError(error) }))
   }

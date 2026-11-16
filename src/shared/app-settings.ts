@@ -49,8 +49,7 @@ export function defaultAppSettings(): AppSettings {
 }
 
 export const DEFAULT_APP_SETTINGS = defaultAppSettings()
-const requiredAppSettingsKeys = [...Object.keys(DEFAULT_PREVIEW_LIMITS), 'language', 'theme', 'defaultView', 'fileTypeExtensions', 'startupConnection', 'transferFileConcurrency', 'performanceSampleIntervalSeconds', 'performanceThresholds']
-const appSettingsKeys = [...requiredAppSettingsKeys, 'directoryUsageEntryLimit']
+const appSettingsKeys = Object.keys(DEFAULT_APP_SETTINGS)
 const performanceThresholdKeys = ['cpu', 'memory', 'disk', 'loadPerCore'] as const
 
 const MIN_TRANSFER_FILE_CONCURRENCY = 1
@@ -66,9 +65,39 @@ function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
   return Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key))
 }
 
+/**
+ * Fills missing fields in stored configuration objects.
+ * @param defaults The default value at the current level.
+ * @param stored The explicitly stored value at the current level.
+ * @returns The completed value, including any invalid or unknown data for validation.
+ */
+function fillMissingSettings(defaults: unknown, stored: unknown): unknown {
+  if (!isRecord(defaults) || !isRecord(stored)) return stored
+
+  const result = { ...defaults, ...stored }
+  for (const [key, defaultValue] of Object.entries(defaults)) {
+    if (Object.hasOwn(stored, key)) result[key] = fillMissingSettings(defaultValue, stored[key])
+  }
+  return result
+}
+
+/**
+ * Loads a settings file using current defaults for fields absent from older versions.
+ * @param stored The parsed contents of the settings file.
+ * @returns The complete, validated application settings.
+ */
+export function loadStoredAppSettings(stored: unknown): AppSettings {
+  return validateAppSettings(fillMissingSettings(defaultAppSettings(), stored))
+}
+
+/**
+ * Checks a complete settings object and normalizes its values.
+ * @param value The settings to validate.
+ * @returns The validated application settings.
+ */
 export function validateAppSettings(value: unknown): AppSettings {
   const limitKeys = Object.keys(DEFAULT_PREVIEW_LIMITS)
-  if (!isRecord(value) || !hasExactKeys(value, Object.hasOwn(value, 'directoryUsageEntryLimit') ? appSettingsKeys : requiredAppSettingsKeys)) throw new LocalizedError(msg('errors.invalidApplicationSettingsStructure'))
+  if (!isRecord(value) || !hasExactKeys(value, appSettingsKeys)) throw new LocalizedError(msg('errors.invalidApplicationSettingsStructure'))
   if (!isLanguagePreference(value.language)) throw new LocalizedError(msg('settings.invalidLanguage'))
   if (value.theme !== 'light' && value.theme !== 'dark' && value.theme !== 'cream') {
     throw new LocalizedError(msg('errors.invalidAppearanceThemeSetting'))
@@ -80,8 +109,7 @@ export function validateAppSettings(value: unknown): AppSettings {
       throw new LocalizedError(msg('errors.previewSettingMustBeAPositiveInteger', { "key": key }))
     }
   }
-  const directoryUsageEntryLimit = Object.hasOwn(value, 'directoryUsageEntryLimit')
-    ? value.directoryUsageEntryLimit : DEFAULT_DIRECTORY_USAGE_ENTRY_LIMIT
+  const directoryUsageEntryLimit = value.directoryUsageEntryLimit
   if (typeof directoryUsageEntryLimit !== 'number' || !Number.isInteger(directoryUsageEntryLimit)
     || directoryUsageEntryLimit < 1 || directoryUsageEntryLimit > MAX_DIRECTORY_USAGE_ENTRY_LIMIT) {
     throw new LocalizedError(msg('settings.invalidDirectoryUsageEntryLimit', { max: MAX_DIRECTORY_USAGE_ENTRY_LIMIT }))

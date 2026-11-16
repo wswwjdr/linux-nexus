@@ -52,11 +52,25 @@ app.whenReady().then(async () => {
     const runtime = theme
     const store = theme
     runtime.setMainWindow(window)
-    store.configureStateFiles(join(directory, 'servers.json'), join(directory, 'settings.json'))
-    assert.equal(store.readAppSettings().theme, 'light')
-    // Unsupported settings are rejected without rewriting configuration files.
     const settingsPath = join(directory, 'settings.json')
-    const valid = { ...store.readAppSettings(), textMiB: 17 }
+    store.configureStateFiles(join(directory, 'servers.json'), settingsPath)
+    const defaults = store.readAppSettings()
+    assert.equal(defaults.theme, 'light')
+    assert.deepEqual(JSON.parse(readFileSync(settingsPath, 'utf8')), defaults)
+
+    const legacyContents = JSON.stringify({ textMiB: 17, fileTypeExtensions: { text: [] } })
+    writeFileSync(settingsPath, legacyContents)
+    const valid = store.readAppSettings()
+    assert.deepEqual(valid, {
+      ...defaults,
+      textMiB: 17,
+      fileTypeExtensions: { ...defaults.fileTypeExtensions, text: [] },
+    })
+    assert.equal(readFileSync(settingsPath, 'utf8'), legacyContents)
+    store.writeAppSettings(valid)
+    assert.deepEqual(JSON.parse(readFileSync(settingsPath, 'utf8')), valid)
+
+    // Unsupported settings are rejected without rewriting configuration files.
     for (const invalid of [{ ...valid, theme: 'system' }, { ...valid, textMiB: 0 }, { ...valid, language: 'unknown' }]) {
       const contents = JSON.stringify(invalid)
       writeFileSync(settingsPath, contents)
