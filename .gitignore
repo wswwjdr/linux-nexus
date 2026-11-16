@@ -1,9 +1,10 @@
+.idea/
+dist/
+data/
+docs/
 node_modules/
 out/
 release/
-dist/
-/data/
-*.log
-.idea/
+tests/
 
 GitHub 发版说明.md
