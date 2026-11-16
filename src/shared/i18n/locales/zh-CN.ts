@@ -1,4 +1,22 @@
 export default {
+  updates: {
+    title: '应用更新',
+    version: '当前版本 {{version}}',
+    disabled: '正式发布的 Windows 版本支持在线更新。',
+    check: '检查更新',
+    checking: '正在检查更新…',
+    current: '当前已是最新版本。',
+    available: '发现新版本 {{version}}。',
+    download: '下载更新',
+    downloading: '正在下载版本 {{version}}（{{progress}}%）',
+    downloadFailed: '下载更新失败',
+    installFailed: '安装更新失败',
+    ready: '版本 {{version}} 已下载，可以安装。',
+    restartAndInstall: '重启并安装',
+    restartWarning: '重启将关闭 SSH 会话并中断正在进行的传输和任务。请先保存未保存的编辑。',
+    installing: '正在准备重启…',
+    later: '稍后',
+  },
   "performance": {
     "live": "监控中",
     "partialFailure": "部分指标不可用",

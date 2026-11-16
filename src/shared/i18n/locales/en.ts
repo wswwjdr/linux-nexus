@@ -1,4 +1,22 @@
 export default {
+  updates: {
+    title: 'Application updates',
+    version: 'Current version {{version}}',
+    disabled: 'Online updates are available in official Windows releases.',
+    check: 'Check for updates',
+    checking: 'Checking for updates…',
+    current: 'You’re using the latest version.',
+    available: 'Version {{version}} is available.',
+    download: 'Download update',
+    downloading: 'Downloading version {{version}} ({{progress}}%)',
+    downloadFailed: 'Update download failed',
+    installFailed: 'Update installation failed',
+    ready: 'Version {{version}} is ready to install.',
+    restartAndInstall: 'Restart and install',
+    restartWarning: 'Restarting will close active SSH sessions and stop running transfers and tasks. Save any open edits before continuing.',
+    installing: 'Preparing to restart…',
+    later: 'Later',
+  },
   "performance": {
     "live": "Live",
     "partialFailure": "Some metrics unavailable",

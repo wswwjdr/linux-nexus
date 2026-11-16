@@ -77,6 +77,14 @@ npm run dist:win
 
 Build artifacts are written to `release/`.
 
+### Releases and online updates
+
+Before the first release, run `npm run release:key -- "$env:USERPROFILE\linux-nexus-update-private.pem"` from the repository root with Node.js 26. Commit the generated `resources/update-public-key.pem` and put the full private key in the repository's `UPDATE_SIGNING_KEY` GitHub Actions secret. Keep the same key for subsequent releases.
+
+With the release workflow and public key committed, run `npm run release:tag -- 1` from the commit you want to publish. The argument is the major version you choose. The command pushes a tag in `v1.yyyyMMddHHmm` format using Beijing time, and GitHub Actions validates, builds, and publishes the GitHub release. Each major version can be released once per minute. Rerun a failed release from its original Actions run.
+
+Users of `1.0.0` install the first update-enabled release from GitHub Releases. Later versions check for updates at startup and offer a manual check under Application updates in Settings. Users confirm the download and restart separately.
+
 ## Documentation
 
 The Agent Assistant guide is available in English. The other guides are in Chinese.

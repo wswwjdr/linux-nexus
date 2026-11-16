@@ -15,6 +15,7 @@ import { stopAllAssistantTasks } from './assistant-runtime'
 import { applyTheme, themeBackgroundColor } from './theme'
 import { configurePerformanceMonitorInterval, stopAllPerformanceMonitors } from './performance-monitor'
 import { publishWindowLayoutChanges } from './window-layout'
+import { registerUpdates } from './updates'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'remote-preview',
@@ -69,7 +70,8 @@ function focusMainWindow(): void {
   window.focus()
 }
 
-function createWindow(): void {
+/** @returns The trusted main window, which signals when the startup check can begin. */
+function createWindow(): BrowserWindow {
   const iconPath = app.isPackaged
     ? join(process.resourcesPath, 'app.ico')
     : join(app.getAppPath(), 'resources', 'app.ico')
@@ -119,6 +121,7 @@ function createWindow(): void {
       window.focus()
     }
   })
+  return window
 }
 
 app.whenReady().then(async () => {
@@ -150,7 +153,11 @@ app.whenReady().then(async () => {
   await mkdir(downloadDirectory, { recursive: true })
   registerPreviewProtocol()
   registerIpc()
-  createWindow()
+  const checkAtStartup = registerUpdates(restartForUpdate)
+  const window = createWindow()
+  window.once('ready-to-show', () => {
+    void checkAtStartup(window).catch(error => console.error('Startup update prompt failed', error))
+  })
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -160,20 +167,53 @@ app.whenReady().then(async () => {
 })
 
 let quitting = false
-app.on('before-quit', event => {
-  if (!hasSingleInstanceLock || quitting) return
-  event.preventDefault()
-  quitting = true
+let allowQuit = false
+const temporaryDirectories = ['linux-nexus-preview', 'linux-nexus-downloads']
+
+/** Stops application work and removes temporary files before exit or update installation. */
+async function cleanUpBeforeExit(): Promise<void> {
   stopAllPerformanceMonitors()
-  void (async () => {
-    await stopAllAssistantTasks()
-    await stopAllSessions()
-    clearPreviewAssets()
-    for (const name of ['linux-nexus-preview', 'linux-nexus-downloads']) {
-      await rm(join(app.getPath('temp'), name), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  await stopAllAssistantTasks()
+  await stopAllSessions()
+  clearPreviewAssets()
+  for (const name of temporaryDirectories) {
+    await rm(join(app.getPath('temp'), name), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  }
+}
+
+/**
+ * Finishes shutdown work before NSIS can close the app and replace files.
+ * @param launch Launches the verified installer.
+ */
+async function restartForUpdate(launch: () => void): Promise<void> {
+  if (quitting) throw new Error('Application is already closing')
+  quitting = true
+  try {
+    await cleanUpBeforeExit()
+    allowQuit = true
+    launch()
+  } catch (error) {
+    allowQuit = false
+    try {
+      await Promise.all(temporaryDirectories.map(name => mkdir(join(app.getPath('temp'), name), { recursive: true })))
+    } catch (restoreError) {
+      throw new AggregateError([error, restoreError], 'Could not restore temporary directories after the update failed')
+    } finally {
+      quitting = false
     }
+    throw error
+  }
+}
+
+app.on('before-quit', event => {
+  if (!hasSingleInstanceLock || allowQuit) return
+  event.preventDefault()
+  if (quitting) return
+  quitting = true
+  void cleanUpBeforeExit().then(() => {
+    allowQuit = true
     app.quit()
-  })().catch(error => {
+  }).catch(error => {
     showErrorBox(msg('errors.cleanupFailedOnExit'), messageFromError(error))
     app.exit(1)
   })

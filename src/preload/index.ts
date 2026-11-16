@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AssistantEvent, AssistantRequest } from '@shared/types/assistant'
+import type { UpdateState, UpdateTransport } from '@shared/types/updates'
 import type {
   ConnectionClosedEvent,
   FileRootExpiredEvent,
@@ -181,3 +182,26 @@ const api: RemoteFilesTransport = {
 }
 
 contextBridge.exposeInMainWorld('remoteFilesTransport', api)
+
+const updateTransport: UpdateTransport = {
+  /** Reads the current update status. */
+  snapshot: () => ipcRenderer.invoke('updates:snapshot'),
+  /** Checks the configured release source for a newer version. */
+  check: () => ipcRenderer.invoke('updates:check'),
+  /** Downloads the update currently offered by the main process. */
+  download: () => ipcRenderer.invoke('updates:download'),
+  /** Asks the main process to confirm restart and installation. */
+  install: () => ipcRenderer.invoke('updates:install'),
+  /**
+   * Subscribes to application update status.
+   * @param callback Receives each state from the main process.
+   * @returns A function that removes the subscription.
+   */
+  subscribe(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, state: UpdateState) => callback(state)
+    ipcRenderer.on('updates:state', listener)
+    return () => ipcRenderer.removeListener('updates:state', listener)
+  },
+}
+
+contextBridge.exposeInMainWorld('appUpdates', updateTransport)
