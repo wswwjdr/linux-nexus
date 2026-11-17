@@ -18,7 +18,8 @@ interface UploadOptions {
   modifiedAtMs: number
 }
 
-async function writeAll(file: Awaited<ReturnType<typeof open>>, chunk: Buffer): Promise<void> {
+/** Writes the entire chunk to the current position of the supplied file handle. */
+export async function writeAll(file: Awaited<ReturnType<typeof open>>, chunk: Buffer): Promise<void> {
   let offset = 0
   while (offset < chunk.length) {
     const { bytesWritten } = await file.write(chunk, offset, chunk.length - offset)

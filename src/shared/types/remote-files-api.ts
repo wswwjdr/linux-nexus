@@ -11,6 +11,7 @@ import type { DependencyCheckResult, DependencyInstallResult } from './dependenc
 import type { PreviewType } from '../file-type-registry'
 import type { RemoteDirectoryStats, RemoteDirectoryUsageNode, RemoteEntryProperties } from './file-properties'
 import type { AssistantEvent, AssistantRequest, AssistantRequests } from './assistant'
+import type { LocalEditTask, LocalEditUpdate } from './local-edits'
 
 export interface RemoteFilesApi {
   assistant<R extends AssistantRequest>(request: R): Promise<AssistantRequests[R['action']]['output']>
@@ -62,6 +63,20 @@ export interface RemoteFilesApi {
   cancelUploadSelection(selectionId: string): Promise<boolean>
   getPathForFile(file: File): string
   downloadEntries(requestId: string, sessionId: string, remotePaths: string[]): Promise<TransferResult>
+  /** Downloads a single remote file and opens the Windows application picker. */
+  openLocalEdit(sessionId: string, remotePath: string): Promise<void>
+  /** Returns the current app-managed local editing tasks. */
+  listLocalEdits(): Promise<LocalEditTask[]>
+  /** Queues an upload confirmation for the specified task. */
+  uploadLocalEdit(id: string): Promise<void>
+  /** Restores upload confirmations for future changes to the specified task. */
+  restoreLocalEditPrompt(id: string): Promise<void>
+  /** Exports the specified task's copy to a user-selected folder. */
+  exportLocalEdit(id: string): Promise<boolean>
+  /** Prompts before removing the specified task's local files. */
+  discardLocalEdit(id: string): Promise<void>
+  /** Subscribes to task changes and returns the unsubscribe callback. */
+  onLocalEdits(callback: (update: LocalEditUpdate) => void): () => void
   cancelTransfer(requestId: string): Promise<boolean>
   executeOperation(request: OperationExecutionRequest): Promise<OperationExecutionResult>
   cancelOperation(requestId: string): Promise<boolean>

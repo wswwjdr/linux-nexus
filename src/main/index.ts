@@ -16,6 +16,7 @@ import { applyTheme, themeBackgroundColor } from './theme'
 import { configurePerformanceMonitorInterval, stopAllPerformanceMonitors } from './performance-monitor'
 import { publishWindowLayoutChanges } from './window-layout'
 import { registerUpdates } from './updates'
+import { cleanUpLocalEdits, prepareLocalEditExit, recheckLocalEdits, resumeLocalEdits } from './local-edits'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'remote-preview',
@@ -109,6 +110,12 @@ function createWindow(): BrowserWindow {
     void window.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
+  window.on('focus', recheckLocalEdits)
+  window.on('close', event => {
+    if (allowQuit || process.platform === 'darwin') return
+    event.preventDefault()
+    app.quit()
+  })
   window.on('closed', () => {
     setMainWindow(null)
     clearPreviewAssets()
@@ -172,6 +179,7 @@ const temporaryDirectories = ['linux-nexus-preview', 'linux-nexus-downloads']
 
 /** Stops application work and removes temporary files before exit or update installation. */
 async function cleanUpBeforeExit(): Promise<void> {
+  await cleanUpLocalEdits()
   stopAllPerformanceMonitors()
   await stopAllAssistantTasks()
   await stopAllSessions()
@@ -184,39 +192,55 @@ async function cleanUpBeforeExit(): Promise<void> {
 /**
  * Finishes shutdown work before NSIS can close the app and replace files.
  * @param launch Launches the verified installer.
+ * @returns Whether the requested shutdown was approved and the installer launched.
  */
-async function restartForUpdate(launch: () => void): Promise<void> {
+async function restartForUpdate(launch: () => void): Promise<boolean> {
   if (quitting) throw new Error('Application is already closing')
   quitting = true
   try {
+    if (!await prepareLocalEditExit()) return false
     await cleanUpBeforeExit()
     allowQuit = true
     launch()
+    return true
   } catch (error) {
     allowQuit = false
     try {
       await Promise.all(temporaryDirectories.map(name => mkdir(join(app.getPath('temp'), name), { recursive: true })))
     } catch (restoreError) {
       throw new AggregateError([error, restoreError], 'Could not restore temporary directories after the update failed')
-    } finally {
-      quitting = false
     }
     throw error
+  } finally {
+    if (!allowQuit) {
+      quitting = false
+      resumeLocalEdits()
+    }
+  }
+}
+
+/** Resolves external edits before the normal application shutdown. */
+async function quitApplication(): Promise<void> {
+  quitting = true
+  try {
+    if (!await prepareLocalEditExit()) return
+    await cleanUpBeforeExit()
+    allowQuit = true
+    app.quit()
+  } catch (error) {
+    showErrorBox(msg('errors.cleanupFailedOnExit'), messageFromError(error))
+  } finally {
+    if (!allowQuit) {
+      quitting = false
+      resumeLocalEdits()
+    }
   }
 }
 
 app.on('before-quit', event => {
   if (!hasSingleInstanceLock || allowQuit) return
   event.preventDefault()
-  if (quitting) return
-  quitting = true
-  void cleanUpBeforeExit().then(() => {
-    allowQuit = true
-    app.quit()
-  }).catch(error => {
-    showErrorBox(msg('errors.cleanupFailedOnExit'), messageFromError(error))
-    app.exit(1)
-  })
+  if (!quitting) void quitApplication()
 })
 
 app.on('window-all-closed', () => {

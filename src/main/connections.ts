@@ -160,7 +160,7 @@ export function connectProfile(
           return
         }
         const platform = environment && { endpoint: endpointKey(profile), environment, pendingArchivePreparation: archiveKey }
-        const activeSession: ActiveSession = { sessionId, client, kind, profileId, shell, hostFingerprint, platform }
+        const activeSession: ActiveSession = { sessionId, client, kind, profileId, username: profile.username, shell, hostFingerprint, platform }
         const fileIdentity = environment && initializeFileIdentity(activeSession, environment.effectiveUid)
         sessions.set(sessionId, activeSession)
         registerPerformanceConnection(activeSession)

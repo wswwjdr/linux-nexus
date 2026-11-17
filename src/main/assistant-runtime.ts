@@ -2,7 +2,7 @@ import { experimental_createSteering, generateText, InvalidToolInputError, isSte
 import { createHash, randomUUID } from 'node:crypto'
 import { i18n, LocalizedError, messageFromUnknown, msg, renderMessage } from '../shared/i18n/messages'
 import type { AssistantApproval, AssistantConversation, AssistantEvent, AssistantEventChange, AssistantMode, AssistantQuestion, AssistantRequests, AssistantSnapshot, AssistantTurn } from '../shared/types/assistant'
-import { assistantFileIdentity } from './file-identity'
+import { activeFileIdentity } from './file-identity'
 import { assistantChatModel, assistantProvider, providerFailure } from './assistant-provider'
 import type { SupportedLanguage } from "../shared/i18n/languages"
 import { removeAssistantConversation, readAssistantMode, readAssistantHistory, readAssistantOutput, readAssistantPrompt,
@@ -34,7 +34,7 @@ function contextFor(sessionId: string) {
   const fingerprint = state.hostKeys[endpoint]
   if (!fingerprint || fingerprint !== session.hostFingerprint) throw new LocalizedError(msg('assistant.invalid'))
   const serverKey = createHash('sha256').update(JSON.stringify([profile.id, endpoint, profile.username, fingerprint])).digest('hex')
-  return { ...assistantFileIdentity(session), serverKey, sessionId, profileId: session.profileId, endpoint }
+  return { ...activeFileIdentity(session), serverKey, sessionId, profileId: session.profileId, endpoint }
 }
 
 const histories = new Map<string, ReturnType<typeof readAssistantHistory>>()

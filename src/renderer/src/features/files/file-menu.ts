@@ -34,6 +34,7 @@ export type FileMenuAction =
   | { type: 'run-script' }
   | { type: 'adjust-script-command' }
   | { type: 'download' }
+  | { type: 'open-local' }
   | { type: 'copy' }
   | { type: 'cut' }
   | { type: 'paste'; strategy: PasteStrategy }
@@ -239,6 +240,7 @@ const singleEntryStrategy: FileContextMenuStrategy = {
     }
     const isDirectory = entry.type === 'directory'
     return [
+      ...(!isDirectory ? [openLocalAction()] : []),
       action('download', isDirectory ? tr('files.downloadFolder') : tr('files.downloadFile'), 'arrow-down', { type: 'download' }),
       action('copy', tr('common.copy'), 'copy', { type: 'copy' }),
       action('cut', tr('files.cut'), 'scissors', { type: 'cut' }),
@@ -324,8 +326,16 @@ const searchResultStrategy: FileContextMenuStrategy = {
   matches: (context) => context.kind === 'search-result',
   contribute(context) {
     if (context.kind !== 'search-result') return []
-    return [action('open-location', tr('files.openContainingDirectory'), 'folder-open', { type: 'open-location' })]
+    return [
+      ...(context.result.type === 'file' ? [openLocalAction()] : []),
+      action('open-location', tr('files.openContainingDirectory'), 'folder-open', { type: 'open-location' }),
+    ]
   },
+}
+
+/** Builds the common menu entry that opens a remote file in a local app. */
+function openLocalAction(): FileMenuActionNode {
+  return action('open-local', tr('localEdit.open'), 'folder-open', { type: 'open-local' })
 }
 
 const entryPropertiesStrategy: FileContextMenuStrategy = {

@@ -102,8 +102,8 @@ export function fileCommands(session: ActiveSession): FileCommandScope {
   return state.commands
 }
 
-/** Returns the active identity and revocable command scope for a file connection. */
-export function assistantFileIdentity(session: ActiveSession): { identity: FileIdentity; commands: FileCommandScope } {
+/** Returns the active identity and revocable command scope for the supplied file connection. */
+export function activeFileIdentity(session: ActiveSession): { identity: FileIdentity; commands: FileCommandScope } {
   const commands = fileCommands(session)
   return { identity: stateFor(session).identity, commands }
 }

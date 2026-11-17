@@ -104,6 +104,7 @@ const diagnosticKeys: Record<string, MessageKey> = {
   "incompleteBytes": "errors.remoteIncompleteBytes",
   "invalidCommit": "errors.remoteInvalidCommit",
   "hardlinkType": "errors.remoteHardlinkType",
+  "versionedTargetChanged": "localEdit.targetChanged",
   "preserveMetadata": "errors.remotePreserveMetadata",
   "readChanged": "errors.remoteReadChanged"
 }

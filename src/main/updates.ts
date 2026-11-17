@@ -18,7 +18,7 @@ const releaseDownloads = 'https://github.com/wswwjdr/linux-nexus/releases/downlo
  * @param restart Runs the application's normal cleanup and invokes the installer launch callback.
  * @returns A function that performs the background startup check.
  */
-export function registerUpdates(restart: (launch: () => void) => Promise<void>): (window: BrowserWindow) => Promise<void> {
+export function registerUpdates(restart: (launch: () => void) => Promise<boolean>): (window: BrowserWindow) => Promise<void> {
   const enabled = app.isPackaged && process.platform === 'win32' && Boolean(__UPDATE_PUBLIC_KEY__ && __RELEASE_DISPLAY_VERSION__)
   const publicKey = enabled ? createPublicKey(__UPDATE_PUBLIC_KEY__) : null
   const updater = enabled ? new NsisUpdater() : null
@@ -136,12 +136,13 @@ export function registerUpdates(restart: (launch: () => void) => Promise<void>):
       return
     }
     try {
-      window.setEnabled(false)
-      await restart(() => {
+      const started = await restart(() => {
+        window.setEnabled(false)
         installError = undefined
         updater.quitAndInstall(true, true)
         if (installError) throw installError
       })
+      if (!started) updateState('ready', { nextVersion })
     } catch (error) {
       console.error('Update installation failed', error)
       if (!window.isDestroyed()) window.setEnabled(true)

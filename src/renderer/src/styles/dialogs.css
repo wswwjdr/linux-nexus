@@ -1,6 +1,14 @@
 /* Size dialogs against their backdrop: session backdrops are smaller than the window. */
 .modal-backdrop { position: fixed; z-index: 5; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); place-items: center; padding: 24px; background:var(--backdrop); backdrop-filter: blur(2px); }
 .modal { width: min(100%, 440px); min-width: 0; min-height: 0; max-height: 100%; overflow: auto; overscroll-behavior: contain; padding: 22px; border:1px solid var(--line); border-radius: 6px; background:var(--surface-raised); box-shadow: var(--shadow-dialog); }
+.local-edits-dialog { width: min(calc(100% - 48px), 620px); max-height: calc(100% - 48px); color: inherit; }
+.local-edits-dialog::backdrop { background: var(--backdrop); backdrop-filter: blur(2px); }
+.local-edits-list { display: grid; gap: 12px; padding: 0; margin: 0; list-style: none; }
+.local-edits-list li { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; overflow-wrap: anywhere; }
+.local-edit-actions { flex-wrap: wrap; }
+.local-edits-button { position: relative; }
+.local-edits-indicator { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.local-edits-indicator.conflict { background: var(--text-danger); }
 .modal-heading, .modal-footer { flex-shrink: 0; }
 .modal-heading { min-width: 0; gap: 12px; }
 .modal-heading > :first-child { min-width: 0; overflow-wrap: anywhere; }

@@ -1,13 +1,14 @@
 import { LocalizedError, type MessageValue, msg, tr } from '@shared/i18n/messages'
 import { useLanguage } from '@/i18n'
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
-import { Bot, Cloud, FileUp, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, RefreshCw, Search, Settings, Shield, Terminal } from 'lucide-react'
+import { Bot, Cloud, FilePenLine, FileUp, FolderOpen, FolderUp, House, Keyboard, LoaderCircle, RefreshCw, Search, Settings, Shield, Terminal } from 'lucide-react'
 import GlobalToast from './GlobalToast'
 import type { SessionFileWorkspaceActions } from './features/files/FileSessionWorkspace'
 import { useScriptExecution } from './features/files/useScriptExecution'
 import type { AssistantTurn } from '@shared/types/assistant'
 import { AssistantPanel } from './features/files/AssistantPanel'
 import { useFileMenuActions } from './features/files/useFileMenuActions'
+import LocalEditsDialog, { useLocalEdits } from './features/files/LocalEditsDialog'
 import SessionWorkspaceView from './features/sessions/SessionWorkspaceView'
 import DialogLayer from './components/DialogLayer'
 import ConfirmationDialog from './components/ConfirmationDialog'
@@ -90,6 +91,7 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
   const [performanceThresholds, setPerformanceThresholds] = useState<PerformanceThresholds>(DEFAULT_PERFORMANCE_THRESHOLDS)
   const [fileTypeExtensions, setFileTypeExtensions] = useState<FileTypeExtensions>(defaultFileTypeExtensions)
   const { notices, showToast, dismissToast } = useToasts()
+  const [localEditsOpen, setLocalEditsOpen] = useState(false)
   const [recentConnections, setRecentConnections] = useState<RecentConnection[]>(readRecentConnections)
   const [pendingHostKeys, setPendingHostKeys] = useState<PendingHostKey[]>([])
   const [browserContextMenu, setBrowserContextMenu] = useState<BrowserContextMenuState | null>(null)
@@ -379,6 +381,13 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
     }
   }
 
+  const localEdits = useLocalEdits(showToast, (sessionId, remotePath) => {
+    const directory = remotePath.slice(0, remotePath.lastIndexOf('/')) || '/'
+    const owner = sessionsRef.current.find(session => session.id === sessionId)
+    if (owner?.currentPath === directory && !owner.loading) void loadDirectory(sessionId, directory, { quiet: true })
+  })
+  const hasLocalEditConflict = localEdits.some(edit => edit.conflict)
+
   const {
     transfers,
     uploadSelection,
@@ -600,7 +609,7 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
       || commandAliases.deleteConfirmation || remoteEntryDeleteDialog || uploadSelection
       || archiveDestinationDialog || rootRequest?.phase === 'password' || rootRequest?.phase === 'verifying'
       || (activeSessionId && workspaceBlockingSessionIds.has(activeSessionId))
-      || sessionChooserOpen || shortcutGuideOpen,
+      || sessionChooserOpen || shortcutGuideOpen || localEditsOpen,
   )
 
   const refreshDirectory = () => {
@@ -724,6 +733,15 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
             )}
           </div>
           <div className="topbar-actions">
+            {localEdits.length > 0 && (
+              <button type="button" className="icon-button toolbar-button local-edits-button" title={tr('localEdit.title')}
+                aria-label={tr('localEdit.title')} onClick={() => setLocalEditsOpen(true)}>
+                <FilePenLine size={16} />
+                {(hasLocalEditConflict || localEdits.some(edit => edit.state === 'modified')) && (
+                  <span className={hasLocalEditConflict ? 'local-edits-indicator conflict' : 'local-edits-indicator'} />
+                )}
+              </button>
+            )}
             {connectedProfileId && (
               <PerformanceMonitor
                 state={performanceMonitorState}
@@ -878,6 +896,7 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
         />
       </main>
 
+      {localEditsOpen && <LocalEditsDialog tasks={localEdits} onClose={() => setLocalEditsOpen(false)} />}
       <GlobalToast
         notices={notices}
         onDismiss={dismissToast}

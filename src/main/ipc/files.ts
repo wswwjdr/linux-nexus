@@ -13,8 +13,16 @@ import { getRemoteDirectoryStats, getRemoteEntryProperties } from '../file-prope
 import { cancelRemoteDirectoryUsageTree, getRemoteDirectoryUsageTree } from '../directory-usage-tree'
 import { cancelFileRootEntry, enterFileRoot, leaveFileRoot } from '../file-identity'
 import { withFileCapabilities } from '../file-dependencies'
+import { discardLocalEdit, exportLocalEdit, listLocalEdits, openLocalEdit, restoreLocalEditPrompt, uploadLocalEdit } from '../local-edits'
 
+/** Registers trusted file, transfer, preview and local editing requests. */
 export function registerFilesIpc(): void {
+  ipcMain.handle('files:local-edit-open', (_event, sessionId: unknown, path: unknown) => openLocalEdit(sessionId, path))
+  ipcMain.handle('files:local-edits-list', () => listLocalEdits())
+  ipcMain.handle('files:local-edit-upload', (_event, id: unknown) => uploadLocalEdit(id))
+  ipcMain.handle('files:local-edit-restore-prompt', (_event, id: unknown) => restoreLocalEditPrompt(id))
+  ipcMain.handle('files:local-edit-export', (_event, id: unknown) => exportLocalEdit(id))
+  ipcMain.handle('files:local-edit-discard', (_event, id: unknown) => discardLocalEdit(id))
   ipcMain.handle('files:root-enter', (_event, sessionId: unknown, password?: unknown) => enterFileRoot(sessionId, password))
   ipcMain.handle('files:root-cancel', (_event, sessionId: unknown) => cancelFileRootEntry(sessionId))
   ipcMain.handle('files:root-leave', (_event, sessionId: unknown) => leaveFileRoot(sessionId))

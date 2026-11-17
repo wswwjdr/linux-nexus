@@ -37,6 +37,7 @@ interface UseFileMenuActionsOptions {
   showToast: (kind: ToastNotice['kind'], message: MessageValue, action?: ToastNotice['action']) => void
 }
 
+/** Resolves browser menus and dispatches actions with their originating file session. */
 export function useFileMenuActions({
   activeSession,
   connectedSessionId,
@@ -92,6 +93,7 @@ export function useFileMenuActions({
     }
   }
 
+  /** Applies the chosen menu action to the supplied context and file session. */
   const dispatchFileMenuAction = (action: FileMenuAction, context: FileContextMenuContext, sessionId: string) => {
     setBrowserContextMenu(null)
     if (context.kind === 'search-result'
@@ -123,6 +125,12 @@ export function useFileMenuActions({
         break
       case 'download':
         if (entries) transfers.download(entries)
+        break
+      case 'open-local':
+        if (entry?.type === 'file') {
+          showToast('info', msg('localEdit.preparing', { name: entry.name }))
+          void window.remoteFiles.openLocalEdit(sessionId, entry.path).catch(error => showToast('error', errorMessage(error)))
+        }
         break
       case 'copy':
         if (entries) remoteOperations.copyRemoteSelection(entries)

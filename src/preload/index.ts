@@ -116,6 +116,17 @@ const api: RemoteFilesTransport = {
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   downloadEntries: (requestId: string, sessionId: string, remotePaths: string[]) =>
     ipcRenderer.invoke('files:download', requestId, sessionId, remotePaths),
+  openLocalEdit: (sessionId, path) => ipcRenderer.invoke('files:local-edit-open', sessionId, path),
+  listLocalEdits: () => ipcRenderer.invoke('files:local-edits-list'),
+  uploadLocalEdit: id => ipcRenderer.invoke('files:local-edit-upload', id),
+  restoreLocalEditPrompt: id => ipcRenderer.invoke('files:local-edit-restore-prompt', id),
+  exportLocalEdit: id => ipcRenderer.invoke('files:local-edit-export', id),
+  discardLocalEdit: id => ipcRenderer.invoke('files:local-edit-discard', id),
+  onLocalEdits: callback => {
+    const listener: Parameters<typeof ipcRenderer.on>[1] = (_event, update) => callback(update)
+    ipcRenderer.on('files:local-edits', listener)
+    return () => ipcRenderer.removeListener('files:local-edits', listener)
+  },
   cancelTransfer: (requestId: string) => ipcRenderer.invoke('files:transfer-cancel', requestId),
   executeOperation: (request: OperationExecutionRequest) => ipcRenderer.invoke('files:operation-execute', request),
   cancelOperation: (requestId: string) => ipcRenderer.invoke('files:operation-cancel', requestId),

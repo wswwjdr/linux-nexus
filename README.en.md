@@ -18,7 +18,7 @@ Linux Nexus brings remote file management and an SSH terminal into one desktop a
 | Agent Assistant | Run SSH operations with command approval, live logs, and editable prompts |
 | SSH terminal and multiple servers | Connect to multiple servers and switch between file manager and terminal tabs |
 | Uploads and downloads | Transfer files and folders, track progress, cancel tasks, and configure concurrency |
-| Previews and editing | Edit text files; preview Markdown, images, PDF, audio, video, and logs |
+| Previews and editing | Edit text files, preview Markdown, images, PDF, audio, video, and logs, or right-click a remote file to [open it with a Windows app](docs/文件预览.md#使用本机软件打开) |
 | Scripts and commands | Run remote scripts, manage Bash command aliases, and enable sudo root mode for an individual file session |
 | Performance monitoring | Enable live monitoring per server profile and view shared readings for logical CPUs, memory, swap, local mounts, block device I/O, and network traffic across file manager and SSH terminal tabs |
 

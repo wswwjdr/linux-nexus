@@ -10,6 +10,7 @@ export interface ActiveSession {
   kind: 'files' | 'terminal'
   shell?: ClientChannel
   profileId: string
+  username?: string
   hostFingerprint?: string
   platform?: { endpoint: string; environment: ServerEnvironment; pendingArchivePreparation?: string }
 }
