@@ -8,7 +8,7 @@ Linux Nexus 面向日常需要维护 Linux 服务器的开发者和运维人员�
 
 [**下载 Windows x64 安装包**](https://github.com/wswwjdr/linux-nexus/releases/latest) · [快速开始](#快速开始) · [功能文档](#文档) · [更多截图](#界面截图)
 
-![Linux Nexus：Windows 桌面上的 Linux 服务器文件管理器](docs/系统功能截图/列表视图.png)
+![Linux Nexus：Windows 桌面上的 Linux 服务器文件管理器](https://preview.tcwwj.icu/linux_nexus/列表视图.png)
 
 ## 主要功能
 
@@ -77,7 +77,7 @@ npm run dist:win
 
 构建产物位于 `release/`。
 
-## 正式发布与在线更新
+### 正式发布与在线更新
 
 首次发布前，用 Node.js 26 在仓库根目录运行 `npm run release:key -- "$env:USERPROFILE\linux-nexus-update-private.pem"`。提交生成的 `resources/update-public-key.pem`，并把私钥文件的完整内容配置为仓库的 GitHub Actions Secret `UPDATE_SIGNING_KEY`。后续发版沿用同一密钥。
 
@@ -113,69 +113,69 @@ npm run build
 
 ### 首页
 
-![首页](docs/系统功能截图/首页.png)
+![首页](https://preview.tcwwj.icu/linux_nexus/首页.png)
 
 ### 图标视图
 
-![图标视图](docs/系统功能截图/图标视图.png)
+![图标视图](https://preview.tcwwj.icu/linux_nexus/图标视图.png)
 
 ### 右键菜单：空白处
 
-![右键菜单-空白处](docs/系统功能截图/右键菜单-空白处.png)
+![右键菜单-空白处](https://preview.tcwwj.icu/linux_nexus/右键菜单-空白处.png)
 
 ### 右键菜单：文件
 
-![右键菜单-文件](docs/系统功能截图/右键菜单-文件.png)
+![右键菜单-文件](https://preview.tcwwj.icu/linux_nexus/右键菜单-文件.png)
 
 ### 右键菜单：文件夹
 
-![右键菜单-文件夹](docs/系统功能截图/右键菜单-文件夹.png)
+![右键菜单-文件夹](https://preview.tcwwj.icu/linux_nexus/右键菜单-文件夹.png)
 
 ### 文件搜索：通过文件名
 
-![文件搜索-通过文件名](docs/系统功能截图/文件搜索-通过文件名.png)
+![文件搜索-通过文件名](https://preview.tcwwj.icu/linux_nexus/文件搜索-通过文件名.png)
 
 ### 文件搜索：通过文本
 
-![文件搜索-通过文本](docs/系统功能截图/文件搜索-通过文本.png)
+![文件搜索-通过文本](https://preview.tcwwj.icu/linux_nexus/文件搜索-通过文本.png)
 
 ### 文件解压
 
-![文件解压](docs/系统功能截图/文件解压.png)
+![文件解压](https://preview.tcwwj.icu/linux_nexus/文件解压.png)
 
 ### 文件预览：md
 
-![文件预览-md](docs/系统功能截图/文件预览-md.png)
+![文件预览-md](https://preview.tcwwj.icu/linux_nexus/文件预览-md.png)
 
 ### 文件预览：图片
 
-![文件预览-图片](docs/系统功能截图/文件预览-图片.png)
+![文件预览-图片](https://preview.tcwwj.icu/linux_nexus/文件预览-图片.png)
 
 ### 文件预览：音频
 
-![文件预览-音频](docs/系统功能截图/文件预览-音频.png)
+![文件预览-音频](https://preview.tcwwj.icu/linux_nexus/文件预览-音频.png)
 
 ### 文件预览：视频
 
-![文件预览-视频](docs/系统功能截图/文件预览-视频.png)
+![文件预览-视频](https://preview.tcwwj.icu/linux_nexus/文件预览-视频.png)
 
 ### SSH终端
 
-![SSH终端](docs/系统功能截图/SSH终端.png)
+![SSH终端](https://preview.tcwwj.icu/linux_nexus/SSH终端.png)
 
 ### 脚本快捷执行
 
-![脚本快捷执行](docs/系统功能截图/脚本快捷执行.png)
+![脚本快捷执行](https://preview.tcwwj.icu/linux_nexus/脚本快捷执行.png)
 
 ### 性能监控
 
-![性能监控](docs/系统功能截图/性能监控.png)
+![性能监控](https://preview.tcwwj.icu/linux_nexus/性能监控.png)
 
 ### 快捷键说明
 
-![快捷键说明](docs/系统功能截图/快捷键说明.png)
+![快捷键说明](https://preview.tcwwj.icu/linux_nexus/快捷键说明.png)
 
 ### 设置
 
-![设置](docs/系统功能截图/设置.png)
+![设置](https://preview.tcwwj.icu/linux_nexus/设置.png)
 

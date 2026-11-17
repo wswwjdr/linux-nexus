@@ -8,7 +8,7 @@ Linux Nexus brings remote file management and an SSH terminal into one desktop a
 
 [**Download for Windows x64**](https://github.com/wswwjdr/linux-nexus/releases/latest) · [Quick start](#quick-start) · [Documentation](#documentation) · [More screenshots](#screenshots)
 
-![Linux Nexus: Linux server file manager on the Windows desktop](docs/系统功能截图/列表视图.png)
+![Linux Nexus: Linux server file manager on the Windows desktop](https://preview.tcwwj.icu/linux_nexus/列表视图.png)
 
 ## Features
 
@@ -115,69 +115,69 @@ The screenshots below show the Chinese interface.
 
 ### Home
 
-![Home](docs/系统功能截图/首页.png)
+![Home](https://preview.tcwwj.icu/linux_nexus/首页.png)
 
 ### Icon view
 
-![Icon view](docs/系统功能截图/图标视图.png)
+![Icon view](https://preview.tcwwj.icu/linux_nexus/图标视图.png)
 
 ### Context menu: directory background
 
-![Context menu: directory background](docs/系统功能截图/右键菜单-空白处.png)
+![Context menu: directory background](https://preview.tcwwj.icu/linux_nexus/右键菜单-空白处.png)
 
 ### Context menu: file
 
-![Context menu: file](docs/系统功能截图/右键菜单-文件.png)
+![Context menu: file](https://preview.tcwwj.icu/linux_nexus/右键菜单-文件.png)
 
 ### Context menu: folder
 
-![Context menu: folder](docs/系统功能截图/右键菜单-文件夹.png)
+![Context menu: folder](https://preview.tcwwj.icu/linux_nexus/右键菜单-文件夹.png)
 
 ### Search by filename
 
-![Search by filename](docs/系统功能截图/文件搜索-通过文件名.png)
+![Search by filename](https://preview.tcwwj.icu/linux_nexus/文件搜索-通过文件名.png)
 
 ### Search by content
 
-![Search by content](docs/系统功能截图/文件搜索-通过文本.png)
+![Search by content](https://preview.tcwwj.icu/linux_nexus/文件搜索-通过文本.png)
 
 ### Archive extraction
 
-![Archive extraction](docs/系统功能截图/文件解压.png)
+![Archive extraction](https://preview.tcwwj.icu/linux_nexus/文件解压.png)
 
 ### Markdown preview
 
-![Markdown preview](docs/系统功能截图/文件预览-md.png)
+![Markdown preview](https://preview.tcwwj.icu/linux_nexus/文件预览-md.png)
 
 ### Image preview
 
-![Image preview](docs/系统功能截图/文件预览-图片.png)
+![Image preview](https://preview.tcwwj.icu/linux_nexus/文件预览-图片.png)
 
 ### Audio preview
 
-![Audio preview](docs/系统功能截图/文件预览-音频.png)
+![Audio preview](https://preview.tcwwj.icu/linux_nexus/文件预览-音频.png)
 
 ### Video preview
 
-![Video preview](docs/系统功能截图/文件预览-视频.png)
+![Video preview](https://preview.tcwwj.icu/linux_nexus/文件预览-视频.png)
 
 ### SSH terminal
 
-![SSH terminal](docs/系统功能截图/SSH终端.png)
+![SSH terminal](https://preview.tcwwj.icu/linux_nexus/SSH终端.png)
 
 ### Script execution
 
-![Script execution](docs/系统功能截图/脚本快捷执行.png)
+![Script execution](https://preview.tcwwj.icu/linux_nexus/脚本快捷执行.png)
 
 ### Performance monitoring
 
-![Performance monitoring](docs/系统功能截图/性能监控.png)
+![Performance monitoring](https://preview.tcwwj.icu/linux_nexus/性能监控.png)
 
 ### Keyboard shortcuts
 
-![Keyboard shortcuts](docs/系统功能截图/快捷键说明.png)
+![Keyboard shortcuts](https://preview.tcwwj.icu/linux_nexus/快捷键说明.png)
 
 ### Settings
 
-![Settings](docs/系统功能截图/设置.png)
+![Settings](https://preview.tcwwj.icu/linux_nexus/设置.png)
 
