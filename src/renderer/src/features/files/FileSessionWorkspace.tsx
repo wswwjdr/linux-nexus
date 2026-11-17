@@ -46,6 +46,11 @@ interface FileSessionWorkspaceProps {
   onOpenExternalLink: (url: string) => void
 }
 
+/**
+ * Renders previews, file tools and their dialogs for one file session.
+ * @param props Session state and workspace action handlers.
+ * @returns The session workspace layer.
+ */
 export default function FileSessionWorkspace({
   session,
   active,
@@ -95,14 +100,14 @@ export default function FileSessionWorkspace({
     }
   }, [onSearchOpenChange, preview.closePreview, previewOpen, searchOpen, session.id])
   const requestSearch = useCallback((preferTextSearch = false) => {
-    if (!active || fileToOpen || preview.textSaving || preview.textSaveConfirmation || confirmDiscardForSearch) return
+    if (!active || fileToOpen || preview.textSaving || preview.textReloading || preview.textConflict || confirmDiscardForSearch) return
     if (preferTextSearch && textSearchRef.current) {
       textSearchRef.current.openSearch()
       return
     }
     if (preview.textDirty) setConfirmDiscardForSearch(true)
     else openSearch()
-  }, [active, fileToOpen, confirmDiscardForSearch, openSearch, preview.textDirty, preview.textSaveConfirmation, preview.textSaving])
+  }, [active, fileToOpen, confirmDiscardForSearch, openSearch, preview.textDirty, preview.textConflict, preview.textReloading, preview.textSaving])
   /** Opens file search or requests closure through the mounted search dialog. */
   const toggleSearch = useCallback(() => {
     if (!active || session.status !== 'connected') return
@@ -135,9 +140,9 @@ export default function FileSessionWorkspace({
   }, [session.id, session.status])
 
   useEffect(() => {
-    onBlockingChange(session.id, active && Boolean(preview.textSaveConfirmation || confirmDiscardForSearch || fileToOpen))
+    onBlockingChange(session.id, active && Boolean(preview.textConflict || confirmDiscardForSearch || fileToOpen))
     return () => onBlockingChange(session.id, false)
-  }, [active, confirmDiscardForSearch, fileToOpen, onBlockingChange, preview.textSaveConfirmation, session.id])
+  }, [active, confirmDiscardForSearch, fileToOpen, onBlockingChange, preview.textConflict, session.id])
 
   useEffect(() => {
     onWorkspaceOpenChange(session.id, active && (
@@ -161,7 +166,7 @@ export default function FileSessionWorkspace({
 
   useEffect(() => {
     const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || !active || event.key !== 'Escape' || preview.textSaveConfirmation || confirmDiscardForSearch) return
+      if (event.defaultPrevented || !active || event.key !== 'Escape' || preview.textSaving || preview.textReloading || preview.textConflict || confirmDiscardForSearch) return
       if (!preview.previewDialog && !preview.logPreviewDialog) return
       event.preventDefault()
       if (textSearchRef.current?.closeSearch()) return
@@ -169,7 +174,7 @@ export default function FileSessionWorkspace({
     }
     window.addEventListener('keydown', dismissOnEscape)
     return () => window.removeEventListener('keydown', dismissOnEscape)
-  }, [active, confirmDiscardForSearch, preview.closePreview, preview.logPreviewDialog, preview.previewDialog, preview.textSaveConfirmation])
+  }, [active, confirmDiscardForSearch, preview.closePreview, preview.logPreviewDialog, preview.previewDialog, preview.textConflict, preview.textReloading, preview.textSaving])
 
   return (
     <div ref={workspaceRef} className={'session-workspace-layer' + (active ? ' active' : '')} aria-hidden={!active}>
@@ -193,11 +198,11 @@ export default function FileSessionWorkspace({
         textReloading={preview.textReloading}
         textEncoding={preview.textEncoding}
         onReopenText={(encoding) => void preview.reopenText(encoding)}
-        onConvertTextToUtf8={preview.convertTextToUtf8}
+        onSelectTextSaveEncoding={preview.selectTextSaveEncoding}
         textDraft={preview.textDraft}
         textDirty={preview.textDirty}
         textSaving={preview.textSaving}
-        textSaveConfirmation={preview.textSaveConfirmation}
+        textConflictOpen={Boolean(preview.textConflict)}
         textSearchRef={textSearchRef}
         onClosePreview={preview.closePreview}
         onOpenExternalLink={onOpenExternalLink}
@@ -252,20 +257,21 @@ export default function FileSessionWorkspace({
         />
       )}
 
-      {active && preview.textSaveConfirmation && (
+      {active && preview.textConflict && (
         <ConfirmationDialog
-          eyebrow={tr('previews.saveRemoteFile')}
-          title={tr('connections.saveChangesTo', { "name": preview.textSaveConfirmation.name })}
-          details={[{ label: tr('common.remotePath'), value: preview.textSaveConfirmation.path }]}
-          description={tr('connections.savingReplacesTheFileOnTheServerWithTheEdited')}
+          title={tr('previews.textSourceChanged')}
+          details={[{ label: tr('common.remotePath'), value: preview.textConflict.path }]}
+          description={tr('previews.textSaveConflictDescription', { name: preview.textConflict.name })}
           tone="warning"
-          confirmLabel={preview.textSaveConfirmation.kind === 'conflict' ? tr('connections.forceOverwriteServerFile') : tr('connections.saveChanges')}
-          busyLabel={tr('previews.saving')}
-          error={preview.textSaveError}
-          errorLabel={tr('connections.saveFailed')}
-          busy={preview.textSaving}
-          onConfirm={() => void preview.confirmTextSave()}
-          onCancel={preview.cancelTextSave}
+          confirmLabel={tr('previews.overwriteTextSource')}
+          cancelLabel={tr('previews.reloadTextSource')}
+          focusCancel
+          busyLabel={preview.textReloading ? tr('previews.readingFile') : tr('previews.saving')}
+          error={preview.textConflict.error}
+          busy={preview.textSaving || preview.textReloading}
+          onConfirm={() => void preview.overwriteTextConflict()}
+          onCancel={() => void preview.reloadTextConflict()}
+          onDismiss={preview.dismissTextConflict}
         />
       )}
     </div>

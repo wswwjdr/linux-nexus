@@ -255,6 +255,7 @@ details[open] > .settings-disclosure-summary .settings-disclosure-chevron { tran
 .text-preview-footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 11px; }
 .text-preview-status { min-width: 0; color:var(--text-secondary); font-size: 11px; }
 .text-preview-status.modified { color:var(--text-warning); }
+.text-preview-encoding-warning { color:var(--text-warning); font-size:11px; }
 .text-preview-find { margin-left: auto; }
 .text-preview-save { min-width: 90px; }
 .log-preview-modal { width: min(100%, 1040px); height: min(820px, 100%); }

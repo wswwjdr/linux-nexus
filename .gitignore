@@ -1,7 +1,7 @@
 .idea/
 dist/
 data/
-docs/
+docs/**
 node_modules/
 out/
 release/

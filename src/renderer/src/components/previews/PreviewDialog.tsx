@@ -18,11 +18,11 @@ export interface PreviewDialogProps {
   textReloading: boolean
   textEncoding: TextEncoding
   onReopenText: (encoding: TextEncoding) => void
-  onConvertTextToUtf8: () => void
+  onSelectTextSaveEncoding: (encoding: TextEncoding) => void
   textDraft: string
   textDirty: boolean
   textSaving: boolean
-  textSaveConfirmation: { name: string; path: string } | null
+  textConflictOpen: boolean
   textSearchRef?: Ref<PreviewSearchHandle>
   onClosePreview: () => void
   onUpdateTextDraft: (content: string) => void
@@ -30,14 +30,19 @@ export interface PreviewDialogProps {
   onOpenExternalLink: (url: string) => void
 }
 
+/**
+ * Displays the selected file preview and the text encoding controls when available.
+ * @param props Preview state, editing controls and lifecycle handlers.
+ * @returns The active preview dialog, or null when closed.
+ */
 export default function PreviewDialog({
   active,
   previewDialog,
-  textReloading, textEncoding, onReopenText, onConvertTextToUtf8,
+  textReloading, textEncoding, onReopenText, onSelectTextSaveEncoding,
   textDraft,
   textDirty,
   textSaving,
-  textSaveConfirmation,
+  textConflictOpen,
   textSearchRef,
   onClosePreview,
   onUpdateTextDraft,
@@ -50,6 +55,7 @@ export default function PreviewDialog({
   const previewName = previewDialog.kind === 'ready' ? previewDialog.result.name : previewDialog.name
   const textPreview = result?.type === 'text'
   const pdfPreview = result?.type === 'pdf'
+  const textBusy = textSaving || textReloading || textConflictOpen
 
   if (result?.type === 'audio') {
     return <AudioPreviewDialog key={result.token} result={result} active={active} onClose={onClosePreview} />
@@ -60,21 +66,26 @@ export default function PreviewDialog({
   if (result?.type === 'markdown') return <MarkdownPreviewDialog key={result.token} result={result} active={active} onClose={onClosePreview} onOpenExternalLink={onOpenExternalLink} />
 
   return (
-    <div className={`modal-backdrop preview-backdrop${pdfPreview ? ' pdf-preview-backdrop' : ''}`} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !textSaving && !textSaveConfirmation && onClosePreview()}>
+    <div className={`modal-backdrop preview-backdrop${pdfPreview ? ' pdf-preview-backdrop' : ''}`} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !textBusy && onClosePreview()}>
       <section className={`modal preview-modal${result ? ` media-preview-modal${textPreview ? ' text-preview-modal' : ''}${pdfPreview ? ' pdf-preview-modal' : ''}` : ''}`}
         data-modal-size={pdfPreview ? 'reading' : textPreview ? 'reading-expanded' : undefined} role="dialog" aria-labelledby="preview-modal-title">
         <div className="modal-heading">
           <div>
             <h2 id="preview-modal-title">{previewName}</h2>
           </div>
-          <button className="icon-button modal-close" title={tr('previews.closePreview')} aria-label={tr('previews.closePreview')} disabled={textSaving || textReloading || Boolean(textSaveConfirmation)} onClick={onClosePreview}><X size={18} /></button>
+          <button className="icon-button modal-close" title={tr('previews.closePreview')} aria-label={tr('previews.closePreview')} disabled={textBusy} onClick={onClosePreview}><X size={18} /></button>
         </div>
         {previewDialog.kind === 'loading' && <div className="preview-loading"><LoaderCircle className="spin" size={20} />{tr('previews.readingFile')}</div>}
         {result?.type === 'text' && <div className="text-encoding-toolbar">
-          <span>{tr('previews.saveEncoding')}{textEncoding === 'utf8' ? 'UTF-8' : 'GBK'}{result.bom && textEncoding === 'utf8' ? ' BOM' : ''}</span>
-          <button disabled={textSaving || textReloading || Boolean(textSaveConfirmation)} onClick={() => onReopenText('utf8')}>{tr('previews.reloadAsUtf8')}</button>
-          <button disabled={textSaving || textReloading || Boolean(textSaveConfirmation)} onClick={() => onReopenText('gbk')}>{tr('previews.reloadAsGbk')}</button>
-          {textEncoding === 'gbk' && <button disabled={textSaving || textReloading || Boolean(textSaveConfirmation)} onClick={onConvertTextToUtf8}>{tr('previews.convertToUtf8')}</button>}
+          <button disabled={textBusy} onClick={() => onReopenText('utf8')}>{tr('previews.reloadAsUtf8')}</button>
+          <button disabled={textBusy} onClick={() => onReopenText('gbk')}>{tr('previews.reloadAsGbk')}</button>
+          <label>
+            {tr('previews.saveEncoding')}
+            <select value={textEncoding} disabled={textBusy} onChange={(event) => onSelectTextSaveEncoding(event.target.value === 'gbk' ? 'gbk' : 'utf8')}>
+              <option value="utf8">{result.bom ? 'UTF-8 BOM' : 'UTF-8'}</option>
+              <option value="gbk">GBK</option>
+            </select>
+          </label>
         </div>}
         {result?.type === 'text' && (
           <TextPreviewPanel
@@ -82,7 +93,8 @@ export default function PreviewDialog({
             draft={textDraft}
             dirty={textDirty}
             saving={textSaving || textReloading}
-            saveConfirmationOpen={Boolean(textSaveConfirmation)}
+            conflictOpen={textConflictOpen}
+            lossy={result.lossy}
             onUpdateDraft={onUpdateTextDraft}
             onRequestSave={onRequestTextSave}
           />

@@ -4,16 +4,29 @@ import { readPreviewLimits } from '../state-store'
 import { filesSession, normalizedRemotePath, remoteFileSize, remotePathType } from '../remote-fs'
 import { readRemoteBytes } from '../remote-byte-reader'
 import { verifyFileOperation } from '../file-dependencies'
+import { decodeText } from './text-codec'
 
 const LOG_PREVIEW_PAGE_BYTES = 256 * 1024
 
+/**
+ * Finds the leading UTF-8 continuation bytes to skip at a partial page boundary.
+ * @param buffer Raw page range.
+ * @returns The number of leading continuation bytes.
+ */
 function utf8ContinuationLength(buffer: Buffer): number {
   let offset = 0
   while (offset < buffer.length && (buffer[offset] & 0xc0) === 0x80) offset += 1
   return offset
 }
 
-/** Reads the next log page from the initial size snapshot identified by the offsets and path. */
+/**
+ * Reads the next log page from a size snapshot, starting at the end of the file.
+ * @param sessionId Active file session.
+ * @param remotePath Path to the remote log.
+ * @param beforeOffset Exclusive end offset for subsequent pages.
+ * @param snapshotSize Size recorded when opening the preview.
+ * @returns The decoded page and its pagination offsets.
+ */
 export async function readLogPreview(
   sessionId: string,
   remotePath: string,
@@ -64,12 +77,8 @@ export async function readLogPreview(
     if (skip >= range.length) skip = 0
   }
 
-  let startOffset = candidateStart + skip
-  let content = range.subarray(skip).toString('utf8')
-  if (startOffset >= endOffset && endOffset > 0) {
-    startOffset = candidateStart
-    content = range.toString('utf8')
-  }
+  const startOffset = candidateStart + skip
+  const { content } = decodeText(range.subarray(skip), 'utf8', startOffset === 0)
 
   return {
     name: normalizedPath.slice(normalizedPath.lastIndexOf('/') + 1),

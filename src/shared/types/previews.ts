@@ -1,13 +1,13 @@
 export type TextLineEnding = '\n' | '\r\n' | '\r' | null
 export type TextEncoding = 'utf8' | 'gbk'
 export interface TextFileVersion { hash: string; identity: string }
-export interface TextSaveOptions { version: TextFileVersion; encoding: TextEncoding; bom: boolean; force: boolean }
+export interface TextSaveOptions { version: TextFileVersion; encoding: TextEncoding; bom: boolean }
 export type TextSaveResult =
   | { status: 'saved'; version: TextFileVersion }
-  | { status: 'conflict' }
+  | { status: 'conflict'; version: TextFileVersion }
 
 export type PreviewResult =
-  | { type: 'text'; name: string; content: string; lineEnding: TextLineEnding; encoding: TextEncoding; bom: boolean; version: TextFileVersion }
+  | { type: 'text'; name: string; content: string; lineEnding: TextLineEnding; encoding: TextEncoding; bom: boolean; lossy: boolean; version: TextFileVersion }
   | { type: 'markdown'; name: string; content: string; token: string; resourceBaseUrl: string }
   | { type: 'pdf'; name: string; url: string; token: string }
   | { type: 'image'; name: string; url: string; token: string }

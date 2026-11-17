@@ -10,7 +10,8 @@ interface TextPreviewPanelProps {
   draft: string
   dirty: boolean
   saving: boolean
-  saveConfirmationOpen: boolean
+  conflictOpen: boolean
+  lossy: boolean
   onUpdateDraft: (content: string) => void
   onRequestSave: () => void
 }
@@ -28,7 +29,8 @@ export default function TextPreviewPanel({
   draft,
   dirty,
   saving,
-  saveConfirmationOpen,
+  conflictOpen,
+  lossy,
   onUpdateDraft,
   onRequestSave,
 }: TextPreviewPanelProps) {
@@ -37,7 +39,7 @@ export default function TextPreviewPanel({
   const highlightRef = useRef<HTMLPreElement>(null)
   const matchRef = useRef<HTMLElement>(null)
   const [viewport, setViewport] = useState({ top: 0, height: 0 })
-  const disabled = saving || saveConfirmationOpen
+  const disabled = saving || conflictOpen
   // Search the textarea's normalized value so CRLF/CR offsets match its selection API.
   const content = useMemo(() => draft.replace(/\r\n|\r/g, '\n'), [draft])
   const lineCount = useMemo(() => {
@@ -156,8 +158,9 @@ export default function TextPreviewPanel({
         <span className={dirty ? 'text-preview-status modified' : 'text-preview-status'} aria-live="polite">
           {saving ? tr('previews.saving') : dirty ? tr('previews.unsavedChanges') : tr('connections.saved')}
         </span>
+        {lossy && <span className="text-preview-encoding-warning" role="status">{tr('previews.textDecodedWithReplacement')}</span>}
         <button type="button" className="icon-button text-preview-find" title={tr('previews.findTextCtrlF')} aria-label={tr('previews.findTextCtrlF')} disabled={disabled} onClick={openSearch}><Search size={16} /></button>
-        <button type="button" className="primary-button text-preview-save" disabled={!dirty || saving || saveConfirmationOpen} onClick={onRequestSave}>
+        <button type="button" className="primary-button text-preview-save" disabled={!dirty || saving || conflictOpen} onClick={onRequestSave}>
           {saving ? <LoaderCircle className="spin" size={15} /> : <Save size={15} />}
           {saving ? tr('previews.saving2') : tr('previews.save')}
         </button>
