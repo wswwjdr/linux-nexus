@@ -75,7 +75,11 @@ npm run dev
 npm run dist:win
 ```
 
-安装包位于 `release/`，版本取自 `package.json` 的 `version`。发版时，在 GitHub Releases 创建 Release，选择 tag，填写版本说明，并上传生成的 `.exe`。用户下载并运行该安装包即可安装或升级。
+打包会在 `release/` 生成安装包和纯文本 `release_version`。发版号形如 `1.202611172231`，由 `package.json` 的主版本号和北京时间组成，同时写入安装包文件名和客户端。
+
+发布在线更新时，将 `Linux-Nexus-Setup-<发版号>.exe`、UTF-8 编码的 `release_notes.md` 和生成的 `release_version` 依次上传到 `https://download.tcwwj.icu/linux%20nexus%20update/`。最后替换版本文件后，客户端才会发现新版。已发布的安装包文件名和内容应保持固定。
+
+用户可在「应用设置 → 常规 → 软件更新」手动检查，也会在正式版启动后收到新版提示。首次安装可通过 GitHub Releases 或自有发布目录下载安装包。
 
 ## 文档
 

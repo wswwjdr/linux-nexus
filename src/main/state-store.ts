@@ -1,14 +1,14 @@
 import { msg, LocalizedError } from '../shared/i18n/messages'
 import { safeStorage } from 'electron'
-import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
-import { createHash, randomUUID } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
-import type { AppSettings, CommandAliasSnapshot, PreviewLimits, ServerProfile } from '@shared/types'
-import { DEFAULT_APP_SETTINGS, DEFAULT_PREVIEW_LIMITS, defaultAppSettings, loadStoredAppSettings, validateAppSettings } from '@shared/app-settings'
+import type { CommandAliasSnapshot, ServerProfile } from '@shared/types'
+import { atomicWriteJson } from './json-store'
+import { configureSettingsStore } from './settings-store'
 import { normalizeStoredCommandAliases } from '@shared/command-aliases'
 import { messageFromError } from './runtime'
 
-export { DEFAULT_APP_SETTINGS, DEFAULT_PREVIEW_LIMITS, validateAppSettings }
 
 export interface StoredState {
   profiles: ServerProfile[]
@@ -18,11 +18,11 @@ export interface StoredState {
 }
 
 let stateFile = ''
-let settingsFile = ''
 
+/** Configures server and application storage. @param serverFile Server state path. @param preferencesFile Application preferences path. */
 export function configureStateFiles(serverFile: string, preferencesFile: string): void {
   stateFile = serverFile
-  settingsFile = preferencesFile
+  configureSettingsStore(preferencesFile)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -95,26 +95,6 @@ export function parseJsonFile(filePath: string): unknown {
   }
 }
 
-/** Atomically replaces the JSON file at filePath with value. */
-export function atomicWriteJson(filePath: string, value: unknown): void {
-  const temporaryFile = filePath + '.' + process.pid + '.' + randomUUID() + '.tmp'
-  let descriptor: number | null = null
-  try {
-    descriptor = openSync(temporaryFile, 'wx', 0o600)
-    writeFileSync(descriptor, JSON.stringify(value, null, 2), { encoding: 'utf8' })
-    fsyncSync(descriptor)
-    closeSync(descriptor)
-    descriptor = null
-    renameSync(temporaryFile, filePath)
-  } catch (error) {
-    if (descriptor !== null) {
-      try { closeSync(descriptor) } catch { /* Preserve the original write error. */ }
-    }
-    try { unlinkSync(temporaryFile) } catch { /* The temporary file may not exist. */ }
-    throw new LocalizedError(msg('errors.cannotSafelySaveConfigurationFile', { "filePath": filePath, "value2": messageFromError(error) }), { cause: error })
-  }
-}
-
 export function readState(verifyPasswordCiphertexts = false): StoredState {
   if (!existsSync(stateFile)) return { profiles: [], passwords: {}, hostKeys: {}, commandAliases: {} }
   try {
@@ -156,35 +136,6 @@ export function saveArchivePreparation(profileId: string, key?: string): void {
   if (key) values[profileId] = key
   else delete values[profileId]
   atomicWriteJson(join(dirname(stateFile), 'archive-preparation.json'), values)
-}
-
-/**
- * Reads existing settings without rewriting them, or creates the file on first use.
- * @returns Validated settings with defaults for fields missing from disk.
- */
-export function readAppSettings(): AppSettings {
-  if (!existsSync(settingsFile)) {
-    const defaults = defaultAppSettings()
-    atomicWriteJson(settingsFile, defaults)
-    return defaults
-  }
-  try {
-    const stored = parseJsonFile(settingsFile)
-    return loadStoredAppSettings(stored)
-  } catch (error) {
-    throw new LocalizedError(msg('errors.invalidApplicationSettings', { "settingsFile": settingsFile, "value2": messageFromError(error) }))
-  }
-}
-
-export function writeAppSettings(settings: unknown): AppSettings {
-  const validated = validateAppSettings(settings)
-  atomicWriteJson(settingsFile, validated)
-  return validated
-}
-
-export function readPreviewLimits(): PreviewLimits {
-  const { textMiB, pdfMiB, imageMiB, audioMiB, videoMiB } = readAppSettings()
-  return { textMiB, pdfMiB, imageMiB, audioMiB, videoMiB }
 }
 
 export function endpointKey(profile: ServerProfile): string {

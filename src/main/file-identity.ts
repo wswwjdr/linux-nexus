@@ -52,14 +52,16 @@ export class FileCommandScope implements RemoteCommandExecutor {
     }))
   }
 
+  /** Opens a root terminal through the current sudo authorization and optional history integration. */
   openRootTerminal(
     client: ActiveSession['client'],
     pty: PseudoTtyOptions,
     path: string,
     signal: AbortSignal,
     done: (result: RootTerminalResult) => void,
+    historyToken?: string,
   ): void {
-    openSudoTerminal(client, pty, path, this.sudo!.password, AbortSignal.any([this.signal, signal]), done)
+    openSudoTerminal(client, pty, path, this.sudo!.password, AbortSignal.any([this.signal, signal]), done, historyToken)
   }
 
   async revoke(): Promise<boolean> {

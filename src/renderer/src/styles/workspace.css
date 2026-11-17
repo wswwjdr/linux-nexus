@@ -34,8 +34,13 @@
 .session-workspace-layer { position: absolute; z-index: 1; inset: 0; visibility: hidden; pointer-events: none; }
 .session-workspace-layer.active { visibility: visible; }
 .session-workspace-layer .modal-backdrop { position: absolute; inset: 0; pointer-events: auto; }
-.terminal-host { color-scheme: dark; min-width: 0; min-height: 0; flex: 1; overflow: hidden; background:var(--surface-terminal); }
+.terminal-host { position: relative; color-scheme: dark; min-width: 0; min-height: 0; flex: 1; overflow: hidden; background:var(--surface-terminal); }
+.terminal-screen { width: 100%; height: 100%; }
 .terminal-host .xterm { height: 100%; padding: 12px 15px; }
+.terminal-history-menu { position: absolute; z-index: 5; inset-inline-start: 15px; width: min(640px, calc(100% - 30px)); max-height: min(230px, 42%); overflow: auto; overscroll-behavior: contain; border: 1px solid var(--line-terminal); border-radius: 5px; background: var(--surface-terminal); box-shadow: var(--shadow-menu); }
+.terminal-history-option { display: block; width: 100%; height: 27px; overflow: hidden; padding: 0 8px; border: 0; background: transparent; color: var(--terminal-muted); font: 12px/27px 'Cascadia Code', Consolas, monospace; text-align: start; text-overflow: ellipsis; white-space: pre; }
+button.terminal-history-option { color: var(--terminal-foreground); cursor: pointer; }
+button.terminal-history-option:is(:hover, :focus-visible) { background: var(--terminal-selection-background); }
 .terminal-session-notice { min-height: 36px; flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 5px 14px; border-bottom:1px solid var(--line-terminal); color:var(--terminal-muted); background:var(--surface-terminal); font-size: 11px; }
 .terminal-session-notice.disconnected { color:var(--terminal-danger); background:var(--surface-terminal-danger); border-bottom-color:var(--terminal-danger-border); }
 .terminal-session-notice.awaiting-trust { color:var(--terminal-warning); }
@@ -143,6 +148,9 @@
 .entry-context-action:disabled svg { color:var(--text-secondary); }
 .entry-context-action svg { flex: 0 0 auto; color:var(--text-secondary); }
 .context-menu-action-icon { width:16px; height:16px; display:inline-flex; flex:0 0 16px; align-items:center; justify-content:center; color:var(--text-secondary); }
+.context-menu-shortcut { margin-left: auto; flex: 0 0 auto; color: var(--text-secondary); font: inherit; font-size: 11px; white-space: nowrap; }
+.browser-context-menu:has(.context-menu-shortcut) { width: max-content; min-width: min(204px, calc(100vw - 16px)); max-width: calc(100vw - 16px); }
+.entry-context-action:has(> .context-menu-shortcut) > .context-menu-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry-context-action.preview-action svg { color:var(--text-info); }
 .entry-context-action.log-preview-action svg { color:var(--accent); }
 .entry-context-action.danger-action { color:var(--text-danger); }

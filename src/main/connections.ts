@@ -21,6 +21,7 @@ import { archiveSetupCapabilities, capabilitiesReady, checkCapabilities, inspect
 import type { DependencyCheckResult } from '@shared/types'
 import { createDependencyPlan } from './dependency-plans'
 import { initializeFileIdentity, revokeFileIdentity, rootTerminalScope } from './file-identity'
+import { newTerminalHistoryToken, openTerminalShell } from './terminal-history'
 
 const pendingConnections = new Map<string, { profileId: string; client: Client; cancel: () => void }>()
 const SSH_KEEPALIVE_INTERVAL_MS = 15_000
@@ -152,9 +153,10 @@ export function connectProfile(
        * @param environment Verified login environment for a file session.
        * @param initialOutput Buffered terminal output to display on activation.
        * @param archiveKey Key to record after the first successful directory listing.
+       * @param historyToken Token used by the optional Bash history integration.
        * @returns The initial file session identity, if applicable.
        */
-      const activate = (shell?: ActiveSession['shell'], environment?: ServerEnvironment, initialOutput?: Buffer, archiveKey?: string) => {
+      const activate = (shell?: ActiveSession['shell'], environment?: ServerEnvironment, initialOutput?: Buffer, archiveKey?: string, historyToken?: string) => {
         if (!isCurrentAttempt()) {
           finish({ ok: false, reason: 'other', message: msg('errors.connectionCancelled') })
           return
@@ -171,7 +173,7 @@ export function connectProfile(
             if (!data) return
             const window = getMainWindow()
             if (window && !window.isDestroyed()) {
-              window.webContents.send('terminal:output', { sessionId, data })
+              window.webContents.send('terminal:output', { sessionId, data, historyToken })
             }
           }
           if (initialOutput) sendOutput(stdoutDecoder.write(initialOutput))
@@ -240,18 +242,15 @@ export function connectProfile(
           resolve({ ok: false, reason: 'dependencies', issue })
         }).catch((error: unknown) => finish({ ok: false, reason: 'other', message: messageFromUnknown(error) }))
       } else if (rootScope) {
+        const historyToken = newTerminalHistoryToken()
         rootScope.openRootTerminal(client, { term: 'xterm-256color', cols, rows }, startPath, connection.signal, (result) => {
           if ('error' in result) finish({ ok: false, reason: 'other', message: messageFromUnknown(result.error) })
-          else activate(result.shell, undefined, result.output)
-        })
+          else activate(result.shell, undefined, result.output, undefined, historyToken)
+        }, historyToken)
       } else {
-        client.shell({ term: 'xterm-256color', cols, rows }, (error, shell) => {
-          if (error) {
-            finish({ ok: false, reason: 'other', message: messageFromUnknown(error) })
-            return
-          }
-          activate(shell)
-        })
+        void openTerminalShell(client, { term: 'xterm-256color', cols, rows }, connection.signal)
+          .then(({ shell, historyToken }) => activate(shell, undefined, undefined, undefined, historyToken))
+          .catch((error: unknown) => finish({ ok: false, reason: 'other', message: messageFromUnknown(error) }))
       }
     })
 

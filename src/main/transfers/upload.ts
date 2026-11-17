@@ -6,7 +6,7 @@ import { basename, isAbsolute, posix } from 'node:path'
 import type { OperationExecutionStrategy, TransferFailure, TransferResult, UploadSelection, UploadSelectionRequest } from '@shared/types'
 import type { TransferItem } from '../runtime'
 import { getMainWindow, messageFromError } from '../runtime'
-import { readAppSettings } from '../state-store'
+import { readAppSettings } from '../settings-store'
 import { filesSession, normalizedRemotePath } from '../remote-fs'
 import { runRemoteCommand } from '../ssh-commands'
 import { verifyFileOperation } from '../file-dependencies'
@@ -259,7 +259,7 @@ async function uploadItems(
   signal: AbortSignal,
 ): Promise<TransferResult> {
   signal.throwIfAborted()
-  const fileConcurrency = readAppSettings().transferFileConcurrency
+  const fileConcurrency = readAppSettings().transfers.fileConcurrency
   const collisionFailures: TransferFailure[] = []
   const collidingItems = new Set<TransferItem>()
   for (const group of findPathCollisions(items, (item) => item.relativePath)) {

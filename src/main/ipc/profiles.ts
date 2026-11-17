@@ -1,3 +1,4 @@
+import { updateAppSettings } from '../settings-service'
 import { msg, LocalizedError } from '../../shared/i18n/messages'
 import { safeStorage } from 'electron'
 import { ipcMain } from './trusted-ipc'
@@ -6,7 +7,8 @@ import type { SaveProfileInput, ServerProfile } from '@shared/types'
 import { connectionIdentityChanged } from '@shared/command-aliases'
 import { stopSessionsForProfile } from '../connections'
 import { removePerformanceMonitor } from '../performance-monitor'
-import { readAppSettings, readState, writeAppSettings, writeState, saveArchivePreparation } from '../state-store'
+import { readAppSettings } from '../settings-store'
+import { readState, writeState, saveArchivePreparation } from '../state-store'
 
 /** Registers handlers for saved server configurations and their lifecycle. */
 export function registerProfilesIpc(): void {
@@ -78,8 +80,8 @@ export function registerProfilesIpc(): void {
   ipcMain.handle('profiles:delete', (_event, profileId: string) => {
     const state = readState()
     const settings = readAppSettings()
-    if (settings.startupConnection?.profileId === profileId) {
-      writeAppSettings({ ...settings, startupConnection: null })
+    if (settings.general.startupConnection?.profileId === profileId) {
+      updateAppSettings({ domain: 'general', value: { ...settings.general, startupConnection: null } })
     }
     state.profiles = state.profiles.filter((profile) => profile.id !== profileId)
     delete state.passwords[profileId]

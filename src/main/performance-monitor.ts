@@ -35,7 +35,7 @@ interface ServerMonitor {
 
 const monitors = new Map<string, ServerMonitor>()
 let version = 0
-let intervalMs = 1000 * DEFAULT_APP_SETTINGS.performanceSampleIntervalSeconds
+let intervalMs = 1000 * DEFAULT_APP_SETTINGS.monitoring.sampleIntervalSeconds
 
 /**
  * Finds or creates the monitor for a server configuration.

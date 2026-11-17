@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client'
 import { I18nextProvider } from 'react-i18next'
 
 import App from './App'
+import { AppUpdateProvider } from './components/dialogs/AppUpdate'
 import './styles.css'
 
 async function start(): Promise<void> {
@@ -14,7 +15,9 @@ async function start(): Promise<void> {
   initializeApplication(bootstrap)
   createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <I18nextProvider i18n={i18n}><App initialSettings={bootstrap.settings} /></I18nextProvider>
+      <I18nextProvider i18n={i18n}>
+        <AppUpdateProvider><App initialSettings={bootstrap.settings} /></AppUpdateProvider>
+      </I18nextProvider>
     </React.StrictMode>,
   )
 }

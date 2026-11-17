@@ -4,7 +4,7 @@ import type { NameSearchRequest, ContentSearchRequest, NameSearchEvent, ContentS
 import type { ScriptExecutionRequest, ScriptExecutionEvent } from './script-executions'
 import type { ConnectResult, TrustHostKeyInput, SessionKind, TerminalOutputEvent, ConnectionClosedEvent, FileElevationResult, FileRootExitResult, FileRootExpiredEvent } from './sessions'
 import type { PerformanceMonitorState } from './performance'
-import type { AppSettings, AppSettingsPatch, AppBootstrap } from './settings'
+import type { AppSettings, AppSettingsUpdate, AppBootstrap } from './settings'
 import type { DroppedUploadEntry, TransferResult, OperationExecutionRequest, OperationExecutionResult, UploadSelectionRequest, UploadSelection, UploadExecutionRequest, TransferProgress, TransferQueuedEvent } from './transfers'
 import type { PreviewResult, TextLineEnding, LogPreviewPage, TextEncoding, TextSaveOptions, TextSaveResult } from './previews'
 import type { DependencyCheckResult, DependencyInstallResult } from './dependencies'
@@ -12,11 +12,17 @@ import type { PreviewType } from '../file-type-registry'
 import type { RemoteDirectoryStats, RemoteDirectoryUsageNode, RemoteEntryProperties } from './file-properties'
 import type { AssistantEvent, AssistantRequest, AssistantRequests } from './assistant'
 import type { LocalEditTask, LocalEditUpdate } from './local-edits'
+import type { UpdateState } from './app-update'
 
 export interface RemoteFilesApi {
   assistant<R extends AssistantRequest>(request: R): Promise<AssistantRequests[R['action']]['output']>
   onAssistantEvent(callback: (event: AssistantEvent) => void): () => void
   getBootstrap(): Promise<AppBootstrap>
+  getUpdateState(): Promise<UpdateState>
+  checkForUpdates(): Promise<UpdateState>
+  installUpdate(version: string): Promise<void>
+  cancelUpdateDownload(): Promise<void>
+  onUpdateState(callback: (state: UpdateState) => void): () => void
   onWindowExpanded(callback: (expanded: boolean) => void): () => void
   listProfiles(): Promise<ServerProfile[]>
   saveProfile(input: SaveProfileInput): Promise<ServerProfile>
@@ -34,8 +40,15 @@ export interface RemoteFilesApi {
   getPerformanceMonitorState(profileId: string): Promise<PerformanceMonitorState>
   setPerformanceMonitorEnabled(profileId: string, enabled: boolean): Promise<PerformanceMonitorState>
   refreshPerformanceMonitor(profileId: string): Promise<void>
+  /** Subscribes to application-close preparation. @param callback Receives the request ID. @returns Unsubscribe function. */
+  onSettingsCloseRequested(callback: (requestId: string) => void): () => void
+  /** Resolves close preparation. @param requestId Pending request ID. @param allow Whether edits are resolved. @returns IPC completion. */
+  completeSettingsClose(requestId: string, allow: boolean): Promise<void>
+  /** Subscribes to persisted configuration. @param callback Receives saved snapshots. @returns Unsubscribe function. */
+  onAppSettingsChanged(callback: (settings: AppSettings) => void): () => void
   getAppSettings(): Promise<AppSettings>
-  updateAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
+  /** Commits one complete domain. @param update Validated domain values. @returns The saved configuration snapshot. */
+  updateAppSettings(update: AppSettingsUpdate): Promise<AppSettings>
   listCommandAliasSnapshots(): Promise<CommandAliasSnapshot[]>
   syncCommandAliases(profileId: string): Promise<CommandAliasOperationResult>
   saveCommandAlias(profileId: string, name: string, command: string, existingCommand?: string): Promise<CommandAliasOperationResult>

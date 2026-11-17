@@ -1,3 +1,4 @@
+import { assistantId, modelId, limitsSchema, assistantPromptSchema } from '../shared/assistant-settings'
 import { safeStorage } from 'electron'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -6,12 +7,9 @@ import { z } from 'zod'
 import { modelMessageSchema } from 'ai'
 import { LocalizedError, msg } from '../shared/i18n/messages'
 import type { AssistantConversation, AssistantLimits, AssistantMode, AssistantOutput, AssistantProvider } from '../shared/types/assistant'
-import { atomicWriteJson } from './state-store'
+import { atomicWriteJson } from './json-store'
 
 export const assistantDefaults: AssistantLimits = { steps: 100, modelTimeoutSeconds: 120 }
-export const assistantId = z.uuid()
-export const modelId = z.string().trim().min(1).max(256).regex(/^[^\s\u0000-\u001f\u007f]+$/u)
-export const limitsSchema = z.strictObject({ steps: z.int().min(1).max(1000), modelTimeoutSeconds: z.int().min(5).max(300) })
 const providerSchema = z.strictObject({
   id: assistantId, name: z.string().min(1).max(100), baseUrl: z.string().max(2048),
   models: z.array(modelId).min(1).max(500), defaultModel: modelId, ciphertext: z.string().nullable(),
@@ -28,7 +26,6 @@ const toolSchema = z.strictObject({
   outputPages: z.int().nonnegative().optional(), truncated: z.boolean().optional(),
 }).refine(({ command, id }) => command === undefined || assistantId.safeParse(id).success)
 export const assistantModeSchema = z.enum(['manual', 'automatic'])
-export const assistantPromptSchema = z.string().min(1).max(32000).refine((value) => value.trim().length > 0).nullable()
 const approvalBase = { id: assistantId, executionId: assistantId }
 const conversationSchema = z.strictObject({
   id: assistantId, title: z.string().optional(), updatedAt: z.int().nonnegative().max(8_640_000_000_000_000), turns: z.array(z.strictObject({

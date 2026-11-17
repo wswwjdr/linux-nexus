@@ -1,38 +1,26 @@
-import { msg, LocalizedError } from '../../shared/i18n/messages'
-import { applyLanguage, systemLanguage } from '../language'
+import { systemLanguage } from '../language'
 
 import { shell } from 'electron'
 import { ipcMain } from './trusted-ipc'
-import type { AppBootstrap, AppSettingsPatch } from '@shared/types'
-import { applyAppSettingsPatch } from '@shared/app-settings'
+import type { AppBootstrap } from '@shared/types'
 import { validateExternalUrl } from '@shared/external-url'
-import { configurePerformanceMonitorInterval } from '../performance-monitor'
-import { readAppSettings, readState, writeAppSettings } from '../state-store'
-import { applyTheme } from '../theme'
+import { readAppSettings } from '../settings-store'
+import { updateAppSettings, completeSettingsExit } from '../settings-service'
 import { getMainWindow } from '../runtime'
 import { isWindowExpanded } from '../window-layout'
 
+/** Registers validated settings, bootstrap and application-close endpoints. */
 export function registerSettingsIpc(): void {
-  ipcMain.handle('app:bootstrap', (): AppBootstrap => ({
-    settings: readAppSettings(),
-    systemLanguage: systemLanguage(),
-    windowExpanded: isWindowExpanded(getMainWindow()!),
-  }))
+  ipcMain.handle(
+    'app:bootstrap',
+    (): AppBootstrap => ({
+      settings: readAppSettings(),
+      systemLanguage: systemLanguage(),
+      windowExpanded: isWindowExpanded(getMainWindow()!),
+    }),
+  )
+  ipcMain.handle('settings:complete-close', (_event, id: unknown, allow: unknown) => completeSettingsExit(id, allow))
   ipcMain.handle('settings:get', () => readAppSettings())
-  ipcMain.handle('settings:update', (_event, input: AppSettingsPatch) => {
-    const currentSettings = readAppSettings()
-    const settings = applyAppSettingsPatch(currentSettings, input)
-    if (settings.startupConnection
-      && !readState().profiles.some((profile) => profile.id === settings.startupConnection?.profileId)) {
-      throw new LocalizedError(msg('errors.theServerSelectedForStartupConnectionDoesNotExist'))
-    }
-    const savedSettings = writeAppSettings(settings)
-    applyLanguage(savedSettings.language)
-    applyTheme(savedSettings.theme)
-    if (savedSettings.performanceSampleIntervalSeconds !== currentSettings.performanceSampleIntervalSeconds) {
-      configurePerformanceMonitorInterval(savedSettings.performanceSampleIntervalSeconds)
-    }
-    return savedSettings
-  })
+  ipcMain.handle('settings:update', (_event, input: unknown) => updateAppSettings(input))
   ipcMain.handle('shell:open-external', (_event, url: unknown) => shell.openExternal(validateExternalUrl(url)))
 }

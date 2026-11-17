@@ -18,19 +18,26 @@ export interface StartupConnection {
 
 export type ThemeMode = 'light' | 'dark' | 'cream'
 
-export interface AppSettings extends PreviewLimits {
-  language: LanguagePreference
-  theme: ThemeMode
-  defaultView: 'icons' | 'details'
-  fileTypeExtensions: FileTypeExtensions
-  startupConnection: StartupConnection | null
-  directoryUsageEntryLimit: number
-  transferFileConcurrency: number
-  performanceSampleIntervalSeconds: number
-  performanceThresholds: PerformanceThresholds
+export interface AppSettings {
+  general: {
+    language: LanguagePreference
+    theme: ThemeMode
+    startupConnection: StartupConnection | null
+  }
+  files: {
+    defaultView: 'icons' | 'details'
+    previewLimits: PreviewLimits
+    fileTypeExtensions: FileTypeExtensions
+    directoryUsageEntryLimit: number
+  }
+  transfers: { fileConcurrency: number }
+  monitoring: { sampleIntervalSeconds: number; thresholds: PerformanceThresholds }
 }
 
-export type AppSettingsPatch = Partial<AppSettings>
+export type SettingsDomain = keyof AppSettings
+export type AppSettingsUpdate = {
+  [K in SettingsDomain]: { domain: K; value: AppSettings[K] }
+}[SettingsDomain]
 
 export interface AppBootstrap {
   settings: AppSettings

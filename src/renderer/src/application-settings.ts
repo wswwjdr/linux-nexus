@@ -21,6 +21,7 @@ export function initializeApplication(bootstrap: Pick<AppBootstrap, 'settings' |
   applyApplicationLanguage(bootstrap.settings)
 }
 
+/** Applies the saved display-language preference. @param settings Current application snapshot. */
 export function applyApplicationLanguage(settings: AppSettings): void {
-  setLanguage(resolveLanguage(settings.language, system))
+  setLanguage(resolveLanguage(settings.general.language, system))
 }

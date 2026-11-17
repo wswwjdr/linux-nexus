@@ -46,6 +46,7 @@ export interface FileRootExpiredEvent extends FileRootExitResult {
 export interface TerminalOutputEvent {
   sessionId: string
   data: string
+  historyToken?: string
 }
 
 export interface ConnectionClosedEvent {

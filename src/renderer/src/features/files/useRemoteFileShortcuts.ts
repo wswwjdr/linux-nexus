@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import type { RemoteEntry } from '@shared/types'
 import type { BrowserContextMenu, SessionContextMenuState, SessionTab } from '@/app-types'
+import { fileShortcuts, matchesShortcut } from '@/keyboard-shortcuts'
 
 interface UseRemoteFileShortcutsOptions {
   activeSession: SessionTab | null
@@ -18,6 +19,10 @@ interface UseRemoteFileShortcutsOptions {
   pasteRemoteEntries: () => void
 }
 
+/**
+ * Registers keyboard commands for the active file session.
+ * @param options Session state and callbacks that implement the file commands.
+ */
 export function useRemoteFileShortcuts({
   activeSession,
   activeSessionId,
@@ -34,6 +39,10 @@ export function useRemoteFileShortcuts({
   pasteRemoteEntries,
 }: UseRemoteFileShortcutsOptions) {
   useEffect(() => {
+    /**
+     * Dispatches a file command when the active workspace can handle the pressed shortcut.
+     * @param event Keyboard event from the renderer window.
+     */
     const handleRemoteFileShortcut = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || modalOpen
         || (activeSessionId && workspaceOpenSessionIds.has(activeSessionId))
@@ -46,33 +55,32 @@ export function useRemoteFileShortcuts({
         return
       }
 
-      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
-
-      const key = event.key.toLowerCase()
-      if (browserContextMenu && key !== 'v') return
+      const paste = matchesShortcut(event, fileShortcuts.paste)
+      if (browserContextMenu && !paste) return
 
       const target = event.target
       if (target instanceof HTMLElement
         && (target.isContentEditable || target.closest('input, textarea, select, [contenteditable="true"]'))) return
 
-      if (key === 'a') {
+      if (matchesShortcut(event, fileShortcuts.selectAll)) {
         event.preventDefault()
         onSelectedPathsChange(sortedEntries.map((entry) => entry.path))
         return
       }
 
-      if (key === 'c' || key === 'x') {
+      const copy = matchesShortcut(event, fileShortcuts.copy)
+      if (copy || matchesShortcut(event, fileShortcuts.cut)) {
         const selectedPaths = new Set(activeSession.selectedPaths)
         const selectedEntries = sortedEntries.filter((entry) => selectedPaths.has(entry.path)
           && (entry.type === 'file' || entry.type === 'directory'))
         if (selectedEntries.length === 0) return
         event.preventDefault()
-        if (key === 'c') copyRemoteSelection(selectedEntries)
+        if (copy) copyRemoteSelection(selectedEntries)
         else cutRemoteSelection(selectedEntries)
         return
       }
 
-      if (key === 'v' && canPasteRemote) {
+      if (paste && canPasteRemote) {
         event.preventDefault()
         pasteRemoteEntries()
       }

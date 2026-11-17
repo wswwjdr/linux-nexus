@@ -45,6 +45,15 @@ export function useCommandAliases({ profiles, showToast }: UseCommandAliasesOpti
     void refreshSnapshots().catch((error: unknown) => showToast('error', msg('common.couldNotReadCommandAliases', { "value1": errorMessage(error) })))
   }, [profiles, refreshSnapshots, showToast, overwriteConfirmation, deleteConfirmation])
 
+  useEffect(() => {
+    const nextId = profiles.some(profile => profile.id === selectedProfileId) ? selectedProfileId : profiles[0]?.id ?? ''
+    if (nextId !== selectedProfileId) {
+      setSelectedProfileId(nextId)
+      setName('')
+      setCommand('')
+    }
+  }, [profiles, selectedProfileId])
+
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? null
   const snapshot = useMemo(
     () => selectedProfile ? snapshots[selectedProfile.id] ?? emptySnapshot(selectedProfile.id) : null,

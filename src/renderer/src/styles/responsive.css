@@ -50,7 +50,6 @@
 
 @media (max-width: 640px) {
   .command-alias-control-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
-  .command-alias-profile-field { width: 100%; grid-column: 1 / -1; flex: initial; }
   .command-alias-toolbar-copy { flex-wrap: wrap; white-space: normal; }
 }
 
@@ -58,7 +57,6 @@
   .modal-backdrop { padding: 8px; }
   .pdf-preview-modal { padding: 12px; }
   .log-preview-modal { width: 100%; height: 100%; padding: 15px; }
-  .settings-modal { width: 100%; padding: 16px; }
   .shortcut-guide-modal { width: 100%; padding: 16px; }
   .shortcut-guide-row { grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 9px 0; }
   .command-alias-add-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }

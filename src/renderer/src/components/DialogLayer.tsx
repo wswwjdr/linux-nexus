@@ -26,7 +26,7 @@ export default function DialogLayer(props: DialogLayerProps) {
         if (!props.creatingDirectory) props.onCloseCreateDirectory()
         return
       }
-      if (props.settingsForm) {
+      if (props.preferences.settingsForm) {
         event.preventDefault()
         if (!props.aliasOperationBusy) settingsDismiss.current?.()
         return
@@ -48,7 +48,7 @@ export default function DialogLayer(props: DialogLayerProps) {
     props.pendingAliasHostKey,
     props.createDirectoryDialog,
     props.creatingDirectory,
-    props.settingsForm,
+    props.preferences.settingsForm,
     props.aliasOperationBusy,
     props.profileDialog,
     aliasHostKeyVisible,

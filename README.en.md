@@ -75,7 +75,11 @@ Build an x64 NSIS installer:
 npm run dist:win
 ```
 
-The installer is written to `release/` and uses the version in `package.json`. To publish it, create a release on GitHub, select a tag, add release notes, and upload the generated `.exe`. Users can download and run that installer to install or upgrade.
+The build writes the installer and a plain-text `release_version` file to `release/`. A release version such as `1.202611172231` combines the major version in `package.json` with the build minute in Beijing time. The installer filename and the packaged client use the same release version.
+
+To publish an online update, upload `Linux-Nexus-Setup-<release version>.exe`, the UTF-8 `release_notes.md`, and the generated `release_version` to `https://download.tcwwj.icu/linux%20nexus%20update/` in that order. Replacing the version file makes the update visible to clients. Keep each published installer at its original filename with its original contents.
+
+Official Windows builds check for updates at startup. Users can also check under **Application Settings → General → Software update**. For a first installation, download the installer from GitHub Releases or the release directory.
 
 ## Documentation
 

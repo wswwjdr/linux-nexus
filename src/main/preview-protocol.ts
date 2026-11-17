@@ -8,7 +8,7 @@ import { getPreviewAsset } from './previews/preview-assets'
 import { readRemoteBytes } from './remote-byte-reader'
 import { msg } from '../shared/i18n/messages'
 import { normalizedRemotePath, remoteFileSize, remotePathType } from './remote-fs'
-import { readAppSettings } from './state-store'
+import { readAppSettings } from './settings-store'
 import { fileCommands, type FileCommandScope } from './file-identity'
 import { previewTypesForFile } from '@shared/preview-file-type'
 import { previewMimeType } from '@shared/preview-mime-type'
@@ -42,11 +42,11 @@ export async function previewResponse(request: Request): Promise<Response> {
     try { remotePath = normalizedRemotePath(decodeURIComponent(url.pathname)) }
     catch { return new Response(null, { status: 400 }) }
     const settings = readAppSettings()
-    if (!previewTypesForFile(remotePath, settings.fileTypeExtensions).includes('image')) return new Response(null, { status: 415 })
+    if (!previewTypesForFile(remotePath, settings.files.fileTypeExtensions).includes('image')) return new Response(null, { status: 415 })
     try {
       if (await remotePathType(commands!, remotePath) !== 'file') return new Response(null, { status: 404 })
       const size = await remoteFileSize(commands!, remotePath)
-      if (size > settings.imageMiB * 1024 * 1024) return new Response(null, { status: 413 })
+      if (size > settings.files.previewLimits.imageMiB * 1024 * 1024) return new Response(null, { status: 413 })
       // A document can close or disconnect while metadata is being read.
       if (getPreviewAsset(token) !== registered || sessions.get(registered.sessionId) !== remoteSession) return new Response(null, { status: 404 })
       asset = { ...registered, kind: 'remote', remotePath, size, contentType: previewMimeType('image', remotePath) }

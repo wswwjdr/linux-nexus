@@ -3,9 +3,11 @@ import { posix } from 'node:path'
 import type { Client, ClientChannel, PseudoTtyOptions } from 'ssh2'
 import { LocalizedError, msg } from '../shared/i18n/messages'
 import { buildRemoteCommand } from './ssh-commands'
+import { terminalBashLaunch } from './terminal-history'
 
 export type RootTerminalResult = { shell: ClientChannel; output: Buffer } | { error: unknown }
 
+/** Starts an authorized root login PTY and reports startup output after sudo authentication. */
 export function openSudoTerminal(
   client: Client,
   pty: PseudoTtyOptions,
@@ -13,6 +15,7 @@ export function openSudoTerminal(
   password: Buffer | undefined,
   signal: AbortSignal,
   done: (result: RootTerminalResult) => void,
+  historyToken?: string,
 ): void {
   const id = randomUUID()
   const prompt = 'LINUX_NEXUS_SUDO_' + id + ':'
@@ -22,7 +25,7 @@ export function openSudoTerminal(
     'stty "$1" || exit 1',
     'cd -- "$2" || exit 1',
     'printf "%s" "$3"',
-    'exec /bin/bash -il',
+    historyToken ? terminalBashLaunch('/bin/bash', historyToken) : 'exec /bin/bash -il',
   ].join('\n')
   // Preserve the credential bytes and keep them off the terminal output until sudo authenticates.
   const launch = [

@@ -5,6 +5,7 @@ import { classifyFileTypeCategories, fileTypeDefinition } from '@shared/file-typ
 import { previewTypesForFile, previewTypeLabels } from '@shared/preview-file-type'
 import { archiveBaseName, archiveFormatForName } from '@shared/archive'
 import type { SortColumn, SortDirection } from '@/app-types'
+import { fileShortcuts, type KeyboardShortcut } from '@/keyboard-shortcuts'
 import type { OperationExecutionStrategy, PasteStrategy } from '@shared/types'
 
 export type FileMenuIcon =
@@ -57,6 +58,7 @@ export type FileMenuActionNode = {
   disabled?: boolean
   disabledReason?: MessageValue
   description?: MessageValue
+  shortcut?: KeyboardShortcut
   checked?: boolean
 }
 
@@ -77,12 +79,21 @@ export interface FileContextMenuStrategy {
   contribute(context: FileContextMenuContext, fileTypeExtensions: FileTypeExtensions): FileMenuNode[]
 }
 
+/**
+ * Builds a selectable file menu action.
+ * @param id Stable menu item identifier.
+ * @param label Display text for the action.
+ * @param icon Optional icon shown next to the label.
+ * @param menuAction Command dispatched on selection.
+ * @param options Optional menu state, description, and keyboard binding.
+ * @returns An action node for the file context menu.
+ */
 const action = (
   id: string,
   label: MessageValue,
   icon: FileMenuIcon | undefined,
   menuAction: FileMenuAction,
-  options: Pick<FileMenuActionNode, 'disabled' | 'disabledReason' | 'description' | 'checked'> = {},
+  options: Pick<FileMenuActionNode, 'disabled' | 'disabledReason' | 'description' | 'shortcut' | 'checked'> = {},
 ): FileMenuActionNode => ({ kind: 'action', id, label, icon, action: menuAction, ...options })
 
 const overwriteAndSkipStrategies: Array<{ strategy: PasteStrategy; label: MessageValue; description: MessageValue }> = [
@@ -90,20 +101,32 @@ const overwriteAndSkipStrategies: Array<{ strategy: PasteStrategy; label: Messag
   { strategy: 'skip', label: msg('files.skipExistingFiles'), description: msg('files.keepExistingFilesAndProcessTheRemainingFiles') },
 ]
 
-function pasteStrategyMenu(disabled: boolean): FileMenuNode {
+/**
+ * Builds the submenu for pasting with or without replacing existing files.
+ * @param disabled Whether the current context can accept a paste.
+ * @param targetsCurrentDirectory Whether the menu and keyboard shortcut paste to the same directory.
+ * @returns The paste submenu and its strategy actions.
+ */
+function pasteStrategyMenu(disabled: boolean, targetsCurrentDirectory: boolean): FileMenuNode {
+  const disabledReason = disabled ? tr('files.cannotPasteHere') : undefined
   return {
     kind: 'submenu',
     id: 'paste-strategy',
     label: tr('connections.paste'),
     icon: 'clipboard-paste',
     disabled,
-    disabledReason: disabled ? tr('files.cannotPasteHere') : undefined,
+    disabledReason,
     children: overwriteAndSkipStrategies.map(({ strategy, label, description }) => action(
       'paste-' + strategy,
       label,
       undefined,
       { type: 'paste', strategy },
-      { disabled, disabledReason: disabled ? tr('files.cannotPasteHere') : undefined, description },
+      {
+        disabled,
+        disabledReason,
+        description,
+        shortcut: targetsCurrentDirectory && strategy === 'force' ? fileShortcuts.paste : undefined,
+      },
     )),
   }
 }
@@ -232,6 +255,11 @@ const singleEntryStrategy: FileContextMenuStrategy = {
   id: 'single-entry-common',
   group: 'common',
   matches: (context) => context.kind === 'single-entry',
+  /**
+   * Lists actions for one entry and associates bindings that target that entry.
+   * @param context Context of the selected entry.
+   * @returns Menu actions for the entry type.
+   */
   contribute(context) {
     if (context.kind !== 'single-entry') return []
     const { entry } = context
@@ -242,12 +270,12 @@ const singleEntryStrategy: FileContextMenuStrategy = {
     return [
       ...(!isDirectory ? [openLocalAction()] : []),
       action('download', isDirectory ? tr('files.downloadFolder') : tr('files.downloadFile'), 'arrow-down', { type: 'download' }),
-      action('copy', tr('common.copy'), 'copy', { type: 'copy' }),
-      action('cut', tr('files.cut'), 'scissors', { type: 'cut' }),
-      pasteStrategyMenu(!context.canPaste),
+      action('copy', tr('common.copy'), 'copy', { type: 'copy' }, { shortcut: fileShortcuts.copy }),
+      action('cut', tr('files.cut'), 'scissors', { type: 'cut' }, { shortcut: fileShortcuts.cut }),
+      pasteStrategyMenu(!context.canPaste, !isDirectory),
       action('copy-path', tr('files.copyPath'), 'copy', { type: 'copy-path' }),
       action('rename', tr('files.rename'), 'pencil', { type: 'rename' }),
-      action('delete', tr('files.delete'), 'trash', { type: 'delete' }),
+      action('delete', tr('files.delete'), 'trash', { type: 'delete' }, { shortcut: fileShortcuts.delete }),
     ]
   },
 }
@@ -256,6 +284,11 @@ const multipleEntriesStrategy: FileContextMenuStrategy = {
   id: 'multiple-entries-common',
   group: 'common',
   matches: (context) => context.kind === 'multiple-entries',
+  /**
+   * Lists actions for a batch of selected entries.
+   * @param context Context of the selected entries.
+   * @returns Batch actions supported by the entire selection.
+   */
   contribute(context) {
     if (context.kind !== 'multiple-entries') return []
     const { entries } = context
@@ -265,12 +298,14 @@ const multipleEntriesStrategy: FileContextMenuStrategy = {
     if (allEntriesSupported) {
       nodes.push(
         action('download', tr('files.downloadItems', { "count": count }), 'arrow-down', { type: 'download' }),
-        action('copy', tr('files.copyItems', { "count": count }), 'copy', { type: 'copy' }),
-        action('cut', tr('files.cutItems', { "count": count }), 'scissors', { type: 'cut' }),
+        action('copy', tr('files.copyItems', { "count": count }), 'copy', { type: 'copy' }, { shortcut: fileShortcuts.copy }),
+        action('cut', tr('files.cutItems', { "count": count }), 'scissors', { type: 'cut' }, { shortcut: fileShortcuts.cut }),
       )
     }
-    nodes.push(pasteStrategyMenu(!context.canPaste))
-    if (allEntriesSupported) nodes.push(action('delete', tr('files.deleteItems', { "count": count }), 'trash', { type: 'delete' }))
+    nodes.push(pasteStrategyMenu(!context.canPaste, true))
+    if (allEntriesSupported) {
+      nodes.push(action('delete', tr('files.deleteItems', { "count": count }), 'trash', { type: 'delete' }, { shortcut: fileShortcuts.delete }))
+    }
     return nodes
   },
 }
@@ -287,6 +322,11 @@ const directoryBackgroundStrategy: FileContextMenuStrategy = {
   id: 'directory-background-common',
   group: 'common',
   matches: (context) => context.kind === 'directory-background',
+  /**
+   * Lists actions that target the current directory.
+   * @param context Current directory and sort state.
+   * @returns Actions available from the directory background.
+   */
   contribute(context) {
     if (context.kind !== 'directory-background') return []
     return [
@@ -313,7 +353,7 @@ const directoryBackgroundStrategy: FileContextMenuStrategy = {
         ],
       },
       action('copy-path', tr('files.copyPath'), 'copy', { type: 'copy-path' }),
-      pasteStrategyMenu(!context.canPaste),
+      pasteStrategyMenu(!context.canPaste, true),
       action('create-directory', tr('common.newFolder'), 'folder-plus', { type: 'create-directory' }),
       uploadStrategyMenu(),
     ]

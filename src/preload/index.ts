@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AssistantEvent, AssistantRequest } from '@shared/types/assistant'
+import type { UpdateState } from '@shared/types/app-update'
 import type {
   ConnectionClosedEvent,
   FileRootExpiredEvent,
@@ -10,7 +11,8 @@ import type {
   TextEncoding,
   TextSaveOptions,
   PerformanceMonitorState,
-  AppSettingsPatch,
+  AppSettings,
+  AppSettingsUpdate,
   RemoteFilesTransport,
   ContentSearchEvent,
   ContentSearchRequest,
@@ -36,6 +38,20 @@ const api: RemoteFilesTransport = {
     return () => ipcRenderer.removeListener('assistant:event', listener)
   },
   getBootstrap: () => ipcRenderer.invoke('app:bootstrap'),
+  /** Reads the current software-update snapshot. */
+  getUpdateState: () => ipcRenderer.invoke('updates:get-state'),
+  /** Checks for a newer release and returns the resulting update state. */
+  checkForUpdates: () => ipcRenderer.invoke('updates:check'),
+  /** Downloads and installs the offered release identified by version. */
+  installUpdate: (version) => ipcRenderer.invoke('updates:install', version),
+  /** Cancels the active installer download. */
+  cancelUpdateDownload: () => ipcRenderer.invoke('updates:cancel'),
+  /** Subscribes callback to update state changes and returns the unsubscribe function. */
+  onUpdateState: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: UpdateState) => callback(value)
+    ipcRenderer.on('updates:state', listener)
+    return () => ipcRenderer.removeListener('updates:state', listener)
+  },
   onWindowExpanded: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, expanded: boolean) => callback(expanded)
     ipcRenderer.on('app:window-expanded', listener)
@@ -78,8 +94,23 @@ const api: RemoteFilesTransport = {
    * @returns A promise that resolves when the request is accepted.
    */
   refreshPerformanceMonitor: (profileId: string) => ipcRenderer.invoke('performance:refresh', profileId),
+  /** Subscribes to close preparation. @param callback Request handler. @returns Unsubscribe function. */
+  onSettingsCloseRequested: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, id: string) => callback(id)
+    ipcRenderer.on('settings:prepare-close', listener)
+    return () => ipcRenderer.removeListener('settings:prepare-close', listener)
+  },
+  /** Completes close preparation. @param id Request ID. @param allow Whether edits are resolved. @returns IPC response. */
+  completeSettingsClose: (id, allow) => ipcRenderer.invoke('settings:complete-close', id, allow),
+  /** Subscribes to saved settings. @param callback Snapshot handler. @returns Unsubscribe function. */
+  onAppSettingsChanged: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, settings: AppSettings) => callback(settings)
+    ipcRenderer.on('settings:changed', listener)
+    return () => ipcRenderer.removeListener('settings:changed', listener)
+  },
   getAppSettings: () => ipcRenderer.invoke('settings:get'),
-  updateAppSettings: (patch: AppSettingsPatch) => ipcRenderer.invoke('settings:update', patch),
+  /** Persists a complete domain. @param update Domain values. @returns IPC response containing saved settings. */
+  updateAppSettings: (update: AppSettingsUpdate) => ipcRenderer.invoke('settings:update', update),
   listCommandAliasSnapshots: () => ipcRenderer.invoke('aliases:list'),
   syncCommandAliases: (profileId: string) => ipcRenderer.invoke('aliases:sync', profileId),
   saveCommandAlias: (profileId: string, name: string, command: string, existingCommand?: string) =>

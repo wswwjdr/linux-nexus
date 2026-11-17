@@ -1,12 +1,17 @@
 import { type MessageValue, tr } from '@shared/i18n/messages'
 import { useLanguage } from '@/i18n'
-import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import { Clipboard, Copy } from 'lucide-react'
 import type { TerminalOutputEvent } from '@shared/types'
 import { errorMessage } from '@/app-utils'
+import { ariaKeyShortcut, matchesShortcut, terminalShortcuts } from '@/keyboard-shortcuts'
 import { readTerminalTheme } from '@/terminal-theme'
+import { observeTerminalHistory, type TerminalHistoryView } from '@/terminal-history'
+import type { TerminalHistoryEntry } from '@shared/terminal-history'
+import { TerminalHistoryMenu } from './TerminalHistoryMenu'
+import ContextMenuShortcut from './ContextMenuShortcut'
 import '@xterm/xterm/css/xterm.css'
 
 interface TerminalPanelProps {
@@ -16,15 +21,46 @@ interface TerminalPanelProps {
   onError: (message: MessageValue) => void
 }
 
+/** Displays the SSH PTY and offers history matches when a Bash prompt is active.
+ * @param props Session identifier, tab and connection state, and error callback.
+ * @returns The terminal, its history popup, and its context menu.
+ */
 export default function TerminalPanel({ sessionId, active, connected, onError }: TerminalPanelProps) {
-  useLanguage()
+  const language = useLanguage()
   const hostRef = useRef<HTMLDivElement>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
+  const historyRef = useRef<ReturnType<typeof observeTerminalHistory> | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const connectedRef = useRef(connected)
+  const [historyView, setHistoryView] = useState<TerminalHistoryView | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   connectedRef.current = connected
+
+  useEffect(() => {
+    if (!connected) historyRef.current?.reset()
+  }, [connected])
+
+  /** Sends terminal input to the current SSH session and reports a failed write.
+   * @param data Input bytes encoded for the SSH terminal channel.
+   */
+  const sendInput = useCallback((data: string): void => {
+    if (!connectedRef.current) return
+    void window.remoteFiles.writeTerminal(sessionId, data).catch((error: unknown) => {
+      if (connectedRef.current) onError(errorMessage(error))
+    })
+  }, [sessionId, onError])
+
+  /** Applies a visible Bash history entry and restores focus to the interactive input.
+   * @param entry The history entry selected in this tab's popup.
+   */
+  function selectHistory(entry: TerminalHistoryEntry): void {
+    if (!active || !connected) return
+    const data = historyRef.current?.select(entry)
+    if (!data) return
+    sendInput(data)
+    terminalRef.current?.focus()
+  }
 
   useEffect(() => {
     if (!contextMenu) return
@@ -54,18 +90,26 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
     }
   }, [contextMenu])
 
+  useLayoutEffect(() => {
+    const menu = contextMenuRef.current
+    if (!menu || !contextMenu) return
+    const bounds = menu.getBoundingClientRect()
+    const x = Math.max(8, Math.min(contextMenu.x, window.innerWidth - bounds.width - 8))
+    const y = Math.max(8, Math.min(contextMenu.y, window.innerHeight - bounds.height - 8))
+    if (x !== contextMenu.x || y !== contextMenu.y) setContextMenu({ x, y })
+  }, [contextMenu, language])
+
+  /**
+   * Opens the clipboard menu at the pointer, with layout measuring its final viewport position.
+   * @param event Right-click event from the terminal.
+   */
   const openContextMenu = (event: MouseEvent<HTMLDivElement>) => {
     event.preventDefault()
-    const menuWidth = 204
-    const menuHeight = 82
-    const inset = 8
-    setContextMenu({
-      x: Math.max(inset, Math.min(event.clientX, window.innerWidth - menuWidth - inset)),
-      y: Math.max(inset, Math.min(event.clientY, window.innerHeight - menuHeight - inset)),
-    })
+    setContextMenu({ x: event.clientX, y: event.clientY })
   }
 
-  const copySelection = () => {
+  /** Copies the terminal selection to the clipboard and restores terminal focus. */
+  const copySelection = useCallback(() => {
     const terminal = terminalRef.current
     const selection = terminal?.getSelection()
     if (!terminal || !selection) return
@@ -74,13 +118,18 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
     })
     setContextMenu(null)
     terminal.focus()
-  }
+  }, [onError])
 
-  const pasteClipboard = async () => {
+  /**
+   * Pastes clipboard text into the connected terminal.
+   * @returns A promise that settles after the paste or error reporting.
+   */
+  const pasteClipboard = useCallback(async () => {
     const terminal = terminalRef.current
     if (!terminal || !connectedRef.current) return
     try {
       const text = await navigator.clipboard.readText()
+      if (terminalRef.current !== terminal || !connectedRef.current) return
       terminal.paste(text)
       setContextMenu(null)
       terminal.focus()
@@ -89,7 +138,7 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
       terminal.focus()
       onError(errorMessage(error))
     }
-  }
+  }, [onError])
 
   useEffect(() => {
     const host = hostRef.current
@@ -106,37 +155,51 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
     terminal.open(host)
     terminalRef.current = terminal
     fitRef.current = fit
+    const history = observeTerminalHistory(terminal, setHistoryView)
+    historyRef.current = history
 
     const input = terminal.onData((data) => {
       if (!connectedRef.current) return
-      void window.remoteFiles.writeTerminal(sessionId, data).catch((error: unknown) => {
-        if (connectedRef.current) onError(errorMessage(error))
-      })
+      history.observeInput(data)
+      sendInput(data)
     })
     const removeOutput = window.remoteFiles.onTerminalOutput((output: TerminalOutputEvent) => {
-      if (output.sessionId === sessionId) terminal.write(output.data)
+      if (output.sessionId !== sessionId) return
+      history.setToken(output.historyToken)
+      terminal.write(output.data)
     })
-    terminal.attachCustomKeyEventHandler((event) => {
-      if (event.type !== 'keydown' || !event.ctrlKey || !event.shiftKey) return true
-      if (event.key.toLowerCase() === 'c') {
-        if (terminal.hasSelection()) {
-          void navigator.clipboard.writeText(terminal.getSelection()).catch((error: unknown) => {
-            onError(errorMessage(error))
-          })
-        }
+    /**
+     * Handles clipboard commands inside xterm and passes through other input.
+     * @param event Keyboard event reported by xterm.
+     * @returns Whether xterm should process the event.
+     */
+    const handleClipboardShortcut = (event: KeyboardEvent): boolean => {
+      if (event.type !== 'keydown') return true
+      if (matchesShortcut(event, terminalShortcuts.copy)) {
+        event.preventDefault()
+        copySelection()
+        return false
+      }
+      if (matchesShortcut(event, terminalShortcuts.paste)) {
+        // The clipboard callback owns the paste so Chromium does not also dispatch a native paste event.
+        event.preventDefault()
+        void pasteClipboard()
         return false
       }
       return true
-    })
+    }
+    terminal.attachCustomKeyEventHandler(handleClipboardShortcut)
 
     return () => {
       input.dispose()
       removeOutput()
+      history.dispose()
       terminal.dispose()
       terminalRef.current = null
+      historyRef.current = null
       fitRef.current = null
     }
-  }, [sessionId, onError])
+  }, [sessionId, sendInput, copySelection, pasteClipboard])
 
   useEffect(() => {
     const host = hostRef.current
@@ -158,8 +221,18 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
     return () => observer.disconnect()
   }, [active, connected, sessionId, onError])
 
+  const screen = terminalRef.current?.element?.querySelector<HTMLElement>('.xterm-screen')
+  const hostHeight = hostRef.current?.clientHeight ?? 0
+  const rowHeight = screen && terminalRef.current ? screen.clientHeight / terminalRef.current.rows : 0
+  const screenTop = screen && hostRef.current ? screen.getBoundingClientRect().top - hostRef.current.getBoundingClientRect().top : 0
+  const historyRow = screenTop + (historyView?.row ?? 0) * rowHeight
+  const historyStyle = historyRow > hostHeight / 2 ? { bottom: hostHeight - historyRow + 4 } : { top: historyRow + rowHeight + 4 }
+
   return (
-    <div className="terminal-host" ref={hostRef} onContextMenu={openContextMenu}>
+    <div className="terminal-host" onContextMenu={openContextMenu}>
+      <div className="terminal-screen" ref={hostRef} />
+      {active && connected && !contextMenu && historyView && rowHeight > 0 && <TerminalHistoryMenu
+        view={historyView} style={historyStyle} onSelect={selectHistory} />}
       {contextMenu && (
         <div
           className="browser-context-menu terminal-context-menu"
@@ -172,10 +245,16 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
             event.stopPropagation()
           }}
         >
-          <button className="entry-context-action" role="menuitem" disabled={!terminalRef.current?.hasSelection()} onClick={copySelection}>
-            <Copy size={16} />{tr('common.copy')}</button>
-          <button className="entry-context-action" role="menuitem" disabled={!connected} onClick={() => void pasteClipboard()}>
-            <Clipboard size={16} />{tr('connections.paste')}</button>
+          <button className="entry-context-action" role="menuitem" aria-keyshortcuts={ariaKeyShortcut(terminalShortcuts.copy)} disabled={!terminalRef.current?.hasSelection()} onClick={copySelection}>
+            <Copy size={16} />
+            <span className="context-menu-label">{tr('common.copy')}</span>
+            <ContextMenuShortcut shortcut={terminalShortcuts.copy} />
+          </button>
+          <button className="entry-context-action" role="menuitem" aria-keyshortcuts={ariaKeyShortcut(terminalShortcuts.paste)} disabled={!connected} onClick={pasteClipboard}>
+            <Clipboard size={16} />
+            <span className="context-menu-label">{tr('connections.paste')}</span>
+            <ContextMenuShortcut shortcut={terminalShortcuts.paste} />
+          </button>
         </div>
       )}
     </div>

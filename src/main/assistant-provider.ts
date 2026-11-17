@@ -3,7 +3,8 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { z } from 'zod'
 import { LocalizedError, msg, renderMessage } from '../shared/i18n/messages'
 import type { AssistantProbeResult } from '../shared/types/assistant'
-import { decryptAssistantData, modelId, readAssistantSettings, type StoredProvider } from './assistant-storage'
+import { modelId } from '../shared/assistant-settings'
+import { decryptAssistantData, readAssistantSettings, type StoredProvider } from './assistant-storage'
 
 export interface ProviderCredentials { id?: string; baseUrl: string; apiKey?: string | null }
 

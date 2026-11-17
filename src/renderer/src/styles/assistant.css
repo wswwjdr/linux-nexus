@@ -1,11 +1,4 @@
 .assistant-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.settings-pages { margin-bottom: 12px; }
-.settings-pages [aria-pressed="true"] {
-  border-color: var(--line-strong);
-  background: var(--surface-hover);
-}
-.assistant-settings fieldset { display: grid; gap: 10px; }
-.assistant-settings p { margin: 0; color: var(--text-secondary); line-height: 1.5; }
 .assistant-check { display: flex; align-items: baseline; gap: 7px; }
 .assistant-probe { display: flex; flex-wrap: wrap; gap: 8px 14px; }
 .assistant-probe small { flex-basis: 100%; }

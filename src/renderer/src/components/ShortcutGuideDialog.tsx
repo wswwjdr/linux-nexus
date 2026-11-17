@@ -1,5 +1,6 @@
 import { type MessageValue, msg, renderMessage, tr } from '@shared/i18n/messages'
 import { useLanguage } from '@/i18n'
+import { fileShortcuts, shortcutKeys, terminalShortcuts } from '@/keyboard-shortcuts'
 import { useEffect, useRef } from 'react'
 import { FolderOpen, Keyboard, Terminal, X } from 'lucide-react'
 
@@ -25,11 +26,11 @@ const shortcutGroups: ShortcutGroup[] = [
       { bindings: [['Ctrl', 'F']], action: msg('common.openContentSearchInTextOrReversePreview') },
       { bindings: [['Enter'], ['Shift', 'Enter']], action: msg('common.goToNextPreviousMatchInTheTextSearchBox') },
       { bindings: [['F3'], ['Shift', 'F3']], action: msg('common.goToNextPreviousMatchInTextPreview') },
-      { bindings: [['Ctrl', 'A']], action: msg('common.selectAllEntriesInTheCurrentDirectory') },
-      { bindings: [['Ctrl', 'C']], action: msg('common.copySelectedFilesOrFolders') },
-      { bindings: [['Ctrl', 'X']], action: msg('common.cutSelectedFilesOrFolders') },
-      { bindings: [['Ctrl', 'V']], action: msg('common.pasteIntoTheCurrentDirectoryOverwritingExistingFiles') },
-      { bindings: [['Delete']], action: msg('common.deleteSelectedFilesOrFolders') },
+      { bindings: [shortcutKeys(fileShortcuts.selectAll)], action: msg('common.selectAllEntriesInTheCurrentDirectory') },
+      { bindings: [shortcutKeys(fileShortcuts.copy)], action: msg('common.copySelectedFilesOrFolders') },
+      { bindings: [shortcutKeys(fileShortcuts.cut)], action: msg('common.cutSelectedFilesOrFolders') },
+      { bindings: [shortcutKeys(fileShortcuts.paste)], action: msg('common.pasteIntoTheCurrentDirectoryOverwritingExistingFiles') },
+      { bindings: [shortcutKeys(fileShortcuts.delete)], action: msg('common.deleteSelectedFilesOrFolders') },
       { bindings: [['Up'], ['Down'], ['Left'], ['Right']], action: msg('common.upDownMovesMenuFocusLeftRightOpensOrCloses') },
     ],
   },
@@ -39,8 +40,8 @@ const shortcutGroups: ShortcutGroup[] = [
     icon: Terminal,
     items: [
       { bindings: [[msg('common.rightMouseButton')]], action: msg('common.openCopyAndPasteMenu') },
-      { bindings: [['Ctrl', 'Shift', 'C']], action: msg('common.copySelectedTerminalText') },
-      { bindings: [['Ctrl', 'Shift', 'V']], action: msg('common.pasteSystemClipboardContent') },
+      { bindings: [shortcutKeys(terminalShortcuts.copy)], action: msg('common.copySelectedTerminalText') },
+      { bindings: [shortcutKeys(terminalShortcuts.paste)], action: msg('common.pasteSystemClipboardContent') },
     ],
   },
   {

@@ -5,8 +5,7 @@ import type { AssistantApproval, AssistantConversation, AssistantEvent, Assistan
 import { activeFileIdentity } from './file-identity'
 import { assistantChatModel, assistantProvider, providerFailure } from './assistant-provider'
 import type { SupportedLanguage } from "../shared/i18n/languages"
-import { removeAssistantConversation, readAssistantMode, readAssistantHistory, readAssistantOutput, readAssistantPrompt,
-  readAssistantSettings, recoverAssistantOutput, saveAssistantMode, saveAssistantConversation, saveAssistantOutput, saveAssistantPrompt } from './assistant-storage'
+import { removeAssistantConversation, readAssistantMode, readAssistantHistory, readAssistantOutput, readAssistantPrompt, readAssistantSettings, recoverAssistantOutput, saveAssistantMode, saveAssistantConversation, saveAssistantOutput, saveAssistantPrompt } from './assistant-storage'
 import { assistantCommandTools, describeStdinInputFailure } from './assistant-command-tools'
 import { defaultAssistantPrompt } from './assistant-prompt'
 import { getMainWindow, sessions } from './runtime'

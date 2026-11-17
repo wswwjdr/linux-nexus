@@ -1,3 +1,4 @@
+import { useApplicationSettings } from './hooks/useApplicationSettings'
 import { LocalizedError, type MessageValue, msg, tr } from '@shared/i18n/messages'
 import { useLanguage } from '@/i18n'
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
@@ -40,7 +41,6 @@ import type {
   ServerProfile,
 } from '@shared/types'
 import type { PreviewType } from '@shared/file-type-registry'
-import { DEFAULT_PERFORMANCE_THRESHOLDS, defaultFileTypeExtensions } from '@shared/app-settings'
 import type {
   BrowserContextMenu as BrowserContextMenuState,
   DirectoryLoadOptions,
@@ -87,9 +87,17 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
     phase: 'entering' | 'password' | 'verifying' | 'leaving'
     error?: MessageValue
   } | null>(null)
-  const [viewModeDefault, setViewModeDefault] = useState<FileViewMode>('details')
-  const [performanceThresholds, setPerformanceThresholds] = useState<PerformanceThresholds>(DEFAULT_PERFORMANCE_THRESHOLDS)
-  const [fileTypeExtensions, setFileTypeExtensions] = useState<FileTypeExtensions>(defaultFileTypeExtensions)
+  const preferences = useApplicationSettings({
+    initialSettings,
+    onDefaultViewChange: (mode) => {
+      setSessions((current) => current.map((session) => session.kind === 'files' ? { ...session, viewMode: mode } : session))
+    },
+  })
+
+  const { startupConnection, settingsForm, openSettingsDialog } = preferences
+  const viewModeDefault = preferences.settings.files.defaultView
+  const fileTypeExtensions = preferences.settings.files.fileTypeExtensions
+  const performanceThresholds = preferences.settings.monitoring.thresholds
   const { notices, showToast, dismissToast } = useToasts()
   const [localEditsOpen, setLocalEditsOpen] = useState(false)
   const [recentConnections, setRecentConnections] = useState<RecentConnection[]>(readRecentConnections)
@@ -203,34 +211,19 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
   const {
     profiles,
     profileDataLoaded,
-    startupConnection,
     profileDialog,
     profileDeleteDialog,
     profileDeleteError,
     profileDeleting,
-    settingsForm,
-    settingsLoading,
     openProfileDialog,
-    openSettingsDialog,
     updateProfileForm,
     submitProfile,
     requestProfileDeletion,
     closeProfileDeleteDialog,
     confirmProfileDeletion,
     setProfilePinned,
-    updateSettingsForm,
-    addFileTypeExtension,
-    removeFileTypeExtension,
-    resetFileTypeExtensions,
-    updateDefaultView,
-    updateTheme,
-    updateLanguage,
-    updateStartupProfile,
-    updateStartupKind,
     closeProfileDialog,
-    closeSettingsDialog,
   } = useProfileManagement({
-    initialSettings,
     showToast,
     onProfileSaved: (profile) => {
       const affectedSessions = sessionsRef.current.filter((session) => session.profileId === profile.id)
@@ -259,12 +252,6 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
         setActiveSessionId(remaining.at(-1)?.id ?? null)
       }
     },
-    onDefaultViewChange: (mode) => {
-      setViewModeDefault(mode)
-      setSessions((current) => current.map((session) => session.kind === 'files' ? { ...session, viewMode: mode } : session))
-    },
-    onFileTypeExtensionsChange: setFileTypeExtensions,
-    onPerformanceThresholdsChange: setPerformanceThresholds,
   })
 
   const connectedProfile = useMemo(
@@ -709,7 +696,6 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
               className="icon-button toolbar-button"
               title={tr('common.settings')}
               aria-label={tr('common.settings')}
-              disabled={settingsLoading}
               onClick={openSettings}
             >
               <Settings size={16} />
@@ -917,13 +903,13 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
       )}
 
       <DialogLayer
+        preferences={preferences}
         profileDialog={profileDialog}
         profileDeleteDialog={profileDeleteDialog}
         profileDeleteError={profileDeleteError}
         profileDeleting={profileDeleting}
         createDirectoryDialog={createDirectoryDialog}
         creatingDirectory={creatingDirectory}
-        settingsForm={settingsForm}
         profiles={profiles}
         pendingHostKey={pendingHostKey}
         pendingAliasHostKey={commandAliases.pendingHostKey}
@@ -944,16 +930,6 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
         onSubmitCreateDirectory={(event) => void submitCreateDirectory(event)}
         onUpdateProfile={updateProfileForm}
         onSubmitProfile={(event) => void submitProfile(event)}
-        onCloseSettings={closeSettingsDialog}
-        onUpdateSettings={updateSettingsForm}
-        onAddFileTypeExtension={addFileTypeExtension}
-        onRemoveFileTypeExtension={removeFileTypeExtension}
-        onResetFileTypeExtensions={resetFileTypeExtensions}
-        onUpdateDefaultView={updateDefaultView}
-        onUpdateTheme={updateTheme}
-        onUpdateLanguage={updateLanguage}
-        onUpdateStartupProfile={updateStartupProfile}
-        onUpdateStartupKind={updateStartupKind}
         onTrustHostKey={() => void trustAndReconnect()}
         onDismissHostKey={dismissHostKey}
         onSelectAliasProfile={commandAliases.selectProfile}

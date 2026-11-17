@@ -4,6 +4,8 @@ import { Archive, ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronRight, Clipboar
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from 'react'
 import type { FileTypeExtensions } from '@shared/types'
 import type { ContextMenuPosition } from '@/app-types'
+import ContextMenuShortcut from '@/components/ContextMenuShortcut'
+import { ariaKeyShortcut } from '@/keyboard-shortcuts'
 import {
   resolveFileContextMenu,
   type FileContextMenuContext,
@@ -51,6 +53,11 @@ function menuLabel(context: FileContextMenuContext): string {
   return tr('files.currentDirectoryActions')
 }
 
+/**
+ * Renders one file context menu command, including its shortcut when available.
+ * @param props Action node, row class name, and command dispatcher.
+ * @returns A menu button for the command.
+ */
 function MenuAction({
   node,
   className,
@@ -69,6 +76,7 @@ function MenuAction({
       className={className + (node.action.type === 'delete' ? ' danger-action' : '') + (node.action.type === 'preview' ? ' preview-action' : '') + (node.action.type === 'preview-log' ? ' log-preview-action' : '')}
       role={role}
       aria-checked={node.checked}
+      aria-keyshortcuts={ariaKeyShortcut(node.shortcut)}
       aria-label={node.disabledReason ? tr('common.disabledAction', { action: node.label, reason: node.disabledReason }) : undefined}
       title={renderMessage(node.disabledReason ?? node.description ?? node.label)}
       disabled={node.disabled}
@@ -76,6 +84,7 @@ function MenuAction({
     >
       <span className="context-menu-action-icon">{Icon && <Icon size={16} />}</span>
       <span className="context-menu-label">{renderMessage(node.label)}</span>
+      <ContextMenuShortcut shortcut={node.shortcut} />
     </button>
   )
 }

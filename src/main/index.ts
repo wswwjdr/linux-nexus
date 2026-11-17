@@ -1,3 +1,4 @@
+import { prepareSettingsExit } from './settings-service'
 import { type MessageValue, msg, renderMessage } from '../shared/i18n/messages'
 import { applyLanguage } from './language'
 
@@ -9,13 +10,16 @@ import { stopAllSessions } from './connections'
 import { registerIpc } from './ipc'
 import { registerPreviewProtocol } from './preview-protocol'
 import { clearPreviewAssets, getMainWindow, messageFromError, setMainWindow } from './runtime'
-import { configureStateFiles, readAppSettings, readState } from './state-store'
+import { readAppSettings } from './settings-store'
+import { configureStateFiles, readState } from './state-store'
 import { configureAssistantStorage } from './assistant-storage'
 import { stopAllAssistantTasks } from './assistant-runtime'
 import { applyTheme, themeBackgroundColor } from './theme'
 import { configurePerformanceMonitorInterval, stopAllPerformanceMonitors } from './performance-monitor'
 import { publishWindowLayoutChanges } from './window-layout'
 import { cleanUpLocalEdits, prepareLocalEditExit, recheckLocalEdits, resumeLocalEdits } from './local-edits'
+import { configureAppUpdates } from './app-updates'
+import type { AppUpdates } from './update-service'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'remote-preview',
@@ -23,6 +27,7 @@ protocol.registerSchemesAsPrivileged([{
 }])
 
 let focusWindowWhenCreated = false
+let updater: AppUpdates | undefined
 const applicationDataDirectory = app.isPackaged
   ? app.getPath('userData')
   : join(app.getAppPath(), 'data')
@@ -133,15 +138,15 @@ app.whenReady().then(async () => {
   if (!hasSingleInstanceLock || !applicationDataConfigured) return
   Menu.setApplicationMenu(null)
   const userDataDirectory = app.getPath('userData')
-  configureStateFiles(join(userDataDirectory, 'servers.json'), join(userDataDirectory, 'settings.json'))
+  configureStateFiles(join(userDataDirectory, 'servers.json'), join(userDataDirectory, 'application-settings.json'))
   configureAssistantStorage(userDataDirectory)
   try {
     applyLanguage('system')
     const settings = readAppSettings()
-    applyLanguage(settings.language)
+    applyLanguage(settings.general.language)
     readState(true)
-    configurePerformanceMonitorInterval(settings.performanceSampleIntervalSeconds)
-    applyTheme(settings.theme)
+    configurePerformanceMonitorInterval(settings.monitoring.sampleIntervalSeconds)
+    applyTheme(settings.general.theme)
   } catch (error) {
     showErrorBox(
       msg('errors.invalidConfigurationFile'),
@@ -158,7 +163,10 @@ app.whenReady().then(async () => {
   await mkdir(downloadDirectory, { recursive: true })
   registerPreviewProtocol()
   registerIpc()
+  updater = await configureAppUpdates(quitApplication)
   createWindow()
+  void updater.cleanStaleFiles()
+  void updater.check()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -183,20 +191,32 @@ async function cleanUpBeforeExit(): Promise<void> {
   }
 }
 
-/** Resolves external edits before the normal application shutdown. */
-async function quitApplication(): Promise<void> {
+/**
+ * Resolves external edits and shuts down the app.
+ * @param openInstaller Optional handoff to run after cleanup and before exiting.
+ * @returns Whether the application approved shutdown and requested exit.
+ */
+async function quitApplication(openInstaller?: () => Promise<void>): Promise<boolean> {
+  if (quitting) return false
   quitting = true
   try {
-    if (!await prepareLocalEditExit()) return
+    if (!await prepareSettingsExit()) return false
+    if (!await prepareLocalEditExit()) return false
+    await updater?.pause()
     await cleanUpBeforeExit()
+    if (openInstaller) await openInstaller()
     allowQuit = true
     app.quit()
+    return true
   } catch (error) {
+    if (openInstaller) throw error
     showErrorBox(msg('errors.cleanupFailedOnExit'), messageFromError(error))
+    return false
   } finally {
     if (!allowQuit) {
       quitting = false
       resumeLocalEdits()
+      updater?.resume()
     }
   }
 }

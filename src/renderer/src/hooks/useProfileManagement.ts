@@ -1,132 +1,35 @@
-import { type LanguagePreference } from '@shared/i18n/languages'
-import { applyApplicationLanguage } from '@/application-settings'
 import { msg, type MessageValue } from '@shared/i18n/messages'
-import { useEffect, useRef, useState, type FormEvent } from 'react'
-import type { AppSettings, AppSettingsPatch, FileTypeCategory, PerformanceThresholds, FileTypeExtensions, SaveProfileInput, ServerProfile, SessionKind, StartupConnection, ThemeMode } from '@shared/types'
-import { performanceThresholdsToForm, type FileViewMode, type PerformanceThresholdField, type ProfileForm, type SettingsFieldKey, type SettingsForm } from '@/app-types'
+import { useEffect, useState, type FormEvent } from 'react'
+import type { SaveProfileInput, ServerProfile } from '@shared/types'
+import type { ProfileForm } from '@/app-types'
 import type { ToastNotice } from '@/GlobalToast'
-import { emptyForm, errorMessage, toPreviewLimitsForm } from '@/app-utils'
-import { defaultFileTypeExtensions, MAX_DIRECTORY_USAGE_ENTRY_LIMIT } from '@shared/app-settings'
-import { applyRendererTheme } from '@/app-theme'
+import { emptyForm, errorMessage } from '@/app-utils'
 
 interface UseProfileManagementOptions {
-  initialSettings: AppSettings
   showToast: (kind: ToastNotice['kind'], message: MessageValue) => void
   onProfileSaved: (profile: ServerProfile) => void
   onProfileDeleted: (profileId: string) => void
-  onDefaultViewChange: (mode: FileViewMode) => void
-  onFileTypeExtensionsChange: (extensions: FileTypeExtensions) => void
-  onPerformanceThresholdsChange: (thresholds: PerformanceThresholds) => void
 }
 
-const thresholdFieldParts: Record<PerformanceThresholdField, keyof PerformanceThresholds> = {
-  cpuWarning: 'cpu',
-  cpuCritical: 'cpu',
-  memoryWarning: 'memory',
-  memoryCritical: 'memory',
-  diskWarning: 'disk',
-  diskCritical: 'disk',
-  loadPerCoreWarning: 'loadPerCore',
-  loadPerCoreCritical: 'loadPerCore',
-}
-
-export function useProfileManagement({ initialSettings, showToast, onProfileSaved, onProfileDeleted, onDefaultViewChange, onFileTypeExtensionsChange, onPerformanceThresholdsChange }: UseProfileManagementOptions) {
+/** Manages saved SSH connections and their dialogs. @param options Server lifecycle callbacks. @returns Server state and actions. */
+export function useProfileManagement({ showToast, onProfileSaved, onProfileDeleted }: UseProfileManagementOptions) {
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
   const [profilesLoaded, setProfilesLoaded] = useState(false)
-  const [startupSettingsLoaded, setStartupSettingsLoaded] = useState(false)
-  const [startupConnection, setStartupConnection] = useState<StartupConnection | null>(null)
   const [dialog, setDialog] = useState<{ mode: 'create' | 'edit'; form: ProfileForm } | null>(null)
   const [profileDeleteDialog, setProfileDeleteDialog] = useState<ServerProfile | null>(null)
   const [profileDeleteError, setProfileDeleteError] = useState<MessageValue | null>(null)
   const [profileDeleting, setProfileDeleting] = useState(false)
-  const [settingsForm, setSettingsForm] = useState<SettingsForm | null>(null)
-  const [settingsLoading, setSettingsLoading] = useState(false)
-  const settingsFormRef = useRef<SettingsForm | null>(null)
-  const settingsWritesRef = useRef<Promise<void>>(Promise.resolve())
-  const persistedSettingsRef = useRef<AppSettings | null>(null)
-  const settingsVersionsRef = useRef(new Map<keyof AppSettings, number>())
 
-  const replaceSettingsForm = (next: SettingsForm | null) => {
-    settingsFormRef.current = next
-    setSettingsForm(next)
-  }
-
-  const updateSettingsDraft = (update: (current: SettingsForm) => SettingsForm) => {
-    const current = settingsFormRef.current
-    if (!current) return null
-    const next = update(current)
-    replaceSettingsForm(next)
-    return next
-  }
-
-  const formWithSetting = (current: SettingsForm, key: keyof AppSettings, settings: AppSettings): SettingsForm => {
-    if (key in current && key !== 'fileTypeExtensions' && key !== 'startupConnection' && key !== 'performanceThresholds') {
-      return { ...current, [key]: String(settings[key as keyof AppSettings]) }
-    }
-    if (key === 'fileTypeExtensions') return { ...current, fileTypeExtensions: settings.fileTypeExtensions }
-    if (key === 'performanceThresholds') {
-      return { ...current, performanceThresholds: performanceThresholdsToForm(settings.performanceThresholds) }
-    }
-    if (key === 'startupConnection') return {
-      ...current,
-      startupProfileId: settings.startupConnection?.profileId ?? '',
-      startupKind: settings.startupConnection?.kind ?? 'files',
-    }
-    return current
-  }
-
-  const reflectSetting = (key: keyof AppSettings, settings: AppSettings) => {
-    if (key === 'theme') applyRendererTheme(settings.theme)
-    if (key === 'defaultView') onDefaultViewChange(settings.defaultView)
-    if (key === 'fileTypeExtensions') onFileTypeExtensionsChange(settings.fileTypeExtensions)
-    if (key === 'startupConnection') setStartupConnection(settings.startupConnection)
-    if (key === 'performanceThresholds') onPerformanceThresholdsChange(settings.performanceThresholds)
-  }
-
-  const persistSetting = (key: keyof AppSettings, patch: AppSettingsPatch) => {
-    const version = (settingsVersionsRef.current.get(key) ?? 0) + 1
-    settingsVersionsRef.current.set(key, version)
-    settingsWritesRef.current = settingsWritesRef.current.then(async () => {
-      try {
-        const saved = await window.remoteFiles.updateAppSettings(patch)
-        persistedSettingsRef.current = saved
-        if (key === 'language') applyApplicationLanguage(saved)
-        if (key === 'theme') applyRendererTheme(saved.theme)
-        if (key === 'performanceThresholds') onPerformanceThresholdsChange(saved.performanceThresholds)
-      } catch (error) {
-        showToast('error', msg('settings.couldNotSaveSettings', { "value1": errorMessage(error) }))
-        let saved = persistedSettingsRef.current
-        try {
-          saved = await window.remoteFiles.getAppSettings()
-          persistedSettingsRef.current = saved
-        } catch (readError) {
-          showToast('error', msg('settings.couldNotRereadSettings', { "value1": errorMessage(readError) }))
-        }
-        if (saved && settingsVersionsRef.current.get(key) === version) {
-          updateSettingsDraft((current) => formWithSetting(current, key, saved!))
-          reflectSetting(key, saved)
-        }
-      }
-    })
-  }
-
+  /** Refreshes the saved connection list. @returns Completion of the refresh. */
   const refreshProfiles = async () => {
     setProfiles(await window.remoteFiles.listProfiles())
   }
-
   useEffect(() => {
     void refreshProfiles()
       .catch((error) => showToast('error', errorMessage(error)))
       .finally(() => setProfilesLoaded(true))
-    applyRendererTheme(initialSettings.theme)
-    persistedSettingsRef.current = initialSettings
-    setStartupConnection(initialSettings.startupConnection)
-    onDefaultViewChange(initialSettings.defaultView)
-    onFileTypeExtensionsChange(initialSettings.fileTypeExtensions)
-    onPerformanceThresholdsChange(initialSettings.performanceThresholds)
-    setStartupSettingsLoaded(true)
-  }, [initialSettings, showToast, onFileTypeExtensionsChange, onPerformanceThresholdsChange])
-
+  }, [showToast])
+  /** Opens a connection draft. @param mode Create or edit. @param profile Existing connection when editing. */
   const openProfileDialog = (mode: 'create' | 'edit', profile?: ServerProfile) => {
     setDialog({
       mode,
@@ -143,149 +46,12 @@ export function useProfileManagement({ initialSettings, showToast, onProfileSave
     })
   }
 
-  const openSettingsDialog = async () => {
-    if (settingsLoading) return
-    setSettingsLoading(true)
-    try {
-      await settingsWritesRef.current
-      const settings = await window.remoteFiles.getAppSettings()
-      persistedSettingsRef.current = settings
-      const profileId = settings.startupConnection?.profileId
-      replaceSettingsForm({
-        ...toPreviewLimitsForm(settings),
-        language: settings.language,
-        theme: settings.theme,
-        defaultView: settings.defaultView,
-        fileTypeExtensions: Object.fromEntries(Object.entries(settings.fileTypeExtensions).map(([type, extensions]) => [type, [...extensions]])) as FileTypeExtensions,
-        directoryUsageEntryLimit: String(settings.directoryUsageEntryLimit),
-        transferFileConcurrency: String(settings.transferFileConcurrency),
-        performanceSampleIntervalSeconds: String(settings.performanceSampleIntervalSeconds),
-        performanceThresholds: performanceThresholdsToForm(settings.performanceThresholds),
-        startupProfileId: profileId && profiles.some((profile) => profile.id === profileId) ? profileId : '',
-        startupKind: settings.startupConnection?.kind ?? 'files',
-      })
-      setStartupConnection(settings.startupConnection)
-    } catch (error) {
-      showToast('error', msg('settings.couldNotReadSettings', { "value1": errorMessage(error) }))
-    } finally {
-      setSettingsLoading(false)
-    }
-  }
-
-  const updateSettingsForm = (key: SettingsFieldKey, value: string) => {
-    const next = updateSettingsDraft((current) => {
-      if (key in thresholdFieldParts) {
-        return { ...current, performanceThresholds: { ...current.performanceThresholds, [key]: value } }
-      }
-      return { ...current, [key]: value }
-    })
-    if (key in thresholdFieldParts) {
-      if (!next) return
-      const thresholds = {
-        cpu: { warning: Number(next.performanceThresholds.cpuWarning), critical: Number(next.performanceThresholds.cpuCritical) },
-        memory: { warning: Number(next.performanceThresholds.memoryWarning), critical: Number(next.performanceThresholds.memoryCritical) },
-        disk: { warning: Number(next.performanceThresholds.diskWarning), critical: Number(next.performanceThresholds.diskCritical) },
-        loadPerCore: { warning: Number(next.performanceThresholds.loadPerCoreWarning), critical: Number(next.performanceThresholds.loadPerCoreCritical) },
-      }
-      const inputsValid = Object.values(next.performanceThresholds).every((text) => text.trim() !== ''
-        && Number.isFinite(Number(text)) && Number(text) >= 0 && Number(text) <= 100)
-      const pairsValid = Object.values(thresholds).every((pair) => pair.warning < pair.critical)
-      if (inputsValid && pairsValid) persistSetting('performanceThresholds', { performanceThresholds: thresholds })
-      else settingsVersionsRef.current.set('performanceThresholds', (settingsVersionsRef.current.get('performanceThresholds') ?? 0) + 1)
-      return
-    }
-    const numericValue = Number(value)
-    const maximum = key === 'directoryUsageEntryLimit' ? MAX_DIRECTORY_USAGE_ENTRY_LIMIT
-      : key === 'transferFileConcurrency' ? 16
-        : key === 'performanceSampleIntervalSeconds' ? 300
-          : Infinity
-    const settingsKey = key as keyof AppSettings
-    if (Number.isInteger(numericValue) && numericValue >= 1 && numericValue <= maximum) {
-      persistSetting(settingsKey, { [settingsKey]: numericValue })
-    } else {
-      settingsVersionsRef.current.set(settingsKey, (settingsVersionsRef.current.get(settingsKey) ?? 0) + 1)
-    }
-  }
-
-  const addFileTypeExtension = (category: FileTypeCategory, extension: string) => {
-    const next = updateSettingsDraft((current) => ({
-      ...current,
-      fileTypeExtensions: {
-        ...current.fileTypeExtensions,
-        [category]: [...new Set([...current.fileTypeExtensions[category], extension])],
-      },
-    }))
-    if (next) {
-      onFileTypeExtensionsChange(next.fileTypeExtensions)
-      persistSetting('fileTypeExtensions', { fileTypeExtensions: next.fileTypeExtensions })
-    }
-  }
-
-  const removeFileTypeExtension = (category: FileTypeCategory, extension: string) => {
-    const next = updateSettingsDraft((current) => ({
-      ...current,
-      fileTypeExtensions: {
-        ...current.fileTypeExtensions,
-        [category]: current.fileTypeExtensions[category].filter((candidate) => candidate !== extension),
-      },
-    }))
-    if (next) {
-      onFileTypeExtensionsChange(next.fileTypeExtensions)
-      persistSetting('fileTypeExtensions', { fileTypeExtensions: next.fileTypeExtensions })
-    }
-  }
-
-  const resetFileTypeExtensions = () => {
-    const next = updateSettingsDraft((current) => ({
-      ...current,
-      fileTypeExtensions: defaultFileTypeExtensions(),
-    }))
-    if (next) {
-      onFileTypeExtensionsChange(next.fileTypeExtensions)
-      persistSetting('fileTypeExtensions', { fileTypeExtensions: next.fileTypeExtensions })
-    }
-  }
-
-  const updateDefaultView = (defaultView: FileViewMode) => {
-    updateSettingsDraft((current) => ({ ...current, defaultView }))
-    onDefaultViewChange(defaultView)
-    persistSetting('defaultView', { defaultView })
-  }
-
-  const updateLanguage = (language: LanguagePreference) => {
-    updateSettingsDraft(current => ({ ...current, language }))
-    persistSetting('language', { language })
-  }
-
-  const updateTheme = (theme: ThemeMode) => {
-    updateSettingsDraft((current) => ({ ...current, theme }))
-    persistSetting('theme', { theme })
-  }
-
-  const updateStartupProfile = (startupProfileId: string) => {
-    const current = settingsFormRef.current
-    if (!current) return
-    const startupConnection = startupProfileId ? { profileId: startupProfileId, kind: current.startupKind } : null
-    updateSettingsDraft((form) => ({ ...form, startupProfileId }))
-    setStartupConnection(startupConnection)
-    persistSetting('startupConnection', { startupConnection })
-  }
-
-  const updateStartupKind = (startupKind: SessionKind) => {
-    const current = settingsFormRef.current
-    if (!current) return
-    const startupConnection = current.startupProfileId ? { profileId: current.startupProfileId, kind: startupKind } : null
-    updateSettingsDraft((form) => ({ ...form, startupKind }))
-    setStartupConnection(startupConnection)
-    persistSetting('startupConnection', { startupConnection })
-  }
-
+  /** Updates connection input. @param patch Changed fields. */
   const updateProfileForm = (patch: Partial<ProfileForm>) => {
-    setDialog((current) =>
-      current ? { ...current, form: { ...current.form, ...patch } } : current,
-    )
+    setDialog((current) => (current ? { ...current, form: { ...current.form, ...patch } } : current))
   }
 
+  /** Validates and saves a connection. @param event Form submission. @returns Completion of the save. */
   const submitProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!dialog) return
@@ -309,17 +75,20 @@ export function useProfileManagement({ initialSettings, showToast, onProfileSave
     }
   }
 
+  /** Opens deletion confirmation. @param profile Connection to delete. */
   const requestProfileDeletion = (profile: ServerProfile) => {
     setProfileDeleteError(null)
     setProfileDeleteDialog(profile)
   }
 
+  /** Dismisses idle deletion confirmation. */
   const closeProfileDeleteDialog = () => {
     if (profileDeleting) return
     setProfileDeleteDialog(null)
     setProfileDeleteError(null)
   }
 
+  /** Deletes the confirmed connection. @returns Completion of deletion. */
   const confirmProfileDeletion = async () => {
     if (!profileDeleteDialog || profileDeleting) return
     const profile = profileDeleteDialog
@@ -328,7 +97,6 @@ export function useProfileManagement({ initialSettings, showToast, onProfileSave
     try {
       await window.remoteFiles.deleteProfile(profile.id)
       setProfiles((current) => current.filter((item) => item.id !== profile.id))
-      setStartupConnection((current) => current?.profileId === profile.id ? null : current)
       onProfileDeleted(profile.id)
       setProfileDeleteDialog(null)
     } catch (error) {
@@ -338,46 +106,32 @@ export function useProfileManagement({ initialSettings, showToast, onProfileSave
     }
   }
 
+  /** Saves connection pin state. @param profileId Connection ID. @param pinned Desired pin state. @returns Completion of the update. */
   const setProfilePinned = async (profileId: string, pinned: boolean) => {
     try {
       const updatedProfile = await window.remoteFiles.setProfilePinned(profileId, pinned)
-      setProfiles((current) => current.map((profile) => profile.id === profileId ? updatedProfile : profile))
+      setProfiles((current) => current.map((profile) => (profile.id === profileId ? updatedProfile : profile)))
     } catch (error) {
-      showToast('error', msg('settings.couldNotUpdateServerPinState', { "value1": errorMessage(error) }))
+      showToast('error', msg('settings.couldNotUpdateServerPinState', { value1: errorMessage(error) }))
     }
   }
 
+  /** Closes the connection editor. */
   const closeProfileDialog = () => setDialog(null)
-  const closeSettingsDialog = () => replaceSettingsForm(null)
-
   return {
     profiles,
-    profileDataLoaded: profilesLoaded && startupSettingsLoaded,
-    startupConnection,
+    profileDataLoaded: profilesLoaded,
     profileDialog: dialog,
     profileDeleteDialog,
     profileDeleteError,
     profileDeleting,
-    settingsForm,
-    settingsLoading,
     openProfileDialog,
-    openSettingsDialog,
     updateProfileForm,
     submitProfile,
     requestProfileDeletion,
     closeProfileDeleteDialog,
     confirmProfileDeletion,
     setProfilePinned,
-    updateSettingsForm,
-    addFileTypeExtension,
-    removeFileTypeExtension,
-    resetFileTypeExtensions,
-    updateDefaultView,
-    updateTheme,
-    updateLanguage,
-    updateStartupProfile,
-    updateStartupKind,
     closeProfileDialog,
-    closeSettingsDialog,
   }
 }

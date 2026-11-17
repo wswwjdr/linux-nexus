@@ -9,6 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent as ReactF
 import type { DroppedUploadEntry, FileIdentity, RemoteEntry } from '@shared/types'
 import type { DirectoryLoadOptions, FileViewMode, SortColumn, SortDirection } from '@/app-types'
 import { formatDate, formatSize, getParentPath } from '@/app-utils'
+import { fileShortcuts, matchesShortcut } from '@/keyboard-shortcuts'
 import { DependencyCancelledError, useFileDependencyAction } from '@/features/dependencies/DependencyProvider'
 import FileEntryCollection from './FileEntryCollection'
 import FilePathBar, { type Breadcrumb } from './FilePathBar'
@@ -274,13 +275,17 @@ export default function FileBrowser({
     onOpenDirectoryContextMenu(event.clientX, event.clientY, content)
   }
 
+  /**
+   * Routes keyboard deletion and menu opening to the current file selection or focused entry.
+   * @param event Keyboard event from within the file browser content.
+   */
   const handleBrowserKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const entryElement = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-entry-path]') : null
     const focusedEntry = entryElement?.dataset.entryPath
       ? sortedEntries.find((entry) => entry.path === entryElement.dataset.entryPath)
       : undefined
     const targets = selectedContextEntries()
-    if (event.key === 'Delete') {
+    if (matchesShortcut(event, fileShortcuts.delete)) {
       const allSelectedDeletable = targets.length > 0 && targets.every((entry) => entry.type === 'file' || entry.type === 'directory')
       const deletions = targets.length > 0
         ? allSelectedDeletable ? targets : []

@@ -1,5 +1,5 @@
 import { msg, LocalizedError } from '../../shared/i18n/messages'
-import { readAppSettings } from '../state-store'
+import { readAppSettings } from '../settings-store'
 import { ipcMain } from './trusted-ipc'
 import type { TextEncoding, TextSaveOptions, ContentSearchRequest, NameSearchRequest, OperationExecutionStrategy, ScriptExecutionRequest, UploadExecutionRequest } from '@shared/types'
 import { copyRemotePath, createRemoteDirectory, deleteRemoteEntries, listDirectory } from '../connections'
@@ -31,7 +31,7 @@ export function registerFilesIpc(): void {
   ipcMain.handle('files:directory-stats', (_event, sessionId: string, remotePath: string) =>
     withFileCapabilities(sessionId, 'directory-stats', () => getRemoteDirectoryStats(sessionId, remotePath)))
   ipcMain.handle('files:directory-usage-tree', (_event, sessionId: string, remotePath: string, requestId: unknown) =>
-    getRemoteDirectoryUsageTree(sessionId, remotePath, requestId, readAppSettings().directoryUsageEntryLimit))
+    getRemoteDirectoryUsageTree(sessionId, remotePath, requestId, readAppSettings().files.directoryUsageEntryLimit))
   ipcMain.handle('files:directory-usage-tree-cancel', (_event, requestId: unknown) =>
     cancelRemoteDirectoryUsageTree(requestId))
   ipcMain.handle('files:list', (_event, sessionId: string, remotePath: string) =>

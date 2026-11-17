@@ -1,6 +1,6 @@
 import { msg, LocalizedError } from '../../shared/i18n/messages'
 import type { LogPreviewPage } from '@shared/types'
-import { readPreviewLimits } from '../state-store'
+import { readPreviewLimits } from '../settings-store'
 import { filesSession, normalizedRemotePath, remoteFileSize, remotePathType } from '../remote-fs'
 import { readRemoteBytes } from '../remote-byte-reader'
 import { verifyFileOperation } from '../file-dependencies'

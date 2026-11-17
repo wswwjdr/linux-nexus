@@ -2,7 +2,7 @@ import { msg, LocalizedError } from '../../shared/i18n/messages'
 import { posix } from 'node:path'
 import type { PreviewLimits, PreviewResult, TextEncoding } from '@shared/types'
 import { previewTypes, previewTypesForFile } from '@shared/preview-file-type'
-import { readAppSettings } from '../state-store'
+import { readAppSettings } from '../settings-store'
 import { filesSession, normalizedRemotePath, remotePathType, remoteFileSize } from '../remote-fs'
 import { imagePreviewStrategy } from './strategies/image-preview'
 import { mediaPreviewStrategy } from './strategies/media-preview'
@@ -59,13 +59,13 @@ async function previewInSession(session: ReturnType<typeof filesSession>, remote
   if (!previewTypes.includes(type)) throw new LocalizedError(msg('errors.invalidPreviewType'))
   const normalizedPath = normalizedRemotePath(remotePath)
   const settings = readAppSettings()
-  if (!previewTypesForFile(normalizedPath, settings.fileTypeExtensions).includes(type)) {
+  if (!previewTypesForFile(normalizedPath, settings.files.fileTypeExtensions).includes(type)) {
     throw new LocalizedError(msg('errors.thisPreviewTypeIsNotConfiguredForTheFile'))
   }
   await verifyFileOperation(session, previewDependencies[type])
   if (await remotePathType(session.commands, normalizedPath) !== 'file') throw new LocalizedError(msg('errors.onlyRegularFilesCanBePreviewed'))
 
-  const limits: PreviewLimits = settings
+  const limits: PreviewLimits = settings.files.previewLimits
   const limitMiB = limits[previewLimitKeyByType[type]]
   const limitBytes = limitMiB * 1024 * 1024
   const size = await remoteFileSize(session.commands, normalizedPath)

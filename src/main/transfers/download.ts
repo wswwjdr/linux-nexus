@@ -4,7 +4,7 @@ import { lstat as localLstat, mkdir } from 'node:fs/promises'
 import { basename, dirname, join, posix } from 'node:path'
 import type { TransferFailure, TransferResult } from '@shared/types'
 import { getMainWindow, messageFromError, type TransferItem } from '../runtime'
-import { readAppSettings } from '../state-store'
+import { readAppSettings } from '../settings-store'
 import { iterateRemoteTree, filesSession, remotePathType, remoteFileSize } from '../remote-fs'
 import { transferFileStream } from './stream-transfer'
 import { verifyFileOperation } from '../file-dependencies'
@@ -72,7 +72,7 @@ async function downloadRemoteItems(
   const transferItems = items.filter((item) => !collidingItems.has(item))
   const files = transferItems.filter((item) => item.type === 'file')
   const total = files.reduce((sum, item) => sum + item.size, 0)
-  const fileConcurrency = readAppSettings().transferFileConcurrency
+  const fileConcurrency = readAppSettings().transfers.fileConcurrency
   const progress = createTransferProgressReporter({
     sender: event.sender,
     requestId,
