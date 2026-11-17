@@ -4,7 +4,6 @@ import { useLanguage } from '@/i18n'
 import { useImperativeHandle, useRef, useState, type Ref } from 'react'
 import type { PromptEditorHandle } from './AssistantPromptEditor'
 import { AssistantSettings } from './AssistantSettings'
-import { UpdateSettings } from './UpdateSettings'
 import { MAX_DIRECTORY_USAGE_ENTRY_LIMIT } from '@shared/app-settings'
 import { fileTypeMessages } from '@shared/preview-file-type'
 
@@ -29,7 +28,11 @@ const performanceThresholdFields: Array<{
   { label: msg('settings.1MinuteLoadPerCore'), warning: 'loadPerCoreWarning', critical: 'loadPerCoreCritical', unit: '', step: '0.1' },
 ]
 
-/** Renders the General and Assistant settings pages using the supplied app settings handlers. */
+/**
+ * Renders the General and Assistant settings pages.
+ * @param props Settings, actions, and the dialog dismissal reference.
+ * @returns The settings dialog.
+ */
 export function SettingsDialog(props: Pick<DialogLayerProps, "settingsForm" | "profiles" | "aliasSnapshot" | "aliasProfileId" | "aliasOperationBusy" | "aliasName" | "aliasCommand" | "onCloseSettings" | "onUpdateSettings" | "onAddFileTypeExtension" | "onRemoveFileTypeExtension" | "onResetFileTypeExtensions" | "onUpdateDefaultView" | "onUpdateLanguage" | "onUpdateTheme" | "onUpdateStartupProfile" | "onUpdateStartupKind" | "onSelectAliasProfile" | "onUpdateAliasName" | "onUpdateAliasCommand" | "onSyncAliases" | "onAddAlias" | "onRequestAliasDelete"> & { dismissRef: Ref<() => void> }) {
   useLanguage()
   const [page, setPage] = useState<'general' | 'assistant'>('general')
@@ -71,7 +74,6 @@ export function SettingsDialog(props: Pick<DialogLayerProps, "settingsForm" | "p
                     <button type="button" className="text-button" aria-pressed={page === 'assistant'} onClick={() => setPage('assistant')}>{tr('assistant.title')}</button>
                   </div>
                   {page === 'assistant' ? <AssistantSettings profiles={profiles} navigationRef={assistantNavigation} /> : <div className="settings-form-content">
-                    <UpdateSettings />
                     <fieldset className="settings-section settings-section-language">
                       <legend>{tr('settings.language')}</legend>
                       <label className="field">

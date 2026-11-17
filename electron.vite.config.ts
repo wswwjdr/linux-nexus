@@ -4,10 +4,6 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   main: {
-    define: {
-      __UPDATE_PUBLIC_KEY__: JSON.stringify(process.env.LINUX_NEXUS_UPDATE_PUBLIC_KEY ?? ''),
-      __RELEASE_DISPLAY_VERSION__: JSON.stringify(process.env.LINUX_NEXUS_RELEASE_DISPLAY_VERSION ?? ''),
-    },
     plugins: [externalizeDepsPlugin()],
     resolve: {
       alias: {

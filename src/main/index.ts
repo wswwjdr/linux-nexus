@@ -15,7 +15,6 @@ import { stopAllAssistantTasks } from './assistant-runtime'
 import { applyTheme, themeBackgroundColor } from './theme'
 import { configurePerformanceMonitorInterval, stopAllPerformanceMonitors } from './performance-monitor'
 import { publishWindowLayoutChanges } from './window-layout'
-import { registerUpdates } from './updates'
 import { cleanUpLocalEdits, prepareLocalEditExit, recheckLocalEdits, resumeLocalEdits } from './local-edits'
 
 protocol.registerSchemesAsPrivileged([{
@@ -71,8 +70,8 @@ function focusMainWindow(): void {
   window.focus()
 }
 
-/** @returns The trusted main window, which signals when the startup check can begin. */
-function createWindow(): BrowserWindow {
+/** Creates the main window and registers its lifecycle handlers. */
+function createWindow(): void {
   const iconPath = app.isPackaged
     ? join(process.resourcesPath, 'app.ico')
     : join(app.getAppPath(), 'resources', 'app.ico')
@@ -128,7 +127,6 @@ function createWindow(): BrowserWindow {
       window.focus()
     }
   })
-  return window
 }
 
 app.whenReady().then(async () => {
@@ -160,11 +158,7 @@ app.whenReady().then(async () => {
   await mkdir(downloadDirectory, { recursive: true })
   registerPreviewProtocol()
   registerIpc()
-  const checkAtStartup = registerUpdates(restartForUpdate)
-  const window = createWindow()
-  window.once('ready-to-show', () => {
-    void checkAtStartup(window).catch(error => console.error('Startup update prompt failed', error))
-  })
+  createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -177,7 +171,7 @@ let quitting = false
 let allowQuit = false
 const temporaryDirectories = ['linux-nexus-preview', 'linux-nexus-downloads']
 
-/** Stops application work and removes temporary files before exit or update installation. */
+/** Stops application work and removes temporary files before exit. */
 async function cleanUpBeforeExit(): Promise<void> {
   await cleanUpLocalEdits()
   stopAllPerformanceMonitors()
@@ -186,36 +180,6 @@ async function cleanUpBeforeExit(): Promise<void> {
   clearPreviewAssets()
   for (const name of temporaryDirectories) {
     await rm(join(app.getPath('temp'), name), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
-  }
-}
-
-/**
- * Finishes shutdown work before NSIS can close the app and replace files.
- * @param launch Launches the verified installer.
- * @returns Whether the requested shutdown was approved and the installer launched.
- */
-async function restartForUpdate(launch: () => void): Promise<boolean> {
-  if (quitting) throw new Error('Application is already closing')
-  quitting = true
-  try {
-    if (!await prepareLocalEditExit()) return false
-    await cleanUpBeforeExit()
-    allowQuit = true
-    launch()
-    return true
-  } catch (error) {
-    allowQuit = false
-    try {
-      await Promise.all(temporaryDirectories.map(name => mkdir(join(app.getPath('temp'), name), { recursive: true })))
-    } catch (restoreError) {
-      throw new AggregateError([error, restoreError], 'Could not restore temporary directories after the update failed')
-    }
-    throw error
-  } finally {
-    if (!allowQuit) {
-      quitting = false
-      resumeLocalEdits()
-    }
   }
 }
 

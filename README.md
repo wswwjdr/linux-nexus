@@ -75,15 +75,7 @@ npm run dev
 npm run dist:win
 ```
 
-构建产物位于 `release/`。
-
-### 正式发布与在线更新
-
-首次发布前，用 Node.js 26 在仓库根目录运行 `npm run release:key -- "$env:USERPROFILE\linux-nexus-update-private.pem"`。提交生成的 `resources/update-public-key.pem`，并把私钥文件的完整内容配置为仓库的 GitHub Actions Secret `UPDATE_SIGNING_KEY`。后续发版沿用同一密钥。
-
-包含发布流程和公钥的提交准备好后，在该提交上运行 `npm run release:tag -- 1`。参数 `1` 是由维护者选定的大版本号。命令按北京时间生成并推送 `v1.yyyyMMddHHmm`，GitHub Actions 验证、构建并发布到 GitHub Releases。同一大版本每分钟可发一版。发布失败可在 Actions 中重跑原 tag 对应的任务。
-
-从 `1.0.0` 升级时，请从 GitHub Releases 手动安装首个支持在线更新的版本。之后应用启动时会检查更新，也可以在设置中的「应用更新」手动检查。下载和重启分别由用户确认。
+安装包位于 `release/`，版本取自 `package.json` 的 `version`。发版时，在 GitHub Releases 创建 Release，选择 tag，填写版本说明，并上传生成的 `.exe`。用户下载并运行该安装包即可安装或升级。
 
 ## 文档
 
