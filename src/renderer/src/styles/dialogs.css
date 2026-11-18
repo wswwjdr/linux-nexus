@@ -235,7 +235,74 @@
 .preview-modal .modal-heading { flex: 0 0 auto; margin-bottom: 10px; }
 .preview-modal .modal-heading h2 { max-width: min(78vw, 480px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .media-preview-modal { width: min(100%, 960px); }
-.text-preview-modal { height: min(680px, 100%); }
+.text-preview-modal { height: min(800px, 100%); padding: 0; overflow: hidden; }
+.text-preview-modal .modal-heading { margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.text-preview-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.text-preview-title svg { flex: none; color: var(--text-accent); }
+.text-preview-actions { display: flex; align-items: center; gap: 8px; padding: 7px 14px; background: var(--surface-soft); }
+.text-preview-tool { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid transparent; border-radius: var(--radius); background: transparent; color: var(--text-primary); cursor: pointer; font: inherit; font-size: 12px; }
+.text-preview-tool:hover { background: var(--surface-hover); }
+.text-preview-modal .text-preview-search { margin: 0; border-radius: 0; padding-inline: 14px; }
+.text-preview-modal .text-preview-info {
+  min-height: 25px;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 0 8px 0 14px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.text-preview-encoding {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.text-preview-encoding:focus-visible { outline-offset: -1px; }
+.text-preview-encoding:hover:not(:disabled) { background: var(--surface-hover); }
+.text-preview-encoding-menu {
+  position: fixed;
+  inset: auto;
+  position-area: block-start span-inline-start;
+  position-try-fallbacks: flip-block, flip-inline;
+  max-width: calc(100vw - 16px);
+  margin: 4px 0;
+  padding: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: 0 6px 20px var(--backdrop);
+}
+.text-preview-encoding-menu:popover-open { display: grid; gap: 2px; }
+.text-preview-encoding-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: start;
+  cursor: pointer;
+}
+.text-preview-encoding-menu button:hover:not(:disabled) { background: var(--surface-hover); }
+.text-preview-modal .text-preview-status::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: currentColor; vertical-align: middle; }
+.text-preview-modal .text-preview-gutter, .text-preview-modal .text-preview-surface .preview-text { border-radius: 0; font-size: 13px; }
+.text-preview-modal .text-preview-highlight { background: var(--surface-raised); }
 .pdf-preview-modal { padding: 16px; }
 .text-preview-content { min-height: 0; flex: 1; display: flex; flex-direction: column; }
 .text-preview-search { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; margin-bottom: 9px; padding: 4px 6px; border:1px solid var(--line); border-radius: var(--radius); color:var(--text-secondary); background:var(--surface-soft); }
@@ -252,7 +319,7 @@
 .text-preview-footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 11px; }
 .text-preview-status { min-width: 0; color:var(--text-secondary); font-size: 11px; }
 .text-preview-status.modified { color:var(--text-warning); }
-.text-preview-encoding-warning { color:var(--text-warning); font-size:11px; }
+.text-preview-encoding-warning { padding: 5px 14px; background: var(--surface-soft); color: var(--text-warning); font-size: 11px; }
 .text-preview-find { margin-left: auto; }
 .text-preview-save { min-width: 90px; }
 .log-preview-modal { width: min(100%, 1040px); height: min(820px, 100%); }

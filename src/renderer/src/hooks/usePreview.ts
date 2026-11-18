@@ -26,7 +26,7 @@ interface TextPreviewContext {
 }
 
 type TextPreviewResult = Extract<PreviewResult, { type: 'text' }>
-type TextConflict = { name: string; path: string; version: TextFileVersion; error?: MessageValue }
+type TextConflict = { name: string; path: string; version: TextFileVersion; encoding: TextEncoding; error?: MessageValue }
 
 /**
  * Manages one workspace's previews, editable draft and remote save conflicts.
@@ -39,7 +39,6 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
   const [previewDialog, setPreviewDialog] = useState<PreviewDialog | null>(null)
   const [logPreviewDialog, setLogPreviewDialog] = useState<LogPreviewDialog | null>(null)
   const [textDraft, setTextDraft] = useState('')
-  const [textEncoding, setTextEncoding] = useState<TextEncoding>('utf8')
   const [textReloading, setTextReloading] = useState(false)
   const [textDirty, setTextDirty] = useState(false)
   const [textSaving, setTextSaving] = useState(false)
@@ -67,7 +66,6 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     }
     textDraftRef.current = content
     setTextDraft(content)
-    setTextEncoding(result.encoding)
     setTextDirty(false)
     setTextConflict(null)
     setPreviewDialog({ kind: 'ready', result })
@@ -237,50 +235,42 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     if (!context || dependencyWait.current || textConflict) return
     textDraftRef.current = content
     setTextDraft(content)
-    setTextDirty(content !== context.originalContent || textEncoding !== context.encoding)
-  }
-
-  /**
-   * Selects the output encoding without reinterpreting the draft.
-   * @param encoding Encoding for the next save.
-   */
-  const selectTextSaveEncoding = (encoding: TextEncoding) => {
-    const context = textPreviewRef.current
-    if (!context || dependencyWait.current || textConflict) return
-    setTextEncoding(encoding)
-    setTextDirty(textDraftRef.current !== context.originalContent || encoding !== context.encoding)
+    setTextDirty(content !== context.originalContent)
   }
 
   /**
    * Saves the captured draft against its loaded or explicitly accepted remote version.
+   * @param requestedEncoding Output encoding, or omit to keep the file's current encoding.
    * @param acceptedConflict Conflict the user chose to overwrite, if any.
+   * @returns A promise that settles when the save attempt finishes.
    */
-  const saveText = async (acceptedConflict?: TextConflict) => {
+  const saveText = async (requestedEncoding?: TextEncoding, acceptedConflict?: TextConflict) => {
     const context = textPreviewRef.current
     if (!context || dependencyWait.current || (textConflict ?? undefined) !== acceptedConflict) return
     const content = textDraftRef.current
-    if (content === context.originalContent && textEncoding === context.encoding) return
+    const encoding = requestedEncoding ?? context.encoding
+    if (content === context.originalContent && encoding === context.encoding) return
 
     const controller = new AbortController()
     dependencyWait.current = controller
     const version = acceptedConflict?.version ?? context.version
-    const bom = textEncoding === 'utf8' && context.bom
+    const bom = encoding === 'utf8' && context.bom
     setTextSaving(true)
     try {
       const result = await withDependencies(
         () => window.remoteFiles.saveTextFile(context.sessionId, context.path, content, context.lineEnding, {
-          version, encoding: textEncoding, bom,
+          version, encoding, bom,
         }),
         context.sessionId, context.path, controller.signal, () => setTextConflict(null),
       )
       if (textPreviewRef.current !== context) return
       if (result.status === 'conflict') {
-        setTextConflict({ name: context.name, path: context.path, version: result.version })
+        setTextConflict({ name: context.name, path: context.path, version: result.version, encoding })
         return
       }
       const lineEnding = context.lineEnding ?? (content.includes('\n') ? '\n' : null)
       applyTextSnapshot(context.sessionId, context.path, {
-        type: 'text', name: context.name, content, lineEnding, encoding: textEncoding, bom,
+        type: 'text', name: context.name, content, lineEnding, encoding, bom,
         lossy: false, version: result.version,
       })
       showToast('info', msg('previews.fileSaved'))
@@ -330,11 +320,18 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
     }
   }
 
-  /** Starts a normal save directly against the loaded source version. */
-  const requestTextSave = () => saveText()
+  /**
+   * Starts a save against the loaded source version.
+   * @param encoding Output encoding, or omit to keep the current encoding.
+   * @returns A promise that settles when the save attempt finishes.
+   */
+  const requestTextSave = (encoding?: TextEncoding) => saveText(encoding)
 
-  /** Retries the save against the specific version shown by the conflict prompt. */
-  const overwriteTextConflict = () => textConflict && saveText(textConflict)
+  /**
+   * Retries with the original output encoding against the version shown by the conflict prompt.
+   * @returns The retry promise, or null when there is no conflict.
+   */
+  const overwriteTextConflict = () => textConflict && saveText(textConflict.encoding, textConflict)
 
   /** Reloads the latest version when the user chooses to discard the conflict draft. */
   const reloadTextConflict = () => textConflict && reloadText(undefined, textConflict)
@@ -345,9 +342,7 @@ export function usePreview({ sessionId, fileTypeExtensions, showToast }: UsePrev
   }
 
   return {
-    textEncoding,
     textReloading,
-    selectTextSaveEncoding,
     reopenText: reloadText,
     previewDialog,
     logPreviewDialog,

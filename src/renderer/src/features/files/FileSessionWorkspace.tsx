@@ -196,9 +196,7 @@ export default function FileSessionWorkspace({
         active={active}
         previewDialog={preview.previewDialog}
         textReloading={preview.textReloading}
-        textEncoding={preview.textEncoding}
         onReopenText={(encoding) => void preview.reopenText(encoding)}
-        onSelectTextSaveEncoding={preview.selectTextSaveEncoding}
         textDraft={preview.textDraft}
         textDirty={preview.textDirty}
         textSaving={preview.textSaving}
