@@ -20,6 +20,7 @@ export function settingsToForm(settings: AppSettings): SettingsForm {
     ...toPreviewLimitsForm(settings.files.previewLimits),
     language: settings.general.language,
     theme: settings.general.theme,
+    sshCopyOnSelect: settings.general.sshCopyOnSelect,
     defaultView: settings.files.defaultView,
     fileTypeExtensions: structuredClone(settings.files.fileTypeExtensions),
     directoryUsageEntryLimit: String(settings.files.directoryUsageEntryLimit),
@@ -38,6 +39,7 @@ function domainValue(domain: SettingsDomain, form: SettingsForm): unknown {
       return {
         language: form.language,
         theme: form.theme,
+        sshCopyOnSelect: form.sshCopyOnSelect,
         startupConnection: form.startupProfileId ? { profileId: form.startupProfileId, kind: form.startupKind } : null,
       }
     case 'files':
@@ -278,6 +280,10 @@ export function useApplicationSettings(options: SettingsOptions) {
   function updateTheme(theme: ThemeMode): void {
     edit('general', { theme }, 0)
   }
+  /** Sets whether selecting SSH terminal text copies it. @param sshCopyOnSelect Whether automatic copying is enabled. */
+  function updateSshCopyOnSelect(sshCopyOnSelect: boolean): void {
+    edit('general', { sshCopyOnSelect }, 0)
+  }
   /** Sets the startup server. @param startupProfileId Server ID or empty selection. */
   function updateStartupProfile(startupProfileId: string): void {
     edit('general', { startupProfileId }, 0)
@@ -303,6 +309,7 @@ export function useApplicationSettings(options: SettingsOptions) {
     updateDefaultView,
     updateLanguage,
     updateTheme,
+    updateSshCopyOnSelect,
     updateStartupProfile,
     updateStartupKind,
   }

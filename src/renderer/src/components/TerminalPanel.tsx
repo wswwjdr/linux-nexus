@@ -1,6 +1,6 @@
 import { type MessageValue, tr } from '@shared/i18n/messages'
 import { useLanguage } from '@/i18n'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import { Clipboard, Copy } from 'lucide-react'
@@ -18,14 +18,15 @@ interface TerminalPanelProps {
   sessionId: string
   active: boolean
   connected: boolean
+  copyOnSelect: boolean
   onError: (message: MessageValue) => void
 }
 
 /** Displays the SSH PTY and offers history matches when a Bash prompt is active.
- * @param props Session identifier, tab and connection state, and error callback.
+ * @param props Session identifier, tab and connection state, copy preference, and error callback.
  * @returns The terminal, its history popup, and its context menu.
  */
-export default function TerminalPanel({ sessionId, active, connected, onError }: TerminalPanelProps) {
+export default function TerminalPanel({ sessionId, active, connected, copyOnSelect, onError }: TerminalPanelProps) {
   const language = useLanguage()
   const hostRef = useRef<HTMLDivElement>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
@@ -108,17 +109,29 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
     setContextMenu({ x: event.clientX, y: event.clientY })
   }
 
+  /** Writes selected text to the system clipboard. @param selection The terminal's selected text. */
+  const writeSelection = useCallback((selection: string): void => {
+    void navigator.clipboard.writeText(selection).catch((error: unknown) => {
+      onError(errorMessage(error))
+    })
+  }, [onError])
+
   /** Copies the terminal selection to the clipboard and restores terminal focus. */
   const copySelection = useCallback(() => {
     const terminal = terminalRef.current
     const selection = terminal?.getSelection()
     if (!terminal || !selection) return
-    void navigator.clipboard.writeText(selection).catch((error: unknown) => {
-      onError(errorMessage(error))
-    })
+    writeSelection(selection)
     setContextMenu(null)
     terminal.focus()
-  }, [onError])
+  }, [writeSelection])
+
+  /** Copies a new selection from the active SSH tab when enabled. @param terminal The terminal whose selection changed. */
+  const copyChangedSelection = useEffectEvent((terminal: Terminal): void => {
+    if (!active || !copyOnSelect) return
+    const selection = terminal.getSelection()
+    if (selection) writeSelection(selection)
+  })
 
   /**
    * Pastes clipboard text into the connected terminal.
@@ -157,6 +170,7 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
     fitRef.current = fit
     const history = observeTerminalHistory(terminal, setHistoryView)
     historyRef.current = history
+    const selectionChange = terminal.onSelectionChange(() => copyChangedSelection(terminal))
 
     const input = terminal.onData((data) => {
       if (!connectedRef.current) return
@@ -191,6 +205,7 @@ export default function TerminalPanel({ sessionId, active, connected, onError }:
     terminal.attachCustomKeyEventHandler(handleClipboardShortcut)
 
     return () => {
+      selectionChange.dispose()
       input.dispose()
       removeOutput()
       history.dispose()

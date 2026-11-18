@@ -51,6 +51,7 @@ function GeneralSettings(props: SettingsPageProps) {
     settingsForm,
     updateLanguage: onUpdateLanguage,
     updateTheme: onUpdateTheme,
+    updateSshCopyOnSelect: onUpdateSshCopyOnSelect,
     updateStartupProfile: onUpdateStartupProfile,
     updateStartupKind: onUpdateStartupKind,
   } = preferences
@@ -151,6 +152,17 @@ function GeneralSettings(props: SettingsPageProps) {
             </div>
           </div>
         )}
+      </fieldset>
+      <fieldset className="settings-section">
+        <legend>{tr('settings.sshTerminal')}</legend>
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={settingsForm.sshCopyOnSelect}
+            onChange={(event) => onUpdateSshCopyOnSelect(event.target.checked)}
+          />
+          {tr('settings.sshCopyOnSelect')}
+        </label>
       </fieldset>
     </>
   )

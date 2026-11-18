@@ -110,6 +110,8 @@ button.terminal-history-option:is(:hover, :focus-visible) { background: var(--te
 .entry-name.directory-entry:hover:not(:disabled) .entry-label { color:var(--accent); }
 .entry-icon { width: 19px; height: 20px; display: grid; flex: 0 0 auto; place-items: center; color:var(--text-secondary); }
 .entry-icon.folder-icon { color:var(--text-accent); }
+/* Leave room for underscores when clipping long filenames to one line. */
+.entry-label, .tile-name { line-height: 1.45; }
 .entry-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-table code { color:var(--text-secondary); font-family: 'Cascadia Code', Consolas, monospace; font-size: 11px; }
 .table-state { min-height: 150px; display: flex; align-items: center; justify-content: center; gap: 9px; color:var(--text-secondary); font-size: 12px; }
@@ -139,6 +141,7 @@ button.terminal-history-option:is(:hover, :focus-visible) { background: var(--te
 .entry-hover-row > span:first-child { color:var(--text-secondary); }
 .entry-hover-row strong { min-width: 0; color:var(--text-strong); font-weight: 600; overflow-wrap: anywhere; }
 .entry-hover-value { min-width: 0; color:var(--text-primary); font-weight: 500; overflow-wrap: anywhere; }
+.entry-hover-value.path-value { white-space: pre-wrap; font-family: 'Cascadia Code', Consolas, monospace; }
 .entry-hover-row code { color:var(--text-secondary); font-family: 'Cascadia Code', Consolas, monospace; font-size: 11px; }
 .file-row:focus-visible { outline:2px solid var(--focus-outline); outline-offset: -2px; }
 .browser-context-menu { position: fixed; z-index: 7; width: 204px; max-height: calc(100vh - 16px); display: flex; flex-direction: column; gap: 2px; overflow-y: auto; padding: 4px; border:1px solid var(--line); border-radius: 5px; background:var(--surface-raised); box-shadow: var(--shadow-menu); }

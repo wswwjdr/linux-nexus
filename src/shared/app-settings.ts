@@ -39,6 +39,7 @@ export const settingsDomains = {
     language: z.enum(['system', 'zh-CN', 'en']),
     theme: z.enum(['light', 'dark', 'cream']),
     startupConnection: z.strictObject({ profileId: z.string().min(1), kind: z.enum(['files', 'terminal']) }).nullable(),
+    sshCopyOnSelect: z.boolean(),
   }),
   files: z.strictObject({
     defaultView: z.enum(['icons', 'details']),
@@ -63,7 +64,11 @@ export const settingsDomains = {
     thresholds: z.strictObject({ cpu: threshold, memory: threshold, disk: threshold, loadPerCore: threshold }),
   }),
 }
-export const appSettingsSchema = z.strictObject(settingsDomains)
+export const appSettingsSchema = z.strictObject({
+  ...settingsDomains,
+  // Older saved settings do not include this preference.
+  general: settingsDomains.general.extend({ sshCopyOnSelect: settingsDomains.general.shape.sshCopyOnSelect.default(false) }),
+})
 export const appSettingsUpdateSchema = z.discriminatedUnion('domain', [
   z.strictObject({ domain: z.literal('general'), value: settingsDomains.general }),
   z.strictObject({ domain: z.literal('files'), value: settingsDomains.files }),
@@ -74,7 +79,7 @@ export const appSettingsUpdateSchema = z.discriminatedUnion('domain', [
 /** Creates independent defaults for every application settings domain. @returns Fresh settings. */
 export function defaultAppSettings(): AppSettings {
   return {
-    general: { language: 'system', theme: 'light', startupConnection: null },
+    general: { language: 'system', theme: 'light', startupConnection: null, sshCopyOnSelect: false },
     files: {
       defaultView: 'details',
       previewLimits: { ...DEFAULT_PREVIEW_LIMITS },

@@ -120,6 +120,7 @@ export type PreviewLimitsForm = Record<PreviewLimitKey, string>
 export interface SettingsForm extends PreviewLimitsForm {
   language: LanguagePreference
   theme: ThemeMode
+  sshCopyOnSelect: boolean
   fileTypeExtensions: FileTypeExtensions
   directoryUsageEntryLimit: string
   transferFileConcurrency: string

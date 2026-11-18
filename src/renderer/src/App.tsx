@@ -817,6 +817,7 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
             scriptCommandDialogs,
             scriptExecutionDialogs,
             fileTypeExtensions,
+            sshCopyOnSelect: preferences.settings.general.sshCopyOnSelect,
             transfers,
           }}
           actions={{

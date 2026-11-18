@@ -891,6 +891,7 @@ export default {
     "connectionType": "Connection type",
     "startupConnectionType": "Startup connection type",
     "sshTerminal": "SSH terminal",
+    "sshCopyOnSelect": "Copy selected text automatically",
     "previewSizeLimits": "Preview size limits",
     "performanceMonitoring": "Performance monitoring",
     "samplingIntervalSeconds": "Sampling interval (seconds)",

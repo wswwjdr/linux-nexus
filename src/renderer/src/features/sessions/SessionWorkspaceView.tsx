@@ -57,6 +57,7 @@ interface SessionWorkspaceState {
   scriptCommandDialogs: ReadonlyMap<string, ScriptCommandDialog>
   scriptExecutionDialogs: ReadonlyMap<string, ScriptExecutionDialogState>
   fileTypeExtensions: FileTypeExtensions
+  sshCopyOnSelect: boolean
   transfers: Record<string, TransferJob>
 }
 
@@ -94,6 +95,7 @@ interface SessionWorkspaceViewProps {
   contextMenuAnchorRef: RefObject<HTMLElement | null>
 }
 
+/** Displays the session tabs and their workspaces. @param props Workspace state, actions, and menu refs. @returns The active workspace and mounted session panels. */
 export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
   useLanguage()
   const { state, actions, sessionContextMenuRef, contextMenuAnchorRef } = props
@@ -102,7 +104,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
     currentPath, entries, loading, viewMode, breadcrumbs, sort, sortedEntries, operationActive,
     highlightedPath, sessionContextMenu, browserContextMenu, searchOpenSessionIds,
     scriptCommandDialogs, scriptExecutionDialogs,
-    fileTypeExtensions, transfers,
+    fileTypeExtensions, sshCopyOnSelect, transfers,
   } = state
   const {
     duplicateSession,
@@ -236,6 +238,7 @@ export default function SessionWorkspaceView(props: SessionWorkspaceViewProps) {
                 sessionId={session.id}
                 active={activeSessionId === session.id && activeSession?.kind === 'terminal'}
                 connected={session.status === 'connected'}
+                copyOnSelect={sshCopyOnSelect}
                 onError={reportTerminalError}
               />
             </div>

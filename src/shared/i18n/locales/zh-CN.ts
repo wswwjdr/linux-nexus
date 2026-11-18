@@ -891,6 +891,7 @@ export default {
     "connectionType": "连接方式",
     "startupConnectionType": "启动连接方式",
     "sshTerminal": "SSH 终端",
+    "sshCopyOnSelect": "选中文本时自动复制",
     "previewSizeLimits": "预览大小上限",
     "performanceMonitoring": "性能监控",
     "samplingIntervalSeconds": "采样间隔（秒）",

@@ -23,6 +23,7 @@ export interface AppSettings {
     language: LanguagePreference
     theme: ThemeMode
     startupConnection: StartupConnection | null
+    sshCopyOnSelect: boolean
   }
   files: {
     defaultView: 'icons' | 'details'
