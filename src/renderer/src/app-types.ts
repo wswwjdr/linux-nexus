@@ -52,6 +52,7 @@ export interface SessionTab {
   profileId: string
   kind: SessionKind
   fileIdentity?: FileIdentity
+  assistantOpen?: boolean
   status: 'connecting' | 'connected' | 'disconnected' | 'awaiting-trust'
   currentPath: string
   startPath: string

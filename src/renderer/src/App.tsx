@@ -68,7 +68,6 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [sessionChooserOpen, setSessionChooserOpen] = useState(false)
   const [shortcutGuideOpen, setShortcutGuideOpen] = useState(false)
-  const [assistantVisible, setAssistantVisible] = useState(false)
   const [assistantTasks, setAssistantTasks] = useState<Record<string, Record<string, AssistantTurn['status'] | 'question' | 'pending'>>>({})
   useEffect(() => window.remoteFiles.onAssistantEvent((event) => {
     if (event.kind !== 'turn') return
@@ -586,7 +585,7 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
     showToast,
   })
   const searchOpen = connectedSessionId !== null && searchOpenSessionIds.has(connectedSessionId)
-  const assistantOpen = Boolean(assistantVisible && connectedSessionId && activeSession?.kind === 'files')
+  const assistantOpen = Boolean(connectedSessionId && activeSession?.kind === 'files' && activeSession.assistantOpen)
   const assistantStatuses = Object.values(connectedSessionId ? assistantTasks[connectedSessionId] ?? {} : {})
   const assistantStatus = assistantStatuses.find((status) => status === 'pending')
     ?? assistantStatuses.find((status) => status === 'question') ?? assistantStatuses[0]
@@ -765,7 +764,8 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
                 </button>
                 <button className="icon-button toolbar-button"
                   title={tr(assistantStatus ? `assistant.${assistantStatus}` : 'assistant.title')}
-                  aria-label={tr('assistant.title')} aria-pressed={assistantOpen} onClick={() => setAssistantVisible((open) => !open)}>
+                  aria-label={tr('assistant.title')} aria-pressed={assistantOpen}
+                  onClick={() => patchSession(activeSession.id, { assistantOpen: !assistantOpen })}>
                   {assistantStatus ? <LoaderCircle className="spin" size={16} /> : <Bot size={16} />}
                 </button>
                 <button className="icon-button toolbar-button" title={tr('common.newSshTerminal')} aria-label={tr('common.newSshTerminal')} disabled={rootRequest?.sessionId === connectedSessionId} onClick={openTerminalForCurrentPath}>
@@ -791,7 +791,7 @@ function AppWorkspace({ initialSettings }: { initialSettings: AppSettings }) {
           assistant={assistantOpen && activeSession ? (controls) => <AssistantPanel key={activeSession.id} sessionId={activeSession.id}
             server={connectedProfile ? `${connectedProfile.name} (${connectedProfile.username}@${connectedProfile.host})` : ''}
             directory={currentPath} controls={controls} fileIdentity={activeSession.fileIdentity ?? 'login'}
-            onClose={() => setAssistantVisible(false)}
+            onClose={() => patchSession(activeSession.id, { assistantOpen: false })}
             onOpenExternalLink={(url) => void window.remoteFiles.openExternalUrl(url).catch((error) =>
               showToast('error', msg('common.cannotOpenLink', { value1: errorMessage(error) })))} /> : undefined}
           state={{

@@ -173,6 +173,13 @@ export function useSessionOperations({
     }
   }
 
+  /**
+   * Creates and connects a new session with its assistant closed.
+   * @param profile Server profile to connect to.
+   * @param kind Type of session to open.
+   * @param startPath Initial working directory for a terminal session.
+   * @param source Existing session that supplies the file view or terminal elevation context.
+   */
   const openSession = (profile: ServerProfile, kind: SessionKind, startPath = '', source?: SessionTab) => {
     const id = crypto.randomUUID()
     const currentPath = kind === 'files' ? source?.currentPath || '/' : ''
@@ -184,6 +191,7 @@ export function useSessionOperations({
       id,
       profileId: profile.id,
       kind,
+      assistantOpen: false,
       status: 'connecting',
       currentPath,
       startPath,
