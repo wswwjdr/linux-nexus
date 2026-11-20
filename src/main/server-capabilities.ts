@@ -73,7 +73,11 @@ const gnuNames = new Map<Capability, string>([
 ])
 const diagnostic = 'LINUX_NEXUS_CAPABILITY:'
 
-/** Returns a POSIX script that reports unavailable capabilities from the app-owned list `required`. */
+/**
+ * Builds a POSIX script that checks for missing and incompatible server tools.
+ * @param required App-defined capabilities to check on the server.
+ * @returns A shell script that writes capability diagnostics to stdout.
+ */
 export function capabilityProbe(required: readonly Capability[]): string {
   return required.map(tool => {
     const version = gnuNames.get(tool)
@@ -81,7 +85,8 @@ export function capabilityProbe(required: readonly Capability[]): string {
     return [
       `if ! command -v ${tool} >/dev/null 2>&1; then`,
       `  printf '%s\\n' '${diagnostic}missing:${tool}'`,
-      ...(version ? [`elif ! case "$(${tool} --version 2>/dev/null)" in *'${version}'*) true ;; *) false ;; esac; then`,
+      // Bash 5.1 needs the opening parentheses when this case is inside $(...).
+      ...(version ? [`elif ! case "$(${tool} --version 2>/dev/null)" in (*'${version}'*) true ;; (*) false ;; esac; then`,
         `  printf '%s\\n' '${diagnostic}incompatible:${tool}'`] : []),
       ...(probe ? [`elif ! ( ${probe} ) </dev/null >/dev/null 2>&1; then`,
         `  printf '%s\\n' '${diagnostic}incompatible:${tool}'`] : []),
